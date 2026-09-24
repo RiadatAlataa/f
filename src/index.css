@@ -1,0 +1,401 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+/* 
+ * Official Lyon Arabic Typeface
+ * Specialized font for the association name, providing luxurious, prestigious editorial typography.
+ */
+@font-face {
+  font-family: 'Lyon Arabic';
+  src: url('/fonts/LyonArabic-Regular.woff2') format('woff2'),
+       url('/fonts/LyonArabic-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Lyon Arabic';
+  src: url('/fonts/LyonArabic-Bold.woff2') format('woff2'),
+       url('/fonts/LyonArabic-Bold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Lyon Arabic';
+  src: url('/fonts/LyonArabic-Bold.woff2') format('woff2'),
+       url('/fonts/LyonArabic-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Lyon Arabic';
+  src: url('/fonts/LyonArabic-Bold.woff2') format('woff2'),
+       url('/fonts/LyonArabic-Bold.otf') format('opentype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Lyon Arabic';
+  src: url('/fonts/LyonArabic-Bold.woff2') format('woff2'),
+       url('/fonts/LyonArabic-Bold.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Tajawal", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-lyon: "Lyon Arabic", "Amiri", "Traditional Arabic", "Scheherazade New", serif;
+
+  /* Redefine neutral palette to slate values for the "Professional Polish" theme */
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
+  --color-neutral-950: #020617;
+
+  /* Professional Polish brand emerald override */
+  --color-emerald-50: #f0fdf4;
+  --color-emerald-100: #dcfce7;
+  --color-emerald-200: #bbf7d0;
+  --color-emerald-300: #86efac;
+  --color-emerald-400: #4ade80;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-emerald-900: #064e3b;
+
+  /* Professional Polish brand indigo override */
+  --color-indigo-50: #f5f3ff;
+  --color-indigo-100: #ede9fe;
+  --color-indigo-200: #ddd6fe;
+  --color-indigo-300: #c4b5fd;
+  --color-indigo-400: #a78bfa;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;
+  --color-indigo-700: #4338ca;
+  --color-indigo-800: #3730a3;
+  --color-indigo-900: #312e81;
+
+  --color-primary-50: #f0fdf4;
+  --color-primary-100: #dcfce7;
+  --color-primary-500: #10b981;
+  --color-primary-600: #059669;
+  --color-primary-700: #047857;
+  
+  --color-accent-gold: #d4af37;
+  --color-accent-amber: #f59e0b;
+}
+
+/* Centralized CSS Variables for Light & Dark Mode */
+:root {
+  color-scheme: light;
+  --bg-page: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #f1f5f9;
+  --bg-input: #ffffff;
+  --bg-hover: #f1f5f9;
+  --text-main: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-focus: #10b981;
+  --ring-color: rgba(16, 185, 129, 0.2);
+  --header-bg: rgba(255, 255, 255, 0.9);
+  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+
+  /* Semantic table & modal variables */
+  --th-bg: #f8fafc;
+  --th-text: #475569;
+  --td-border: #f1f5f9;
+  --input-border: #cbd5e1;
+  --input-placeholder: #94a3b8;
+}
+
+.dark {
+  color-scheme: dark;
+  --bg-page: #090d16;
+  --bg-surface: #0f172a;
+  --bg-card: #0f172a;
+  --bg-card-subtle: #1e293b;
+  --bg-input: #1e293b;
+  --bg-hover: #1e293b;
+  --text-main: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --border-subtle: #334155;
+  --border-strong: #475569;
+  --border-focus: #34d399;
+  --ring-color: rgba(52, 211, 153, 0.25);
+  --header-bg: rgba(15, 23, 42, 0.92);
+  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+
+  /* Semantic table & modal variables in dark */
+  --th-bg: #1e293b;
+  --th-text: #94a3b8;
+  --td-border: #1e293b;
+  --input-border: #334155;
+  --input-placeholder: #64748b;
+}
+
+/* Base style overrides to support smooth scrolling, perfect text contrast and transitions */
+html, body {
+  font-family: var(--font-sans);
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  overflow-x: hidden;
+}
+
+/* Ensure inputs, textareas, and selects default to clean contrast in light mode */
+input, textarea, select {
+  color: inherit;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--input-placeholder);
+}
+
+/* System-wide card and surface classes */
+.app-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  box-shadow: var(--card-shadow);
+}
+
+.app-card-subtle {
+  background-color: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.app-input {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-main);
+}
+.app-input:focus {
+  border-color: var(--border-focus);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-color);
+}
+
+/* Arabic RTL support tweaks */
+[dir="rtl"] {
+  text-align: right;
+}
+
+/* 
+ * Explicit Light Mode & Dark Mode Form and Text Rules 
+ * Guarantees that all inputs, textareas, selects, and table elements
+ * have high-contrast, WCAG AA compliant text in both light and dark modes.
+ */
+input:not([type="checkbox"]):not([type="radio"]), 
+textarea, 
+select {
+  background-color: var(--bg-input);
+  color: var(--text-main);
+  border-color: var(--border-strong);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus, 
+textarea:focus, 
+select:focus {
+  border-color: var(--border-focus);
+}
+
+/* Light mode crisp contrast guarantee */
+html:not(.dark) {
+  --text-table-head: #334155;
+  --text-table-body: #0f172a;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Light mode table text guarantees */
+html:not(.dark) thead tr {
+  color: #334155;
+}
+
+html:not(.dark) tbody tr {
+  color: #0f172a;
+}
+
+/* Make sure text-neutral-400 and text-slate-400 labels inside forms/cards are readable in light mode */
+html:not(.dark) label {
+  color: #334155;
+}
+
+html:not(.dark) .text-neutral-400,
+html:not(.dark) .text-slate-400 {
+  color: #64748b;
+}
+
+html:not(.dark) .text-neutral-500,
+html:not(.dark) .text-slate-500 {
+  color: #475569;
+}
+
+/* Ensure secondary subtle text has high contrast in light mode */
+html:not(.dark) .text-neutral-600,
+html:not(.dark) .text-slate-600 {
+  color: #334155;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Custom print stylesheet for beautiful membership cards and reports */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .print-table-header {
+    display: table-header-group !important;
+  }
+  .print-row {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+
+/* 
+ * Dedicated Lyon Arabic typography for the association's official name
+ * Applies to Header, Sidebar, Footer, Hero, Cards, and everywhere the official name appears.
+ */
+.font-lyon,
+.font-association-title,
+.font-association-brand,
+.association-brand-text {
+  font-family: 'Lyon Arabic', 'Lyon Arabic Web', 'Amiri', 'Traditional Arabic', 'Scheherazade New', serif !important;
+  font-feature-settings: "cv01" on, "calt" on, "liga" on;
+  letter-spacing: -0.015em;
+  word-spacing: 0.05em;
+}
+
+/* 
+ * Global Dropdown Menus Stacking & Visibility Guarantee
+ * Ensures all dropdown menus float above tables, cards, badges, and headers site-wide.
+ */
+.category-dropdown-group {
+  position: relative;
+}
+
+.category-dropdown-group.is-open {
+  z-index: 60 !important;
+}
+
+.dropdown-menu-floating {
+  z-index: 100 !important;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.15), 0 8px 10px -6px rgb(0 0 0 / 0.1) !important;
+}
+
+/*
+ * Prevent accidental horizontal scrolling and ensure mobile safe-area padding
+ */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
+
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
+}
+
+/*
+ * ==========================================================================
+ * Comprehensive System-Wide Layout & Fluid Widescreen System
+ * Solves large blank side spaces and narrow centered content across all pages:
+ * Full Width → Minimal Safe Margin → Balanced Content → Minimal Safe Margin
+ * ==========================================================================
+ */
+
+/* Redefine max-w-7xl to be expansive and fluid instead of a restrictive 1280px box */
+.max-w-7xl {
+  max-width: min(97vw, 1860px) !important;
+}
+
+/* Fluid responsive container system for Dashboards, Portals & Public Pages */
+.app-container-responsive,
+.dashboard-container,
+.site-container,
+.portal-container {
+  width: 100%;
+  max-width: min(97vw, 1860px);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: clamp(0.75rem, 2vw, 2.5rem);
+  padding-right: clamp(0.75rem, 2vw, 2.5rem);
+}
+
+/* Prevent text clipping and enforce clean line balance across wide tables & cards */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Smooth fluid scaling for large screens (1920px+) */
+@media (min-width: 1600px) {
+  /* On ultra-wide screens, ensure card grids gracefully adapt */
+  .auto-fit-cards-widescreen {
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)) !important;
+  }
+}
+
+
+
+
