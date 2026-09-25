@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { AidDistribution, Beneficiary, DistributionHandoverRecord } from '../types';
+import { HandoverPhotoCapture } from './HandoverPhotoCapture';
 
 interface AidHandoverScannerModalProps {
   isOpen: boolean;
@@ -42,6 +43,8 @@ interface AidHandoverScannerModalProps {
     distributionId: string;
     beneficiaryId?: string;
     barcodeId: string;
+    photoUrl?: string;
+    proofPhotos?: string[];
     handedByUserId: string;
     handedByUserName: string;
     handedByUserRole: string;
@@ -76,10 +79,12 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   const [foundBeneficiary, setFoundBeneficiary] = useState<Beneficiary | null>(null);
   const [alreadyReceivedRecord, setAlreadyReceivedRecord] = useState<DistributionHandoverRecord | null>(null);
   const [isDuplicate, setIsDuplicate] = useState(false);
+  const [isNotTargeted, setIsNotTargeted] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSuccessBen, setLastSuccessBen] = useState<Beneficiary | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [handoverPhoto, setHandoverPhoto] = useState<string | null>(null);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
@@ -165,9 +170,23 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
 
     setFoundBeneficiary(matched);
 
-    // Check duplicate in this distribution
+    // 1. Eligibility Check (التحقق من إدراج المستفيد ضمن كشف التوزيع المعتمد)
+    const targetedBenIds = currentDistribution?.targetedBeneficiaryIds || [];
+    const isTargeted = targetedBenIds.length === 0 || targetedBenIds.includes(matched.id);
+
+    if (!isTargeted) {
+      setIsNotTargeted(true);
+      setIsDuplicate(false);
+      setAlreadyReceivedRecord(null);
+      playBeep('error');
+      return;
+    }
+
+    setIsNotTargeted(false);
+
+    // 2. Check duplicate in this distribution (منع التكرار)
     const existingHandover = handoverRecords.find(
-      h => h.distributionId === activeDistId && h.beneficiaryId === matched.id
+      h => h.distributionId === activeDistId && (h.beneficiaryId === matched.id || (h.nationalId && h.nationalId === matched.nationalId))
     );
 
     if (existingHandover) {
@@ -260,9 +279,11 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
     setFoundBeneficiary(null);
     setScannedBarcode('');
     setIsDuplicate(false);
+    setIsNotTargeted(false);
     setAlreadyReceivedRecord(null);
     setNotFound(false);
     setManualInput('');
+    setHandoverPhoto(null);
     if (scanMode === 'hardware') {
       manualInputRef.current?.focus();
     }
@@ -270,7 +291,12 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
 
   // Handle Confirmed Handover Button Click
   const handleConfirmHandover = async () => {
-    if (!foundBeneficiary || !activeDistId || isDuplicate) return;
+    if (!foundBeneficiary || !activeDistId || isDuplicate || isNotTargeted) return;
+
+    if (!handoverPhoto) {
+      alert("التقاط صورة التسليم إلزامي لتوثيق الاستلام في ملف المستفيد!");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -278,6 +304,8 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
         distributionId: activeDistId,
         beneficiaryId: foundBeneficiary.id,
         barcodeId: foundBeneficiary.barcodeId || scannedBarcode,
+        photoUrl: handoverPhoto,
+        proofPhotos: [handoverPhoto],
         handedByUserId: currentUser.id || 'staff',
         handedByUserName: currentUser.name || 'مشرف التوزيع',
         handedByUserRole: currentUser.role || 'staff',
@@ -485,127 +513,204 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
           )}
 
           {/* Verification Results Panel */}
-          {foundBeneficiary && (
-            <div className={`p-4 rounded-2xl border-2 transition-all shadow-md ${
-              isDuplicate 
-                ? 'bg-red-50/80 dark:bg-red-950/30 border-red-500' 
-                : 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-500'
-            }`}>
-              {/* Status Banner */}
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-200 dark:border-neutral-700/60">
-                <div className="flex items-center gap-2">
-                  {isDuplicate ? (
-                    <div className="p-1.5 rounded-xl bg-red-600 text-white">
-                      <ShieldAlert className="w-5 h-5" />
+          {foundBeneficiary && (() => {
+            const customAllocatedQty = (currentDistribution?.beneficiaryAllocations && currentDistribution.beneficiaryAllocations[foundBeneficiary.id] !== undefined)
+              ? currentDistribution.beneficiaryAllocations[foundBeneficiary.id]
+              : (currentDistribution?.unitQuantityPerBeneficiary || 1);
+
+            return (
+              <div className={`p-4 rounded-2xl border-2 transition-all shadow-md ${
+                isNotTargeted
+                  ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-500'
+                  : isDuplicate 
+                    ? 'bg-red-50/80 dark:bg-red-950/30 border-red-500' 
+                    : 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-500'
+              }`}>
+                {/* Status Banner */}
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-200 dark:border-neutral-700/60">
+                  <div className="flex items-center gap-2">
+                    {isNotTargeted ? (
+                      <div className="p-1.5 rounded-xl bg-amber-600 text-white">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                    ) : isDuplicate ? (
+                      <div className="p-1.5 rounded-xl bg-red-600 text-white">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                    ) : (
+                      <div className="p-1.5 rounded-xl bg-emerald-600 text-white">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div>
+                      <h4 className={`text-sm font-black ${
+                        isNotTargeted 
+                          ? 'text-amber-800 dark:text-amber-300' 
+                          : isDuplicate 
+                            ? 'text-red-700 dark:text-red-400' 
+                            : 'text-emerald-800 dark:text-emerald-300'
+                      }`}>
+                        {isNotTargeted 
+                          ? '⚠️ هذا المستفيد غير مدرج في كشف التوزيع الحالي.' 
+                          : isDuplicate 
+                            ? `⚠️ تم تسليم المساعدة لهذا المستفيد مسبقاً بتاريخ ${alreadyReceivedRecord?.date || ''} الساعة ${alreadyReceivedRecord?.time || ''}` 
+                            : '✅ مستحق للمساعدة - جاهز للتسليم والتوثيق'}
+                      </h4>
+                      <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                        {isNotTargeted 
+                          ? 'المستفيد مسجل في النظام لكنه غير مشمول ضمن كشف المستحقين المعتمدين لهذه الدفعة من قِبل إدارة المستفيدين' 
+                          : isDuplicate 
+                            ? 'ممنوع التكرار: يمنع النظام صرف المساعدة مرتين لنفس المستفيد في نفس كشف التوزيع' 
+                            : 'معتمد في كشف التوزيع الحالي ولم يستلم بعد - يرجى التقاط صورة التسليم لإتمام العملية'}
+                      </p>
                     </div>
-                  ) : (
-                    <div className="p-1.5 rounded-xl bg-emerald-600 text-white">
-                      <CheckCircle2 className="w-5 h-5" />
+                  </div>
+
+                  <span className="text-xs font-mono font-bold px-2 py-1 bg-white dark:bg-neutral-800 rounded-lg text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700">
+                    {foundBeneficiary.barcodeId || scannedBarcode}
+                  </span>
+                </div>
+
+                {/* Beneficiary Core Details */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">اسم المستفيد:</div>
+                    <div className="font-black text-neutral-900 dark:text-white truncate mt-0.5">{foundBeneficiary.name}</div>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">رقم الهوية:</div>
+                    <div className="font-mono font-bold text-neutral-900 dark:text-white mt-0.5">{foundBeneficiary.nationalId || '---'}</div>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">الصنف المستحق:</div>
+                    <div className="font-bold text-emerald-700 dark:text-emerald-400 mt-0.5 truncate">
+                      {currentDistribution?.aidTypeLabel || currentDistribution?.title || "سلة غذائية"}
                     </div>
-                  )}
-                  <div>
-                    <h4 className={`text-sm font-black ${isDuplicate ? 'text-red-700 dark:text-red-400' : 'text-emerald-800 dark:text-emerald-300'}`}>
-                      {isDuplicate ? '⚠️ تم استلام هذه المساعدة مسبقًا لهذا المستفيد!' : '✅ مستحق للمساعدة - جاهز للتسليم'}
-                    </h4>
-                    <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
-                      {isDuplicate 
-                        ? 'ممنوع التكرار: لا يمكن تسجيل استلام المساعدة مرتين في نفس التوزيعة' 
-                        : 'لم يستلم في هذه التوزيعة مسبقًا - يمكنك الضغط على "تم الاستلام"'}
-                    </p>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">الكمية المخصصة:</div>
+                    <div className="font-bold text-emerald-800 dark:text-emerald-300 mt-0.5">
+                      {customAllocatedQty} {currentDistribution?.unit || "طرد/وحدة"}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">رقم الملف:</div>
+                    <div className="font-mono font-bold text-neutral-700 dark:text-neutral-300 mt-0.5">
+                      {foundBeneficiary.beneficiaryNumber || 'BEN-2026-0000'}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">عدد أفراد الأسرة:</div>
+                    <div className="font-bold text-neutral-900 dark:text-white mt-0.5">{foundBeneficiary.familySize || 1} أفراد</div>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">فئة الاستحقاق:</div>
+                    <div className="font-bold text-neutral-900 dark:text-white mt-0.5">{foundBeneficiary.category || "أسر متعففة"}</div>
+                  </div>
+
+                  <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400">حالة التسليم:</div>
+                    <div className={`font-bold mt-0.5 ${
+                      isNotTargeted 
+                        ? 'text-amber-700 dark:text-amber-400' 
+                        : isDuplicate 
+                          ? 'text-red-700 dark:text-red-400' 
+                          : 'text-emerald-700 dark:text-emerald-400'
+                    }`}>
+                      {isNotTargeted 
+                        ? 'غير مدرج بالكشف ❌' 
+                        : isDuplicate 
+                          ? 'تم التسليم مسبقاً ✓' 
+                          : 'لم يستلم (مستحق الآن)'}
+                    </div>
                   </div>
                 </div>
 
-                <span className="text-xs font-mono font-bold px-2 py-1 bg-white dark:bg-neutral-800 rounded-lg text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700">
-                  {foundBeneficiary.barcodeId || scannedBarcode}
-                </span>
-              </div>
-
-              {/* Beneficiary Core Details */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
-                <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">اسم المستفيد:</div>
-                  <div className="font-black text-neutral-900 dark:text-white truncate mt-0.5">{foundBeneficiary.name}</div>
-                </div>
-
-                <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">رقم الهوية:</div>
-                  <div className="font-mono font-bold text-neutral-900 dark:text-white mt-0.5">{foundBeneficiary.nationalId || '---'}</div>
-                </div>
-
-                <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">رقم المستفيد:</div>
-                  <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    {foundBeneficiary.beneficiaryNumber || 'BEN-2026-0000'}
+                {/* Not Targeted Notice */}
+                {isNotTargeted && (
+                  <div className="mt-3 p-3 bg-amber-100/70 dark:bg-amber-900/40 rounded-xl border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200">
+                    🔒 <strong>تعليمات المستودع:</strong> لا يحق لموظف المخزون تسليم أي صنف إلا لشخص مسجل في كشف التوزيع المعتمد. يرجى إحالة المستفيد لمراجعة قسم إدارة المستفيدين لإدراجه في الدفعات القادمة.
                   </div>
-                </div>
+                )}
 
-                <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">عدد أفراد الأسرة:</div>
-                  <div className="font-bold text-neutral-900 dark:text-white mt-0.5">{foundBeneficiary.familySize || 1} أفراد</div>
-                </div>
-
-                <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">فئة الاستحقاق:</div>
-                  <div className="font-bold text-neutral-900 dark:text-white mt-0.5">{foundBeneficiary.category || "أسر متعففة"}</div>
-                </div>
-
-                <div className="p-2.5 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">المساعدة المستحقة:</div>
-                  <div className="font-bold text-emerald-700 dark:text-emerald-400 mt-0.5 truncate">
-                    {currentDistribution?.quantityPerBeneficiary || "1 سلة / طرد"}
+                {/* Photo Proof Capture Section (التقاط صورة التسليم إلزامي فقط للمستحقين) */}
+                {!isDuplicate && !isNotTargeted && (
+                  <div className="mt-3">
+                    <HandoverPhotoCapture
+                      photo={handoverPhoto}
+                      onPhotoCaptured={setHandoverPhoto}
+                      required={true}
+                    />
                   </div>
-                </div>
-              </div>
+                )}
 
-              {/* Duplicate Details Warning */}
-              {isDuplicate && alreadyReceivedRecord && (
-                <div className="mt-3 p-3 bg-red-100/70 dark:bg-red-950/60 rounded-xl border border-red-300 dark:border-red-900 text-xs text-red-800 dark:text-red-200 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>بيانات الاستلام المسجل مسبقًا:</span>
+                {/* Duplicate Details Warning */}
+                {isDuplicate && alreadyReceivedRecord && (
+                  <div className="mt-3 p-3 bg-red-100/70 dark:bg-red-950/60 rounded-xl border border-red-300 dark:border-red-900 text-xs text-red-800 dark:text-red-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>بيانات وتفاصيل الاستلام المسجل مسبقًا:</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                      <div>التاريخ والوقت: <strong>{alreadyReceivedRecord.date}</strong> الساعة <strong>{alreadyReceivedRecord.time}</strong></div>
+                      <div>الموظف الذي قام بالتسليم: <strong>{alreadyReceivedRecord.handedByUserName}</strong></div>
+                      <div>طريقة التحقق: <strong>{alreadyReceivedRecord.method === 'camera_scanner' ? 'كاميرا الجوال' : 'قارئ باركود خارجي'}</strong></div>
+                      <div>رقم إيصال التسليم: <span className="font-mono">{alreadyReceivedRecord.id}</span></div>
+                    </div>
+                    {alreadyReceivedRecord.photoUrl && (
+                      <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-900/60">
+                        <span className="text-[10px] text-red-700 dark:text-red-300 font-bold block mb-1">صورة التوثيق السابقة:</span>
+                        <img 
+                          src={alreadyReceivedRecord.photoUrl} 
+                          alt="توثيق سابق" 
+                          className="w-24 h-16 object-cover rounded-lg border border-red-300 cursor-pointer hover:opacity-80"
+                          onClick={() => window.open(alreadyReceivedRecord.photoUrl, '_blank')}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] pt-1">
-                    <div>التاريخ: <strong>{alreadyReceivedRecord.date}</strong> الساعة <strong>{alreadyReceivedRecord.time}</strong></div>
-                    <div>المسؤول المسلّم: <strong>{alreadyReceivedRecord.handedByUserName}</strong></div>
-                    <div>طريقة المسح: <strong>{alreadyReceivedRecord.method === 'camera_scanner' ? 'كاميرا' : 'قارئ باركود'}</strong></div>
-                    <div>رقم السجل: <span className="font-mono">{alreadyReceivedRecord.id}</span></div>
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Confirm / Reset Action Button */}
-              <div className="mt-4 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={resetScannerState}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors cursor-pointer"
-                >
-                  مسح مستفيد آخر
-                </button>
-
-                {!isDuplicate && (
+                {/* Confirm / Reset Action Button */}
+                <div className="mt-4 flex items-center justify-end gap-2.5">
                   <button
                     type="button"
-                    disabled={isSubmitting}
-                    onClick={handleConfirmHandover}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                    onClick={resetScannerState}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors cursor-pointer"
                   >
-                    {isSubmitting ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>جاري تسجيل الاستلام...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>✅ تم الاستلام (تسجيل التسليم الآن)</span>
-                      </>
-                    )}
+                    مسح مستفيد آخر
                   </button>
-                )}
+
+                  {!isDuplicate && !isNotTargeted && (
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={handleConfirmHandover}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>جاري تسجيل الاستلام وخصم المخزون...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>✅ تم الاستلام (تسجيل التسليم وخصم المخزون)</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Not Found Warning */}
           {notFound && (

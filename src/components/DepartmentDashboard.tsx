@@ -908,6 +908,10 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
           <div className="space-y-4">
             <InventoryManager
               initiatives={initiatives}
+              beneficiaries={beneficiaries}
+              distributions={distributions}
+              distributionHandovers={distributionHandovers}
+              onHandoverSubmit={onHandoverSubmit}
               onRefreshGlobalData={onRefreshGlobalData}
               currentUser={currentUser}
               storekeeperMode={effectiveRole === 'storekeeper'}

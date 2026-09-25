@@ -49,6 +49,7 @@ import {
 } from '../types';
 import { AidHandoverScannerModal } from './AidHandoverScannerModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
+import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
 
 interface BeneficiariesMasterDashboardProps {
   beneficiaries: Beneficiary[];
@@ -75,6 +76,7 @@ interface BeneficiariesMasterDashboardProps {
 
 type TabType = 
   | 'overview' 
+  | 'allocations'
   | 'beneficiaries' 
   | 'distributions' 
   | 'eligibilities' 
@@ -123,6 +125,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingDist, setEditingDist] = useState<AidDistribution | null>(null);
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
+  const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
   const [isAddBenModalOpen, setIsAddBenModalOpen] = useState(false);
   const [manualBarcodeQuery, setManualBarcodeQuery] = useState('');
   const [quickHandoverMsg, setQuickHandoverMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -136,8 +139,11 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [formLocation, setFormLocation] = useState('مقر الجمعية - مخطط العسيلة');
   const [formInventoryItemId, setFormInventoryItemId] = useState<string>('');
   const [formUnitQty, setFormUnitQty] = useState<number>(1);
-  const [formTargetAudience, setFormTargetAudience] = useState<'all' | 'specific_categories' | 'custom'>('all');
+  const [formTargetAudience, setFormTargetAudience] = useState<'all' | 'specific_categories' | 'custom' | 'custom_selection'>('all');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [customAllocations, setCustomAllocations] = useState<{ [benId: string]: number }>({});
+  const [customAllocationSearch, setCustomAllocationSearch] = useState('');
+  const [customTotalGoal, setCustomTotalGoal] = useState<number>(50);
   const [formNotes, setFormNotes] = useState('');
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -302,6 +308,25 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     }
   };
 
+  // Open Allocation Modal pre-linked with a specific inventory item
+  const handleOpenAllocationForInventoryItem = (item: any) => {
+    setEditingDist(null);
+    setFormTitle(`توزيع ${item.name} للمستحقين`);
+    setFormAidType('food_basket');
+    setFormAidTypeLabel(item.name);
+    setFormDescription(item.description || `تخصيص كميات من صنف (${item.name}) للمستفيدين المعتمدين من المخزون`);
+    setFormDate(new Date().toISOString().split('T')[0]);
+    setFormLocation('مقر المستودع الرئيسي - جمعية ريادة العطاء');
+    setFormInventoryItemId(item.id);
+    setFormUnitQty(1);
+    setFormTargetAudience('custom_selection');
+    setCustomAllocations({});
+    setSelectedCategories([]);
+    setFormNotes(`أمر صرف وتوزيع رقمي معتمد من إدارة المستفيدين للصنف ${item.name} - باركود: ${item.barcode || '-'}`);
+    setFormError(null);
+    setIsCreateModalOpen(true);
+  };
+
   // Submit Distribution Form with Inventory Link
   const handleSaveDistribution = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,18 +336,26 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     try {
       // Calculate targeted beneficiaries
       let targetedIds: string[] = [];
-      if (formTargetAudience === 'all') {
+      let totalNeeded = 0;
+
+      if (formTargetAudience === 'custom_selection') {
+        targetedIds = Object.keys(customAllocations).filter(id => (Number(customAllocations[id]) || 0) > 0);
+        totalNeeded = (Object.values(customAllocations) as any[]).reduce((acc: number, q: any) => acc + (Number(q) || 0), 0);
+      } else if (formTargetAudience === 'all') {
         targetedIds = beneficiaries.map(b => b.id);
+        totalNeeded = formUnitQty * targetedIds.length;
       } else if (formTargetAudience === 'specific_categories' && selectedCategories.length > 0) {
         targetedIds = beneficiaries
           .filter(b => b.category && selectedCategories.includes(b.category))
           .map(b => b.id);
+        totalNeeded = formUnitQty * targetedIds.length;
       } else {
         targetedIds = beneficiaries.filter(b => b.status === 'approved').map(b => b.id);
+        totalNeeded = formUnitQty * targetedIds.length;
       }
 
       if (targetedIds.length === 0) {
-        setFormError('يرجى التأكد من وجود مستفيدين مستهدفين لهذه التوزيعة.');
+        setFormError('يرجى التأكد من تحديد مستفيد واحد على الأقل وتخصيص كمية له.');
         setFormSubmitting(false);
         return;
       }
@@ -330,9 +363,8 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       // Check stock if inventory item selected
       const selectedItem = availableInventoryItems.find(i => i.id === formInventoryItemId);
       if (selectedItem) {
-        const totalNeeded = formUnitQty * targetedIds.length;
         if (totalNeeded > selectedItem.availableStock) {
-          setFormError(`الرصيد المتاح في المستودع للصنف (${selectedItem.name}) هو ${selectedItem.availableStock}، بينما الكمية المطلوبة لتغطية ${targetedIds.length} مستفيد هي ${totalNeeded}. يرجى تقليل الكمية أو تعديل الفئات المستهدفة.`);
+          setFormError(`الرصيد المتاح في المستودع للصنف (${selectedItem.name}) هو ${selectedItem.availableStock}، بينما الكمية المطلوبة لتغطية ${targetedIds.length} مستفيد هي ${totalNeeded}. يرجى تقليل الكمية أو تعديل التخصيصات.`);
           setFormSubmitting(false);
           return;
         }
@@ -344,16 +376,21 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
         aidTypeLabel: formAidTypeLabel || (selectedItem ? selectedItem.name : 'مساعدات عينية'),
         description: formDescription,
         distributionDate: formDate,
-        quantityPerBeneficiary: `${formUnitQty} ${selectedItem ? selectedItem.unitOfMeasure : 'طرد'}`,
+        quantityPerBeneficiary: formTargetAudience === 'custom_selection' 
+          ? `كميات مخصصة متفاوتة (${totalNeeded} إجمالي)` 
+          : `${formUnitQty} ${selectedItem ? selectedItem.unitOfMeasure : 'طرد'}`,
         targetAudience: formTargetAudience,
         targetedBeneficiaryIds: targetedIds,
+        beneficiaryAllocations: formTargetAudience === 'custom_selection' ? customAllocations : undefined,
+        allocatedQuantity: totalNeeded,
+        reservedStock: totalNeeded,
         location: formLocation,
         notes: formNotes,
         createdBy: currentUser.name || 'مدير إدارة المستفيدين',
         inventoryItemId: formInventoryItemId || undefined,
         inventoryItemName: selectedItem ? selectedItem.name : undefined,
         unitQuantityPerBeneficiary: formUnitQty,
-        eligibilityFilterCategory: selectedCategories.join('، ') || 'كافة الفئات المعتمدة'
+        eligibilityFilterCategory: formTargetAudience === 'custom_selection' ? 'مخصص بالأسماء' : (selectedCategories.join('، ') || 'كافة الفئات المعتمدة')
       };
 
       let success = false;
@@ -475,6 +512,41 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     XLSX.writeFile(wb, `سجل_تسليم_المساعدات_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // Export Specific Approved Distribution Batch to Excel
+  const exportDistributionBatchToExcel = (dist: AidDistribution) => {
+    const targeted = (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0)
+      ? beneficiaries.filter(b => dist.targetedBeneficiaryIds?.includes(b.id))
+      : beneficiaries;
+
+    const rows = targeted.map((b, idx) => {
+      const hRecord = handoverRecords.find(h => h.distributionId === dist.id && (h.beneficiaryId === b.id || (h.nationalId && h.nationalId === b.nationalId)));
+      const customQty = (dist.beneficiaryAllocations && dist.beneficiaryAllocations[b.id] !== undefined)
+        ? dist.beneficiaryAllocations[b.id]
+        : (dist.unitQuantityPerBeneficiary || 1);
+
+      return {
+        "م": idx + 1,
+        "رقم الملف": b.beneficiaryNumber || b.id,
+        "اسم المستفيد": b.name,
+        "رقم الهوية": b.nationalId || "",
+        "الجوال": b.phone || "",
+        "فئة الاستحقاق": b.category || "أسر متعففة",
+        "الصنف المعتمد للصرف": dist.aidTypeLabel || dist.title,
+        "الكمية المعتمدة": `${customQty} ${dist.unit || 'طرد'}`,
+        "حالة الاستلام": hRecord ? "تم التسليم بنجاح ✓" : "بانتظار التسليم بالمستودع",
+        "تاريخ ووقت الاستلام": hRecord ? `${hRecord.date} ${hRecord.time}` : "—",
+        "الموظف المسلم": hRecord ? hRecord.handedByUserName : "—",
+        "توثيق الصورة": hRecord ? (hRecord.photoUrl || (hRecord.proofPhotos && hRecord.proofPhotos.length > 0) ? "موثقة بالصورة ✓" : "بدون صورة") : "—"
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!views'] = [{ RTL: true }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "كشف التوزيع المعتمد");
+    XLSX.writeFile(wb, `كشف_توزيع_${dist.title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   // Aid Categories for Eligibility Matrix
   const aidCategories = [
     { id: 'food', name: 'سلال ومواد غذائية', icon: '🥫', criteria: 'الأسر المتعففة، الأرامل، كبار السن، محدودي الدخل', freq: 'شهرياً أو موسمي' },
@@ -537,12 +609,13 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           </div>
         </div>
 
-        {/* 10 Navigation Tabs */}
+        {/* Navigation Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-2 border-t border-neutral-100 scrollbar-thin">
           {[
             { id: 'overview', label: 'إدارة المستفيدين', icon: Building2 },
+            { id: 'allocations', label: 'تخصيص المساعدات للمستفيدين', icon: Layers, badge: availableInventoryItems.filter(i => i.availableStock > 0).length },
             { id: 'beneficiaries', label: 'المستفيدون', icon: Users, badge: beneficiaries.length },
-            { id: 'distributions', label: 'التوزيعات', icon: Package, badge: distributions.length },
+            { id: 'distributions', label: 'كشوف التوزيع وأوامر الصرف', icon: Package, badge: distributions.length },
             { id: 'eligibilities', label: 'الاستحقاقات', icon: CheckSquare },
             { id: 'handover_ledger', label: 'سجل الاستلام', icon: FileText, badge: handoverRecords.length },
             { id: 'upcoming', label: 'التوزيعات القادمة', icon: Calendar, badge: upcomingDistributions.length },
@@ -836,8 +909,290 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: BENEFICIARIES (المستفيدون) */}
+      {/* TAB: ALLOCATIONS (قسم تخصيص المساعدات للمستفيدين) */}
       {/* ========================================================================= */}
+      {activeTab === 'allocations' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header Banner */}
+          <div className="bg-linear-to-l from-emerald-950 via-slate-900 to-slate-900 border border-emerald-500/40 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>إدارة المستفيدين • قسم تخصيص المساعدات للمستفيدين</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  تخصيص المساعدات وتحديد المستحقين من المخزون
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
+                  إدارة المستفيدين هي الجهة المسؤولة حصراً عن تحديد الأشخاص المستحقين للمساعدات وتخصيص الكميات لهم. يمكنك استعراض الأصناف المتاحة بالمستودع، تحديد المستفيدين بأسمائهم وهوياتهم، اعتماد كشف التوزيع، وحجز الكمية تلقائياً في المخزون وتوليد أمر صرف رقمي لإدارة المستودع.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-emerald-500/20 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-slate-950" />
+                  <span>إنشاء تخصيص وكشف توزيع جديد</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs space-y-1">
+              <span className="text-[11px] font-bold text-neutral-500 block">أصناف متوفرة للتخصيص</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-black text-neutral-900 font-mono">
+                  {availableInventoryItems.filter(i => i.availableStock > 0).length}
+                </span>
+                <Package className="w-5 h-5 text-emerald-600" />
+              </div>
+              <span className="text-[10px] text-emerald-600 font-bold block">من إجمالي {availableInventoryItems.length} صنف</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs space-y-1">
+              <span className="text-[11px] font-bold text-neutral-500 block">إجمالي الرصيد المتاح للتخصيص</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-black text-emerald-600 font-mono">
+                  {availableInventoryItems.reduce((acc, i) => acc + (i.availableStock || 0), 0)}
+                </span>
+                <Layers className="w-5 h-5 text-emerald-600" />
+              </div>
+              <span className="text-[10px] text-neutral-500 block">وحدة متاحة للتوزيع المباشر</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs space-y-1">
+              <span className="text-[11px] font-bold text-neutral-500 block">الكميات المحجوزة للتوزيع</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-black text-amber-600 font-mono">
+                  {stats.totalReservedStock}
+                </span>
+                <ShieldCheck className="w-5 h-5 text-amber-600" />
+              </div>
+              <span className="text-[10px] text-amber-700 block">محجوزة بأوامر صرف معتمدة</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs space-y-1">
+              <span className="text-[11px] font-bold text-neutral-500 block">كشوف التوزيع النشطة</span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-black text-neutral-900 font-mono">
+                  {stats.activeDistributions}
+                </span>
+                <FileText className="w-5 h-5 text-indigo-600" />
+              </div>
+              <span className="text-[10px] text-indigo-600 block">بانتظار التسليم بالمستودع</span>
+            </div>
+          </div>
+
+          {/* Section 1: Available Warehouse Items Ready for Allocation */}
+          <div className="bg-white p-6 rounded-3xl border border-neutral-200/80 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-emerald-600" />
+                  <span>الأصناف المتوفرة في المخزون والمتاحة للتخصيص</span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  بيانات حية مباشرة من مستودع الجمعية - اختر الصنف لبدء تحديد المستحقين وتخصيص الكميات
+                </p>
+              </div>
+            </div>
+
+            {availableInventoryItems.length === 0 ? (
+              <div className="py-12 text-center text-neutral-400 space-y-2">
+                <Inbox className="w-12 h-12 mx-auto text-neutral-300" />
+                <p className="text-sm font-bold">لا توجد أصناف مسجلة في المخزون حالياً.</p>
+                <p className="text-xs text-neutral-500">عند قيام إدارة المخزون بإضافة أصناف جديدة ستظهر هنا فوراً للتخصيص.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {availableInventoryItems.map(item => {
+                  const isAvailable = item.availableStock > 0;
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between gap-4 ${
+                        isAvailable 
+                          ? 'border-emerald-200/80 hover:border-emerald-400 bg-white hover:shadow-md' 
+                          : 'border-neutral-200 bg-neutral-50 opacity-75'
+                      }`}
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] text-neutral-400 font-mono block">
+                              باركود: {item.barcode}
+                            </span>
+                            <h4 className="text-sm font-black text-neutral-900 mt-0.5">
+                              {item.name}
+                            </h4>
+                            <span className="text-[11px] text-neutral-500">
+                              {item.category || "مواد غذائية وإغاثية"} • {item.warehouseName || "المستودع الرئيسي"}
+                            </span>
+                          </div>
+
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            item.availableStock > 50 
+                              ? 'bg-emerald-100 text-emerald-800' 
+                              : item.availableStock > 0 
+                                ? 'bg-amber-100 text-amber-800' 
+                                : 'bg-red-100 text-red-800'
+                          }`}>
+                            {item.availableStock > 50 ? 'متوفر بكثرة' : item.availableStock > 0 ? 'رصيد محدود' : 'نفد الرصيد'}
+                          </span>
+                        </div>
+
+                        {/* Stock breakdown */}
+                        <div className="grid grid-cols-3 gap-1.5 p-2.5 bg-neutral-50 rounded-xl text-center text-xs">
+                          <div>
+                            <span className="text-[10px] text-neutral-400 block font-bold">الرصيد الكلي:</span>
+                            <span className="font-mono font-bold text-neutral-800">{item.currentQty}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-amber-600 block font-bold">المحجوز للتوزيع:</span>
+                            <span className="font-mono font-bold text-amber-700">{item.reservedQty || 0}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-emerald-600 block font-bold">المتاح للتخصيص:</span>
+                            <span className="font-mono font-black text-emerald-700">{item.availableStock}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={!isAvailable}
+                        onClick={() => handleOpenAllocationForInventoryItem(item)}
+                        className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                          isAvailable 
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm' 
+                            : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>{isAvailable ? 'تخصيص هذا الصنف للمستفيدين' : 'الرصيد غير متوفر حالياً'}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Approved Allocation Orders (كشوف التوزيع وأوامر الصرف المعتمدة) */}
+          <div className="bg-white p-6 rounded-3xl border border-neutral-200/80 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-indigo-600" />
+                  <span>كشوف التوزيع وأوامر الصرف المعتمدة الصادرة للمخزون ({distributions.length})</span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  أوامر التوزيع المعتمدة من إدارة المستفيدين، تسلّم فقط بالباركود والصورة للمستحقين المعتمدين
+                </p>
+              </div>
+            </div>
+
+            {distributions.length === 0 ? (
+              <div className="py-12 text-center text-neutral-400 space-y-2">
+                <FileText className="w-12 h-12 mx-auto text-neutral-300" />
+                <p className="text-sm font-bold">لا توجد كشوف توزيع معتمدة بعد.</p>
+                <p className="text-xs text-neutral-500">اختر أحد أصناف المخزون أعلاه واعتمد كشف توزيع للمستفيدين.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {distributions.map(dist => {
+                  const targetedCount = (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0)
+                    ? dist.targetedBeneficiaryIds.length
+                    : beneficiaries.length;
+                  const deliveredCount = handoverRecords.filter(h => h.distributionId === dist.id).length;
+                  const pct = Math.min(100, Math.round((deliveredCount / Math.max(1, targetedCount)) * 100));
+
+                  return (
+                    <div key={dist.id} className="p-4 sm:p-5 rounded-2xl border border-neutral-200/80 hover:border-neutral-300 bg-neutral-50/50 space-y-4 transition-all">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm sm:text-base font-black text-neutral-900">
+                              {dist.title}
+                            </h4>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              dist.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                              dist.status === 'active' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {dist.status === 'completed' ? 'مكتمل التسليم' : dist.status === 'active' ? 'جاري التسليم بالمستودع' : 'معتمد وبانتظار البدء'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-neutral-500 flex flex-wrap items-center gap-3">
+                            <span>الصنف: <b className="text-neutral-800">{dist.aidTypeLabel || dist.title}</b></span>
+                            <span>الكمية المعتمدة: <b className="font-mono text-emerald-700">{dist.allocatedQuantity || dist.reservedStock || targetedCount} {dist.unit || 'طرد'}</b></span>
+                            <span>المستفيدين المعتمدين: <b className="font-mono text-neutral-800">{targetedCount} مستفيد</b></span>
+                            <span>التاريخ: <b className="font-mono text-neutral-800">{dist.distributionDate}</b></span>
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => exportDistributionBatchToExcel(dist)}
+                            className="px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="تصدير كشف التوزيع إلى Excel"
+                          >
+                            <Download className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>تصدير Excel</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => window.print()}
+                            className="px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="طباعة كشف التوزيع"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-neutral-500" />
+                            <span>طباعة</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedScannerDistId(dist.id);
+                              setIsScannerOpen(true);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                            <span>تسليم بالباركود والصورة</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-neutral-500">حالة تسليم موظفي المستودع:</span>
+                          <span className="text-emerald-700 font-mono font-black">
+                            تم تسليم {deliveredCount} من {targetedCount} مستفيد ({pct}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
+                          <div className="bg-emerald-600 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+
       {activeTab === 'beneficiaries' && (
         <div className="bg-white p-6 rounded-3xl border border-neutral-200/80 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -956,13 +1311,25 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                       </span>
                     </td>
                     <td className="p-3 text-center">
-                      <button
-                        onClick={() => setSelectedBarcodeBen(ben)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all flex items-center gap-1.5 mx-auto cursor-pointer"
-                      >
-                        <Barcode className="w-3.5 h-3.5" />
-                        بطاقة الباركود
-                      </button>
+                      <div className="inline-flex items-center gap-1.5 justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBarcodeBen(ben)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Barcode className="w-3.5 h-3.5" />
+                          <span>الباركود</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHistoryBeneficiary(ben)}
+                          className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                          title="عرض سجل المساعدات المستلمة والموثقة بالصور لهذا المستفيد"
+                        >
+                          <Package className="w-3.5 h-3.5" />
+                          <span>سجل الاستلام ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1207,58 +1574,94 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                   <th className="p-3">الكمية</th>
                   <th className="p-3">المسؤول عن التسليم</th>
                   <th className="p-3">وسيلة التحقق</th>
-                  <th className="p-3 text-center rounded-l-xl">إلغاء السند</th>
+                  <th className="p-3 text-center">توثيق الصورة</th>
+                  <th className="p-3 text-center rounded-l-xl">الإجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {filteredLedger.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-neutral-400">
+                    <td colSpan={8} className="p-8 text-center text-neutral-400">
                       لا توجد سجلات تسليم مطابقة للبحث حتى الآن.
                     </td>
                   </tr>
                 ) : (
-                  filteredLedger.map(rec => (
-                    <tr key={rec.id} className="hover:bg-neutral-50/80 transition-colors">
-                      <td className="p-3">
-                        <div className="font-bold text-neutral-900">{rec.beneficiaryName}</div>
-                        <div className="text-[10px] text-neutral-400 font-mono">
-                          {rec.nationalId || rec.barcodeId}
-                        </div>
-                      </td>
-                      <td className="p-3 font-mono text-neutral-600">
-                        <div>{rec.date}</div>
-                        <div className="text-[10px] text-neutral-400">{rec.time}</div>
-                      </td>
-                      <td className="p-3">
-                        <div className="font-bold text-neutral-800">{rec.itemName || rec.distributionTitle}</div>
-                        <div className="text-[10px] text-neutral-400">{rec.distributionTitle}</div>
-                      </td>
-                      <td className="p-3 font-mono font-bold text-emerald-700">
-                        {rec.quantity || 1} {rec.unit || 'طرد'}
-                      </td>
-                      <td className="p-3 font-medium text-neutral-700">{rec.handedByUserName}</td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-700 flex items-center gap-1 w-fit">
-                          <Barcode className="w-3 h-3 text-neutral-500" />
-                          {rec.method === 'camera_scanner' ? 'كاميرا الموبايل' : rec.method === 'hardware_scanner' ? 'قارئ باركود' : 'يدوي'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <button
-                          onClick={() => {
-                            if (confirm(`هل أنت متأكد من إلغاء سند الاستلام للمستفيد (${rec.beneficiaryName}) وإعادة الكمية للمخزون؟`)) {
-                              onCancelHandover(rec.id);
-                            }
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 mx-auto"
-                        >
-                          <Undo2 className="w-3 h-3" />
-                          إلغاء
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  filteredLedger.map(rec => {
+                    const ben = beneficiaries.find(b => b.id === rec.beneficiaryId || (rec.nationalId && b.nationalId === rec.nationalId));
+                    const photoSrc = rec.photoUrl || (rec.proofPhotos && rec.proofPhotos[0]) || "";
+
+                    return (
+                      <tr key={rec.id} className="hover:bg-neutral-50/80 transition-colors">
+                        <td className="p-3">
+                          <div className="font-bold text-neutral-900">{rec.beneficiaryName}</div>
+                          <div className="text-[10px] text-neutral-400 font-mono">
+                            {rec.nationalId || rec.barcodeId}
+                          </div>
+                        </td>
+                        <td className="p-3 font-mono text-neutral-600">
+                          <div>{rec.date}</div>
+                          <div className="text-[10px] text-neutral-400">{rec.time}</div>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold text-neutral-800">{rec.itemName || rec.distributionTitle}</div>
+                          <div className="text-[10px] text-neutral-400">{rec.distributionTitle}</div>
+                        </td>
+                        <td className="p-3 font-mono font-bold text-emerald-700">
+                          {rec.quantity || 1} {rec.unit || 'طرد'}
+                        </td>
+                        <td className="p-3 font-medium text-neutral-700">{rec.handedByUserName}</td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-700 flex items-center gap-1 w-fit">
+                            <Barcode className="w-3 h-3 text-neutral-500" />
+                            {rec.method === 'camera_scanner' ? 'كاميرا الموبايل' : rec.method === 'hardware_scanner' ? 'قارئ باركود' : 'يدوي'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          {photoSrc ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (ben) setHistoryBeneficiary(ben);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[10.5px] font-bold border border-emerald-200 cursor-pointer shadow-2xs"
+                            >
+                              <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>عرض الصورة</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-neutral-400 italic">بدون صورة</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="inline-flex items-center gap-1.5 justify-center">
+                            {ben && (
+                              <button
+                                type="button"
+                                onClick={() => setHistoryBeneficiary(ben)}
+                                className="px-2 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10.5px] font-bold border border-purple-200 cursor-pointer"
+                                title="عرض السجل التاريخي الكامل للمستفيد"
+                              >
+                                السجل
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                if (confirm(`هل أنت متأكد من إلغاء سند الاستلام للمستفيد (${rec.beneficiaryName}) وإعادة الكمية للمخزون؟`)) {
+                                  onCancelHandover(rec.id);
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-0.5"
+                              title="إلغاء السند وإعادة الكمية للمخزون"
+                            >
+                              <Undo2 className="w-3 h-3" />
+                              إلغاء
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1625,16 +2028,145 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
               </div>
 
               <div>
-                <label className="font-bold text-neutral-700 block mb-1">الفئات المستهدفة وضوابط الاستحقاق:</label>
+                <label className="font-bold text-neutral-700 block mb-1">الفئات المستهدفة وضوابط الاستحقاق والتخصيص:</label>
                 <select
                   value={formTargetAudience}
                   onChange={(e: any) => setFormTargetAudience(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-neutral-900 font-bold focus:outline-none focus:border-emerald-500 mb-2"
                 >
+                  <option value="custom_selection">🎯 تخصيص محدد بالأسماء والكميات (تحديد المستفيدين وكمية كل شخص)</option>
                   <option value="all">كافة المستفيدين المسجلين ({beneficiaries.length} مستفيد)</option>
                   <option value="specific_categories">فئات استحقاق محددة فقط</option>
                   <option value="approved_only">المستفيدين المعتمدين فقط</option>
                 </select>
+
+                {/* Custom Selection Mode (إدارة المستفيدين تحدد الأسماء والكميات) */}
+                {formTargetAudience === 'custom_selection' && (() => {
+                  const sumCustom = (Object.values(customAllocations) as any[]).reduce((acc: number, q: any) => acc + (Number(q) || 0), 0);
+                  const selectedCount = Object.keys(customAllocations).filter(id => (Number(customAllocations[id]) || 0) > 0).length;
+                  const filteredPickerBens = beneficiaries.filter(b => 
+                    !customAllocationSearch ||
+                    b.name.toLowerCase().includes(customAllocationSearch.toLowerCase()) ||
+                    (b.nationalId && b.nationalId.includes(customAllocationSearch)) ||
+                    (b.beneficiaryNumber && b.beneficiaryNumber.toLowerCase().includes(customAllocationSearch.toLowerCase()))
+                  );
+
+                  return (
+                    <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200/80 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-emerald-200/60">
+                        <div>
+                          <h4 className="font-black text-xs text-emerald-950 flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>تحديد المستحقين وتخصيص الكميات الفردية</span>
+                          </h4>
+                          <p className="text-[10px] text-emerald-700 mt-0.5">
+                            حدد المستفيدين واكتب الكمية المخصصة لكل شخص (مثال: محمد 1، عبد الله 2).
+                          </p>
+                        </div>
+
+                        {/* Live Allocation Counter */}
+                        <div className="flex items-center gap-2 text-xs font-mono font-bold bg-white px-3 py-1.5 rounded-xl border border-emerald-300">
+                          <span className="text-neutral-500 text-[10px] font-sans">الموزع حتى الآن:</span>
+                          <span className="text-emerald-700 text-sm font-black">{sumCustom}</span>
+                          <span className="text-neutral-400">/</span>
+                          <span className="text-neutral-700">{selectedCount} مستفيد</span>
+                        </div>
+                      </div>
+
+                      {/* Search & Quick Allocation Buttons */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative flex-1 min-w-[200px]">
+                          <Search className="w-3.5 h-3.5 text-neutral-400 absolute right-2.5 top-2" />
+                          <input
+                            type="text"
+                            value={customAllocationSearch}
+                            onChange={(e) => setCustomAllocationSearch(e.target.value)}
+                            placeholder="بحث في المستفيدين لتخصيص المساعدة..."
+                            className="w-full pr-8 pl-2 py-1.5 rounded-xl bg-white border border-emerald-200 text-xs focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newAlloc: { [id: string]: number } = { ...customAllocations };
+                            filteredPickerBens.slice(0, 20).forEach(b => {
+                              newAlloc[b.id] = (newAlloc[b.id] || 0) + 1;
+                            });
+                            setCustomAllocations(newAlloc);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer transition-all"
+                        >
+                          تخصيص 1 للمستعرضين
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCustomAllocations({})}
+                          className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-neutral-100 text-neutral-600 text-[11px] font-bold border border-neutral-200 cursor-pointer"
+                        >
+                          تفريغ
+                        </button>
+                      </div>
+
+                      {/* Beneficiaries Picker List */}
+                      <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1 divide-y divide-emerald-100 bg-white p-2 rounded-xl border border-emerald-200/80">
+                        {filteredPickerBens.map(b => {
+                          const currentQty = customAllocations[b.id] || 0;
+                          const isSelected = currentQty > 0;
+
+                          return (
+                            <div key={b.id} className={`flex items-center justify-between p-2 rounded-lg transition-colors ${
+                              isSelected ? 'bg-emerald-50/70 border border-emerald-200' : 'hover:bg-neutral-50'
+                            }`}>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    setCustomAllocations({
+                                      ...customAllocations,
+                                      [b.id]: e.target.checked ? 1 : 0
+                                    });
+                                  }}
+                                  className="rounded text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <div>
+                                  <span className="font-bold text-neutral-900 block text-xs">{b.name}</span>
+                                  <span className="text-[10px] text-neutral-400 font-mono">
+                                    هوية: {b.nationalId || '-'} • {b.category || 'أسر متعففة'} • {b.familySize || 1} أفراد
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-neutral-500 font-bold">الكمية:</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={50}
+                                  value={currentQty}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, Number(e.target.value) || 0);
+                                    setCustomAllocations({
+                                      ...customAllocations,
+                                      [b.id]: val
+                                    });
+                                  }}
+                                  className={`w-14 px-2 py-1 rounded-lg text-center font-mono font-black text-xs border ${
+                                    isSelected 
+                                      ? 'bg-emerald-100/60 border-emerald-400 text-emerald-900' 
+                                      : 'bg-neutral-50 border-neutral-200 text-neutral-500'
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {formTargetAudience === 'specific_categories' && (
                   <div className="grid grid-cols-2 gap-2 bg-neutral-50 p-3 rounded-xl border border-neutral-200">
@@ -1836,6 +2368,19 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           homeSettings={homeSettings}
           isOpen={!!selectedBarcodeBen}
           onClose={() => setSelectedBarcodeBen(null)}
+          lang={lang}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: BENEFICIARY AID HISTORY & PHOTO PROOF LEDGER */}
+      {/* ========================================================================= */}
+      {historyBeneficiary && (
+        <BeneficiaryHistoryModal
+          beneficiary={historyBeneficiary}
+          handoverRecords={handoverRecords}
+          isOpen={!!historyBeneficiary}
+          onClose={() => setHistoryBeneficiary(null)}
           lang={lang}
         />
       )}

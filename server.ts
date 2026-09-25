@@ -4052,20 +4052,30 @@ function filterDatabaseForUser(db: any, context: any) {
 // API REST routes
 
 // Comprehensive Health Check & Diagnostic endpoint for custom domain, proxy & uptime monitoring
-app.get("/api/health", (req, res) => {
-  const db = readDb();
-  res.json({
-    status: "ok",
+app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  let db: any = null;
+  try {
+    db = readDb();
+  } catch (e) {
+    // ignore
+  }
+  return res.status(200).json({
+    ok: true,
+    status: "healthy",
+    message: "خادم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة متصل وقيد العمل بنجاح",
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     port: PORT,
-    environment: process.env.NODE_ENV || "development",
+    environment: process.env.NODE_ENV || "production",
     database: {
       initialized: !!db,
-      departmentsCount: (db.departments || []).length,
-      volunteersCount: (db.volunteers || []).length,
-      initiativesCount: (db.initiatives || []).length,
-      beneficiariesCount: (db.beneficiaries || []).length
+      departmentsCount: (db?.departments || []).length,
+      volunteersCount: (db?.volunteers || []).length,
+      initiativesCount: (db?.initiatives || []).length,
+      beneficiariesCount: (db?.beneficiaries || []).length,
+      inventoryCount: (db?.inventoryItems || []).length
     },
     clientInfo: {
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
@@ -8281,7 +8291,19 @@ app.post("/api/db/distributions/create", (req, res) => {
   const targetCount = Array.isArray(payload.targetedBeneficiaryIds) && payload.targetedBeneficiaryIds.length > 0 
     ? payload.targetedBeneficiaryIds.length 
     : (db.beneficiaries || []).length;
-  const totalRequiredQty = unitQty * targetCount;
+  
+  // Custom per-beneficiary allocated quantities (e.g. { "ben-1": 1, "ben-2": 2, "ben-3": 1 })
+  let totalRequiredQty = 0;
+  if (payload.beneficiaryAllocations && typeof payload.beneficiaryAllocations === 'object') {
+    const allocValues = Object.values(payload.beneficiaryAllocations) as any[];
+    const customSum = allocValues.reduce((acc: number, val: any) => acc + (Number(val) || 0), 0);
+    if (customSum > 0) {
+      totalRequiredQty = customSum;
+    }
+  }
+  if (totalRequiredQty === 0) {
+    totalRequiredQty = Number(payload.allocatedQuantity) || (unitQty * targetCount);
+  }
 
   if (payload.inventoryItemId) {
     inventoryItem = db.inventoryItems.find((itm: any) => itm.id === payload.inventoryItemId);
@@ -8309,7 +8331,7 @@ app.post("/api/db/distributions/create", (req, res) => {
       targetDepartmentId: "dep-8",
       targetRole: "storekeeper",
       titleAr: `حجز كمية بالمخزون لصالح توزيعة: ${payload.title || inventoryItem.name}`,
-      bodyAr: `يوجد مستفيدون مسجلون لاستلام (${inventoryItem.name}): عدد المستفيدين: ${targetCount}، الكمية المحجوزة: ${totalRequiredQty} ${inventoryItem.unitOfMeasure || 'وحدة'}، الرصيد المتاح بالمستودع بعد الحجز: ${currentStock - inventoryItem.reservedQty}.`,
+      bodyAr: `يوجد دفعة جديدة جاهزة للتسليم للمستفيدين (${inventoryItem.name}): عدد المستفيدين المعتمدين: ${targetCount}، الكمية الإجمالية المحجوزة: ${totalRequiredQty} ${inventoryItem.unitOfMeasure || 'وحدة'}، الرصيد المتاح بالمستودع بعد الحجز: ${currentStock - inventoryItem.reservedQty}.`,
       category: "beneficiary",
       type: "important",
       date: new Date().toISOString().split('T')[0],
@@ -8328,6 +8350,7 @@ app.post("/api/db/distributions/create", (req, res) => {
     quantityPerBeneficiary: payload.quantityPerBeneficiary || `${unitQty} ${inventoryItem?.unitOfMeasure || 'طرد / سلة'}`,
     targetAudience: payload.targetAudience || "all",
     targetedBeneficiaryIds: payload.targetedBeneficiaryIds || [],
+    beneficiaryAllocations: payload.beneficiaryAllocations || {},
     status: payload.status || "active",
     location: payload.location || "مقر الجمعية - مخطط العسيلة",
     createdAt: new Date().toISOString(),
@@ -8442,15 +8465,26 @@ app.post("/api/db/distributions/handover", (req, res) => {
     distributionId, 
     beneficiaryId, 
     barcodeId,
+    photoUrl,
+    proofPhotos,
     handedByUserId = "staff",
     handedByUserName = "مسؤول التوزيع الميداني",
     handedByUserRole = "staff",
+    handedDepartment = "إدارة المخزون والمستودعات",
     method = "camera_scanner",
     notes = ""
   } = req.body;
 
   if (!distributionId) {
     return res.status(400).json({ error: "معرف التوزيعة مطلوب." });
+  }
+
+  // Mandatory photo proof check
+  if (!photoUrl && (!proofPhotos || proofPhotos.length === 0)) {
+    return res.status(400).json({ 
+      error: "توثيق الصورة إلزامي لإتمام عملية التسليم! يرجى التقاط صورة للمستفيد أثناء الاستلام.",
+      photoRequired: true
+    });
   }
 
   // 1. Find the distribution
@@ -8476,17 +8510,17 @@ app.post("/api/db/distributions/handover", (req, res) => {
 
   if (!ben) {
     return res.status(404).json({ 
-      error: "المستفيد غير مسجل في قاعدة البيانات، يرجى التأكد من مسح باركود معتمد.",
+      error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
       notFound: true
     });
   }
 
-  // 2.5 Eligibility Check (التحقق من تسجيل المستفيد واستحقاقه لهذا الصنف)
+  // 2.5 Eligibility Check (التحقق من تسجيل المستفيد واستحقاقه لهذا الصنف المحدد فقط)
   if (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0) {
     const isTargeted = dist.targetedBeneficiaryIds.includes(ben.id);
     if (!isTargeted) {
       return res.status(403).json({
-        error: "هذا المستفيد غير مسجل في قائمة المستحقين لاستلام هذا الصنف حالياً.",
+        error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
         notEligible: true,
         beneficiary: ben,
         distribution: dist
@@ -8510,10 +8544,16 @@ app.post("/api/db/distributions/handover", (req, res) => {
     });
   }
 
-  // 4. Record new handover
+  // 4. Record new handover with Photo Proof & Custom Quantity
   const now = new Date();
   const timeString = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const handoverQty = Number(dist.unitQuantityPerBeneficiary) || 1;
+  
+  // Custom allocated qty per beneficiary if set by Beneficiaries Dept, else default unitQty
+  let handoverQty = Number(dist.unitQuantityPerBeneficiary) || 1;
+  if (dist.beneficiaryAllocations && dist.beneficiaryAllocations[ben.id] !== undefined) {
+    handoverQty = Number(dist.beneficiaryAllocations[ben.id]) || handoverQty;
+  }
+
   const handoverRecord = {
     id: "handover-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5),
     distributionId,
@@ -8530,14 +8570,17 @@ app.post("/api/db/distributions/handover", (req, res) => {
     handedByUserId,
     handedByUserName,
     handedByUserRole,
+    handedDepartment: handedDepartment || "إدارة المخزون والمستودعات",
     method: method || "camera_scanner",
-    notes: notes || `تسليم ${dist.quantityPerBeneficiary}`,
+    notes: notes || `تسليم ${handoverQty} ${dist.unit || 'طرد'} للمستفيد بموجب الاعتماد المسبق`,
     itemName: dist.aidTypeLabel || dist.title,
     inventoryItemId: dist.inventoryItemId,
     handoverDate: now.toISOString().split('T')[0],
     distributionTitle: dist.title,
     quantity: handoverQty,
     unit: dist.unit || "طرد",
+    photoUrl: photoUrl || (proofPhotos && proofPhotos[0]) || "",
+    proofPhotos: proofPhotos || (photoUrl ? [photoUrl] : []),
     beneficiaryConfirmedReceipt: true
   };
 
@@ -8563,9 +8606,10 @@ app.post("/api/db/distributions/handover", (req, res) => {
         barcode: invItem.barcode,
         type: "outbound",
         quantity: handoverQty,
-        reason: `صرف وتسليم مساعدة للمستفيد (${ben.name}) بموجب التوزيعة (${dist.title}) بالباركود الذكي`,
+        reason: `صرف وتسليم مساعدة للمستفيد (${ben.name}) بموجب التوزيعة (${dist.title}) مع توثيق الصورة والباركود`,
         approvedBy: handedByUserName,
         beneficiaryId: ben.id,
+        proofPhotos: handoverRecord.proofPhotos,
         date: now.toISOString().split('T')[0],
         createdAt: now.toISOString()
       });
@@ -8588,7 +8632,22 @@ app.post("/api/db/distributions/handover", (req, res) => {
     targetUserId: ben.id,
     recipientType: "beneficiaries",
     titleAr: "تم تسليم مساعدتك بنجاح ✓",
-    bodyAr: `تم بحمد الله تسليمك (${dist.aidTypeLabel || dist.title}) بتاريخ ${now.toISOString().split('T')[0]} في تمام الساعة ${timeString}. نشكرك لتعاونك.`,
+    bodyAr: `تم بحمد الله تسليمك (${dist.aidTypeLabel || dist.title}) بكمية (${handoverQty} ${dist.unit || 'طرد'}) بتاريخ ${now.toISOString().split('T')[0]} في تمام الساعة ${timeString}. نشكرك لتعاونك.`,
+    category: "beneficiary",
+    type: "normal",
+    date: now.toISOString().split('T')[0],
+    createdAt: now.toISOString(),
+    read: false
+  });
+
+  // Notify Beneficiary Department that delivery was successfully executed by Warehouse
+  db.notifications.unshift({
+    id: "notif-dept-delivery-" + Date.now(),
+    userId: "role:department_admin",
+    targetDepartmentId: "dep-4",
+    targetRole: "department_admin",
+    titleAr: `تم تنفيذ تسليم مساعدة: ${ben.name}`,
+    bodyAr: `قامت إدارة المخزون بتسليم المساعدة المعتمدة (${dist.aidTypeLabel || dist.title}) للمستفيد (${ben.name}) بالباركود والصورة بنجاح. القائم بالتسليم: ${handedByUserName}.`,
     category: "beneficiary",
     type: "normal",
     date: now.toISOString().split('T')[0],
@@ -8601,7 +8660,7 @@ app.post("/api/db/distributions/handover", (req, res) => {
     id: "log-" + Date.now(),
     timestamp: now.toISOString(),
     user: handedByUserName,
-    action: `تسجيل استلام مساعدة: المستفيد (${ben.name}) استلم (${dist.quantityPerBeneficiary}) في توزيعة (${dist.title}) عبر ${method === 'camera_scanner' ? 'كاميرا الجوال' : method === 'hardware_scanner' ? 'قارئ باركود خارجي' : 'إدخال يدوي'} وتم خصم المخزون بنجاح`,
+    action: `تسجيل استلام مساعدة موثقة بالصورة: المستفيد (${ben.name}) استلم (${handoverQty} ${dist.unit || 'طرد'}) في توزيعة (${dist.title}) عبر ${method === 'camera_scanner' ? 'كاميرا الجوال' : method === 'hardware_scanner' ? 'قارئ باركود' : 'إدخال يدوي'} وتم خصم المخزون بنجاح`,
     ip: req.ip || "127.0.0.1",
     device: req.headers["user-agent"] || "Mobile Scanner"
   });
@@ -11064,6 +11123,23 @@ app.post("/api/db/inventory/items/add", (req, res) => {
       });
     }
 
+    // Send real-time notification to Beneficiary Department (dep-4)
+    if (!db.notifications) db.notifications = [];
+    db.notifications.unshift({
+      id: "notif-ben-dept-" + Date.now(),
+      userId: "role:department_admin",
+      targetDepartmentId: "dep-4",
+      targetRole: "department_admin",
+      titleAr: `تمت إضافة صنف جديد للمخزون: ${item.name}`,
+      bodyAr: `تمت إضافة ${item.currentQty} ${item.unitOfMeasure || 'وحدة'} من صنف (${item.name}) إلى المخزون، وهي متاحة للتخصيص للمستفيدين. الرصيد المتاح: ${item.currentQty}.`,
+      category: "beneficiary",
+      type: "important",
+      date: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      read: false,
+      linkUrl: "#beneficiaries-allocations"
+    });
+
     db.logs.unshift({
       id: "log-" + Date.now(),
       timestamp: new Date().toISOString(),
@@ -11181,6 +11257,24 @@ app.post("/api/db/inventory/movements/add_quantity", (req, res) => {
     device: "Inventory Movement"
   });
 
+  // Notify Beneficiary Department of added stock
+  if (!db.notifications) db.notifications = [];
+  const availableStock = Math.max(0, (Number(item.currentQty) || 0) - (Number(item.reservedQty) || 0));
+  db.notifications.unshift({
+    id: "notif-inbound-ben-" + Date.now(),
+    userId: "role:department_admin",
+    targetDepartmentId: "dep-4",
+    targetRole: "department_admin",
+    titleAr: `تمت إضافة ${addedQty} ${item.unitOfMeasure || 'وحدة'} من (${item.name}) إلى المخزون`,
+    bodyAr: `قامت إدارة المخزون بتوريد كمية إضافية (+${addedQty}) من صنف (${item.name}). الكمية المتاحة حالياً للتخصيص للمستفيدين: ${availableStock} ${item.unitOfMeasure || 'وحدة'}.`,
+    category: "beneficiary",
+    type: "important",
+    date: new Date().toISOString().split('T')[0],
+    createdAt: new Date().toISOString(),
+    read: false,
+    linkUrl: "#beneficiaries-allocations"
+  });
+
   writeDb(db);
   res.json({ status: "success", item, movement: mov, db });
 });
@@ -11251,6 +11345,163 @@ app.post("/api/db/inventory/movements/issue_quantity", (req, res) => {
 
   writeDb(db);
   res.json({ status: "success", item, movement: mov, db });
+});
+
+// 5.1 Outbound Movement for Volunteers (تسليم الأصناف والعهد للمتطوعين بالباركود والصورة الحية)
+app.post("/api/db/inventory/movements/issue_volunteer", (req, res) => {
+  const db = readDb();
+  const { 
+    volunteerId,
+    volunteerBarcode,
+    itemId,
+    quantity = 1,
+    photoUrl,
+    proofPhotos,
+    notes = "",
+    initiativeId = "",
+    initiativeName = "",
+    handedByUserId = "staff",
+    handedByUserName = "أمين المستودع",
+    handedByUserRole = "storekeeper"
+  } = req.body;
+
+  if (!itemId) {
+    return res.status(400).json({ error: "معرف الصنف المخزني مطلوب." });
+  }
+
+  // Mandatory photo proof check
+  if (!photoUrl && (!proofPhotos || proofPhotos.length === 0)) {
+    return res.status(400).json({ 
+      error: "توثيق الصورة إلزامي لإتمام صرف الصنف للمتطوع! يرجى التقاط صورة التسليم.",
+      photoRequired: true
+    });
+  }
+
+  // Find volunteer
+  db.volunteers = db.volunteers || [];
+  let vol: any = null;
+  if (volunteerId) {
+    vol = db.volunteers.find((v: any) => v.id === volunteerId);
+  }
+  if (!vol && volunteerBarcode) {
+    const cleanSearch = volunteerBarcode.toString().trim();
+    vol = db.volunteers.find((v: any) => 
+      (v.barcode && v.barcode.toString().trim() === cleanSearch) ||
+      (v.membershipNumber && v.membershipNumber.toString().trim() === cleanSearch) ||
+      (v.nationalId && v.nationalId.toString().trim() === cleanSearch) ||
+      (v.id && v.id.toString().trim() === cleanSearch)
+    );
+  }
+
+  if (!vol) {
+    return res.status(404).json({ error: "المتطوع غير مسجل في قاعدة البيانات، يرجى مسح باركود متطوع معتمد." });
+  }
+
+  // Find inventory item
+  db.inventoryItems = db.inventoryItems || [];
+  const item = db.inventoryItems.find((i: any) => i.id === itemId);
+  if (!item) {
+    return res.status(404).json({ error: "الصنف غير موجود بالمخزون." });
+  }
+
+  const issueQty = Number(quantity) || 1;
+  const currentStock = Number(item.currentQty) || 0;
+  if (currentStock < issueQty) {
+    return res.status(400).json({ error: `الكمية المتاحة في المخزون (${currentStock}) غير كافية لصرف (${issueQty}) للمتطوع.` });
+  }
+
+  // Deduct inventory
+  item.currentQty -= issueQty;
+  item.issuedQty = (item.issuedQty || 0) + issueQty;
+  item.totalValue = item.currentQty * (item.purchasePrice || item.unitPrice || 0);
+  item.updatedAt = new Date().toISOString();
+
+  const now = new Date();
+  const timeString = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const finalPhoto = photoUrl || (proofPhotos && proofPhotos[0]) || "";
+
+  // Record Volunteer Issuance Record
+  db.volunteerIssuances = db.volunteerIssuances || [];
+  const issuanceRecord = {
+    id: "vol-iss-" + Date.now(),
+    volunteerId: vol.id,
+    volunteerName: vol.name,
+    volunteerMembershipNumber: vol.membershipNumber || "",
+    volunteerBarcode: vol.barcode || vol.membershipNumber || "",
+    volunteerPhone: vol.phone || "",
+    volunteerNationalId: vol.nationalId || "",
+    itemId: item.id,
+    itemName: item.name,
+    itemBarcode: item.barcode,
+    quantity: issueQty,
+    unit: item.unitOfMeasure || "قطعة",
+    date: now.toISOString().split('T')[0],
+    time: timeString,
+    issuedAt: now.toISOString(),
+    handedByUserId,
+    handedByUserName,
+    handedByUserRole,
+    warehouseName: item.warehouseName || "المستودع الرئيسي",
+    photoUrl: finalPhoto,
+    proofPhotos: proofPhotos || (finalPhoto ? [finalPhoto] : []),
+    notes: notes || `صرف ${issueQty} ${item.unitOfMeasure || 'قطعة'} للمتطوع بالباركود والصورة`,
+    initiativeId: initiativeId || "",
+    initiativeName: initiativeName || "",
+    status: "completed"
+  };
+  db.volunteerIssuances.unshift(issuanceRecord);
+
+  // Record in Inventory Movements
+  db.inventoryMovements = db.inventoryMovements || [];
+  db.inventoryMovements.unshift({
+    id: "mov-vol-" + Date.now(),
+    itemId: item.id,
+    itemName: item.name,
+    barcode: item.barcode,
+    type: "outbound",
+    quantity: issueQty,
+    reason: `تسليم وصرف للمتطوع (${vol.name}) برقم العضوية (${vol.membershipNumber || vol.barcode}) مع توثيق الصورة`,
+    recipientName: vol.name,
+    approvedBy: handedByUserName,
+    proofPhotos: issuanceRecord.proofPhotos,
+    date: now.toISOString().split('T')[0],
+    createdAt: now.toISOString()
+  });
+
+  // Log in system logs
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: now.toISOString(),
+    user: handedByUserName,
+    action: `صرف صنف موثق بالصورة للمتطوع: (${vol.name}) استلم (${issueQty} ${item.unitOfMeasure || 'قطعة'}) من (${item.name}) عبر مسح الباركود والتقاط صورة التسليم`,
+    ip: req.ip || "127.0.0.1",
+    device: "Warehouse Manager"
+  });
+
+  // Notify volunteer
+  if (!db.notifications) db.notifications = [];
+  db.notifications.unshift({
+    id: "notif-vol-issue-" + Date.now(),
+    userId: vol.id,
+    targetUserId: vol.id,
+    recipientType: "volunteers",
+    titleAr: "تم تسليمك صنف / عهدة من المستودع بنجاح ✓",
+    bodyAr: `تم تسجيل صرف (${issueQty} ${item.unitOfMeasure || 'قطعة'}) من صنف (${item.name}) لك بتاريخ ${now.toISOString().split('T')[0]} في تمام الساعة ${timeString}.`,
+    category: "volunteer",
+    type: "normal",
+    date: now.toISOString().split('T')[0],
+    createdAt: now.toISOString(),
+    read: false
+  });
+
+  writeDb(db);
+  res.json({
+    success: true,
+    record: issuanceRecord,
+    volunteer: vol,
+    item,
+    db
+  });
 });
 
 // 6. Warehouse Transfer Movement
@@ -13658,9 +13909,14 @@ setupFinancialRoutes(app, readDb, writeDb);
 setupEmailRoutes(app, readDb, writeDb);
 
 // Serve Frontend in dev or production
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 
 async function start() {
+  // If running in Vercel Serverless environment, do not start HTTP listener
+  if (process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return;
+  }
+
   if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -13694,3 +13950,6 @@ process.on("uncaughtException", (err) => {
 });
 
 start();
+
+export default app;
+export { app };

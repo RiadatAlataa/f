@@ -1184,7 +1184,12 @@ export interface AidDistribution {
   distributedCount?: number;
   remainingAllocated?: number;
   completionRate?: number; // 0 - 100%
+  // Beneficiary Custom Allocation (تخصيص كميات متفاوتة لكل مستفيد من قبل إدارة المستفيدين)
+  beneficiaryAllocations?: { [beneficiaryId: string]: number };
   eligibilityFilterCategory?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  deliveryBatchNumber?: string;
 }
 
 export interface DistributionHandoverRecord {
@@ -1212,9 +1217,41 @@ export interface DistributionHandoverRecord {
   distributionTitle?: string;
   quantity?: number | string;
   unit?: string;
+  // Photo proof of handover (توثيق الاستلام بالصورة الحية)
+  photoUrl?: string;
+  proofPhotos?: string[];
+  handedDepartment?: string;
   beneficiaryConfirmedReceipt?: boolean;
   isRated?: boolean;
   ratingId?: string;
+}
+
+// سجل صرف المستودع للمتطوعين مع توثيق الباركود والصورة الحية
+export interface VolunteerIssuanceRecord {
+  id: string;
+  volunteerId: string;
+  volunteerName: string;
+  volunteerMembershipNumber?: string;
+  volunteerBarcode: string;
+  volunteerPhone?: string;
+  volunteerNationalId?: string;
+  itemId: string;
+  itemName: string;
+  itemBarcode: string;
+  quantity: number;
+  unit: string;
+  date: string;
+  time: string;
+  issuedAt: string;
+  handedByUserId: string;
+  handedByUserName: string;
+  handedByUserRole: string;
+  warehouseName: string;
+  photoUrl?: string;
+  notes?: string;
+  initiativeId?: string;
+  initiativeName?: string;
+  status: 'completed' | 'returned' | 'cancelled';
 }
 
 export interface BenefitRequest {

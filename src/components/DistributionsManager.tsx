@@ -26,14 +26,16 @@ import {
   Undo2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { AidDistribution, Beneficiary, DistributionHandoverRecord, HomeSettings } from '../types';
+import { AidDistribution, Beneficiary, DistributionHandoverRecord, HomeSettings, InventoryItem } from '../types';
 import { AidHandoverScannerModal } from './AidHandoverScannerModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
+import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
 
 interface DistributionsManagerProps {
   distributions: AidDistribution[];
   beneficiaries: Beneficiary[];
   handoverRecords: DistributionHandoverRecord[];
+  inventoryItems?: InventoryItem[];
   homeSettings?: HomeSettings;
   currentUser?: {
     id?: string;
@@ -52,6 +54,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   distributions = [],
   beneficiaries = [],
   handoverRecords = [],
+  inventoryItems = [],
   homeSettings,
   currentUser = { id: 'admin', name: 'الإدارة العامة', role: 'admin' },
   onCreateDistribution,
@@ -90,6 +93,8 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingDist, setEditingDist] = useState<AidDistribution | null>(null);
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
+  const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
+  const [formInventoryItemId, setFormInventoryItemId] = useState<string>('');
 
   // Form State for Create/Edit
   const [formTitle, setFormTitle] = useState('');
@@ -830,15 +835,27 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
                           )}
                         </td>
                         <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBarcodeBen(ben)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
-                            title="عرض وطباعة بطاقة باركود المستفيد"
-                          >
-                            <Barcode className="w-3.5 h-3.5" />
-                            <span>البطاقة</span>
-                          </button>
+                          <div className="inline-flex items-center gap-1 justify-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBarcodeBen(ben)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+                              title="عرض وطباعة بطاقة باركود المستفيد"
+                            >
+                              <Barcode className="w-3.5 h-3.5" />
+                              <span>البطاقة</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setHistoryBeneficiary(ben)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-colors cursor-pointer"
+                              title="عرض سجل المساعدات المستلمة والموثقة بالصور"
+                            >
+                              <Package className="w-3.5 h-3.5" />
+                              <span>السجل</span>
+                            </button>
+                          </div>
                         </td>
                         <td className="p-3 text-center">
                           {ben.hasReceived ? (

@@ -40,13 +40,15 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Beneficiary, HomeSettings } from '../types';
+import { Beneficiary, HomeSettings, DistributionHandoverRecord } from '../types';
 import { BeneficiariesImportModal } from './BeneficiariesImportModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
+import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
 
 interface BeneficiariesManagerProps {
   beneficiaries: Beneficiary[];
   onUpdateBeneficiaryStatus: (id: string, status: "approved" | "pending" | "rejected") => Promise<boolean>;
+  handoverRecords?: DistributionHandoverRecord[];
   homeSettings?: HomeSettings;
   lang?: "ar" | "en";
   currentUserRole?: string;
@@ -63,6 +65,7 @@ type SortOrder = 'asc' | 'desc';
 export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   beneficiaries = [],
   onUpdateBeneficiaryStatus,
+  handoverRecords = [],
   homeSettings,
   lang = "ar",
   currentUserRole = "admin",
@@ -72,6 +75,9 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   onNavigateToDistributions,
   activeDistributionsCount = 0
 }) => {
+  // Beneficiary Aid History Modal State
+  const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
+
   // -------------------------------------------------------------
   // Filter and Search states (Requirement 6)
   // -------------------------------------------------------------
@@ -1208,6 +1214,17 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               <span>الباركود</span>
                             </button>
 
+                            {/* Aid History Ledger Trigger */}
+                            <button
+                              type="button"
+                              onClick={() => setHistoryBeneficiary(ben)}
+                              title="سجل المساعدات المستلمة والموثقة بالصور والباركود"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-bold rounded-lg border border-purple-300 bg-purple-50 text-purple-800 hover:bg-purple-100 transition-all cursor-pointer shadow-2xs"
+                            >
+                              <Package className="w-3.5 h-3.5 text-purple-600" />
+                              <span>المساعدات ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
+                            </button>
+
                             {/* View Full Profile */}
                             <button
                               type="button"
@@ -1395,15 +1412,26 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-neutral-100 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedBarcodeBen(ben)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      <Barcode className="w-3.5 h-3.5" />
-                      <span>بطاقة الباركود</span>
-                    </button>
+                  <div className="pt-3 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBarcodeBen(ben)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        <Barcode className="w-3.5 h-3.5" />
+                        <span>بطاقة الباركود</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setHistoryBeneficiary(ben)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        <Package className="w-3.5 h-3.5 text-purple-600" />
+                        <span>المساعدات ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
+                      </button>
+                    </div>
 
                     <div className="flex items-center gap-1">
                       <button
@@ -1757,17 +1785,32 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedBarcodeBen(selectedDetailsBen);
-                  setSelectedDetailsBen(null);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-bold border border-emerald-200 cursor-pointer"
-              >
-                <Barcode className="w-4 h-4" />
-                <span>بطاقة الباركود</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedBarcodeBen(selectedDetailsBen);
+                    setSelectedDetailsBen(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-bold border border-emerald-200 cursor-pointer"
+                >
+                  <Barcode className="w-4 h-4" />
+                  <span>بطاقة الباركود</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetBen = selectedDetailsBen;
+                    setSelectedDetailsBen(null);
+                    setHistoryBeneficiary(targetBen);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-800 hover:bg-purple-100 rounded-xl text-xs font-bold border border-purple-200 cursor-pointer"
+                >
+                  <Package className="w-4 h-4 text-purple-600" />
+                  <span>سجل المساعدات المستلمة</span>
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -1986,6 +2029,17 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           homeSettings={homeSettings}
           isOpen={true}
           onClose={() => setSelectedBarcodeBen(null)}
+          lang={lang}
+        />
+      )}
+
+      {/* BENEFICIARY AID HISTORY MODAL WITH PHOTO PROOF */}
+      {historyBeneficiary && (
+        <BeneficiaryHistoryModal
+          beneficiary={historyBeneficiary}
+          handoverRecords={handoverRecords || []}
+          isOpen={!!historyBeneficiary}
+          onClose={() => setHistoryBeneficiary(null)}
           lang={lang}
         />
       )}

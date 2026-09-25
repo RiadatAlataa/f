@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Package, Boxes, Barcode, QrCode, AlertTriangle, Plus, Search, Filter, 
   ArrowDownLeft, ArrowUpRight, RefreshCw, Printer, Download, Eye, Edit3, 
   Trash2, Building, Truck, CheckCircle2, XCircle, FileText, Calendar, 
   DollarSign, Shield, Layers, Camera, AlertCircle, Sparkles, X, ChevronRight,
-  TrendingDown, Check, FileCheck, Share2, Calculator
+  TrendingDown, Check, FileCheck, Share2, Calculator, User, Phone, Image as ImageIcon, Clock
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { 
-  InventoryItem, Warehouse, InventoryVendor, InventoryMovement, InventoryAudit, Initiative, InventoryItemComponent 
+  InventoryItem, Warehouse, InventoryVendor, InventoryMovement, InventoryAudit, Initiative, InventoryItemComponent,
+  AidDistribution, DistributionHandoverRecord, Beneficiary 
 } from "../types";
 import { ImageUploadField } from "./ImageUploadField";
+import { AidHandoverScannerModal } from "./AidHandoverScannerModal";
+import { BeneficiaryHistoryModal } from "./BeneficiaryHistoryModal";
 
 interface InventoryManagerProps {
   initiatives?: Initiative[];
@@ -17,6 +21,10 @@ interface InventoryManagerProps {
   currentUser?: any;
   storekeeperMode?: boolean;
   onLogout?: () => void;
+  beneficiaries?: Beneficiary[];
+  distributions?: AidDistribution[];
+  distributionHandovers?: DistributionHandoverRecord[];
+  onHandoverSubmit?: (data: any) => Promise<any>;
 }
 
 export const InventoryManager: React.FC<InventoryManagerProps> = ({
@@ -24,9 +32,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   onRefreshGlobalData,
   currentUser,
   storekeeperMode = false,
-  onLogout
+  onLogout,
+  beneficiaries = [],
+  distributions = [],
+  distributionHandovers = [],
+  onHandoverSubmit
 }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'movements' | 'audits' | 'warehouses' | 'reports' | 'storekeepers' | 'archive'>(() => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'movements' | 'audits' | 'warehouses' | 'reports' | 'storekeepers' | 'archive' | 'aid_handovers'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_inventory_tab');
       if (saved) return saved as any;
@@ -39,6 +51,20 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       localStorage.setItem('reyadat_inventory_tab', activeTab);
     } catch {}
   }, [activeTab]);
+
+  // Aid Handover States (تسليم المساعدات للمستفيدين)
+  const [selectedAidDistId, setSelectedAidDistId] = useState<string>(() => distributions[0]?.id || '');
+  const [isAidScannerOpen, setIsAidScannerOpen] = useState(false);
+  const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
+  const [selectedProofPhoto, setSelectedProofPhoto] = useState<{ url: string; title: string; record: DistributionHandoverRecord } | null>(null);
+  const [aidSearchQuery, setAidSearchQuery] = useState('');
+  const [aidStatusFilter, setAidStatusFilter] = useState<'all' | 'delivered' | 'pending'>('all');
+
+  useEffect(() => {
+    if (distributions.length > 0 && (!selectedAidDistId || !distributions.some(d => d.id === selectedAidDistId))) {
+      setSelectedAidDistId(distributions[0].id);
+    }
+  }, [distributions]);
 
   // State
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -794,6 +820,23 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           >
             <FileText className="w-4 h-4 text-sky-300" />
             <span>أرشيف وتتبع العمليات ({inventoryLogs.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('aid_handovers')}
+            className={`px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 whitespace-nowrap border-2 border-emerald-400/50 ${
+              activeTab === 'aid_handovers'
+                ? 'bg-white text-emerald-900 shadow-md'
+                : 'bg-emerald-800/80 text-white hover:bg-emerald-700'
+            }`}
+          >
+            <Camera className="w-4 h-4 text-emerald-300" />
+            <span>تسليم مساعدات المستفيدين ({distributions.length})</span>
+            {distributions.filter(d => d.status === 'active').length > 0 && (
+              <span className="bg-emerald-400 text-slate-900 text-[10px] font-black px-2 py-0.5 rounded-full">
+                {distributions.filter(d => d.status === 'active').length} دفعات جاهزة
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1997,6 +2040,497 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* ------------------------------------------------------------------- */}
+      {/* TAB 9: AID HANDOVERS TO BENEFICIARIES (تسليم مساعدات المستفيدين المعتمدة) */}
+      {/* ------------------------------------------------------------------- */}
+      {activeTab === 'aid_handovers' && (() => {
+        const activeAidDist = distributions.find(d => d.id === selectedAidDistId) || distributions[0];
+        const linkedInvItem = activeAidDist?.inventoryItemId ? items.find(i => i.id === activeAidDist.inventoryItemId) : null;
+        const targetedBenIds = activeAidDist?.targetedBeneficiaryIds || [];
+        
+        // Filtered beneficiaries for this batch
+        const batchBeneficiaries = (targetedBenIds.length > 0 
+          ? beneficiaries.filter(b => targetedBenIds.includes(b.id)) 
+          : beneficiaries
+        ).filter(b => {
+          const matchQuery = !aidSearchQuery ||
+            b.name.toLowerCase().includes(aidSearchQuery.toLowerCase()) ||
+            (b.nationalId && b.nationalId.includes(aidSearchQuery)) ||
+            (b.barcodeId && b.barcodeId.toLowerCase().includes(aidSearchQuery.toLowerCase())) ||
+            (b.phone && b.phone.includes(aidSearchQuery));
+
+          const isHanded = activeAidDist ? distributionHandovers.some(h => 
+            h.distributionId === activeAidDist.id && (h.beneficiaryId === b.id || (h.nationalId && h.nationalId === b.nationalId))
+          ) : false;
+
+          if (aidStatusFilter === 'delivered') return matchQuery && isHanded;
+          if (aidStatusFilter === 'pending') return matchQuery && !isHanded;
+          return matchQuery;
+        });
+
+        // Current batch handovers
+        const batchHandovers = activeAidDist 
+          ? distributionHandovers.filter(h => h.distributionId === activeAidDist.id)
+          : distributionHandovers;
+
+        const totalAllocatedAll = distributions.reduce((acc, d) => acc + (Number(d.allocatedQuantity) || (Number(d.unitQuantityPerBeneficiary || 1) * (d.targetedBeneficiaryIds?.length || beneficiaries.length))), 0);
+        const totalDeliveredAll = distributionHandovers.length;
+        const totalReservedAll = items.reduce((acc, itm) => acc + (Number(itm.reservedQty) || 0), 0);
+        const remainingAll = Math.max(0, totalAllocatedAll - totalDeliveredAll);
+
+        // Export active batch to Excel
+        const exportBatchToExcel = () => {
+          if (!activeAidDist) return alert("يرجى اختيار دفعة مساعدة أولاً");
+          const exportRows = batchBeneficiaries.map((b, idx) => {
+            const hRecord = distributionHandovers.find(h => h.distributionId === activeAidDist.id && (h.beneficiaryId === b.id || (h.nationalId && h.nationalId === b.nationalId)));
+            const allocatedQty = (activeAidDist.beneficiaryAllocations && activeAidDist.beneficiaryAllocations[b.id] !== undefined)
+              ? activeAidDist.beneficiaryAllocations[b.id]
+              : (activeAidDist.unitQuantityPerBeneficiary || 1);
+
+            return {
+              "م": idx + 1,
+              "رقم الملف": b.beneficiaryNumber || b.id,
+              "اسم المستفيد": b.name,
+              "رقم الهوية": b.nationalId || "",
+              "الجوال": b.phone || "",
+              "فئة الاستحقاق": b.category || "أسر متعففة",
+              "الصنف المخصص": activeAidDist.aidTypeLabel || activeAidDist.title,
+              "الكمية المعتمدة": `${allocatedQty} ${activeAidDist.unit || 'طرد'}`,
+              "حالة الاستلام": hRecord ? "تم التسليم بنجاح ✓" : "بانتظار الاستلام",
+              "تاريخ ووقت الاستلام": hRecord ? `${hRecord.date} ${hRecord.time}` : "—",
+              "الموظف المسلم": hRecord ? hRecord.handedByUserName : "—",
+              "طريقة التحقق": hRecord ? (hRecord.method === 'camera_scanner' ? 'كاميرا الجوال' : hRecord.method === 'hardware_scanner' ? 'قارئ باركود' : 'يدوي') : "—",
+              "توثيق الصورة": hRecord ? (hRecord.photoUrl || (hRecord.proofPhotos && hRecord.proofPhotos.length > 0) ? "موثقة بالصورة ✓" : "بدون صورة") : "—"
+            };
+          });
+
+          const ws = XLSX.utils.json_to_sheet(exportRows);
+          ws['!views'] = [{ RTL: true }];
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "كشف التسليم المعتمد");
+          XLSX.writeFile(wb, `كشف_تسليم_المساعدات_${activeAidDist.title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        };
+
+        return (
+          <div className="space-y-6 animate-fade-in" dir="rtl">
+            {/* Top Station Header & Action Banner */}
+            <div className="bg-linear-to-l from-emerald-950 via-slate-900 to-slate-900 border border-emerald-500/40 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>نظام تسليم المساعدات المعتمدة • إدارة المخزون والمستودعات</span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black flex items-center gap-3 text-white">
+                    <span>محطة مسح الباركود وتسليم المساعدات للمستحقين</span>
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                    التسليم متاح <span className="text-emerald-400 font-bold">فقط للمستفيدين المعتمدين</span> من قِبل إدارة المستفيدين. يتحقق النظام تلقائياً من الأهلية والباركود ويمنع التكرار تماماً مع التوثيق الإلزامي بالصورة الحية.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => {
+                      if (!activeAidDist) return alert("يرجى اختيار حملة توزيع أو إنشاء دفعة مساعدة أولاً.");
+                      setIsAidScannerOpen(true);
+                    }}
+                    className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-emerald-500/20 cursor-pointer active:scale-95"
+                  >
+                    <Camera className="w-5 h-5 text-slate-950" />
+                    <span>فتح محطة المسح والتسليم بالصورة</span>
+                  </button>
+
+                  <button
+                    onClick={exportBatchToExcel}
+                    className="px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center gap-1.5 transition-all border border-white/15 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>تصدير الكشف (Excel)</span>
+                  </button>
+
+                  <button
+                    onClick={() => window.print()}
+                    className="px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center gap-1.5 transition-all border border-white/15 cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>طباعة الكشف</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold block">إجمالي الكميات المخصصة</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-white mt-1 block font-mono">
+                  {totalAllocatedAll} وحدة
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">في كافة دفعات المستفيدين</span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold block">المسلم فعلياً والموثق بالصور</span>
+                <span className="text-2xl font-black text-emerald-600 mt-1 block font-mono">
+                  {totalDeliveredAll} عملية
+                </span>
+                <span className="text-[11px] text-emerald-600 font-bold mt-1 block">خصمت من المستودع تلقائياً</span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold block">المتبقي للتسليم الميداني</span>
+                <span className="text-2xl font-black text-amber-600 mt-1 block font-mono">
+                  {remainingAll} وحدة
+                </span>
+                <span className="text-[11px] text-amber-500 font-bold mt-1 block">بانتظار حضور المستحقين</span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold block">الرصيد المحجوز بالمخزون</span>
+                <span className="text-2xl font-black text-purple-600 mt-1 block font-mono">
+                  {totalReservedAll} وحدة
+                </span>
+                <span className="text-[11px] text-purple-600 font-bold mt-1 block">محمي من الصرف لجهات أخرى</span>
+              </div>
+            </div>
+
+            {/* Distribution Batches Selector & Status Bar */}
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700">
+                <div className="space-y-1">
+                  <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-emerald-600" />
+                    <span>اختر دفعة المساعدات النشطة لتسليمها:</span>
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={selectedAidDistId}
+                      onChange={(e) => setSelectedAidDistId(e.target.value)}
+                      className="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 font-bold text-slate-900 dark:text-white text-sm focus:outline-none focus:border-emerald-500 min-w-[280px]"
+                    >
+                      {distributions.map(dist => (
+                        <option key={dist.id} value={dist.id}>
+                          {dist.title} — ({dist.aidTypeLabel || dist.quantityPerBeneficiary}) [{dist.status === 'completed' ? 'مكتملة' : 'نشطة'}]
+                        </option>
+                      ))}
+                    </select>
+
+                    {activeAidDist && (
+                      <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                        activeAidDist.status === 'completed'
+                          ? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      }`}>
+                        {activeAidDist.status === 'completed' ? 'مكتملة الصرف' : 'دفعة نشطة جاهزة للتسليم'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {activeAidDist && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    {linkedInvItem && (
+                      <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200">
+                        <span className="text-[10px] text-indigo-500 block font-bold">صنف المخزون المرتبط:</span>
+                        <span className="font-black">{linkedInvItem.name} (باركود: {linkedInvItem.barcode})</span>
+                      </div>
+                    )}
+                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600">
+                      <span className="text-[10px] text-slate-400 block font-bold">تاريخ الحملة:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{activeAidDist.distributionDate}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600">
+                      <span className="text-[10px] text-slate-400 block font-bold">الموقع:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{activeAidDist.location || "المستودع الرئيسي بالعسيلة"}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Progress Tracker for Active Batch */}
+              {activeAidDist && (
+                <div className="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-700 dark:text-slate-300">
+                      نسبة تسليم الدفعة: {batchHandovers.length} مستفيدين استلموا من أصل {targetedBenIds.length || beneficiaries.length} معتمدين
+                    </span>
+                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-black">
+                      {Math.round((batchHandovers.length / Math.max(1, targetedBenIds.length || beneficiaries.length)) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.round((batchHandovers.length / Math.max(1, targetedBenIds.length || beneficiaries.length)) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Approved Beneficiaries Table for Active Batch */}
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span>الكشف المعتمد للمستحقين لهذه الدفعة ({batchBeneficiaries.length} مستفيد)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    الأسماء المعتمدة رسمياً من إدارة المستفيدين فقط — لا يتم الصرف لأي مستفيد غير وارد في هذا الكشف
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                  {/* Search Input */}
+                  <div className="relative flex-1 md:w-64">
+                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={aidSearchQuery}
+                      onChange={(e) => setAidSearchQuery(e.target.value)}
+                      placeholder="بحث بالاسم، الهوية، الباركود..."
+                      className="w-full pr-9 pl-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Status Filter */}
+                  <select
+                    value={aidStatusFilter}
+                    onChange={(e: any) => setAidStatusFilter(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+                  >
+                    <option value="all">كافة المستحقين</option>
+                    <option value="delivered">تم التسليم فقط</option>
+                    <option value="pending">بانتظار الاستلام</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="p-3 w-10 text-center">م</th>
+                      <th className="p-3">اسم المستفيد وبياناته</th>
+                      <th className="p-3 font-mono">رقم الهوية الوطنية</th>
+                      <th className="p-3 font-mono">رقم الجوال</th>
+                      <th className="p-3 text-center">الكمية المعتمدة</th>
+                      <th className="p-3">حالة الاستلام</th>
+                      <th className="p-3 text-center">توثيق الصورة</th>
+                      <th className="p-3 text-center">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {batchBeneficiaries.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
+                          لا توجد أسماء مطابقة لمعايير البحث في هذا الكشف.
+                        </td>
+                      </tr>
+                    ) : (
+                      batchBeneficiaries.map((ben, idx) => {
+                        const hRecord = activeAidDist ? distributionHandovers.find(h => 
+                          h.distributionId === activeAidDist.id && (h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId))
+                        ) : null;
+
+                        const isDelivered = !!hRecord;
+                        const allocatedQty = (activeAidDist?.beneficiaryAllocations && activeAidDist.beneficiaryAllocations[ben.id] !== undefined)
+                          ? activeAidDist.beneficiaryAllocations[ben.id]
+                          : (activeAidDist?.unitQuantityPerBeneficiary || 1);
+
+                        const photoSrc = hRecord?.photoUrl || (hRecord?.proofPhotos && hRecord.proofPhotos[0]) || "";
+
+                        return (
+                          <tr key={ben.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors">
+                            <td className="p-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <User className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{ben.name}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-2">
+                                <span>الملف: {ben.beneficiaryNumber || ben.id}</span>
+                                <span>•</span>
+                                <span>باركود: {ben.barcodeId || "-"}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-300">{ben.nationalId || "—"}</td>
+                            <td className="p-3 font-mono text-slate-600 dark:text-slate-400">{ben.phone || "—"}</td>
+                            <td className="p-3 text-center font-mono font-black text-emerald-700 dark:text-emerald-400">
+                              {allocatedQty} {activeAidDist?.unit || 'طرد'}
+                            </td>
+                            <td className="p-3">
+                              {isDelivered ? (
+                                <div>
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 inline-flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    <span>تم التسليم بنجاح</span>
+                                  </span>
+                                  <p className="text-[9.5px] text-slate-400 font-mono mt-0.5">
+                                    {hRecord.date} {hRecord.time} • المسلّم: {hRecord.handedByUserName}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 inline-flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  <span>بانتظار الاستلام</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              {photoSrc ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProofPhoto({ url: photoSrc, title: activeAidDist?.aidTypeLabel || "صورة استلام المساعدة", record: hRecord! })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 rounded-lg text-[10.5px] font-bold border border-emerald-200 dark:border-emerald-800 cursor-pointer shadow-2xs"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>عرض الصورة</span>
+                                </button>
+                              ) : isDelivered ? (
+                                <span className="text-[10px] text-slate-400 italic">بدون صورة</span>
+                              ) : (
+                                <span className="text-[10px] text-slate-300">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="inline-flex items-center gap-1.5 justify-center">
+                                {!isDelivered && (
+                                  <button
+                                    onClick={() => {
+                                      if (activeAidDist) {
+                                        setSelectedAidDistId(activeAidDist.id);
+                                        setIsAidScannerOpen(true);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                  >
+                                    <Camera className="w-3 h-3" />
+                                    <span>تسليم الآن</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => setHistoryBeneficiary(ben)}
+                                  className="px-2 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[10.5px] font-bold border border-purple-200 dark:border-purple-800 transition-all cursor-pointer"
+                                  title="عرض السجل التاريخي الكامل لكافة المساعدات المستلمة بالصور"
+                                >
+                                  <span>سجل المستفيد</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Live Delivery Ledger with Photo Proofs */}
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-emerald-600" />
+                    <span>سجل عمليات التسليم الفعلي الموثق بالصور للمستودع ({batchHandovers.length} عملية)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    توثيق فوري بالباركود، صورة الكاميرا، ختم التاريخ والوقت، واسم موظف المستودع المسؤول
+                  </p>
+                </div>
+
+                <button
+                  onClick={exportBatchToExcel}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>تصدير السجل</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-700">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="p-3 w-10 text-center">م</th>
+                      <th className="p-3">المستفيد</th>
+                      <th className="p-3">الصنف والتوزيعة</th>
+                      <th className="p-3 text-center">الكمية المسلمة</th>
+                      <th className="p-3">تاريخ ووقت التسليم</th>
+                      <th className="p-3">الموظف المسلّم</th>
+                      <th className="p-3">طريقة التحقق</th>
+                      <th className="p-3 text-center">صورة الاستلام</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {batchHandovers.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
+                          لم يتم تسجيل أي عمليات تسليم لهذه الدفعة حتى الآن.
+                        </td>
+                      </tr>
+                    ) : (
+                      batchHandovers.map((rec, idx) => {
+                        const photoSrc = rec.photoUrl || (rec.proofPhotos && rec.proofPhotos[0]) || "";
+
+                        return (
+                          <tr key={rec.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors">
+                            <td className="p-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-900 dark:text-white">{rec.beneficiaryName}</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{rec.nationalId || rec.barcodeId}</div>
+                            </td>
+                            <td className="p-3">
+                              <span className="font-bold text-slate-800 dark:text-slate-200 block">{rec.itemName || rec.distributionTitle}</span>
+                              <span className="text-[10px] text-slate-400 truncate block">{rec.distributionTitle}</span>
+                            </td>
+                            <td className="p-3 text-center font-mono font-black text-emerald-700 dark:text-emerald-400">
+                              {rec.quantity || 1} {rec.unit || 'طرد'}
+                            </td>
+                            <td className="p-3">
+                              <div className="font-mono font-bold text-slate-800 dark:text-slate-200">{rec.date}</div>
+                              <div className="font-mono text-[10px] text-slate-400">{rec.time}</div>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-800 dark:text-slate-200">{rec.handedByUserName}</div>
+                              <div className="text-[10px] text-slate-400">{rec.handedDepartment || 'إدارة المستودع'}</div>
+                            </td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                                {rec.method === 'camera_scanner' ? 'كاميرا الجوال' : rec.method === 'hardware_scanner' ? 'قارئ باركود' : 'إدخال يدوي'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              {photoSrc ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProofPhoto({ url: photoSrc, title: rec.itemName || "صورة الاستلام", record: rec })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 rounded-lg text-[10.5px] font-bold border border-emerald-200 dark:border-emerald-800 cursor-pointer shadow-2xs"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>عرض الصورة</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">بدون صورة</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ------------------------------------------------------------------- */}
       {/* MODAL 1: ADD / EDIT INVENTORY ITEM */}
@@ -3426,6 +3960,69 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AID HANDOVER SCANNER & PHOTO CAPTURE MODAL */}
+      {isAidScannerOpen && onHandoverSubmit && (
+        <AidHandoverScannerModal
+          isOpen={isAidScannerOpen}
+          onClose={() => setIsAidScannerOpen(false)}
+          distributions={distributions}
+          selectedDistributionId={selectedAidDistId}
+          beneficiaries={beneficiaries}
+          handoverRecords={distributionHandovers}
+          currentUser={currentUser}
+          onHandoverSubmit={onHandoverSubmit}
+          lang="ar"
+        />
+      )}
+
+      {/* BENEFICIARY AID HISTORY MODAL */}
+      {historyBeneficiary && (
+        <BeneficiaryHistoryModal
+          beneficiary={historyBeneficiary}
+          handoverRecords={distributionHandovers}
+          isOpen={!!historyBeneficiary}
+          onClose={() => setHistoryBeneficiary(null)}
+          lang="ar"
+        />
+      )}
+
+      {/* PHOTO PREVIEW SUB-MODAL */}
+      {selectedProofPhoto && (
+        <div 
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/85 p-4" 
+          onClick={() => setSelectedProofPhoto(null)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-5 space-y-4 text-right shadow-2xl border border-slate-200 dark:border-slate-800" 
+            onClick={e => e.stopPropagation()}
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h4 className="font-black text-sm text-slate-900 dark:text-white">
+                  توثيق استلام المساعدة: {selectedProofPhoto.record.itemName || "مساعدة"}
+                </h4>
+                <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  المستفيد: {selectedProofPhoto.record.beneficiaryName} • {selectedProofPhoto.record.date} {selectedProofPhoto.record.time}
+                </p>
+              </div>
+              <button onClick={() => setSelectedProofPhoto(null)} className="p-1 text-slate-400 hover:text-slate-200 font-bold">✕</button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden bg-black max-h-[65vh] flex items-center justify-center border border-slate-200 dark:border-slate-800">
+              <img src={selectedProofPhoto.url} alt="صورة التسليم" className="w-full h-auto max-h-[60vh] object-contain" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+              <div>الموظف الذي سلّم: <b>{selectedProofPhoto.record.handedByUserName}</b></div>
+              <div>الكمية المسلمة: <b>{selectedProofPhoto.record.quantity} {selectedProofPhoto.record.unit || 'طرد'}</b></div>
+              <div>الإدارة: <b>{selectedProofPhoto.record.handedDepartment || 'إدارة المستودع'}</b></div>
+              <div>رقم السند: <b className="font-mono text-[10px]">{selectedProofPhoto.record.id}</b></div>
+            </div>
           </div>
         </div>
       )}

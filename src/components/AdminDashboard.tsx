@@ -75,6 +75,7 @@ interface AdminDashboardProps {
     beneficiaryRatings?: BeneficiaryRating[];
     orgMembers?: OrgMember[];
     heroSlides?: HeroSlide[];
+    inventoryItems?: any[];
   };
   onAddDepartment: (dep: Partial<Department>) => void;
   onDeleteDepartment: (id: string) => void;
@@ -161,6 +162,7 @@ interface AdminDashboardProps {
   onRequestEmployeeModification?: (requestId: string, reviewerName: string, modificationNotes: string) => Promise<boolean>;
   initialSubTab?: string;
   onSubTabChange?: (tab: string) => void;
+  onRefreshGlobalData?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -235,7 +237,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   teamStaffAssignments = [],
   onApproveEmployeeRequest,
   onRejectEmployeeRequest,
-  onRequestEmployeeModification
+  onRequestEmployeeModification,
+  onRefreshGlobalData
 }: AdminDashboardProps) => {
   const [activeSubTab, setActiveSubTab] = useState<'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
     try {
@@ -1004,6 +1007,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'inventory' && (
             <InventoryManager
               initiatives={data.initiatives}
+              beneficiaries={data.beneficiaries || []}
+              distributions={data.distributions || []}
+              distributionHandovers={data.distributionHandovers || []}
+              onHandoverSubmit={onHandoverSubmit}
+              currentUser={{
+                id: "admin",
+                name: "المدير العام للجمعية",
+                role: "admin"
+              }}
+              onRefreshGlobalData={onRefreshGlobalData}
             />
           )}
 
@@ -3101,6 +3114,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'beneficiaries' && (
             <BeneficiariesManager
               beneficiaries={data.beneficiaries || []}
+              handoverRecords={data.distributionHandovers || []}
               onUpdateBeneficiaryStatus={onUpdateBeneficiaryStatus || (async () => false)}
               homeSettings={data.homeSettings}
               lang={lang}
@@ -3119,6 +3133,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               distributions={data.distributions || []}
               beneficiaries={data.beneficiaries || []}
               handoverRecords={data.distributionHandovers || []}
+              inventoryItems={data.inventoryItems || []}
               homeSettings={data.homeSettings}
               currentUser={{
                 id: "admin",
