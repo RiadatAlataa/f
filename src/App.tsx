@@ -72,6 +72,13 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
+  const [connectionDiagnostics, setConnectionDiagnostics] = useState<{
+    status?: number;
+    url?: string;
+    details?: string;
+    timestamp?: string;
+  } | null>(null);
   
   // Customization preferences with localStorage persistence
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -266,11 +273,29 @@ export default function App() {
       if (!isBackground && !dbData) {
         setLoading(true);
       }
+      setIsRetrying(true);
       const headers = getAuthHeaders();
-      const res = await fetch("/api/db", { headers });
-      if (!res.ok) throw new Error("فشل تحميل قاعدة البيانات من الخادم");
+      const res = await fetch("/api/db", { 
+        headers,
+        cache: 'no-store'
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "");
+        const diagInfo = {
+          status: res.status,
+          url: "/api/db",
+          details: errorText.slice(0, 300) || `HTTP Error ${res.status}: ${res.statusText}`,
+          timestamp: new Date().toLocaleTimeString("ar-SA")
+        };
+        setConnectionDiagnostics(diagInfo);
+        throw new Error(`فشل الاتصال بالخادم الرئيسي (رمز الاستجابة: ${res.status})`);
+      }
+
       const data = await res.json();
       setDbData(data);
+      setError(null);
+      setConnectionDiagnostics(null);
       
       // Auto-select simulation IDs only when not authenticated
       const currentStored = getStoredSession();
@@ -285,11 +310,24 @@ export default function App() {
           setSelectedBeneficiaryId(data.beneficiaries[0].id);
         }
       }
-      
-      setError(null);
     } catch (err: any) {
-      setError(err.message || "حدث خطأ غير متوقع");
+      console.error("[System Connection Error]:", err);
+      const isNetworkError = err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network');
+      const friendlyMessage = isNetworkError 
+        ? "تعذر الوصول إلى خادم الجمعية عبر هذا النطاق، يرجى التحقق من اتصالك بالإنترنت وصلاحية شهادة SSL."
+        : (err.message || "حدث خطأ غير متوقع في جلب البيانات من الخادم الرئيسي");
+      
+      setError(friendlyMessage);
+      if (!connectionDiagnostics) {
+        setConnectionDiagnostics({
+          status: 0,
+          url: "/api/db",
+          details: err.stack || err.message,
+          timestamp: new Date().toLocaleTimeString("ar-SA")
+        });
+      }
     } finally {
+      setIsRetrying(false);
       if (!isBackground) {
         setLoading(false);
       }
@@ -1263,17 +1301,71 @@ export default function App() {
 
   if (error || !dbData) {
     return (
-      <div className="min-h-screen bg-rose-50/50 flex flex-col items-center justify-center p-6 text-center" dir="rtl">
-        <div className="bg-white p-8 rounded-2xl border border-rose-100 shadow-xl max-w-sm w-full space-y-4">
-          <AlertCircle className="w-10 h-10 text-rose-600 mx-auto animate-bounce" />
-          <h2 className="text-sm font-black text-rose-800">فشل في الاتصال بالخادم الرئيسي</h2>
-          <p className="text-xs text-neutral-500 leading-relaxed">تأكد من تشغيل خادم Express بنجاح على المنفذ المخصص ثم أعد المحاولة.</p>
-          <button 
-            onClick={fetchDatabase}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl transition-all cursor-pointer"
-          >
-            إعادة محاولة المزامنة والربط
-          </button>
+      <div className="min-h-screen bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-sans" dir="rtl">
+        <div className="bg-white dark:bg-slate-950 p-6 sm:p-8 rounded-3xl border border-rose-200 dark:border-rose-900/50 shadow-2xl max-w-md w-full space-y-5 text-right">
+          
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-800">
+              <AlertCircle className="w-6 h-6 text-rose-600 dark:text-rose-400 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-rose-900 dark:text-rose-200">فشل في الاتصال بالخادم الرئيسي</h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</p>
+            </div>
+          </div>
+
+          <div className="bg-rose-50/80 dark:bg-rose-950/30 p-3.5 rounded-2xl border border-rose-100 dark:border-rose-900/30 text-xs text-rose-800 dark:text-rose-300 leading-relaxed">
+            {error || "تعذر إتمام الاتصال بخادم Express الخلفي أو تحميل قاعدة البيانات."}
+          </div>
+
+          <div className="space-y-2">
+            <button 
+              onClick={() => fetchDatabase(false)}
+              disabled={isRetrying}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
+              <span>{isRetrying ? "جاري إعادة التحقق والربط..." : "إعادة محاولة المزامنة والربط"}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                fetch("/api/health")
+                  .then(r => r.json())
+                  .then(h => {
+                    alert(`حالة الخادم: متصل وقيد العمل (${h.environment})\nالمنفذ: ${h.port}\nوقت التشغيل: ${h.uptimeSeconds} ثانية\nالإدارات: ${h.database?.departmentsCount}`);
+                  })
+                  .catch(e => {
+                    alert(`فحص مسار الصحة /api/health تعذر: ${e.message}\nتأكد من توجيه البروكسي أو Nginx إلى المنفذ المحدد.`);
+                  });
+              }}
+              className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>فحص تشخيصي سريع لخادم النطاق (/api/health)</span>
+            </button>
+          </div>
+
+          {/* Diagnostic details drawer */}
+          {connectionDiagnostics && (
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+              <details className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                <summary className="cursor-pointer font-bold hover:text-neutral-700 dark:hover:text-neutral-200 py-1 flex items-center justify-between">
+                  <span>سجل تشخيص الخادم (للمطورين والدعم الفني)</span>
+                  <span className="font-mono text-[10px] text-neutral-400">{connectionDiagnostics.timestamp}</span>
+                </summary>
+                <div className="mt-2 p-2.5 bg-neutral-900 text-neutral-200 rounded-xl font-mono text-[10px] text-left overflow-x-auto space-y-1" dir="ltr">
+                  <div>Host: {typeof window !== 'undefined' ? window.location.host : 'unknown'}</div>
+                  <div>URL: {connectionDiagnostics.url}</div>
+                  <div>Status: {connectionDiagnostics.status || 'Network Error / Blocked'}</div>
+                  <div className="text-neutral-400">{connectionDiagnostics.details}</div>
+                </div>
+              </details>
+            </div>
+          )}
+
+          <div className="text-[11px] text-neutral-400 text-center">
+            إذا استمرت المشكلة، يرجى التأكد من استماع الخادم للمنفذ المخصص في الاستضافة (PORT) وتوجيه الدومين الرسمي بنجاح.
+          </div>
         </div>
       </div>
     );

@@ -27,7 +27,26 @@ import { setupEmailRoutes } from "./server/emailRoutes";
 import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService";
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+
+// Enable trust proxy for Cloud Run, Nginx, Cloudflare, and custom domain proxies
+app.set('trust proxy', 1);
+
+// CORS and Pre-flight Handling for Custom Domains & SSL Proxies
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "*";
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-user-id, x-user-role, x-department-id, x-national-id, x-team-id"
+  );
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 app.use(express.json({ limit: "50mb" }));
 
@@ -4031,6 +4050,34 @@ function filterDatabaseForUser(db: any, context: any) {
 }
 
 // API REST routes
+
+// Comprehensive Health Check & Diagnostic endpoint for custom domain, proxy & uptime monitoring
+app.get("/api/health", (req, res) => {
+  const db = readDb();
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    port: PORT,
+    environment: process.env.NODE_ENV || "development",
+    database: {
+      initialized: !!db,
+      departmentsCount: (db.departments || []).length,
+      volunteersCount: (db.volunteers || []).length,
+      initiativesCount: (db.initiatives || []).length,
+      beneficiariesCount: (db.beneficiaries || []).length
+    },
+    clientInfo: {
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      host: req.headers.host,
+      protocol: req.protocol
+    }
+  });
+});
+
+app.get("/api/ping", (req, res) => {
+  res.json({ status: "pong", time: Date.now() });
+});
 
 // Get DB with Server-Side Department Data Isolation & RBAC Filtering
 app.get("/api/db", (req, res) => {
@@ -13628,9 +13675,22 @@ async function start() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT} [${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}]`);
+  });
+
+  server.on("error", (err: any) => {
+    console.error("Critical server listener error:", err);
   });
 }
+
+// Global process safeguards against crashes in production
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception thrown:", err);
+});
 
 start();
