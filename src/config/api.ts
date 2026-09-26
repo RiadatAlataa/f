@@ -92,27 +92,12 @@ export const sanitizeApiBaseUrl = (rawUrl: string): { cleanUrl: string; error?: 
 };
 
 /**
- * Returns the currently active API Base URL
+ * Returns the currently active API Base URL.
+ * Automatically resolved centrally from environment configuration and domain.
+ * Users never need to configure this manually.
  */
 export const getApiBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem('reyadat_api_url');
-      if (stored && stored.trim()) {
-        const sanitized = sanitizeApiBaseUrl(stored);
-        if (sanitized.cleanUrl) {
-          return sanitized.cleanUrl;
-        }
-      }
-    } catch {}
-    if ((window as any).__API_URL__) {
-      const sanitized = sanitizeApiBaseUrl(String((window as any).__API_URL__));
-      if (sanitized.cleanUrl) {
-        return sanitized.cleanUrl;
-      }
-    }
-  }
-
+  // 1. Central Project & Deployment Environment Variable (Vercel / Render / Cloud Run)
   const envUrl = (
     import.meta.env.VITE_API_URL || 
     import.meta.env.VITE_BACKEND_URL || 
@@ -120,11 +105,22 @@ export const getApiBaseUrl = (): string => {
     ''
   );
 
-  if (envUrl) {
+  if (envUrl && envUrl.trim()) {
     const sanitized = sanitizeApiBaseUrl(envUrl);
-    return sanitized.cleanUrl || '';
+    if (sanitized.cleanUrl) {
+      return sanitized.cleanUrl;
+    }
   }
 
+  // 2. Global Server Injected Configuration
+  if (typeof window !== 'undefined' && (window as any).__API_URL__) {
+    const sanitized = sanitizeApiBaseUrl(String((window as any).__API_URL__));
+    if (sanitized.cleanUrl) {
+      return sanitized.cleanUrl;
+    }
+  }
+
+  // 3. Fallback to same-origin relative path (standard for Vercel Serverless & Custom Domains)
   return '';
 };
 

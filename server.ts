@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
-import { 
+import type { 
   Department, 
   VolunteerTeam, 
   Volunteer, 
@@ -20,10 +20,10 @@ import {
   OpportunityRequest,
   TeamApplication,
   OfficialLetter
-} from "./src/types";
-import { setupFinancialRoutes } from "./server/financeRoutes";
-import { setupEmailRoutes } from "./server/emailRoutes";
-import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService";
+} from "./src/types.ts";
+import { setupFinancialRoutes } from "./server/financeRoutes.ts";
+import { setupEmailRoutes } from "./server/emailRoutes.ts";
+import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService.ts";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -65,16 +65,24 @@ const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
 const DB_FILE_TMP = path.join("/tmp", "db.json");
 
 function getActiveDbPath(): string {
-  const isServerless = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const isServerless = !!(
+    process.env.VERCEL || 
+    process.env.NOW_REGION || 
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.VERCEL_ENV
+  );
   if (isServerless) {
-    if (!fs.existsSync(DB_FILE_TMP) && fs.existsSync(DB_FILE_ROOT)) {
-      try {
-        fs.copyFileSync(DB_FILE_ROOT, DB_FILE_TMP);
-      } catch {
-        return DB_FILE_ROOT;
+    if (!fs.existsSync(DB_FILE_TMP)) {
+      if (fs.existsSync(DB_FILE_ROOT)) {
+        try {
+          fs.copyFileSync(DB_FILE_ROOT, DB_FILE_TMP);
+        } catch {
+          // ignore
+        }
       }
     }
-    return fs.existsSync(DB_FILE_TMP) ? DB_FILE_TMP : DB_FILE_ROOT;
+    return fs.existsSync(DB_FILE_TMP) ? DB_FILE_TMP : (fs.existsSync(DB_FILE_ROOT) ? DB_FILE_ROOT : DB_FILE_TMP);
   }
   return DB_FILE_ROOT;
 }
@@ -3564,9 +3572,16 @@ function readDb() {
 
 function writeDb(data: any) {
   memoryDbCache = data;
+  const isServerless = !!(
+    process.env.VERCEL || 
+    process.env.NOW_REGION || 
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.VERCEL_ENV
+  );
+  const targetPath = isServerless ? DB_FILE_TMP : getActiveDbPath();
   try {
-    const activePath = getActiveDbPath();
-    fs.writeFileSync(activePath, JSON.stringify(data, null, 2), "utf-8");
+    fs.writeFileSync(targetPath, JSON.stringify(data, null, 2), "utf-8");
   } catch (err) {
     console.error("Error writing to database file", err);
     try {
@@ -4136,18 +4151,44 @@ app.get("/api/ping", (req, res) => {
 
 // Get DB with Server-Side Department Data Isolation & RBAC Filtering
 app.get("/api/db", (req, res) => {
-  const db = readDb();
-  const context = getUserAccessContext(req);
-  const filtered = filterDatabaseForUser(db, context);
-  res.json(filtered);
+  try {
+    const db = readDb();
+    if (!db) {
+      return res.status(200).json(defaultDb);
+    }
+    const context = getUserAccessContext(req);
+    const filtered = filterDatabaseForUser(db, context);
+    return res.status(200).json(filtered);
+  } catch (err: any) {
+    console.error("Error in /api/db endpoint:", err);
+    try {
+      const fallbackDb = readDb() || defaultDb;
+      return res.status(200).json(fallbackDb);
+    } catch {
+      return res.status(200).json(defaultDb);
+    }
+  }
 });
 
 // Explicit Scoped DB endpoint
 app.get("/api/db/scoped", (req, res) => {
-  const db = readDb();
-  const context = getUserAccessContext(req);
-  const filtered = filterDatabaseForUser(db, context);
-  res.json(filtered);
+  try {
+    const db = readDb();
+    if (!db) {
+      return res.status(200).json(defaultDb);
+    }
+    const context = getUserAccessContext(req);
+    const filtered = filterDatabaseForUser(db, context);
+    return res.status(200).json(filtered);
+  } catch (err: any) {
+    console.error("Error in /api/db/scoped endpoint:", err);
+    try {
+      const fallbackDb = readDb() || defaultDb;
+      return res.status(200).json(fallbackDb);
+    } catch {
+      return res.status(200).json(defaultDb);
+    }
+  }
 });
 
 // ==========================================
@@ -13995,7 +14036,17 @@ process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception thrown:", err);
 });
 
-start();
+const isServerlessEnv = !!(
+  process.env.VERCEL || 
+  process.env.NOW_REGION || 
+  process.env.AWS_LAMBDA_FUNCTION_NAME || 
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.VERCEL_ENV
+);
+
+if (!isServerlessEnv) {
+  start();
+}
 
 export default app;
 export { app };

@@ -1761,7 +1761,7 @@ export interface SupportTask {
 }
 
 // Export Financial Management System types
-export * from './types/finance';
+export * from './types/finance.ts';
 
 // Email System & Sender / SMTP Interfaces
 export interface EmailSettings {
