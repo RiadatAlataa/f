@@ -5,24 +5,20 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/health",
-      "destination": "/api/health.ts"
-    },
-    {
-      "source": "/api/health/",
-      "destination": "/api/health.ts"
-    },
-    {
       "source": "/health",
-      "destination": "/api/health.ts"
+      "destination": "/api/health"
     },
     {
       "source": "/health/",
-      "destination": "/api/health.ts"
+      "destination": "/api/health"
+    },
+    {
+      "source": "/api/health/",
+      "destination": "/api/health"
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.ts"
+      "destination": "/api"
     },
     {
       "source": "/((?!api/|assets/|favicon|.*\\..*).*)",

@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { 
   Department, 
@@ -51,12 +50,36 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "50mb" }));
 
 const cardTemplatesDir = path.join(process.cwd(), "public", "card_templates");
-if (!fs.existsSync(cardTemplatesDir)) {
-  fs.mkdirSync(cardTemplatesDir, { recursive: true });
+try {
+  if (!fs.existsSync(cardTemplatesDir)) {
+    fs.mkdirSync(cardTemplatesDir, { recursive: true });
+  }
+} catch {
+  // Read-only filesystem in serverless environments
 }
-app.use("/card_templates", express.static(cardTemplatesDir));
+if (fs.existsSync(cardTemplatesDir)) {
+  app.use("/card_templates", express.static(cardTemplatesDir));
+}
 
-const DB_FILE = path.join(process.cwd(), "db.json");
+const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
+const DB_FILE_TMP = path.join("/tmp", "db.json");
+
+function getActiveDbPath(): string {
+  const isServerless = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  if (isServerless) {
+    if (!fs.existsSync(DB_FILE_TMP) && fs.existsSync(DB_FILE_ROOT)) {
+      try {
+        fs.copyFileSync(DB_FILE_ROOT, DB_FILE_TMP);
+      } catch {
+        return DB_FILE_ROOT;
+      }
+    }
+    return fs.existsSync(DB_FILE_TMP) ? DB_FILE_TMP : DB_FILE_ROOT;
+  }
+  return DB_FILE_ROOT;
+}
+
+const DB_FILE = DB_FILE_ROOT;
 
 // Lazy Gemini API Client
 let aiClient: GoogleGenAI | null = null;
@@ -1982,11 +2005,14 @@ function seed120Initiatives(db: any): boolean {
 // Seed the in-memory defaultDb
 seed120Initiatives(defaultDb);
 
+let memoryDbCache: any = null;
+
 // Helper: Read db from file or write defaults
 function readDb() {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const content = fs.readFileSync(DB_FILE, "utf-8");
+    const activePath = getActiveDbPath();
+    if (fs.existsSync(activePath)) {
+      const content = fs.readFileSync(activePath, "utf-8");
       const db = JSON.parse(content);
       
       // Auto upgrade existing database with missing parameters
@@ -3511,24 +3537,43 @@ function readDb() {
       }
       
       if (modified) {
-        writeDb(db);
+        try {
+          writeDb(db);
+        } catch {
+          // ignore
+        }
       }
+      memoryDbCache = db;
       return db;
     }
+    if (memoryDbCache) return memoryDbCache;
   } catch (err) {
     console.error("Error reading database file, using defaults", err);
+    if (memoryDbCache) return memoryDbCache;
   }
   
   // Write defaults
-  writeDb(defaultDb);
+  memoryDbCache = defaultDb;
+  try {
+    writeDb(defaultDb);
+  } catch {
+    // ignore
+  }
   return defaultDb;
 }
 
 function writeDb(data: any) {
+  memoryDbCache = data;
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+    const activePath = getActiveDbPath();
+    fs.writeFileSync(activePath, JSON.stringify(data, null, 2), "utf-8");
   } catch (err) {
     console.error("Error writing to database file", err);
+    try {
+      fs.writeFileSync(DB_FILE_TMP, JSON.stringify(data, null, 2), "utf-8");
+    } catch (tmpErr) {
+      console.error("Error writing fallback /tmp/db.json", tmpErr);
+    }
   }
 }
 
@@ -13918,6 +13963,7 @@ async function start() {
   }
 
   if (!isProduction) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

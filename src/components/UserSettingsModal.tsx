@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { 
   X, Volume2, VolumeX, Bell, BellRing, Sparkles, Moon, Sun, 
-  Check, Music, Sliders, Smartphone, Laptop, ShieldCheck
+  Check, Music, Sliders, Smartphone, Laptop, ShieldCheck, Server,
+  CheckCircle2, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { useApplicationAudio, GENERAL_AUDIO_STORAGE_KEY } from '../utils/audioNotification';
+import { getApiBaseUrl, setApiBaseUrl, checkHealthEndpoint, sanitizeApiBaseUrl } from '../config/api';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -37,7 +39,67 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   const [isPlayingTest, setIsPlayingTest] = useState(false);
 
+  // Backend URL settings
+  const [backendUrl, setBackendUrl] = useState<string>(() => getApiBaseUrl());
+  const [isCheckingBackend, setIsCheckingBackend] = useState<boolean>(false);
+  const [backendStatus, setBackendStatus] = useState<{ ok: boolean; message: string } | null>(null);
+
   if (!isOpen) return null;
+
+  const handleTestAndSaveBackend = async () => {
+    setIsCheckingBackend(true);
+    setBackendStatus(null);
+    try {
+      const sanitized = sanitizeApiBaseUrl(backendUrl);
+      if (sanitized.error) {
+        setBackendStatus({ ok: false, message: sanitized.error });
+        setIsCheckingBackend(false);
+        return;
+      }
+      const res = await checkHealthEndpoint(sanitized.cleanUrl || undefined);
+      if (res.ok) {
+        setApiBaseUrl(sanitized.cleanUrl);
+        setBackendUrl(sanitized.cleanUrl);
+        setBackendStatus({
+          ok: true,
+          message: `تم الاتصال بنجاح (${res.httpStatus} OK - ${res.serverSource})`
+        });
+      } else {
+        setBackendStatus({
+          ok: false,
+          message: `فشل الاتصال: ${res.errorMessage}`
+        });
+      }
+    } catch (err: any) {
+      setBackendStatus({ ok: false, message: err.message || 'خطأ غير معروف' });
+    } finally {
+      setIsCheckingBackend(false);
+    }
+  };
+
+  const handleResetBackend = async () => {
+    setIsCheckingBackend(true);
+    setBackendStatus(null);
+    try {
+      setApiBaseUrl('');
+      setBackendUrl('');
+      const defaultUrl = getApiBaseUrl();
+      const res = await checkHealthEndpoint(defaultUrl || undefined);
+      if (res.ok) {
+        setBackendStatus({
+          ok: true,
+          message: `تمت استعادة الإعداد الافتراضي بنجاح (${res.httpStatus} OK - ${res.serverSource})`
+        });
+      } else {
+        setBackendStatus({
+          ok: false,
+          message: `تمت الاستعادة، ولكن تعذر الاتصال بالخادم الافتراضي (${res.httpStatus})`
+        });
+      }
+    } finally {
+      setIsCheckingBackend(false);
+    }
+  };
 
   const handleToggleGeneralSound = () => {
     const next = !generalSound;
@@ -259,13 +321,76 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
             )}
           </div>
 
-          {/* SECTION 3: Device & Storage Persistence Note */}
+          {/* SECTION 3: Backend Connection Settings (ربط الخادم الخلفي) */}
+          <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>{lang === 'ar' ? 'ربط الخادم الخلفي (API Backend / Render)' : 'API Backend Connection'}</span>
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">
+                {backendUrl ? (lang === 'ar' ? 'مخصص' : 'Custom') : (lang === 'ar' ? 'تلقائي' : 'Default')}
+              </span>
+            </h3>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2.5">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                {lang === 'ar' 
+                  ? 'إذا كان Express يعمل على خدمة خارجية مثل Render، أدخل رابط الخدمة وسيقوم النظام بتوجيه كافة الطلبات إليه مباشرة. اتركه فارغاً للوضع التلقائي.' 
+                  : 'Specify external Express service URL (e.g. Render) or leave empty for default.'}
+              </p>
+
+              <div className="space-y-1">
+                <input
+                  type="url"
+                  placeholder="https://your-service.onrender.com"
+                  value={backendUrl}
+                  onChange={(e) => setBackendUrl(e.target.value)}
+                  dir="ltr"
+                  className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              {backendStatus && (
+                <div className={`p-2.5 rounded-xl text-[11px] flex items-center gap-2 ${
+                  backendStatus.ok 
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                }`}>
+                  {backendStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />}
+                  <span>{backendStatus.message}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestAndSaveBackend}
+                  disabled={isCheckingBackend}
+                  className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingBackend ? 'animate-spin' : ''}`} />
+                  <span>{lang === 'ar' ? 'فحص وحفظ الرابط' : 'Test & Save'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetBackend}
+                  disabled={isCheckingBackend}
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  {lang === 'ar' ? 'استعادة الافتراضي' : 'Reset'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: Device & Storage Persistence Note */}
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
               {lang === 'ar'
-                ? 'يتم حفظ تفضيلاتك الصوتية محلياً على جهازك ويتم تطبيقها تلقائياً عند تقديم أو استقبال أي طلب تطوع أو فريق.'
-                : 'Your audio preferences are automatically stored and applied whenever a volunteer or team application is submitted.'}
+                ? 'يتم حفظ تفضيلاتك محلياً على جهازك ويتم تطبيقها تلقائياً عند زيارة الموقع أو تقديم أي طلب.'
+                : 'Your preferences are automatically stored and applied whenever you use the application.'}
             </span>
           </div>
 

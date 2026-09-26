@@ -33,7 +33,9 @@ import {
   getApiBaseUrl, 
   setApiBaseUrl, 
   buildApiUrl, 
-  checkHealthEndpoint 
+  checkHealthEndpoint,
+  sanitizeApiBaseUrl,
+  getHttpStatusDescription
 } from "./config/api";
 
 export default function App() {
@@ -319,14 +321,15 @@ export default function App() {
           }
         }
 
+        const statusDesc = getHttpStatusDescription(res.status, res.statusText);
         const diagInfo = {
           status: res.status,
           url: targetUrl,
-          details: errorDetails || `HTTP Error ${res.status}: ${res.statusText}`,
+          details: errorDetails || `HTTP Error ${res.status}: ${statusDesc}`,
           timestamp: new Date().toLocaleTimeString("ar-SA")
         };
         setConnectionDiagnostics(diagInfo);
-        throw new Error(`فشل في الاتصال بالخادم الرئيسي (رمز الاستجابة: ${res.status} ${res.statusText || 'Not Found'})`);
+        throw new Error(`فشل في الاتصال بالخادم الرئيسي (رمز الاستجابة: ${res.status} - ${statusDesc})`);
       }
 
       if (!isJson) {
@@ -1334,14 +1337,14 @@ export default function App() {
   const handleQuickHealthCheck = async (customUrl?: string) => {
     setIsCheckingHealth(true);
     try {
-      const targetBase = customUrl !== undefined ? customUrl : (backendUrlInput.trim() || undefined);
-      const res = await checkHealthEndpoint(targetBase);
+      const activeBase = customUrl !== undefined ? customUrl : getApiBaseUrl();
+      const res = await checkHealthEndpoint(activeBase || undefined);
       
       setConnectionDiagnostics({
         status: res.httpStatus,
         url: res.url,
         details: res.ok 
-          ? `اتصال سليم بنجاح - Uptime: ${res.uptimeSeconds || 0}s | Env: ${res.environment || 'production'}` 
+          ? `اتصال سليم بنجاح (${res.serverSource}) - وقت التشغيل: ${res.uptimeSeconds || 0} ثانية | البيئة: ${res.environment || 'production'}` 
           : (res.errorMessage || res.statusText),
         timestamp: new Date().toLocaleTimeString("ar-SA")
       });
@@ -1349,17 +1352,16 @@ export default function App() {
       if (res.ok) {
         setHealthStatusBadge({
           ok: true,
-          message: `الخادم متصل بنجاح (200 OK) - ${res.service || 'جمعية ريادة العطاء'}`
+          message: `✅ الخادم متصل وقيد العمل بنجاح (${res.httpStatus} OK) - ${res.serverSource}`
         });
-        alert(`✅ حالة الخادم: متصل وقيد العمل بنجاح (رمز الاستجابة 200)\n\n• الرابط: ${res.url}\n• البيئة: ${res.environment || 'production'}\n• وقت التشغيل: ${res.uptimeSeconds || 0} ثانية\n• الخدمة: ${res.service || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة'}`);
-        // Now automatically retry fetching database
+        alert(`✅ فحص تشخيصي سريع لخادم النطاق (/api/health):\n\n• عنوان الخادم المختبر: ${activeBase || window.location.origin}\n• Endpoint المستخدم: ${res.url}\n• رمز HTTP الفعلي: ${res.httpStatus} (${res.statusText})\n• نوع المحتوى: ${res.contentType}\n• منصة الخادم ومصدر الاستجابة: ${res.serverSource}\n• وقت التشغيل: ${res.uptimeSeconds || 0} ثانية\n• الخدمة: ${res.service || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة'}\n\nنتيجة الفحص: نجح الاتصال بالخادم وقاعدة البيانات جاهزة للعمل.`);
         fetchDatabase(false);
       } else {
         setHealthStatusBadge({
           ok: false,
-          message: `فشل الاتصال (${res.httpStatus || 'خطأ شبكة'}) - المحتوى: ${res.isJson ? 'JSON' : 'صفحة خطأ أو غير صالحة'}`
+          message: `❌ فشل الاتصال (${res.httpStatus || 'خطأ شبكة'}) - المصدر: ${res.serverSource}`
         });
-        alert(`⚠️ نتيجة فحص مسار الصحة:\n\n• الرابط المطلوب: ${res.url}\n• رمز الاستجابة: ${res.httpStatus} (${res.statusText || 'Error'})\n• نوع المحتوى: ${res.isJson ? 'JSON صالح' : 'HTML / غير صالح'}\n\n• التفاصيل:\n${res.errorMessage}\n\n💡 ملاحظة للمسؤول: إذا كان الخادم الخلفي Express يعمل على خدمة خارجية مثل Render، يرجى إدخال عنوان الخدمة (https://xxx.onrender.com) في قسم "إعداد رابط الخادم الخلفي" أدناه.`);
+        alert(`⚠️ نتيجة الفحص التشخيصي لمسار الصحة (/api/health):\n\n• عنوان الخادم المختبر: ${activeBase || window.location.origin}\n• Endpoint المستخدم: ${res.url}\n• رمز HTTP الفعلي: ${res.httpStatus || 0} (${res.statusText})\n• نوع المحتوى المستلم: ${res.contentType || 'غير معروف'}\n• مصدر الاستجابة: ${res.serverSource}\n\n• سبب الفشل والتفاصيل:\n${res.errorMessage}\n\n💡 ملاحظة: إذا كان الخادم الخلفي Express يعمل على Render أو خدمة مستقلة، أدخل رابطه أدناه في "إعداد رابط الخادم الخلفي" واضغط على "حفظ وفحص الرابط".`);
       }
     } catch (err: any) {
       alert(`❌ تعذر إتمام فحص الصحة: ${err.message || 'خطأ غير معروف'}`);
@@ -1368,11 +1370,89 @@ export default function App() {
     }
   };
 
-  const handleSaveBackendUrl = (urlToSave: string) => {
-    const clean = urlToSave.trim().replace(/\/+$/, '');
-    setApiBaseUrl(clean);
-    setBackendUrlInput(clean);
-    handleQuickHealthCheck(clean || undefined);
+  const handleSaveBackendUrl = async (urlToSave: string) => {
+    setIsCheckingHealth(true);
+    setHealthStatusBadge(null);
+    try {
+      const sanitized = sanitizeApiBaseUrl(urlToSave);
+      if (sanitized.error) {
+        alert(`❌ تنبيه: ${sanitized.error}`);
+        setIsCheckingHealth(false);
+        return;
+      }
+
+      const testTarget = sanitized.cleanUrl;
+      const res = await checkHealthEndpoint(testTarget);
+
+      setConnectionDiagnostics({
+        status: res.httpStatus,
+        url: res.url,
+        details: res.ok 
+          ? `نجاح الفحص والربط (${res.serverSource})` 
+          : (res.errorMessage || res.statusText),
+        timestamp: new Date().toLocaleTimeString("ar-SA")
+      });
+
+      if (res.ok) {
+        setApiBaseUrl(testTarget);
+        setBackendUrlInput(testTarget);
+        setHealthStatusBadge({
+          ok: true,
+          message: `✅ تم التحقق والربط بنجاح مع: ${testTarget} (${res.httpStatus} OK - ${res.serverSource})`
+        });
+        alert(`✅ نجاح اختبار الاتصال بالخادم:\n\n• عنوان الخادم المعتمد: ${testTarget}\n• Endpoint الصحة: ${res.url}\n• رمز HTTP الفعلي: ${res.httpStatus} (${res.statusText})\n• مصدر الاستجابة: ${res.serverSource}\n• البيئة: ${res.environment || 'production'}\n• وقت التشغيل: ${res.uptimeSeconds || 0} ثانية\n\nتم حفظ الرابط بنجاح في إعدادات المتصفح، وجاري الآن استئناف الاتصال وتحميل قاعدة البيانات.`);
+        fetchDatabase(false);
+      } else {
+        setHealthStatusBadge({
+          ok: false,
+          message: `❌ فشل فحص الرابط (${res.httpStatus || 'خطأ اتصال'}). لم يتم حفظ الرابط غير الصالح.`
+        });
+        alert(`❌ فشل الاتصال بالرابط المدخل ولم يتم حفظه:\n\n• العنوان المختبر: ${res.url}\n• رمز HTTP الفعلي: ${res.httpStatus || 0} (${res.statusText})\n• نوع المحتوى المستلم: ${res.contentType || 'غير معروف'}\n• مصدر الاستجابة: ${res.serverSource}\n\n• سبب الفشل:\n${res.errorMessage}\n\nتأكد من تشغيل خدمة الخادم الخلفي وصحة الرابط.`);
+      }
+    } catch (err: any) {
+      alert(`❌ خطأ غير متوقع أثناء فحص الرابط: ${err.message || 'خطأ غير معروف'}`);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
+
+  const handleResetToDefaultBackend = async () => {
+    setIsCheckingHealth(true);
+    setHealthStatusBadge(null);
+    try {
+      setApiBaseUrl("");
+      setBackendUrlInput("");
+      const defaultBase = getApiBaseUrl();
+      const res = await checkHealthEndpoint(defaultBase || undefined);
+
+      setConnectionDiagnostics({
+        status: res.httpStatus,
+        url: res.url,
+        details: res.ok 
+          ? `استعادة الإعداد الافتراضي (${res.serverSource})` 
+          : (res.errorMessage || res.statusText),
+        timestamp: new Date().toLocaleTimeString("ar-SA")
+      });
+
+      if (res.ok) {
+        setHealthStatusBadge({
+          ok: true,
+          message: `✅ تمت استعادة الخادم الافتراضي بنجاح (${res.httpStatus} OK - ${res.serverSource})`
+        });
+        alert(`✅ تمت استعادة إعداد الاتصال الافتراضي بنجاح:\n\n• عنوان الخادم الافتراضي: ${defaultBase || window.location.origin}\n• مسار الصحة: ${res.url}\n• رمز HTTP الفعلي: ${res.httpStatus} (${res.statusText})\n• منصة الخادم ومصدر الاستجابة: ${res.serverSource}\n• وقت التشغيل: ${res.uptimeSeconds || 0} ثانية\n\nجاري مزامنة قاعدة البيانات الآن.`);
+        fetchDatabase(false);
+      } else {
+        setHealthStatusBadge({
+          ok: false,
+          message: `⚠️ تمت استعادة الافتراضي، ولكن تعذر الاتصال بالخادم الافتراضي (${res.httpStatus || 'خطأ'})`
+        });
+        alert(`⚠️ تمت استعادة الوضع الافتراضي، ولكن فحص الاتصال أظهر خطأ:\n\n• المسار المختبر: ${res.url}\n• رمز HTTP الفعلي: ${res.httpStatus || 0} (${res.statusText})\n• المصدر: ${res.serverSource}\n\n• التفاصيل:\n${res.errorMessage}`);
+      }
+    } catch (err: any) {
+      alert(`❌ خطأ أثناء استعادة الافتراضي: ${err.message || 'خطأ غير معروف'}`);
+    } finally {
+      setIsCheckingHealth(false);
+    }
   };
 
   if (loading) {
@@ -1490,7 +1570,7 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => handleSaveBackendUrl("")}
+                  onClick={handleResetToDefaultBackend}
                   disabled={isCheckingHealth}
                   className="bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-bold text-xs py-2 px-3 rounded-lg transition-all cursor-pointer"
                 >
