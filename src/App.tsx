@@ -29,6 +29,12 @@ import { NotificationBell } from "./components/NotificationBell";
 import { UserSettingsModal } from "./components/UserSettingsModal";
 import { playApplicationSubmittedChime } from "./utils/audioNotification";
 import { DashboardErrorBoundary } from "./components/DashboardErrorBoundary";
+import { 
+  getApiBaseUrl, 
+  setApiBaseUrl, 
+  buildApiUrl, 
+  checkHealthEndpoint 
+} from "./config/api";
 
 export default function App() {
   // Global App States
@@ -254,6 +260,12 @@ export default function App() {
   const [selectedVolunteerId, setSelectedVolunteerId] = useState<string>("");
   const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState<string>("");
 
+  // Backend Connection & Health Check States
+  const [backendUrlInput, setBackendUrlInput] = useState<string>(() => getApiBaseUrl());
+  const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
+  const [showBackendConfig, setShowBackendConfig] = useState<boolean>(false);
+  const [healthStatusBadge, setHealthStatusBadge] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Helper to build auth headers
   const getAuthHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {};
@@ -275,27 +287,59 @@ export default function App() {
       }
       setIsRetrying(true);
       const headers = getAuthHeaders();
-      const res = await fetch("/api/db", { 
+      const targetUrl = buildApiUrl("/api/db");
+      const res = await fetch(targetUrl, { 
         headers,
         cache: 'no-store'
       });
 
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      const isJson = contentType.includes("application/json");
+
       if (!res.ok) {
-        const errorText = await res.text().catch(() => "");
+        let errorDetails = "";
+        if (isJson) {
+          try {
+            const errJson = await res.json();
+            errorDetails = errJson.message || errJson.error || JSON.stringify(errJson);
+          } catch {
+            errorDetails = await res.text().catch(() => "");
+          }
+        } else {
+          const rawText = await res.text().catch(() => "");
+          const titleMatch = rawText.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const pageTitle = titleMatch ? titleMatch[1].trim() : "";
+          const cleanSnippet = rawText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+          if (pageTitle) {
+            errorDetails = `صفحة ويب بعنوان: "${pageTitle}"`;
+          } else if (cleanSnippet) {
+            errorDetails = `محتوى غير JSON (${cleanSnippet})`;
+          } else {
+            errorDetails = `نوع المحتوى: ${contentType || "HTML/Text"}`;
+          }
+        }
+
         const diagInfo = {
           status: res.status,
-          url: "/api/db",
-          details: errorText.slice(0, 300) || `HTTP Error ${res.status}: ${res.statusText}`,
+          url: targetUrl,
+          details: errorDetails || `HTTP Error ${res.status}: ${res.statusText}`,
           timestamp: new Date().toLocaleTimeString("ar-SA")
         };
         setConnectionDiagnostics(diagInfo);
-        throw new Error(`فشل الاتصال بالخادم الرئيسي (رمز الاستجابة: ${res.status})`);
+        throw new Error(`فشل في الاتصال بالخادم الرئيسي (رمز الاستجابة: ${res.status} ${res.statusText || 'Not Found'})`);
+      }
+
+      if (!isJson) {
+        const rawText = await res.text().catch(() => "");
+        const cleanSnippet = rawText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+        throw new Error(`الخادم أعاد كود 200 ولكن نوع المحتوى (${contentType}) ليس JSON (${cleanSnippet || 'HTML/Text'})`);
       }
 
       const data = await res.json();
       setDbData(data);
       setError(null);
       setConnectionDiagnostics(null);
+      setHealthStatusBadge(null);
       
       // Auto-select simulation IDs only when not authenticated
       const currentStored = getStoredSession();
@@ -314,14 +358,14 @@ export default function App() {
       console.error("[System Connection Error]:", err);
       const isNetworkError = err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network');
       const friendlyMessage = isNetworkError 
-        ? "تعذر الوصول إلى خادم الجمعية عبر هذا النطاق، يرجى التحقق من اتصالك بالإنترنت وصلاحية شهادة SSL."
+        ? "تعذر الوصول إلى خادم الجمعية عبر هذا النطاق، يرجى التحقق من اتصالك بالإنترنت وصلاحية شهادة SSL أو إعدادات CORS."
         : (err.message || "حدث خطأ غير متوقع في جلب البيانات من الخادم الرئيسي");
       
       setError(friendlyMessage);
       if (!connectionDiagnostics) {
         setConnectionDiagnostics({
           status: 0,
-          url: "/api/db",
+          url: buildApiUrl("/api/db"),
           details: err.stack || err.message,
           timestamp: new Date().toLocaleTimeString("ar-SA")
         });
@@ -1287,6 +1331,50 @@ export default function App() {
     }
   };
 
+  const handleQuickHealthCheck = async (customUrl?: string) => {
+    setIsCheckingHealth(true);
+    try {
+      const targetBase = customUrl !== undefined ? customUrl : (backendUrlInput.trim() || undefined);
+      const res = await checkHealthEndpoint(targetBase);
+      
+      setConnectionDiagnostics({
+        status: res.httpStatus,
+        url: res.url,
+        details: res.ok 
+          ? `اتصال سليم بنجاح - Uptime: ${res.uptimeSeconds || 0}s | Env: ${res.environment || 'production'}` 
+          : (res.errorMessage || res.statusText),
+        timestamp: new Date().toLocaleTimeString("ar-SA")
+      });
+
+      if (res.ok) {
+        setHealthStatusBadge({
+          ok: true,
+          message: `الخادم متصل بنجاح (200 OK) - ${res.service || 'جمعية ريادة العطاء'}`
+        });
+        alert(`✅ حالة الخادم: متصل وقيد العمل بنجاح (رمز الاستجابة 200)\n\n• الرابط: ${res.url}\n• البيئة: ${res.environment || 'production'}\n• وقت التشغيل: ${res.uptimeSeconds || 0} ثانية\n• الخدمة: ${res.service || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة'}`);
+        // Now automatically retry fetching database
+        fetchDatabase(false);
+      } else {
+        setHealthStatusBadge({
+          ok: false,
+          message: `فشل الاتصال (${res.httpStatus || 'خطأ شبكة'}) - المحتوى: ${res.isJson ? 'JSON' : 'صفحة خطأ أو غير صالحة'}`
+        });
+        alert(`⚠️ نتيجة فحص مسار الصحة:\n\n• الرابط المطلوب: ${res.url}\n• رمز الاستجابة: ${res.httpStatus} (${res.statusText || 'Error'})\n• نوع المحتوى: ${res.isJson ? 'JSON صالح' : 'HTML / غير صالح'}\n\n• التفاصيل:\n${res.errorMessage}\n\n💡 ملاحظة للمسؤول: إذا كان الخادم الخلفي Express يعمل على خدمة خارجية مثل Render، يرجى إدخال عنوان الخدمة (https://xxx.onrender.com) في قسم "إعداد رابط الخادم الخلفي" أدناه.`);
+      }
+    } catch (err: any) {
+      alert(`❌ تعذر إتمام فحص الصحة: ${err.message || 'خطأ غير معروف'}`);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
+
+  const handleSaveBackendUrl = (urlToSave: string) => {
+    const clean = urlToSave.trim().replace(/\/+$/, '');
+    setApiBaseUrl(clean);
+    setBackendUrlInput(clean);
+    handleQuickHealthCheck(clean || undefined);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center" dir="rtl">
@@ -1318,10 +1406,26 @@ export default function App() {
             {error || "تعذر إتمام الاتصال بخادم Express الخلفي أو تحميل قاعدة البيانات."}
           </div>
 
+          {/* Health Status Badge */}
+          {healthStatusBadge && (
+            <div className={`p-3 rounded-2xl border text-xs leading-relaxed flex items-center gap-2 ${
+              healthStatusBadge.ok 
+                ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' 
+                : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+            }`}>
+              {healthStatusBadge.ok ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              )}
+              <span>{healthStatusBadge.message}</span>
+            </div>
+          )}
+
           <div className="space-y-2">
             <button 
               onClick={() => fetchDatabase(false)}
-              disabled={isRetrying}
+              disabled={isRetrying || isCheckingHealth}
               className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
@@ -1329,21 +1433,72 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => {
-                fetch("/api/health")
-                  .then(r => r.json())
-                  .then(h => {
-                    alert(`حالة الخادم: متصل وقيد العمل (${h.environment})\nالمنفذ: ${h.port}\nوقت التشغيل: ${h.uptimeSeconds} ثانية\nالإدارات: ${h.database?.departmentsCount}`);
-                  })
-                  .catch(e => {
-                    alert(`فحص مسار الصحة /api/health تعذر: ${e.message}\nتأكد من توجيه البروكسي أو Nginx إلى المنفذ المحدد.`);
-                  });
-              }}
+              onClick={() => handleQuickHealthCheck()}
+              disabled={isCheckingHealth}
               className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>فحص تشخيصي سريع لخادم النطاق (/api/health)</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingHealth ? 'animate-spin' : ''}`} />
+              <span>{isCheckingHealth ? "جاري فحص مسار الصحة..." : "فحص تشخيصي سريع لمسار الصحة (/api/health)"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowBackendConfig(!showBackendConfig)}
+              className="w-full bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-900/60 dark:hover:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 font-medium text-xs py-2 px-3 rounded-xl transition-all cursor-pointer flex items-center justify-between"
+            >
+              <span className="flex items-center gap-2">
+                <Sliders className="w-3.5 h-3.5 text-neutral-500" />
+                <span>إعداد رابط الخادم الخلفي (Backend URL / Render)</span>
+              </span>
+              <span className="text-[10px] text-neutral-400 font-mono">
+                {backendUrlInput ? 'مخصص' : 'تلقائي (Vercel)'}
+              </span>
             </button>
           </div>
+
+          {/* Backend Configuration Drawer */}
+          {showBackendConfig && (
+            <div className="p-3.5 bg-neutral-50 dark:bg-neutral-900/80 rounded-2xl border border-neutral-200 dark:border-neutral-800 space-y-3 text-right">
+              <div className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                إذا كان الخادم الخلفي Express منشوراً على خدمة منفصلة (مثل Render: <code className="font-mono text-emerald-600">https://your-service.onrender.com</code>)، يمكنك تحديد رابطه هنا وسيقوم النظام بتوجيه كافة الطلبات إليه مباشرة. اتركه فارغاً إذا كان الخادم يعمل على نفس نطاق Vercel.
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
+                  رابط الخادم الخلفي (API Base URL):
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://your-app.onrender.com أو اتركه فارغاً"
+                  value={backendUrlInput}
+                  onChange={(e) => setBackendUrlInput(e.target.value)}
+                  dir="ltr"
+                  className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-neutral-300 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleSaveBackendUrl(backendUrlInput)}
+                  disabled={isCheckingHealth}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>حفظ وفحص الرابط</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveBackendUrl("")}
+                  disabled={isCheckingHealth}
+                  className="bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-bold text-xs py-2 px-3 rounded-lg transition-all cursor-pointer"
+                >
+                  استعادة الافتراضي
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Diagnostic details drawer */}
           {connectionDiagnostics && (

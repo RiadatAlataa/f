@@ -5,7 +5,8 @@
  * - Vercel Serverless (relative URLs by default)
  * - Render / Cloud Run / VPS external backend (via VITE_API_URL or runtime setting)
  * - Custom domain proxy & SSL
- * - Graceful health checking with Content-Type & JSON validation
+ * - Automatic fetch interception for transparent prefixing
+ * - Graceful health checking with Content-Type & JSON validation (prevents "Unexpected token 'T'")
  */
 
 export const getApiBaseUrl = (): string => {
@@ -67,89 +68,168 @@ export interface HealthCheckResult {
   data?: any;
   rawText?: string;
   errorMessage?: string;
+  service?: string;
+  environment?: string;
+  uptimeSeconds?: number;
 }
 
 /**
- * Performs a robust diagnostic health check against /api/health
+ * Performs a robust diagnostic health check against /api/health and /api/health/
  * Prevents "Unexpected token 'T'" errors by inspecting Content-Type first
  */
 export const checkHealthEndpoint = async (targetBaseUrl?: string): Promise<HealthCheckResult> => {
-  const targetUrl = buildApiUrl('/api/health', targetBaseUrl);
+  const primaryUrl = buildApiUrl('/api/health', targetBaseUrl);
+  const fallbackUrl = buildApiUrl('/api/health/', targetBaseUrl);
   
-  try {
-    const res = await fetch(targetUrl, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
+  const testUrl = async (url: string): Promise<HealthCheckResult | null> => {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
 
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    const isJson = contentType.includes('application/json');
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const isJson = contentType.includes('application/json');
 
-    if (!res.ok) {
-      let rawText = '';
-      let errorMsg = `رمز الاستجابة: ${res.status} (${res.statusText})`;
-      
-      if (isJson) {
-        try {
-          const jsonBody = await res.json();
-          rawText = JSON.stringify(jsonBody);
-          errorMsg = jsonBody.message || jsonBody.error || errorMsg;
-        } catch {
+      if (!res.ok) {
+        let rawText = '';
+        let errorMsg = `فشل في الاتصال بالخادم الرئيسي (رمز الاستجابة ${res.status}: ${res.statusText || 'Not Found'})`;
+        
+        if (isJson) {
+          try {
+            const jsonBody = await res.json();
+            rawText = JSON.stringify(jsonBody);
+            errorMsg = jsonBody.message || jsonBody.error || errorMsg;
+          } catch {
+            rawText = await res.text().catch(() => '');
+          }
+        } else {
           rawText = await res.text().catch(() => '');
+          // Extract title or text snippet from HTML for clear user understanding
+          const titleMatch = rawText.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const pageTitle = titleMatch ? titleMatch[1].trim() : '';
+          const cleanSnippet = rawText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
+          
+          if (pageTitle) {
+            errorMsg += ` - تم استلام صفحة ويب بعنوان: "${pageTitle}" بدلاً من استجابة JSON.`;
+          } else if (cleanSnippet) {
+            errorMsg += ` - المحتوى المستلم (HTML/Text): "${cleanSnippet}"`;
+          } else {
+            errorMsg += ` - تم استلام محتوى (${contentType || 'HTML/Text'}) بدلاً من استجابة JSON.`;
+          }
         }
-      } else {
-        rawText = await res.text().catch(() => '');
-        // Clean out HTML tags for safe UI display
-        const cleanSnippet = rawText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-        if (cleanSnippet) {
-          errorMsg += ` - المحتوى المستلم (HTML/Text): "${cleanSnippet}"`;
-        }
+
+        return {
+          ok: false,
+          httpStatus: res.status,
+          statusText: res.statusText,
+          isJson,
+          url,
+          rawText,
+          errorMessage: errorMsg
+        };
       }
 
-      return {
-        ok: false,
-        httpStatus: res.status,
-        statusText: res.statusText,
-        isJson,
-        url: targetUrl,
-        rawText,
-        errorMessage: errorMsg
-      };
-    }
+      if (!isJson) {
+        const rawText = await res.text().catch(() => '');
+        return {
+          ok: false,
+          httpStatus: res.status,
+          statusText: res.statusText,
+          isJson: false,
+          url,
+          rawText,
+          errorMessage: `الخادم أعاد كود 200 بنجاح لكن نوع المحتوى (${contentType}) ليس JSON. يرجى التحقق من توجيه المسار إلى الخادم الصحيح.`
+        };
+      }
 
-    if (!isJson) {
-      const rawText = await res.text().catch(() => '');
+      const data = await res.json();
       return {
-        ok: false,
+        ok: true,
         httpStatus: res.status,
         statusText: res.statusText,
+        isJson: true,
+        url,
+        data,
+        service: data.service || data.message,
+        environment: data.environment,
+        uptimeSeconds: data.uptimeSeconds
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        httpStatus: 0,
+        statusText: 'Network / CORS Error',
         isJson: false,
-        url: targetUrl,
-        rawText,
-        errorMessage: `الخادم أعاد استجابة بنجاح لكن نوع المحتوى (${contentType}) ليس JSON. قد تكون صفحة خطأ أو تحويل.`
+        url,
+        errorMessage: err.message || 'تعذر الاتصال بالخادم عبر الشبكة. يرجى التأكد من تشغيل الخادم وصلاحية شهادة SSL وإعدادات CORS.'
       };
     }
+  };
 
-    const data = await res.json();
-    return {
-      ok: true,
-      httpStatus: res.status,
-      statusText: res.statusText,
-      isJson: true,
-      url: targetUrl,
-      data
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      httpStatus: 0,
-      statusText: 'Network / CORS Error',
-      isJson: false,
-      url: targetUrl,
-      errorMessage: err.message || 'تعذر الاتصال بالخادم عبر الشبكة. يرجى التأكد من شهادة SSL وإعدادات CORS.'
-    };
+  // Test primary URL (/api/health)
+  const primaryResult = await testUrl(primaryUrl);
+  if (primaryResult && primaryResult.ok) {
+    return primaryResult;
   }
+
+  // If primary returned 404, try fallback with trailing slash (/api/health/)
+  if (primaryResult && primaryResult.httpStatus === 404) {
+    const fallbackResult = await testUrl(fallbackUrl);
+    if (fallbackResult && fallbackResult.ok) {
+      return fallbackResult;
+    }
+    // Return primary failure with full context
+    return primaryResult;
+  }
+
+  return primaryResult || {
+    ok: false,
+    httpStatus: 0,
+    statusText: 'Unknown Error',
+    isJson: false,
+    url: primaryUrl,
+    errorMessage: 'حدث خطأ غير متوقع أثناء فحص نقطة نهاية الصحة'
+  };
 };
+
+/**
+ * Installs a global fetch interceptor in the browser so that any relative API call (e.g. fetch('/api/db'))
+ * is transparently rewritten to use getApiBaseUrl() if configured (e.g. on Render).
+ */
+export const installGlobalFetchInterceptor = () => {
+  if (typeof window === 'undefined') return;
+  if ((window as any).__reyadat_fetch_installed__) return;
+  (window as any).__reyadat_fetch_installed__ = true;
+
+  const originalFetch = window.fetch;
+  window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    let resolvedInput = input;
+
+    if (typeof input === 'string') {
+      if (input.startsWith('/api/') || input === '/api') {
+        const baseUrl = getApiBaseUrl();
+        if (baseUrl) {
+          resolvedInput = `${baseUrl}${input}`;
+        }
+      }
+    } else if (input instanceof URL) {
+      if (input.pathname.startsWith('/api')) {
+        const baseUrl = getApiBaseUrl();
+        if (baseUrl) {
+          resolvedInput = new URL(`${baseUrl}${input.pathname}${input.search}`);
+        }
+      }
+    }
+
+    return originalFetch.call(this, resolvedInput, init);
+  };
+};
+
+// Auto-install fetch interceptor on import
+if (typeof window !== 'undefined') {
+  installGlobalFetchInterceptor();
+}
