@@ -340,39 +340,64 @@ export const checkHealthEndpoint = async (targetBaseUrl?: string): Promise<Healt
 };
 
 /**
- * Installs a global fetch interceptor in the browser so that any relative API call (e.g. fetch('/api/db'))
- * is transparently rewritten to use getApiBaseUrl() if configured (e.g. on Render).
+ * Safely installs a global fetch interceptor in the browser if permitted by the host environment.
+ * If window.fetch has only a getter or is sealed/frozen by an iframe sandbox, it fails gracefully
+ * without throwing an uncaught TypeError.
  */
 export const installGlobalFetchInterceptor = () => {
   if (typeof window === 'undefined') return;
   if ((window as any).__reyadat_fetch_installed__) return;
-  (window as any).__reyadat_fetch_installed__ = true;
 
-  const originalFetch = window.fetch;
-  window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    let resolvedInput = input;
+  try {
+    const originalFetch = window.fetch;
+    if (typeof originalFetch !== 'function') return;
 
-    if (typeof input === 'string') {
-      if (input.startsWith('/api/') || input === '/api') {
-        const baseUrl = getApiBaseUrl();
-        if (baseUrl) {
-          resolvedInput = `${baseUrl}${input}`;
+    const customFetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      let resolvedInput = input;
+      const baseUrl = getApiBaseUrl();
+
+      if (baseUrl) {
+        if (typeof input === 'string') {
+          if (input.startsWith('/api/') || input === '/api') {
+            resolvedInput = `${baseUrl}${input}`;
+          }
+        } else if (input instanceof URL) {
+          if (input.pathname.startsWith('/api')) {
+            resolvedInput = new URL(`${baseUrl}${input.pathname}${input.search}`);
+          }
         }
       }
-    } else if (input instanceof URL) {
-      if (input.pathname.startsWith('/api')) {
-        const baseUrl = getApiBaseUrl();
-        if (baseUrl) {
-          resolvedInput = new URL(`${baseUrl}${input.pathname}${input.search}`);
-        }
-      }
+
+      return originalFetch.call(window, resolvedInput, init);
+    };
+
+    // Attempt assignment
+    try {
+      window.fetch = customFetch;
+      (window as any).__reyadat_fetch_installed__ = true;
+      return;
+    } catch {
+      // If assignment fails because window.fetch has only a getter
     }
 
-    return originalFetch.call(this, resolvedInput, init);
-  };
+    // Attempt defineProperty
+    try {
+      Object.defineProperty(window, 'fetch', {
+        value: customFetch,
+        writable: true,
+        configurable: true
+      });
+      (window as any).__reyadat_fetch_installed__ = true;
+    } catch {
+      // If window.fetch cannot be reconfigured in sandboxed environments,
+      // silently proceed; native same-origin relative /api calls function normally.
+    }
+  } catch {
+    // Ignore any environment security restrictions
+  }
 };
 
-// Auto-install fetch interceptor on import
+// Auto-install fetch interceptor safely on import
 if (typeof window !== 'undefined') {
   installGlobalFetchInterceptor();
 }
