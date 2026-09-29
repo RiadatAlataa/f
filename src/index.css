@@ -301,6 +301,8 @@ html:not(.dark) .text-slate-600 {
   body {
     background: white !important;
     color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .print-table-header {
     display: table-header-group !important;
@@ -308,6 +310,23 @@ html:not(.dark) .text-slate-600 {
   .print-row {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+  }
+  /* When printing the report modal, make sure only the report is visible */
+  .printable-report-modal {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .printable-report-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
   }
 }
 

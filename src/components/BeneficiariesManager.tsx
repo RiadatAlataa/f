@@ -37,9 +37,13 @@ import {
   Sparkles,
   Hash,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  FileDown,
+  Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { Beneficiary, HomeSettings, DistributionHandoverRecord } from '../types';
 import { BeneficiariesImportModal } from './BeneficiariesImportModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
@@ -119,6 +123,8 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const printReportRef = useRef<HTMLDivElement>(null);
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -364,23 +370,6 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       const associationName = homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
       const licenseNumber = homeSettings?.licenseNumber || "100088868";
 
-      // Filter summary description
-      let filterSummary = "جميع الحالات المسجلة";
-      if (statusFilter === "approved") filterSummary = "المستفيدين المعتمدين فقط";
-      if (statusFilter === "pending") filterSummary = "الطلبات قيد الدراسة فقط";
-      if (statusFilter === "rejected") filterSummary = "الحالات الموقوفة والمرفوضة فقط";
-      if (dateFilter !== "all") {
-        const dateLabels: Record<string, string> = {
-          today: "اليوم",
-          week: "آخر 7 أيام",
-          month: "آخر 30 يوماً",
-          year: "خلال هذا العام"
-        };
-        filterSummary += ` | تاريخ التسجيل: ${dateLabels[dateFilter] || dateFilter}`;
-      }
-      if (categoryFilter !== "all") filterSummary += ` | الفئة: ${categoryFilter}`;
-      if (searchTerm.trim()) filterSummary += ` | بحث نصي: "${searchTerm.trim()}"`;
-
       const totalFamilySum = filteredBeneficiaries.reduce((sum, b) => sum + (Number(b.familySize) || 0), 0);
 
       // Section 7 Requirement:
@@ -390,13 +379,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       // تاريخ التقرير: [التاريخ]
       // ثم يبدأ جدول البيانات أسفل الرأس بشكل منظم، دون دمج أو خلط يعطل التصفية.
       const worksheetData: any[][] = [
-        ["اسم الجمعية:", associationName, "", "", "", "", "", "", "", "", "", "", "", ""],
-        ["رقم الترخيص:", `${licenseNumber} - المركز الوطني لتنمية القطاع غير الربحي`, "", "", "", "", "", "", "", "", "", "", "", ""],
-        ["عنوان التقرير:", "سجل بيانات المستفيدين المعتمد", "", "", "", "", "", "", "", "", "", "", "", ""],
-        ["تاريخ التقرير:", timestampFormatted, "", "", "", "", "", "", "", "", "", "", "", ""],
-        ["نطاق التصفية:", filterSummary, "", "", "", "", "", "", "", "", "", "", "", ""],
-        ["إجمالي المستفيدين:", `${filteredBeneficiaries.length} مستفيد`, "إجمالي أفراد الأسر:", `${totalFamilySum} فرد`, "", "", "", "", "", "", "", "", "", ""],
-        [], // Empty separator row
+        ["اسم الجمعية:", associationName],
+        ["رقم الترخيص:", `${licenseNumber} - المركز الوطني لتنمية القطاع غير الربحي`],
+        ["عنوان التقرير:", "سجل بيانات المستفيدين"],
+        ["تاريخ التقرير:", timestampFormatted],
+        ["إجمالي المستفيدين:", `${filteredBeneficiaries.length} مستفيد`],
+        ["إجمالي أفراد الأسرة:", `${totalFamilySum} فرد`],
+        [], // Empty separator row (Row 7)
         [
           "الرقم التسلسلي",
           "اسم المستفيد",
@@ -415,7 +404,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
         ]
       ];
 
-      // Add Data Rows (Row 9 in 1-based indexing)
+      // Add Data Rows (Row 9 in 1-based indexing, index 8)
       filteredBeneficiaries.forEach((ben, index) => {
         const statusArabic = 
           ben.status === "approved" ? "معتمد نشط" :
@@ -480,7 +469,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
       // Ensure National ID, Phone, BenNum, Barcode are stored explicitly as strings with text format (@)
       // to avoid Excel truncating leading zeros (Requirement 4.10)
-      for (let r = headerRowIndex; r < lastDataRowIndex; r++) {
+      for (let r = 8; r < 8 + filteredBeneficiaries.length; r++) {
         const cellId = XLSX.utils.encode_cell({ r, c: 2 });
         const cellPhone = XLSX.utils.encode_cell({ r, c: 3 });
         const cellBenNum = XLSX.utils.encode_cell({ r, c: 12 });
@@ -493,22 +482,32 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       }
 
       // Column widths (Requirement 4.6: auto width based on content without text truncation)
-      ws['!cols'] = [
-        { wch: 14 }, // الرقم التسلسلي
-        { wch: 32 }, // اسم المستفيد
-        { wch: 20 }, // رقم الهوية
-        { wch: 18 }, // رقم الجوال
-        { wch: 28 }, // البريد
-        { wch: 16 }, // أفراد الأسرة
-        { wch: 38 }, // العنوان ومقر السكن
-        { wch: 20 }, // فئة الاستحقاق
-        { wch: 22 }, // حالة الملف
-        { wch: 20 }, // تاريخ التسجيل
-        { wch: 20 }, // تاريخ الإضافة
-        { wch: 35 }, // الملاحظات
-        { wch: 20 }, // الرقم المرجعي
-        { wch: 20 }  // رمز الباركود
-      ];
+      const tableHeaders = worksheetData[7];
+      const colWidths = tableHeaders.map((header: string, colIndex: number) => {
+        let maxLen = (header || "").length;
+        filteredBeneficiaries.forEach((ben, idx) => {
+          let text = "";
+          switch (colIndex) {
+            case 0: text = String(idx + 1); break;
+            case 1: text = ben.name || ""; break;
+            case 2: text = ben.nationalId || ""; break;
+            case 3: text = ben.phone || ""; break;
+            case 4: text = ben.email || ""; break;
+            case 5: text = `${ben.familySize || 1} أفراد`; break;
+            case 6: text = ben.address || ""; break;
+            case 7: text = ben.category || ""; break;
+            case 8: text = ben.status === "approved" ? "معتمد نشط" : ben.status === "pending" ? "قيد الدراسة" : "موقوف / غير معتمد"; break;
+            case 9: text = ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : ""; break;
+            case 10: text = ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : ""; break;
+            case 11: text = ben.notes || ""; break;
+            case 12: text = ben.beneficiaryNumber || ""; break;
+            case 13: text = ben.barcodeId || ""; break;
+          }
+          if (text.length > maxLen) maxLen = text.length;
+        });
+        return { wch: Math.min(Math.max(maxLen + 4, 15), 45) };
+      });
+      ws['!cols'] = colWidths;
 
       // Append sheet to workbook
       XLSX.utils.book_append_sheet(wb, ws, "سجل بيانات المستفيدين");
@@ -548,6 +547,62 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   const handlePrintPdf = async () => {
     await logExportToServer("pdf", filteredBeneficiaries.length);
     window.print();
+  };
+
+  const handleDirectDownloadPdf = async () => {
+    if (!printReportRef.current) return;
+    setIsExportingPdf(true);
+
+    try {
+      const element = printReportRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        windowWidth: 1200
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4"
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const imgWidth = pageWidth - (margin * 2);
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      if (imgHeight <= pageHeight - (margin * 2)) {
+        pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
+      } else {
+        let heightLeft = imgHeight;
+        let position = margin;
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+        heightLeft -= (pageHeight - (margin * 2));
+
+        while (heightLeft > 0) {
+          position = position - (pageHeight - (margin * 2));
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+          heightLeft -= (pageHeight - (margin * 2));
+        }
+      }
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      pdf.save(`سجل_بيانات_المستفيدين_المعتمد_${dateStr}.pdf`);
+      await logExportToServer("pdf", filteredBeneficiaries.length);
+      setExportNotice("تم تحميل ملف تقرير المستفيدين (PDF) بنجاح.");
+      setTimeout(() => setExportNotice(null), 4000);
+    } catch (err) {
+      console.error("PDF direct export error:", err);
+      window.print();
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const resetFilters = () => {
@@ -937,18 +992,18 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       {/* BENEFICIARIES DATA TABLE / CARDS VIEW (Requirement 1 & 2)     */}
       {/* ------------------------------------------------------------- */}
       {viewMode === 'table' ? (
-        <div className="bg-white border border-neutral-200 rounded-2xl shadow-xs overflow-hidden">
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xs overflow-hidden">
           {/* HORIZONTAL SCROLL CONTAINER */}
           <div className="overflow-x-auto w-full">
             <table className="w-full text-right text-xs border-collapse">
               <thead>
-                <tr className="bg-neutral-100/80 text-neutral-700 border-b border-neutral-200 font-bold">
+                <tr className="bg-neutral-100/90 dark:bg-neutral-800/90 text-neutral-800 dark:text-neutral-200 border-b border-neutral-200 dark:border-neutral-700 text-xs font-bold select-none sticky top-0 z-10">
                   
                   {/* 1. الرقم التسلسلي */}
                   <th className="p-3.5 text-center w-14 whitespace-nowrap">
                     <button 
                       onClick={() => handleSortToggle('createdAt')} 
-                      className="inline-flex items-center gap-1 hover:text-emerald-700 cursor-pointer font-bold mx-auto"
+                      className="inline-flex items-center justify-center gap-1 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold mx-auto transition-colors"
                       title="ترتيب حسب التسلسل"
                     >
                       <span>#</span>
@@ -959,11 +1014,11 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   </th>
 
                   {/* 2. اسم المستفيد */}
-                  <th className="p-3.5 min-w-[200px] whitespace-nowrap">
+                  <th className="p-3.5 text-right min-w-[200px] whitespace-nowrap">
                     <button 
                       onClick={() => handleSortToggle('name')} 
-                      className="inline-flex items-center gap-1 hover:text-emerald-700 cursor-pointer font-bold"
-                      title="ترتيب بالاسم"
+                      className="inline-flex items-center gap-1.5 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold transition-colors"
+                      title="ترتيب بالاسم أبجديًا"
                     >
                       <span>اسم المستفيد</span>
                       {sortField === 'name' ? (
@@ -975,26 +1030,37 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   </th>
 
                   {/* 3. رقم الهوية الوطنية */}
-                  <th className="p-3.5 min-w-[130px] whitespace-nowrap">
+                  <th className="p-3.5 text-center min-w-[135px] whitespace-nowrap">
                     <button 
                       onClick={() => handleSortToggle('nationalId')} 
-                      className="inline-flex items-center gap-1 hover:text-emerald-700 cursor-pointer font-bold"
-                      title="ترتيب برقم الهوية"
+                      className="inline-flex items-center justify-center gap-1.5 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold mx-auto transition-colors"
+                      title="ترتيب برقم الهوية الوطنية"
                     >
                       <span>رقم الهوية الوطنية</span>
-                      {sortField === 'nationalId' && (
+                      {sortField === 'nationalId' ? (
                         sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-emerald-600" /> : <ArrowDown className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-neutral-400 opacity-60" />
                       )}
                     </button>
                   </th>
 
                   {/* 4. رقم الجوال */}
-                  <th className="p-3.5 min-w-[130px] whitespace-nowrap">
-                    <span>رقم الجوال</span>
+                  <th className="p-3.5 text-center min-w-[130px] whitespace-nowrap">
+                    <button 
+                      onClick={() => handleSortToggle('phone')} 
+                      className="inline-flex items-center justify-center gap-1.5 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold mx-auto transition-colors"
+                      title="ترتيب برقم الجوال"
+                    >
+                      <span>رقم الجوال</span>
+                      {sortField === 'phone' && (
+                        sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-emerald-600" /> : <ArrowDown className="w-3 h-3 text-emerald-600" />
+                      )}
+                    </button>
                   </th>
 
                   {/* 5. البريد الإلكتروني */}
-                  <th className="p-3.5 min-w-[160px] whitespace-nowrap">
+                  <th className="p-3.5 text-right min-w-[170px] whitespace-nowrap">
                     <span>البريد الإلكتروني</span>
                   </th>
 
@@ -1002,8 +1068,8 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   <th className="p-3.5 text-center min-w-[110px] whitespace-nowrap">
                     <button 
                       onClick={() => handleSortToggle('familySize')} 
-                      className="inline-flex items-center gap-1 hover:text-emerald-700 cursor-pointer font-bold mx-auto"
-                      title="ترتيب بعدد الأفراد"
+                      className="inline-flex items-center justify-center gap-1.5 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold mx-auto transition-colors"
+                      title="ترتيب بعدد أفراد الأسرة"
                     >
                       <span>أفراد الأسرة</span>
                       {sortField === 'familySize' ? (
@@ -1015,7 +1081,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   </th>
 
                   {/* 7. العنوان ومقر السكن */}
-                  <th className="p-3.5 min-w-[200px]">
+                  <th className="p-3.5 text-right min-w-[210px] whitespace-nowrap">
                     <span>العنوان ومقر السكن</span>
                   </th>
 
@@ -1028,22 +1094,24 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   <th className="p-3.5 text-center min-w-[130px] whitespace-nowrap">
                     <button 
                       onClick={() => handleSortToggle('status')} 
-                      className="inline-flex items-center gap-1 hover:text-emerald-700 cursor-pointer font-bold mx-auto"
-                      title="ترتيب بالحالة"
+                      className="inline-flex items-center justify-center gap-1.5 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold mx-auto transition-colors"
+                      title="ترتيب بحالة الملف"
                     >
                       <span>حالة الملف</span>
-                      {sortField === 'status' && (
+                      {sortField === 'status' ? (
                         sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-emerald-600" /> : <ArrowDown className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-neutral-400 opacity-60" />
                       )}
                     </button>
                   </th>
 
                   {/* 10. تاريخ التسجيل بالمنصة */}
-                  <th className="p-3.5 text-center min-w-[120px] whitespace-nowrap">
+                  <th className="p-3.5 text-center min-w-[125px] whitespace-nowrap">
                     <button 
                       onClick={() => handleSortToggle('createdAt')} 
-                      className="inline-flex items-center gap-1 hover:text-emerald-700 cursor-pointer font-bold mx-auto"
-                      title="ترتيب بتاريخ التسجيل"
+                      className="inline-flex items-center justify-center gap-1.5 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer font-bold mx-auto transition-colors"
+                      title="ترتيب بتاريخ التسجيل بالمنصة"
                     >
                       <span>تاريخ التسجيل</span>
                       {sortField === 'createdAt' && (
@@ -1052,27 +1120,32 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                     </button>
                   </th>
 
-                  {/* 11. الملاحظات */}
-                  <th className="p-3.5 min-w-[160px]">
+                  {/* 11. تاريخ الإضافة */}
+                  <th className="p-3.5 text-center min-w-[120px] whitespace-nowrap">
+                    <span>تاريخ الإضافة</span>
+                  </th>
+
+                  {/* 12. الملاحظات */}
+                  <th className="p-3.5 text-right min-w-[180px] whitespace-nowrap">
                     <span>الملاحظات</span>
                   </th>
 
-                  {/* 12. الإجراءات والاعتماد */}
-                  <th className="p-3.5 text-center min-w-[160px] whitespace-nowrap">
+                  {/* 13. الإجراءات والاعتماد */}
+                  <th className="p-3.5 text-center min-w-[190px] whitespace-nowrap">
                     <span>الإجراءات</span>
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {paginatedBeneficiaries.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="p-12 text-center text-neutral-400">
-                      <AlertCircle className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
-                      <p className="font-bold text-neutral-700 text-sm">لا توجد سجلات مستفيدين تطابق معايير البحث والفلترة.</p>
-                      <p className="text-neutral-400 text-xs mt-1">تأكد من كتابة الاسم أو رقم الهوية بشكل صحيح أو قم بإلغاء الفلاتر.</p>
+                    <td colSpan={13} className="p-12 text-center text-neutral-400 dark:text-neutral-500">
+                      <AlertCircle className="w-10 h-10 mx-auto text-neutral-300 dark:text-neutral-600 mb-2" />
+                      <p className="font-bold text-neutral-700 dark:text-neutral-300 text-sm">لا توجد سجلات مستفيدين تطابق معايير البحث والفلترة.</p>
+                      <p className="text-neutral-400 dark:text-neutral-500 text-xs mt-1">تأكد من كتابة الاسم أو رقم الهوية بشكل صحيح أو قم بإلغاء الفلاتر.</p>
                       <button 
                         onClick={resetFilters}
-                        className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-200"
+                        className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-200 dark:border-emerald-800"
                       >
                         <RotateCcw className="w-3 h-3" />
                         <span>إعادة ضبط وعرض الكل</span>
@@ -1090,29 +1163,29 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                     return (
                       <tr 
                         key={ben.id} 
-                        className="hover:bg-neutral-50/80 transition-colors group"
+                        className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/50 transition-colors group"
                       >
                         {/* 1. الرقم التسلسلي */}
-                        <td className="p-3.5 text-center font-mono text-neutral-400 font-bold whitespace-nowrap">
+                        <td className="p-3.5 text-center font-mono text-neutral-400 dark:text-neutral-500 font-bold whitespace-nowrap">
                           {rowNumber}
                         </td>
 
                         {/* 2. اسم المستفيد */}
                         <td className="p-3.5">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-xs shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-xs shrink-0 border border-emerald-200/50 dark:border-emerald-800/40">
                               {ben.name?.trim().charAt(0) || "م"}
                             </div>
                             <div className="min-w-0">
-                              <strong className="text-neutral-900 block text-xs font-black truncate max-w-[180px]">
+                              <strong className="text-neutral-900 dark:text-neutral-100 block text-xs font-black truncate max-w-[190px]">
                                 {ben.name}
                               </strong>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-100">
+                                <span className="text-[9px] font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200/50 dark:border-emerald-800/50">
                                   {ben.beneficiaryNumber || `BEN-2026-${String(rowNumber).padStart(4, '0')}`}
                                 </span>
                                 {ben.barcodeId && (
-                                  <span className="text-[9px] font-mono text-neutral-500 bg-neutral-100 px-1.5 py-0.2 rounded">
+                                  <span className="text-[9px] font-mono text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-200/60 dark:border-neutral-700">
                                     {ben.barcodeId}
                                   </span>
                                 )}
@@ -1122,37 +1195,43 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                         </td>
 
                         {/* 3. رقم الهوية الوطنية */}
-                        <td className="p-3.5 whitespace-nowrap">
+                        <td className="p-3.5 text-center whitespace-nowrap">
                           <span 
                             dir="ltr" 
-                            className="font-mono font-bold text-neutral-800 bg-neutral-100 px-2 py-1 rounded-md text-[11px] inline-block tracking-wider"
+                            className="font-mono font-bold text-neutral-800 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-md text-[11px] inline-block tracking-wider border border-neutral-200/60 dark:border-neutral-700"
                           >
                             {ben.nationalId || "-"}
                           </span>
                         </td>
 
                         {/* 4. رقم الجوال */}
-                        <td className="p-3.5 whitespace-nowrap">
-                          <span 
-                            dir="ltr" 
-                            className="font-mono text-neutral-700 text-[11px] font-bold inline-flex items-center gap-1 bg-neutral-50 px-2 py-1 rounded-md border border-neutral-150"
-                          >
-                            <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
-                            <span>{ben.phone || "-"}</span>
-                          </span>
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          {ben.phone ? (
+                            <a 
+                              href={`tel:${ben.phone}`}
+                              dir="ltr" 
+                              className="font-mono text-neutral-800 dark:text-neutral-200 text-[11px] font-bold inline-flex items-center gap-1 bg-neutral-50 dark:bg-neutral-800/60 px-2.5 py-1 rounded-md border border-neutral-200 dark:border-neutral-700 hover:text-emerald-600 transition-colors"
+                            >
+                              <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
+                              <span>{ben.phone}</span>
+                            </a>
+                          ) : (
+                            <span className="text-neutral-400 text-xs">-</span>
+                          )}
                         </td>
 
                         {/* 5. البريد الإلكتروني */}
-                        <td className="p-3.5">
+                        <td className="p-3.5 text-right">
                           {ben.email ? (
-                            <span 
+                            <a 
+                              href={`mailto:${ben.email}`}
                               dir="ltr" 
-                              className="font-mono text-neutral-600 text-[11px] inline-flex items-center gap-1 truncate max-w-[170px]" 
+                              className="font-mono text-neutral-600 dark:text-neutral-300 text-[11px] inline-flex items-center gap-1.5 hover:text-emerald-600 truncate max-w-[170px] transition-colors" 
                               title={ben.email}
                             >
                               <Mail className="w-3 h-3 text-neutral-400 shrink-0" />
                               <span className="truncate">{ben.email}</span>
-                            </span>
+                            </a>
                           ) : (
                             <span className="text-neutral-400 text-[11px]">-</span>
                           )}
@@ -1160,22 +1239,22 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
                         {/* 6. عدد أفراد الأسرة */}
                         <td className="p-3.5 text-center whitespace-nowrap">
-                          <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full font-bold font-mono text-[11px] border border-blue-150">
+                          <span className="inline-block px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-full font-bold font-mono text-[11px] border border-blue-200/60 dark:border-blue-800/40">
                             {ben.familySize || 1} أفراد
                           </span>
                         </td>
 
                         {/* 7. العنوان ومقر السكن */}
-                        <td className="p-3.5">
-                          <span className="text-[11px] text-neutral-700 flex items-start gap-1 leading-relaxed max-w-[220px]">
+                        <td className="p-3.5 text-right">
+                          <div className="text-[11px] text-neutral-700 dark:text-neutral-300 flex items-start gap-1.5 leading-relaxed max-w-[210px] break-words">
                             <MapPin className="w-3 h-3 text-neutral-400 shrink-0 mt-0.5" />
-                            <span className="break-words">{ben.address || "مكة المكرمة - العسيلة"}</span>
-                          </span>
+                            <span>{ben.address || "مكة المكرمة - العسيلة"}</span>
+                          </div>
                         </td>
 
                         {/* 8. فئة الاستحقاق */}
                         <td className="p-3.5 text-center whitespace-nowrap">
-                          <span className="inline-block px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-md text-[10.5px] font-bold border border-neutral-200">
+                          <span className="inline-block px-2.5 py-1 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-md text-[10.5px] font-bold border border-neutral-200 dark:border-neutral-700">
                             {ben.category || "أسر متعففة"}
                           </span>
                         </td>
@@ -1189,18 +1268,23 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                         </td>
 
                         {/* 10. تاريخ التسجيل بالمنصة */}
-                        <td className="p-3.5 text-center whitespace-nowrap font-mono text-[11px] text-neutral-600">
+                        <td className="p-3.5 text-center whitespace-nowrap font-mono text-[11px] text-neutral-600 dark:text-neutral-400">
                           {ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : "-"}
                         </td>
 
-                        {/* 11. الملاحظات */}
-                        <td className="p-3.5">
-                          <span className="text-[11px] text-neutral-500 block max-w-[160px] truncate" title={ben.notes || "لا توجد ملاحظات"}>
-                            {ben.notes || "-"}
-                          </span>
+                        {/* 11. تاريخ الإضافة */}
+                        <td className="p-3.5 text-center whitespace-nowrap font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+                          {ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : "-"}
                         </td>
 
-                        {/* 12. الإجراءات والاعتماد */}
+                        {/* 12. الملاحظات */}
+                        <td className="p-3.5 text-right">
+                          <div className="text-[11px] text-neutral-500 dark:text-neutral-400 max-w-[180px] break-words line-clamp-2" title={ben.notes || "لا توجد ملاحظات"}>
+                            {ben.notes || "-"}
+                          </div>
+                        </td>
+
+                        {/* 13. الإجراءات والاعتماد */}
                         <td className="p-3.5 text-center whitespace-nowrap">
                           <div className="inline-flex items-center gap-1.5">
                             {/* Barcode Card Trigger */}
@@ -1208,7 +1292,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               type="button"
                               onClick={() => setSelectedBarcodeBen(ben)}
                               title="عرض وطباعة بطاقة الباركود الرسمية للمستفيد"
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-all cursor-pointer shadow-2xs"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-bold rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 transition-all cursor-pointer shadow-2xs"
                             >
                               <Barcode className="w-3.5 h-3.5" />
                               <span>الباركود</span>
@@ -1219,9 +1303,9 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               type="button"
                               onClick={() => setHistoryBeneficiary(ben)}
                               title="سجل المساعدات المستلمة والموثقة بالصور والباركود"
-                              className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-bold rounded-lg border border-purple-300 bg-purple-50 text-purple-800 hover:bg-purple-100 transition-all cursor-pointer shadow-2xs"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-bold rounded-lg border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 hover:bg-purple-100 transition-all cursor-pointer shadow-2xs"
                             >
-                              <Package className="w-3.5 h-3.5 text-purple-600" />
+                              <Package className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                               <span>المساعدات ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
                             </button>
 
@@ -1230,7 +1314,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               type="button"
                               onClick={() => setSelectedDetailsBen(ben)}
                               title="عرض كافة تفاصيل المستفيد"
-                              className="p-1 text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
+                              className="p-1.5 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
@@ -1242,7 +1326,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
                                 ben.status === "approved"
                                   ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
-                                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-300"
+                                  : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 border-emerald-300 dark:border-emerald-800"
                               }`}
                             >
                               اعتماد
@@ -1255,7 +1339,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
                                 ben.status === "rejected"
                                   ? "bg-rose-600 text-white border-rose-600 shadow-2xs"
-                                  : "bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-300"
+                                  : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border-rose-300 dark:border-rose-800"
                               }`}
                             >
                               إيقاف
@@ -1501,13 +1585,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       {/* PDF REPORT & PRINT PREVIEW MODAL (Requirement 5)              */}
       {/* ------------------------------------------------------------- */}
       {showPdfModal && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:static print:bg-white animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-6xl border border-neutral-200 shadow-2xl overflow-hidden my-auto print:border-none print:shadow-none print:w-full print:max-w-none">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:static print:bg-white animate-fade-in printable-report-modal">
+          <div className="bg-white rounded-3xl w-full max-w-6xl border border-neutral-200 shadow-2xl overflow-hidden my-auto print:border-none print:shadow-none print:w-full print:max-w-none printable-report-container">
             
             {/* MODAL ACTION TOOLBAR (Hidden in Print) */}
-            <div className="p-4 bg-neutral-900 text-white flex items-center justify-between print:hidden">
+            <div className="p-4 bg-neutral-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 print:hidden">
               <div className="flex items-center gap-2.5">
-                <FileText className="w-5 h-5 text-emerald-400" />
+                <FileText className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div>
                   <h3 className="text-xs sm:text-sm font-black">معاينة التقرير الرسمي لسجل بيانات المستفيدين (PDF)</h3>
                   <p className="text-[10.5px] text-neutral-300">
@@ -1516,22 +1600,48 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
+                {/* Direct PDF Download */}
                 <button
-                  onClick={handlePrintPdf}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                  type="button"
+                  onClick={handleDirectDownloadPdf}
+                  disabled={isExportingPdf}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black rounded-xl inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                  title="تحميل ملف PDF مباشرة على جهازك"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>طباعة وحفظ PDF</span>
+                  {isExportingPdf ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileDown className="w-4 h-4" />
+                  )}
+                  <span>{isExportingPdf ? "جارٍ التحميل..." : "تحميل PDF مباشر"}</span>
                 </button>
+
+                {/* Native Browser Print / Save as PDF */}
                 <button
+                  type="button"
+                  onClick={handlePrintPdf}
+                  className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-100 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition-all cursor-pointer border border-neutral-700 shadow-sm"
+                  title="طباعة عبر المتصفح"
+                >
+                  <Printer className="w-4 h-4 text-emerald-400" />
+                  <span>طباعة المتصفح</span>
+                </button>
+
+                {/* Excel Export */}
+                <button
+                  type="button"
                   onClick={handleExportExcel}
-                  className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition-all cursor-pointer border border-neutral-700"
+                  title="تصدير كملف Excel"
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
                   <span>Excel</span>
                 </button>
+
+                {/* Close Button */}
                 <button
+                  type="button"
                   onClick={() => setShowPdfModal(false)}
                   className="p-2 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
                   title="إغلاق المعاينة"
@@ -1542,7 +1652,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             </div>
 
             {/* PRINTABLE REPORT SHEET (Rendered in Modal & Printed natively) */}
-            <div className="p-6 sm:p-10 space-y-5 text-right print:p-2 bg-white" dir="rtl">
+            <div ref={printReportRef} className="p-6 sm:p-10 space-y-5 text-right print:p-2 bg-white" dir="rtl">
               
               {/* OFFICIAL LETTERHEAD */}
               <div className="border-b-2 border-emerald-700 pb-4">
