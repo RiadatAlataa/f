@@ -1,4 +1,4 @@
-import app, { readDb } from '../server-core.ts';
+import app, { readDb } from '../server-core';
 
 /**
  * Vercel Serverless Function entry point

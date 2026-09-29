@@ -10,7 +10,7 @@ import {
   createResendDomainRecord,
   triggerResendDomainVerification,
   translateEmailError
-} from "./emailService.ts";
+} from "./emailService";
 
 export function setupEmailRoutes(
   app: Express,

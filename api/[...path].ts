@@ -1,4 +1,4 @@
-import app from '../server-core.ts';
+import app from '../server-core';
 
 /**
  * Vercel Catch-All Serverless Function for all /api/* routes
