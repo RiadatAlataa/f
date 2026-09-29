@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 import { GoogleGenAI } from "@google/genai";
 import type { 
   Department, 
@@ -65,11 +66,19 @@ const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
 const DB_FILE_TMP = path.join("/tmp", "db.json");
 
 export function findSourceDbJson(): string | null {
+  let moduleDir = process.cwd();
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.url) {
+      moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch {}
+
   const candidatePaths = [
     path.join(process.cwd(), "db.json"),
-    path.join(__dirname, "db.json"),
-    path.join(__dirname, "..", "db.json"),
-    path.resolve("db.json")
+    path.join(moduleDir, "db.json"),
+    path.join(moduleDir, "..", "db.json"),
+    path.resolve("db.json"),
+    path.join("/tmp", "db.json")
   ];
   for (const p of candidatePaths) {
     try {
