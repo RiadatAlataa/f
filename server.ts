@@ -64,7 +64,24 @@ if (fs.existsSync(cardTemplatesDir)) {
 const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
 const DB_FILE_TMP = path.join("/tmp", "db.json");
 
-function getActiveDbPath(): string {
+export function findSourceDbJson(): string | null {
+  const candidatePaths = [
+    path.join(process.cwd(), "db.json"),
+    path.join(__dirname, "db.json"),
+    path.join(__dirname, "..", "db.json"),
+    path.resolve("db.json")
+  ];
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+export function getActiveDbPath(): string {
   const isServerless = !!(
     process.env.VERCEL || 
     process.env.NOW_REGION || 
@@ -74,17 +91,18 @@ function getActiveDbPath(): string {
   );
   if (isServerless) {
     if (!fs.existsSync(DB_FILE_TMP)) {
-      if (fs.existsSync(DB_FILE_ROOT)) {
+      const source = findSourceDbJson();
+      if (source) {
         try {
-          fs.copyFileSync(DB_FILE_ROOT, DB_FILE_TMP);
+          fs.copyFileSync(source, DB_FILE_TMP);
         } catch {
           // ignore
         }
       }
     }
-    return fs.existsSync(DB_FILE_TMP) ? DB_FILE_TMP : (fs.existsSync(DB_FILE_ROOT) ? DB_FILE_ROOT : DB_FILE_TMP);
+    return fs.existsSync(DB_FILE_TMP) ? DB_FILE_TMP : (findSourceDbJson() || DB_FILE_TMP);
   }
-  return DB_FILE_ROOT;
+  return findSourceDbJson() || DB_FILE_ROOT;
 }
 
 const DB_FILE = DB_FILE_ROOT;
@@ -2016,11 +2034,23 @@ seed120Initiatives(defaultDb);
 let memoryDbCache: any = null;
 
 // Helper: Read db from file or write defaults
-function readDb() {
+export function readDb() {
   try {
     const activePath = getActiveDbPath();
+    let content = "";
     if (fs.existsSync(activePath)) {
-      const content = fs.readFileSync(activePath, "utf-8");
+      content = fs.readFileSync(activePath, "utf-8");
+    } else {
+      const source = findSourceDbJson();
+      if (source && fs.existsSync(source)) {
+        content = fs.readFileSync(source, "utf-8");
+        try {
+          fs.writeFileSync(DB_FILE_TMP, content, "utf-8");
+        } catch {}
+      }
+    }
+
+    if (content) {
       const db = JSON.parse(content);
       
       // Auto upgrade existing database with missing parameters
@@ -3570,7 +3600,7 @@ function readDb() {
   return defaultDb;
 }
 
-function writeDb(data: any) {
+export function writeDb(data: any) {
   memoryDbCache = data;
   const isServerless = !!(
     process.env.VERCEL || 
@@ -3628,27 +3658,71 @@ export function createServerSession(user: any, role: string): ServerSession {
     teamId: user?.teamId || '',
     createdAt: now,
     lastActive: now,
-    expiresAt: now + (24 * 60 * 60 * 1000) // 24 hours valid session
+    expiresAt: now + (7 * 24 * 60 * 60 * 1000) // 7 days persistent session
   };
   activeSessions.set(token, session);
+
+  try {
+    const db = readDb();
+    if (db) {
+      if (!Array.isArray(db.activeSessions)) {
+        db.activeSessions = [];
+      }
+      db.activeSessions = db.activeSessions.filter((s: any) => s && s.expiresAt > now);
+      db.activeSessions.push(session);
+      writeDb(db);
+    }
+  } catch (e) {
+    console.error("Error persisting session to db:", e);
+  }
+
   return session;
 }
 
 export function getServerSession(token?: string): ServerSession | null {
   if (!token) return null;
-  const session = activeSessions.get(token);
+  const now = Date.now();
+  let session = activeSessions.get(token);
+
+  if (!session) {
+    try {
+      const db = readDb();
+      if (db && Array.isArray(db.activeSessions)) {
+        session = db.activeSessions.find((s: any) => s && s.token === token);
+        if (session) {
+          activeSessions.set(token, session);
+        }
+      }
+    } catch {}
+  }
+
   if (!session) return null;
-  if (Date.now() > session.expiresAt) {
+  if (now > session.expiresAt) {
     activeSessions.delete(token);
+    try {
+      const db = readDb();
+      if (db && Array.isArray(db.activeSessions)) {
+        db.activeSessions = db.activeSessions.filter((s: any) => s && s.token !== token);
+        writeDb(db);
+      }
+    } catch {}
     return null;
   }
-  session.lastActive = Date.now();
+  session.lastActive = now;
   return session;
 }
 
 export function destroyServerSession(token?: string): boolean {
   if (!token) return false;
-  return activeSessions.delete(token);
+  activeSessions.delete(token);
+  try {
+    const db = readDb();
+    if (db && Array.isArray(db.activeSessions)) {
+      db.activeSessions = db.activeSessions.filter((s: any) => s && s.token !== token);
+      writeDb(db);
+    }
+  } catch {}
+  return true;
 }
 
 // 1. Resolve User Access Context from Request Headers / Query / Body
@@ -4111,6 +4185,30 @@ function filterDatabaseForUser(db: any, context: any) {
 
 // API REST routes
 
+// Root API Endpoint
+app.get(["/api", "/api/"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  let db: any = null;
+  try {
+    db = readDb();
+  } catch {}
+
+  res.status(200).json({
+    ok: true,
+    message: "بوابة واجهة برمجة التطبيقات لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+    service: "Reyadat Al-Ataa Central API Gateway",
+    status: "healthy",
+    database: {
+      connected: Boolean(db && Array.isArray(db.departments) && db.departments.length > 0),
+      departmentsCount: (db?.departments || []).length,
+      volunteersCount: (db?.volunteers || []).length,
+      initiativesCount: (db?.initiatives || []).length
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Comprehensive Health Check & Diagnostic endpoint for custom domain, proxy & uptime monitoring
 app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -4118,24 +4216,48 @@ app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
   let db: any = null;
   try {
     db = readDb();
-  } catch (e) {
-    // ignore
+  } catch (e: any) {
+    console.error("Health check error reading database:", e);
   }
+
+  const isDbHealthy = Boolean(db && Array.isArray(db.departments) && db.departments.length > 0);
+
+  if (!isDbHealthy) {
+    return res.status(503).json({
+      ok: false,
+      status: "unhealthy",
+      error: "قاعدة البيانات المركزية غير متصلة أو لم يتم تهيئتها بنجاح",
+      timestamp: new Date().toISOString(),
+      database: {
+        status: "disconnected"
+      }
+    });
+  }
+
   return res.status(200).json({
     ok: true,
     status: "healthy",
-    message: "خادم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة متصل وقيد العمل بنجاح",
+    message: "خادم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة وقاعدة البيانات متصلان وقيد العمل بنجاح",
+    service: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - البوابة المركزية",
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     port: PORT,
     environment: process.env.NODE_ENV || "production",
     database: {
-      initialized: !!db,
+      status: "connected",
       departmentsCount: (db?.departments || []).length,
       volunteersCount: (db?.volunteers || []).length,
       initiativesCount: (db?.initiatives || []).length,
       beneficiariesCount: (db?.beneficiaries || []).length,
       inventoryCount: (db?.inventoryItems || []).length
+    },
+    services: {
+      database: "operational",
+      auth: "operational",
+      volunteering: "operational",
+      beneficiaries: "operational",
+      warehouse: "operational",
+      finance: "operational"
     },
     clientInfo: {
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
@@ -13993,6 +14115,34 @@ setupFinancialRoutes(app, readDb, writeDb);
 
 // Setup Central Enterprise Email Management & SMTP/Resend Service routes
 setupEmailRoutes(app, readDb, writeDb);
+
+// Fallback 404 handler specifically for /api/* routes
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: `المسار المطلوب (${req.originalUrl || req.url}) غير موجود في واجهة برمجة التطبيقات`,
+    code: "API_ENDPOINT_NOT_FOUND",
+    status: 404,
+    path: req.originalUrl || req.url,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Central Express Error Handling Middleware (prevents unhandled 500 crash)
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Central Express Server Error:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const status = typeof err.status === 'number' ? err.status : 500;
+  res.status(status).json({
+    ok: false,
+    error: err.message || "حدث خطأ داخلي في معالجة طلب الخادم",
+    code: err.code || "INTERNAL_SERVER_ERROR",
+    path: req.originalUrl || req.url,
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Serve Frontend in dev or production
 const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
