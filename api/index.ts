@@ -27,10 +27,10 @@ export default function handler(req: any, res: any) {
     const matchedPath = req.headers?.['x-matched-path'] || req.headers?.['x-vercel-matched-path'] || req.headers?.['x-original-url'] || '';
     const paramPath = parsedUrl.searchParams.get('__path') || req.query?.__path || parsedUrl.searchParams.get('path') || req.query?.path || '';
 
-    if (matchedPath && matchedPath.startsWith('/api')) {
-      req.url = matchedPath;
-    } else if (paramPath) {
+    if (paramPath) {
       req.url = `/api/${paramPath.replace(/^\/+/, '')}`;
+    } else if (matchedPath && matchedPath.startsWith('/api') && !matchedPath.startsWith('/api/index')) {
+      req.url = matchedPath;
     } else if (req.url && !req.url.startsWith('/api')) {
       req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
     } else if (parsedUrl.pathname === '/api/index' || parsedUrl.pathname === '/api/index.ts') {

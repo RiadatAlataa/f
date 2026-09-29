@@ -1,4 +1,22 @@
-import { readDb } from '../server.ts';
+import fs from "fs";
+import path from "path";
+
+function readHealthDb(): any {
+  const candidatePaths = [
+    path.join(process.cwd(), "db.json"),
+    path.join("/tmp", "db.json"),
+    path.resolve("db.json")
+  ];
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, "utf-8");
+        if (raw) return JSON.parse(raw);
+      }
+    } catch {}
+  }
+  return null;
+}
 
 /**
  * Direct Comprehensive Vercel Serverless Function for /api/health
@@ -26,7 +44,7 @@ export default function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
   try {
-    const db = readDb();
+    const db = readHealthDb();
     const isDbConnected = Boolean(db && Array.isArray(db.departments) && db.departments.length > 0);
 
     if (!isDbConnected) {
