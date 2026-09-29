@@ -5,7 +5,10 @@
   "framework": "vite",
   "functions": {
     "api/*.ts": {
-      "includeFiles": "db.json"
+      "includeFiles": "{db.json,server-core.ts,server/**,src/types.ts,src/types/**}"
+    },
+    "api/**/*.ts": {
+      "includeFiles": "{db.json,server-core.ts,server/**,src/types.ts,src/types/**}"
     }
   },
   "rewrites": [
