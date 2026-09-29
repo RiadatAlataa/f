@@ -11,27 +11,27 @@
   "rewrites": [
     {
       "source": "/api/health",
-      "destination": "/api/health.ts"
+      "destination": "/api/health"
     },
     {
       "source": "/api/health/",
-      "destination": "/api/health.ts"
+      "destination": "/api/health"
     },
     {
       "source": "/health",
-      "destination": "/api/health.ts"
+      "destination": "/api/health"
     },
     {
       "source": "/health/",
-      "destination": "/api/health.ts"
+      "destination": "/api/health"
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.ts?__path=$1"
+      "destination": "/api/index?__path=$1"
     },
     {
       "source": "/api",
-      "destination": "/api/index.ts"
+      "destination": "/api/index"
     },
     {
       "source": "/((?!api/|health|assets/|favicon|.*\\..*).*)",
