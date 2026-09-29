@@ -190,7 +190,7 @@ export default function App() {
           headers['x-user-role'] = stored.role;
         }
 
-        const res = await fetch("/api/db/auth/session", { headers });
+        const res = await fetch(buildApiUrl("/api/db/auth/session"), { headers });
         if (res.ok) {
           const sessionData = await res.json();
           if (sessionData && sessionData.status === "success" && sessionData.user) {
@@ -219,7 +219,7 @@ export default function App() {
     try {
       const stored = getStoredSession();
       if (stored?.sessionToken) {
-        await fetch("/api/db/auth/logout", {
+        await fetch(buildApiUrl("/api/db/auth/logout"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionToken: stored.sessionToken })
@@ -413,7 +413,8 @@ export default function App() {
   const syncWithServer = async (endpoint: string, payload: any, actionDescription: string) => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch(endpoint, {
+      const finalUrl = buildApiUrl(endpoint);
+      const res = await fetch(finalUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(payload)
@@ -679,7 +680,7 @@ export default function App() {
 
   const handleSubmitRating = async (ratingPayload: any) => {
     try {
-      const res = await fetch("/api/db/initiatives/rate-by-volunteer", {
+      const res = await fetch(buildApiUrl("/api/db/initiatives/rate-by-volunteer"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(ratingPayload)
@@ -705,7 +706,7 @@ export default function App() {
     evaluatorRole?: string;
   }) => {
     try {
-      const res = await fetch("/api/db/initiatives/evaluate-points", {
+      const res = await fetch(buildApiUrl("/api/db/initiatives/evaluate-points"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -807,7 +808,7 @@ export default function App() {
   const handleImportBeneficiaries = async (beneficiariesList: Partial<Beneficiary>[], fileType: 'excel' | 'pdf') => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch("/api/db/beneficiaries/import", {
+      const res = await fetch(buildApiUrl("/api/db/beneficiaries/import"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
@@ -838,7 +839,7 @@ export default function App() {
   const handleCreateDistribution = async (distData: Partial<AidDistribution>) => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch("/api/db/distributions/create", {
+      const res = await fetch(buildApiUrl("/api/db/distributions/create"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(distData)
@@ -858,7 +859,7 @@ export default function App() {
   const handleUpdateDistribution = async (distData: Partial<AidDistribution>) => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch("/api/db/distributions/update", {
+      const res = await fetch(buildApiUrl("/api/db/distributions/update"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(distData)
@@ -878,7 +879,7 @@ export default function App() {
   const handleDeleteDistribution = async (distributionId: string) => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch("/api/db/distributions/delete", {
+      const res = await fetch(buildApiUrl("/api/db/distributions/delete"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ distributionId })
@@ -898,7 +899,7 @@ export default function App() {
   const handleHandoverSubmit = async (handoverData: any) => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch("/api/db/distributions/handover", {
+      const res = await fetch(buildApiUrl("/api/db/distributions/handover"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(handoverData)
@@ -919,7 +920,7 @@ export default function App() {
   const handleCancelHandover = async (handoverId: string) => {
     try {
       const authHeaders = getAuthHeaders();
-      const res = await fetch("/api/db/distributions/handover/cancel", {
+      const res = await fetch(buildApiUrl("/api/db/distributions/handover/cancel"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ handoverId })
@@ -947,7 +948,7 @@ export default function App() {
 
   const handleSubmitTeamApplication = async (app: Partial<TeamApplication>) => {
     try {
-      const res = await fetch("/api/db/teamApplications/submit", {
+      const res = await fetch(buildApiUrl("/api/db/teamApplications/submit"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(app)
@@ -966,7 +967,7 @@ export default function App() {
 
   const handleAcceptTeamApplication = async (appId: string, departmentId: string, reviewerNotes?: string) => {
     try {
-      const res = await fetch("/api/db/teamApplications/accept", {
+      const res = await fetch(buildApiUrl("/api/db/teamApplications/accept"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: appId, departmentId, reviewerNotes })
@@ -986,7 +987,7 @@ export default function App() {
 
   const handleRejectTeamApplication = async (appId: string, reason: string) => {
     try {
-      const res = await fetch("/api/db/teamApplications/reject", {
+      const res = await fetch(buildApiUrl("/api/db/teamApplications/reject"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: appId, rejectionReason: reason })
@@ -1006,7 +1007,7 @@ export default function App() {
 
   const handleRequestTeamApplicationCorrection = async (appId: string, notes: string) => {
     try {
-      const res = await fetch("/api/db/teamApplications/request-correction", {
+      const res = await fetch(buildApiUrl("/api/db/teamApplications/request-correction"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: appId, correctionNotes: notes })
@@ -1026,7 +1027,7 @@ export default function App() {
 
   const handleDeleteTeamApplication = async (appId: string) => {
     try {
-      const res = await fetch("/api/db/teamApplications/delete", {
+      const res = await fetch(buildApiUrl("/api/db/teamApplications/delete"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: appId })
@@ -1057,7 +1058,7 @@ export default function App() {
   // Notification Handlers
   const handleSendCustomNotification = async (payload: any) => {
     try {
-      const res = await fetch("/api/db/notifications/send", {
+      const res = await fetch(buildApiUrl("/api/db/notifications/send"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1076,7 +1077,7 @@ export default function App() {
   const handleMarkNotificationRead = async (notificationId?: string, markAll?: boolean) => {
     try {
       const userId = authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : currentRole === 'supervisor' ? 'supervisor' : currentRole === 'support' ? 'support' : 'all');
-      const res = await fetch("/api/db/notifications/mark-read", {
+      const res = await fetch(buildApiUrl("/api/db/notifications/mark-read"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, notificationId, markAll })
@@ -1095,7 +1096,7 @@ export default function App() {
   const handleDeleteNotification = async (notificationId?: string, clearAll?: boolean) => {
     try {
       const userId = authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : currentRole === 'supervisor' ? 'supervisor' : currentRole === 'support' ? 'support' : 'all');
-      const res = await fetch("/api/db/notifications/delete", {
+      const res = await fetch(buildApiUrl("/api/db/notifications/delete"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, notificationId, clearAll })
@@ -1114,7 +1115,7 @@ export default function App() {
   // Official Letters Handlers
   const handleSendOfficialLetter = async (letterData: Partial<OfficialLetter>) => {
     try {
-      const res = await fetch("/api/db/letters/send", {
+      const res = await fetch(buildApiUrl("/api/db/letters/send"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(letterData)
@@ -1148,7 +1149,7 @@ export default function App() {
 
   const handleResendNotification = async (notificationId: string) => {
     try {
-      const res = await fetch("/api/db/notifications/resend", {
+      const res = await fetch(buildApiUrl("/api/db/notifications/resend"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationId })
@@ -1166,7 +1167,7 @@ export default function App() {
 
   // AI Chat message sender
   const handleAiSendMessage = async (prompt: string, history: { role: string; text: string }[]) => {
-    const res = await fetch("/api/ai/chat", {
+    const res = await fetch(buildApiUrl("/api/ai/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, history })
@@ -1178,7 +1179,7 @@ export default function App() {
   // Staff & Employee Requests Handlers (Department & Admin)
   const handleSubmitEmployeeRequest = async (requestData: Partial<EmployeeRequest>) => {
     try {
-      const res = await fetch("/api/db/employee-requests/create", {
+      const res = await fetch(buildApiUrl("/api/db/employee-requests/create"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)
@@ -1199,7 +1200,7 @@ export default function App() {
 
   const handleUpdateEmployeeRequest = async (requestId: string, updates: Partial<EmployeeRequest>) => {
     try {
-      const res = await fetch("/api/db/employee-requests/update", {
+      const res = await fetch(buildApiUrl("/api/db/employee-requests/update"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId, updates })
@@ -1220,7 +1221,7 @@ export default function App() {
 
   const handleApproveEmployeeRequest = async (requestId: string, reviewerName: string, notes?: string) => {
     try {
-      const res = await fetch("/api/db/employee-requests/approve", {
+      const res = await fetch(buildApiUrl("/api/db/employee-requests/approve"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId, reviewerName, notes })
@@ -1241,7 +1242,7 @@ export default function App() {
 
   const handleRejectEmployeeRequest = async (requestId: string, reviewerName: string, rejectionReason: string) => {
     try {
-      const res = await fetch("/api/db/employee-requests/reject", {
+      const res = await fetch(buildApiUrl("/api/db/employee-requests/reject"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId, reviewerName, rejectionReason })
@@ -1262,7 +1263,7 @@ export default function App() {
 
   const handleRequestEmployeeModification = async (requestId: string, reviewerName: string, modificationNotes: string) => {
     try {
-      const res = await fetch("/api/db/employee-requests/request-modification", {
+      const res = await fetch(buildApiUrl("/api/db/employee-requests/request-modification"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId, reviewerName, modificationNotes })
@@ -1290,7 +1291,7 @@ export default function App() {
     notes?: string;
   }) => {
     try {
-      const res = await fetch("/api/db/team-staff/assign", {
+      const res = await fetch(buildApiUrl("/api/db/team-staff/assign"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -1311,7 +1312,7 @@ export default function App() {
 
   const handleRemoveTeamStaff = async (assignmentId: string) => {
     try {
-      const res = await fetch("/api/db/team-staff/remove", {
+      const res = await fetch(buildApiUrl("/api/db/team-staff/remove"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignmentId })

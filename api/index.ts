@@ -99,6 +99,7 @@ export default function handler(req: any, res: any) {
         uptimeSeconds: Math.floor(process.uptime ? process.uptime() : 0),
         environment: process.env.NODE_ENV || 'production',
         platform: 'vercel-serverless',
+        configuredApiUrl: process.env.VITE_API_URL || process.env.API_URL || null,
         database: {
           status: 'connected',
           departmentsCount: (db.departments || []).length,

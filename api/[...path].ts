@@ -9,7 +9,7 @@ export default function handler(req: any, res: any) {
   const origin = req.headers?.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-user-id, x-user-role, x-department-id, x-national-id, x-team-id'
@@ -26,5 +26,20 @@ export default function handler(req: any, res: any) {
     req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
 
-  return app(req, res);
+  try {
+    return app(req, res);
+  } catch (err: any) {
+    console.error("Critical error in api/[...path].ts handler:", err);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({
+        ok: false,
+        error: err.message || "حدث خطأ داخلي في معالجة طلب الخادم",
+        code: "SERVERLESS_HANDLER_EXCEPTION",
+        path: req.url,
+        timestamp: new Date().toISOString()
+      }));
+    }
+  }
 }

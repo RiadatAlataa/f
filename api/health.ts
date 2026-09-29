@@ -56,6 +56,7 @@ export default function handler(req: any, res: any) {
       uptimeSeconds: Math.floor(process.uptime ? process.uptime() : 0),
       environment: process.env.NODE_ENV || 'production',
       platform: process.env.VERCEL ? 'vercel-serverless' : 'node-express',
+      configuredApiUrl: process.env.VITE_API_URL || process.env.API_URL || null,
       runtime: 'Node.js',
       domain: req.headers?.host || 'localhost',
       database: {
