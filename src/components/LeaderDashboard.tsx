@@ -3,7 +3,7 @@ import {
   Users, Calendar, CheckSquare, Star, MessageSquare, Send, BarChart2, 
   Check, X, RefreshCw, Award, Smile, Info, Compass, ShieldAlert,
   Clock, LogOut, Shield, Search, Filter, FileSpreadsheet, Edit3, User, CheckCircle2, ChevronDown, Plus, FileText, Globe, ExternalLink, Printer, Sparkles, Image as ImageIcon,
-  Mail, AlertCircle, CreditCard, Download, Eye, Layers
+  Mail, AlertCircle, CreditCard, Download, Eye, Layers, Home, ArrowRight
 } from "lucide-react";
 import { 
   Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, VolunteerTeam, Department, OpportunityRequest,
@@ -54,6 +54,7 @@ interface LeaderDashboardProps {
   onResubmitOpportunityRequest?: (opp: any) => Promise<any> | void;
   onUpdateOpportunityRequest?: (opp: any) => Promise<any> | void;
   onSubmitOfficialLetter?: (letter: Partial<OfficialLetter>) => Promise<{ success: boolean; letter?: OfficialLetter; message?: string }>;
+  onBackToHome?: () => void;
 }
 
 export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
@@ -79,7 +80,8 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   onAddOpportunityRequest,
   onResubmitOpportunityRequest,
   onUpdateOpportunityRequest,
-  onSubmitOfficialLetter
+  onSubmitOfficialLetter,
+  onBackToHome
 }: LeaderDashboardProps) => {
   // Tabs for Leader
   const [activeTab, setActiveTab] = useState<'home' | 'team' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards'>('home');
@@ -480,6 +482,18 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             <strong className="text-md font-black text-rose-600 block">{teamRequests.length}</strong>
             <span className="text-[10px] text-neutral-400 font-bold block">طلبات معلقة</span>
           </div>
+          {onBackToHome && (
+            <button
+              id="leader-back-to-home-btn"
+              type="button"
+              onClick={onBackToHome}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer shrink-0"
+              title="العودة إلى الصفحة الرئيسية للجمعية"
+            >
+              <Home className="w-4 h-4 text-emerald-600" />
+              <span>العودة إلى الصفحة الرئيسية</span>
+            </button>
+          )}
           <button
             id="leader-send-letter-cta-btn"
             type="button"

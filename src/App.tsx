@@ -150,15 +150,46 @@ export default function App() {
   const [authenticatedUser, setAuthenticatedUser] = useState<any | null>(
     initialAuthSession?.user || null
   );
+  const [savedUserRole, setSavedUserRole] = useState<'admin' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | null>(() => {
+    const stored = getStoredSession();
+    return stored?.role && stored.role !== 'public' ? (stored.role as any) : null;
+  });
   const [isUserSettingsOpen, setIsUserSettingsOpen] = useState<boolean>(false);
+
+  // Track user dashboard role whenever in internal view
+  useEffect(() => {
+    if (currentRole && currentRole !== 'public') {
+      setSavedUserRole(currentRole);
+    }
+  }, [currentRole]);
+
+  // Centralized Navigation between Public Site and Management Dashboards
+  const handleNavigateToPublicHome = () => {
+    if (currentRole && currentRole !== 'public') {
+      setSavedUserRole(currentRole);
+    }
+    setCurrentRole('public');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleReturnToDashboard = () => {
+    const stored = getStoredSession();
+    const targetRole = savedUserRole || (stored?.role && stored.role !== 'public' ? stored.role : null) || authenticatedUser?.role || 'admin';
+    setCurrentRole(targetRole as any);
+    setActiveMainTab('system');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Synchronize authenticated session state to localStorage
   useEffect(() => {
     try {
-      if (authenticatedUser && currentRole && currentRole !== 'public') {
+      if (authenticatedUser) {
         const stored = getStoredSession();
+        const roleToSave = (currentRole && currentRole !== 'public') 
+          ? currentRole 
+          : (savedUserRole || stored?.role || authenticatedUser?.role || 'admin');
         const payload = {
-          role: currentRole,
+          role: roleToSave,
           user: authenticatedUser,
           activeMainTab,
           adminSubTab,
@@ -172,7 +203,7 @@ export default function App() {
     } catch (e) {
       console.error("Failed to persist session to localStorage", e);
     }
-  }, [authenticatedUser, currentRole, activeMainTab, adminSubTab]);
+  }, [authenticatedUser, currentRole, savedUserRole, activeMainTab, adminSubTab]);
 
   // Session Re-hydration on mount: verify session token with server
   useEffect(() => {
@@ -230,6 +261,7 @@ export default function App() {
       // Ignore
     }
     setAuthenticatedUser(null);
+    setSavedUserRole(null);
     setCurrentRole('public');
     setActiveMainTab('system');
     setAdminSubTab(undefined);
@@ -238,6 +270,7 @@ export default function App() {
   // Centralized login success handler (persists session immediately)
   const handleLoginSuccess = (role: string, user: any) => {
     setAuthenticatedUser(user);
+    setSavedUserRole(role as any);
     setCurrentRole(role as any);
     setActiveMainTab('system');
     try {
@@ -1505,12 +1538,12 @@ export default function App() {
                 </div>
 
                 <button 
-                  onClick={() => { setCurrentRole('public'); setActiveMainTab('system'); }}
+                  onClick={handleNavigateToPublicHome}
                   className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-800 transition-all cursor-pointer shrink-0"
-                  title="العودة إلى الموقع الإلكتروني العام"
+                  title="العودة إلى الصفحة الرئيسية للجمعية مع الحفاظ على تسجيل الدخول"
                 >
                   <ArrowRight className="w-3.5 h-3.5" />
-                  <span>الموقع الرئيسي</span>
+                  <span>العودة إلى الصفحة الرئيسية</span>
                 </button>
               </div>
 
@@ -1709,6 +1742,7 @@ export default function App() {
                       onApproveEmployeeRequest={handleApproveEmployeeRequest}
                       onRejectEmployeeRequest={handleRejectEmployeeRequest}
                       onRequestEmployeeModification={handleRequestEmployeeModification}
+                      onBackToHome={handleNavigateToPublicHome}
                     />
                   </DashboardErrorBoundary>
                 )}
@@ -1770,6 +1804,7 @@ export default function App() {
                       onDeleteGalleryItem={handleDeleteGalleryItem}
                       onRefreshGlobalData={fetchDatabase}
                       onLogout={handleLogout}
+                      onBackToHome={handleNavigateToPublicHome}
                     />
                   </DashboardErrorBoundary>
                 )}
@@ -1800,6 +1835,7 @@ export default function App() {
                 onResubmitOpportunityRequest={handleResubmitOpportunityRequest}
                 onUpdateOpportunityRequest={handleUpdateOpportunityRequest}
                 onSubmitOfficialLetter={handleSendOfficialLetter}
+                onBackToHome={handleNavigateToPublicHome}
               />
             )}
 
@@ -1821,6 +1857,7 @@ export default function App() {
                 onReissueCard={handleReissueCard}
                 onCheckoutInitiative={handleCheckoutInitiative}
                 onSubmitRating={handleSubmitRating}
+                onBackToHome={handleNavigateToPublicHome}
               />
             )}
 
@@ -1902,6 +1939,8 @@ export default function App() {
                 onSubmitOfficialLetter={handleSendOfficialLetter}
                 orgMembers={dbData.orgMembers || dbData.homeSettings?.orgMembers || []}
                 heroSlides={dbData.heroSlides || dbData.homeSettings?.heroSlides || []}
+                authenticatedUser={authenticatedUser}
+                onReturnToDashboard={handleReturnToDashboard}
               />
             )}
 
@@ -1937,6 +1976,7 @@ export default function App() {
                   }
                 }}
                 onLogout={handleLogout}
+                onBackToHome={handleNavigateToPublicHome}
                 lang={lang}
               />
             )}

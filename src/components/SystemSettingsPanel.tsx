@@ -290,13 +290,37 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-neutral-700 mb-1">رقم الترخيص الرسمي</label>
+            <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
+              <label className="block text-xs font-bold text-emerald-950 mb-1 flex items-center justify-between">
+                <span>رقم الترخيص الرسمي للجمعية</span>
+                <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-bold">المركز الوطني</span>
+              </label>
               <input
                 type="text"
-                value={settings.licenseNumber}
+                value={settings.licenseNumber || "5081"}
                 onChange={e => updateSettings(s => ({ ...s, licenseNumber: e.target.value }))}
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-300 focus:border-emerald-600 focus:outline-none"
+                placeholder="5081"
+                className="w-full text-xs font-mono font-bold p-2.5 rounded-xl border border-emerald-300 focus:border-emerald-600 focus:outline-none bg-white text-emerald-900"
+              />
+              <p className="text-[10px] text-emerald-700 mt-1">
+                الترخيص الرسمي: 5081 - صادر من المركز الوطني لتنمية القطاع غير الربحي بمكة المكرمة.
+              </p>
+            </div>
+
+            <div className="md:col-span-2">
+              <ImagePickerControl
+                label="صورة وثيقة الترخيص الرسمية (License Image)"
+                description="صورة شهادة تسجيل وترخيص الجمعية الرسمية الصادرة من المركز الوطني (تظهر كمربع صغير في الصفحة الرئيسية)"
+                value={(settings as any).licenseImage || ""}
+                onChange={val => {
+                  updateSettings(s => ({ ...s, licenseImage: val }));
+                  fetch("/api/db/license/upload", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ imageBase64: val, licenseNumber: settings.licenseNumber || "5081" })
+                  }).catch(console.error);
+                }}
+                aspectRatio="square"
               />
             </div>
 

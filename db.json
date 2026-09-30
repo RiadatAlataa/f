@@ -3464,6 +3464,38 @@
   ],
   "logs": [
     {
+      "id": "log-1790789004097",
+      "timestamp": "2026-09-30T17:23:24.097Z",
+      "user": "الإدارة العامة",
+      "action": "حذف صورة وثيقة الترخيص الرسمية",
+      "ip": "127.0.0.1",
+      "device": "curl/7.88.1"
+    },
+    {
+      "id": "log-1790788997771",
+      "timestamp": "2026-09-30T17:23:17.771Z",
+      "user": "الإدارة العامة",
+      "action": "رفع وتحديث صورة وثيقة الترخيص الرسمي للجمعية",
+      "ip": "127.0.0.1",
+      "device": "curl/7.88.1"
+    },
+    {
+      "id": "log-1790787607504",
+      "timestamp": "2026-09-30T17:00:07.504Z",
+      "user": "الإدارة العامة",
+      "action": "حذف صورة وثيقة الترخيص الرسمية",
+      "ip": "::ffff:127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1790787607470",
+      "timestamp": "2026-09-30T17:00:07.470Z",
+      "user": "الإدارة العامة",
+      "action": "رفع وتحديث صورة وثيقة الترخيص الرسمي للجمعية",
+      "ip": "::ffff:127.0.0.1",
+      "device": "node"
+    },
+    {
       "id": "log-1789754747907",
       "timestamp": "2026-09-18T18:05:47.907Z",
       "user": "المتطوع أحمد بن علي الغامدي",
@@ -3597,7 +3629,7 @@
     },
     "licenseConfig": {
       "enabled": true,
-      "imageUrl": "https://images.unsplash.com/photo-1607344645866-009c320c5ab8?w=800&auto=format&fit=crop&q=80",
+      "imageUrl": "",
       "width": 320,
       "maxHeight": 100,
       "alignment": "right",
@@ -3624,7 +3656,8 @@
         "isActive": true,
         "createdAt": "2026-09-24T16:12:54.179Z"
       }
-    ]
+    ],
+    "licenseImage": ""
   },
   "news": [
     {
@@ -3651,22 +3684,79 @@
       "id": "partner-1",
       "nameAr": "مؤسسة سليمان الراجحي الخيرية",
       "nameEn": "Sulaiman Al Rajhi Foundation",
-      "logo": "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=150&h=150&fit=crop",
-      "link": "https://rf.org.sa"
+      "logo": "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=300&h=300&fit=crop",
+      "link": "https://rf.org.sa",
+      "category": "شريك استراتيجي",
+      "descriptionAr": "شراكة تنموية فاعلة لتمويل المشاريع الإنسانية ودعم الأسر المتعففة في مخطط العسيلة بمكة المكرمة.",
+      "active": true,
+      "showInHome": true,
+      "isFeatured": true,
+      "order": 1
     },
     {
       "id": "partner-2",
       "nameAr": "منصة إحسان الوطنية للعمل الخيري",
       "nameEn": "Ehsan National Platform",
-      "logo": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=150&h=150&fit=crop",
-      "link": "https://ehsan.sa"
+      "logo": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=300&h=300&fit=crop",
+      "link": "https://ehsan.sa",
+      "category": "شريك داعم",
+      "descriptionAr": "تعزيز فرص التبرع الموثوقة وتوسيع نطاق المساعدات الغذائية والرعاية المجتمعية لخدمة الإنسان.",
+      "active": true,
+      "showInHome": true,
+      "isFeatured": true,
+      "order": 2
     },
     {
       "id": "partner-3",
+      "nameAr": "المركز الوطني لتنمية القطاع غير الربحي",
+      "nameEn": "National Center for Non-Profit Sector",
+      "logo": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=300&h=300&fit=crop",
+      "link": "https://ncnp.gov.sa",
+      "category": "شريك استراتيجي",
+      "descriptionAr": "الإشراف المالي والإداري والحوكمة المؤسسية وتطوير آليات الامتثال والشفافية بجمعية ريادة العطاء.",
+      "active": true,
+      "showInHome": true,
+      "isFeatured": true,
+      "order": 3
+    },
+    {
+      "id": "partner-4",
       "nameAr": "جمعية إكرام الجود لخدمة ضيوف الرحمن",
       "nameEn": "Ekram Al-Jood Association",
-      "logo": "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=150&h=150&fit=crop",
-      "link": "https://ekram.sa"
+      "logo": "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=300&h=300&fit=crop",
+      "link": "https://ekram.sa",
+      "category": "شريك مجتمعي",
+      "descriptionAr": "التعاون في مشاريع إفطار الصائمين وسقيا المعتمرين وخدمة زوار المسجد الحرام الشريف.",
+      "active": true,
+      "showInHome": true,
+      "isFeatured": false,
+      "order": 4
+    },
+    {
+      "id": "partner-5",
+      "nameAr": "منصة العمل التطوعي الوطنية",
+      "nameEn": "National Volunteer Portal",
+      "logo": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=300&h=300&fit=crop",
+      "link": "https://nvp.gov.sa",
+      "category": "شريك لوجستي",
+      "descriptionAr": "توثيق الساعات التطوعية وطرح الفرص التنموية واعتماد شهادات المتطوعين وفق المعايير الرسمية.",
+      "active": true,
+      "showInHome": true,
+      "isFeatured": false,
+      "order": 5
+    },
+    {
+      "id": "partner-6",
+      "nameAr": "مؤسسة أوقاف العسيلة التنموية",
+      "nameEn": "Al-Asilah Development Endowments",
+      "logo": "https://images.unsplash.com/photo-1577495508048-b635879837f1?w=300&h=300&fit=crop",
+      "link": "",
+      "category": "شريك نجاح",
+      "descriptionAr": "دعم البرامج التعليمية ومبادرات تمكين الشباب والأسر المنتجة في أحياء العسيلة.",
+      "active": true,
+      "showInHome": true,
+      "isFeatured": false,
+      "order": 6
     }
   ],
   "gallery": [
@@ -3676,7 +3766,10 @@
       "url": "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&h=600&fit=crop",
       "titleAr": "توزيع وجبات المعتمرين في الساحات",
       "titleEn": "Distributing meals to pilgrims in plazas",
-      "date": "2026-07-15"
+      "date": "2026-07-15",
+      "category": "مبادرات",
+      "isFeatured": true,
+      "descriptionAr": "توزيع وجبات المعتمرين في ساحات الحرم المكي الشريف."
     },
     {
       "id": "gal-2",
@@ -3684,7 +3777,10 @@
       "url": "https://images.unsplash.com/photo-1542810634-71277d95dcbb?w=800&h=600&fit=crop",
       "titleAr": "اللقاء السنوي لمتطوعي ريادة العطاء",
       "titleEn": "Annual meeting of Reyadat Al-Ata volunteers",
-      "date": "2026-07-18"
+      "date": "2026-07-18",
+      "category": "فعاليات",
+      "isFeatured": true,
+      "descriptionAr": "اللقاء السنوي الدوري لمتطوعي ومنتسبي ريادة العطاء."
     },
     {
       "id": "gal-3",
@@ -3692,7 +3788,65 @@
       "url": "https://assets.mixkit.co/videos/preview/mixkit-volunteers-distributing-food-box-to-poor-people-41584-large.mp4",
       "titleAr": "فيديو وثائقي لمبادرة تنظيم حشود الإفطار",
       "titleEn": "Documentary video of Ramadan food service",
-      "date": "2026-07-12"
+      "date": "2026-07-12",
+      "category": "إعلام",
+      "isFeatured": true,
+      "descriptionAr": "توثيق مرئي ميداني لخدمات سقيا وإفطار الصائمين."
+    },
+    {
+      "id": "gal-4",
+      "type": "photo",
+      "url": "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800&h=600&fit=crop",
+      "titleAr": "مشروع السقيا وكسوة الشتاء لأسر مخطط العسيلة",
+      "titleEn": "Winter clothes and water distribution project",
+      "descriptionAr": "جانب من فعاليات توزيع الكسوة الشتوية وعبوات المياه المبردة للمستفيدين والأسر بمكة المكرمة.",
+      "category": "مشاريع",
+      "isFeatured": true,
+      "date": "2026-08-10"
+    },
+    {
+      "id": "gal-5",
+      "type": "photo",
+      "url": "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=800&h=600&fit=crop",
+      "titleAr": "مبادرة الرعاية الصحية وتفقد كبار السن الميدانية",
+      "titleEn": "Healthcare initiative and visiting senior citizens",
+      "descriptionAr": "توثيق مشاركة الفرق التطوعية الصحية في الفحص الميداني لكبار السن وتقديم الاستشارات الطبية.",
+      "category": "مبادرات",
+      "isFeatured": true,
+      "date": "2026-08-14"
+    },
+    {
+      "id": "gal-6",
+      "type": "photo",
+      "url": "https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=800&h=600&fit=crop",
+      "titleAr": "حفل تكريم فرسان التطوع والشركاء السنوي",
+      "titleEn": "Annual volunteer knights and partners honor ceremony",
+      "descriptionAr": "احتفاء الجمعية بمتطوعيها المميزين وقادة الفرق التطوعية وتكريم الجهات المانحة الداعمة.",
+      "category": "فعاليات",
+      "isFeatured": true,
+      "date": "2026-08-20"
+    },
+    {
+      "id": "gal-7",
+      "type": "video",
+      "url": "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
+      "titleAr": "تقرير مصور: برنامج تمكين الشباب وبناء المهارات",
+      "titleEn": "Video Report: Youth empowerment and capacity building",
+      "descriptionAr": "تغطية مرئية متكاملة لورش العمل التدريبية لتمكين المتطوعين ورفع جاهزيتهم للعمل الإنساني.",
+      "category": "إعلام",
+      "isFeatured": true,
+      "date": "2026-08-25"
+    },
+    {
+      "id": "gal-8",
+      "type": "photo",
+      "url": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&h=600&fit=crop",
+      "titleAr": "ملتقى التطوع والتنمية المستدامة بالعسيلة",
+      "titleEn": "Volunteering and sustainable development forum",
+      "descriptionAr": "جلسات حوارية تجمع قيادات العمل غير الربحي لتعزيز استدامة المبادرات الإنسانية.",
+      "category": "فعاليات",
+      "isFeatured": false,
+      "date": "2026-09-02"
     }
   ],
   "beneficiaries": [
@@ -7837,6 +7991,22 @@
   ],
   "accessAuditLogs": [
     {
+      "id": "audit-login-1790790651145-eqzm",
+      "timestamp": "2026-09-30T17:50:51.145Z",
+      "userId": "admin-user",
+      "userName": "مجلس الجمعية والمدير التنفيذي",
+      "userRole": "admin",
+      "userDepartmentId": "dep-1",
+      "targetDepartmentId": "dep-1",
+      "action": "login",
+      "resource": "بوابة الدخول الموحد",
+      "endpoint": "/api/db/auth/login",
+      "status": "allowed",
+      "ip": "169.254.169.126",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
+      "notes": "تسجيل دخول الإدارة العليا بنجاح"
+    },
+    {
       "id": "audit-login-1790269271225-v946",
       "timestamp": "2026-09-24T17:01:11.225Z",
       "userId": "sk-101",
@@ -8057,5 +8227,66 @@
       "createdAt": "2026-09-24T16:12:54.179Z"
     }
   ],
-  "developerErrorLogs": []
+  "developerErrorLogs": [
+    {
+      "id": "err_1790790676038_7jfiq",
+      "pageName": "قسم: إدارة الدعم الفني والتذاكر",
+      "message": "Cannot read properties of undefined (reading 'map')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'map')\n    at SupportAdminPanel (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/SupportAdminPanel.tsx:920:142)\n    at Object.react_stack_bottom_frame (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:18509:20)\n    at renderWithHooks (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:5654:24)\n    at updateFunctionComponent (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:7475:21)\n    at beginWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:8525:20)\n    at runWithFiberInDEV (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:997:72)\n    at performUnitOfWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:12561:98)\n    at workLoopSync (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:12424:43)\n    at renderRootSync (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:12408:13)\n    at performWorkOnRoot (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=5365ee96:11827:37)",
+      "componentStack": "\n    at SupportAdminPanel (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/SupportAdminPanel.tsx:24:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:6:5)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at AdminDashboard (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/AdminDashboard.tsx:68:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:6:5)\n    at div (<anonymous>)\n    at main (<anonymous>)\n    at div (<anonymous>)\n    at App (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/App.tsx:37:31)",
+      "timestamp": "2026-09-30T17:51:16.043Z",
+      "url": "https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/#gallery",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+      "ip": "169.254.169.126"
+    }
+  ],
+  "activeSessions": [
+    {
+      "token": "sess_1790790651148_lfa5eac2q8227o",
+      "userId": "admin-user",
+      "role": "admin",
+      "user": {
+        "id": "admin-user",
+        "name": "مجلس الجمعية والمدير التنفيذي",
+        "email": "admin@riadataleata.org.sa",
+        "phone": "0550000000",
+        "nationalId": "1000000000",
+        "role": "admin",
+        "jobTitle": "المدير العام والمدير التنفيذي",
+        "primaryDepartmentId": "dep-1",
+        "primaryDepartmentName": "الإدارة التنفيذية",
+        "allowedDepartmentIds": [
+          "dep-1",
+          "dep-2",
+          "dep-3",
+          "dep-4",
+          "dep-5",
+          "dep-6",
+          "dep-7",
+          "dep-8",
+          "dep-9"
+        ],
+        "permissions": [
+          "super_admin",
+          "view_department",
+          "create_data",
+          "edit_data",
+          "delete_data",
+          "export_pdf",
+          "export_excel",
+          "manage_staff",
+          "manage_tasks",
+          "view_reports",
+          "cross_department_access"
+        ],
+        "status": "active"
+      },
+      "departmentId": "dep-1",
+      "nationalId": "1000000000",
+      "teamId": "",
+      "createdAt": 1790790651148,
+      "lastActive": 1790790651148,
+      "expiresAt": 1791395451148
+    }
+  ]
 }

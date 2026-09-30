@@ -4,8 +4,9 @@ import {
   Plus, Trash2, Edit3, HelpCircle, Save, CheckCircle, Clock, 
   AlertTriangle, Check, X, ShieldAlert, Award, FileText, UserCheck, Inbox,
   ShieldCheck, ArrowUp, ArrowDown, ExternalLink, Sliders, Globe,
-  Network, Image as ImageIcon
+  Network, Image as ImageIcon, Upload, Maximize2, RefreshCw
 } from "lucide-react";
+import { buildApiUrl } from "../config/api";
 import { 
   HomeSettings, NewsItem, PartnerItem, GalleryItem, 
   Beneficiary, BenefitRequest, OrgMember, HeroSlide 
@@ -93,6 +94,110 @@ export function HomepageAdminPanel({
   const [localSettings, setLocalSettings] = useState<HomeSettings>({ ...settings });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isSavingPartnerSettings, setIsSavingPartnerSettings] = useState(false);
+
+  // License Management States
+  const [isUploadingLicense, setIsUploadingLicense] = useState(false);
+  const [licenseFeedback, setLicenseFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isLicensePreviewModalOpen, setIsLicensePreviewModalOpen] = useState(false);
+  const [showLicenseDeleteConfirm, setShowLicenseDeleteConfirm] = useState(false);
+  const licenseFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleUploadLicenseFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setLicenseFeedback({ type: "error", text: "يرجى اختيار ملف صورة صالح (PNG, JPG, WEBP, SVG)" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setLicenseFeedback({ type: "error", text: "حجم الملف يتجاوز الحد المسموح (10 ميجابايت)" });
+      return;
+    }
+
+    setIsUploadingLicense(true);
+    setLicenseFeedback(null);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64Data = reader.result as string;
+      try {
+        const res = await fetch(buildApiUrl("/api/db/license/upload"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: base64Data,
+            licenseNumber: localSettings.licenseNumber || "5081"
+          })
+        });
+        const data = await res.json();
+        const finalUrl = data.imageUrl || base64Data;
+        const updated: HomeSettings = {
+          ...localSettings,
+          licenseNumber: data.licenseNumber || localSettings.licenseNumber || "5081",
+          licenseImage: finalUrl,
+          licenseConfig: {
+            ...(localSettings.licenseConfig || {}),
+            enabled: true,
+            imageUrl: finalUrl,
+            titleAr: localSettings.licenseConfig?.titleAr || "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 5081",
+            notes: localSettings.licenseConfig?.notes || "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
+          }
+        };
+        setLocalSettings(updated);
+        await onUpdateSettings(updated);
+        setLicenseFeedback({ type: "success", text: "تم رفع وحفظ وثيقة الترخيص الرسمية بنجاح ✓ وتظهر الآن في الصفحة الرئيسية!" });
+      } catch {
+        const updated: HomeSettings = {
+          ...localSettings,
+          licenseImage: base64Data,
+          licenseConfig: {
+            ...(localSettings.licenseConfig || {}),
+            enabled: true,
+            imageUrl: base64Data
+          }
+        };
+        setLocalSettings(updated);
+        await onUpdateSettings(updated);
+        setLicenseFeedback({ type: "success", text: "تم حفظ صورة الترخيص في النظام بنجاح ✓" });
+      } finally {
+        setIsUploadingLicense(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDeleteLicense = async () => {
+    setIsUploadingLicense(true);
+    setLicenseFeedback(null);
+    try {
+      await fetch(buildApiUrl("/api/db/license/delete"), { method: "POST" });
+      const updated: HomeSettings = {
+        ...localSettings,
+        licenseImage: "",
+        licenseConfig: {
+          ...(localSettings.licenseConfig || {}),
+          imageUrl: ""
+        }
+      };
+      setLocalSettings(updated);
+      await onUpdateSettings(updated);
+      setShowLicenseDeleteConfirm(false);
+      setLicenseFeedback({ type: "success", text: "تم حذف صورة وثيقة الترخيص بنجاح" });
+    } catch {
+      const updated: HomeSettings = {
+        ...localSettings,
+        licenseImage: "",
+        licenseConfig: {
+          ...(localSettings.licenseConfig || {}),
+          imageUrl: ""
+        }
+      };
+      setLocalSettings(updated);
+      await onUpdateSettings(updated);
+      setShowLicenseDeleteConfirm(false);
+      setLicenseFeedback({ type: "success", text: "تم حذف صورة الترخيص" });
+    } finally {
+      setIsUploadingLicense(false);
+    }
+  };
 
   useEffect(() => {
     setLocalSettings({ ...settings });
@@ -484,25 +589,46 @@ export function HomepageAdminPanel({
             </div>
           </div>
 
-          {/* Section 1.5: Official License Image Strip Below Header */}
-          <div className="bg-white p-5 rounded-2xl border border-emerald-200/80 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-emerald-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">
-                  <ShieldCheck className="w-5 h-5" />
+          {/* Section 1.5: Official License Image & Number Management */}
+          <div className="bg-white p-5 rounded-2xl border-2 border-emerald-300/80 shadow-xs space-y-5">
+            {/* Hidden File Input for License Upload */}
+            <input
+              type="file"
+              ref={licenseFileInputRef}
+              accept="image/png, image/jpeg, image/jpg, image/webp, image/svg+xml"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  handleUploadLicenseFile(file);
+                }
+                if (e.target) e.target.value = "";
+              }}
+            />
+
+            {/* Header of Section */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black shadow-2xs">
+                  <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-neutral-800">
-                    {lang === "ar" ? "وثيقة الترخيص الرسمية (صورة صغيرة قابلة للنقر مع نافذة تكبير)" : "Official License (Small Clickable Image & Viewer)"}
+                  <h3 className="text-sm font-black text-neutral-800 flex items-center gap-2">
+                    <span>{lang === "ar" ? "إدارة وثيقة وصورة الترخيص الرسمي (رقم 5081)" : "Official License Management (#5081)"}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      معتمد
+                    </span>
                   </h3>
-                  <p className="text-[10px] text-neutral-400">
-                    عرض صورة وثيقة الترخيص كأيقونة/صورة مصغرة ذكية تفتح نافذة العرض والتكبير الرسمية للترخيص 5081
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    {lang === "ar" 
+                      ? "إدارة صورة وثيقة الترخيص الرسمية وتحديد رقم الترخيص المعروض للزوار في الصفحة الرئيسية" 
+                      : "Manage official license document image and number shown on the public homepage"}
                   </p>
                 </div>
               </div>
 
               {/* Active Toggle Switch */}
-              <label className="inline-flex items-center gap-2 cursor-pointer bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+              <label className="inline-flex items-center gap-2 cursor-pointer bg-emerald-50 hover:bg-emerald-100/70 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors">
                 <input
                   type="checkbox"
                   checked={localSettings.licenseConfig?.enabled !== false}
@@ -511,11 +637,8 @@ export function HomepageAdminPanel({
                       ...localSettings,
                       licenseConfig: {
                         ...(localSettings.licenseConfig || {
-                          imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&fit=crop",
-                          width: 340,
-                          maxHeight: 95,
-                          alignment: "right",
-                          titleAr: "شهادة ترخيص جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+                          imageUrl: "",
+                          titleAr: "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 5081",
                           notes: "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
                         }),
                         enabled: e.target.checked
@@ -530,251 +653,313 @@ export function HomepageAdminPanel({
               </label>
             </div>
 
-            {/* License Upload & Media */}
-            <ImageUploadField
-              label="صورة وثيقة الترخيص الرسمية (رفع ملف مباشر أو رابط)"
-              description="ارفع صورة عالية الوضوح لشهادة الترخيص أو الوثيقة الصادرة من المركز الوطني"
-              value={localSettings.licenseConfig?.imageUrl || ""}
-              onChange={(val) => {
-                setLocalSettings({
-                  ...localSettings,
-                  licenseConfig: {
-                    ...(localSettings.licenseConfig || {
-                      enabled: true,
-                      width: 340,
-                      maxHeight: 95,
-                      alignment: "right",
-                      titleAr: "شهادة ترخيص جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
-                      notes: "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
-                    }),
-                    imageUrl: val
-                  }
-                });
-              }}
-              previewAspect="banner"
-            />
-
-            {/* Dimension Controls & Alignment */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-              {/* Width */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-neutral-600">
-                  عرض الصورة بالبكسل (Max Width):
-                </label>
+            {/* License Feedback Alert */}
+            {licenseFeedback && (
+              <div className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 ${
+                licenseFeedback.type === "success" 
+                  ? "bg-emerald-50 text-emerald-800 border border-emerald-200" 
+                  : "bg-rose-50 text-rose-800 border border-rose-200"
+              }`}>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="150"
-                    max="800"
-                    step="10"
-                    value={localSettings.licenseConfig?.width || 340}
-                    onChange={(e) => {
-                      const val = Number(e.target.value) || 340;
-                      setLocalSettings({
-                        ...localSettings,
-                        licenseConfig: {
-                          ...(localSettings.licenseConfig || {
-                            enabled: true,
-                            imageUrl: "",
-                            maxHeight: 95,
-                            alignment: "right"
-                          }),
-                          width: val
-                        }
-                      });
-                    }}
-                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-neutral-250 bg-neutral-50/50 font-mono"
-                  />
-                  <span className="text-xs text-neutral-400">px</span>
+                  {licenseFeedback.type === "success" ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-rose-600" />}
+                  <span>{licenseFeedback.text}</span>
                 </div>
-                {/* Presets */}
-                <div className="flex gap-1 pt-0.5">
-                  {[260, 340, 440, 560].map(px => (
-                    <button
-                      key={px}
-                      type="button"
-                      onClick={() => {
-                        setLocalSettings({
-                          ...localSettings,
-                          licenseConfig: {
-                            ...(localSettings.licenseConfig || { enabled: true, imageUrl: "", maxHeight: 95, alignment: "right" }),
-                            width: px
-                          }
-                        });
-                      }}
-                      className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 cursor-pointer"
-                    >
-                      {px}
-                    </button>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setLicenseFeedback(null)}
+                  className="text-neutral-400 hover:text-neutral-700 p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
+            )}
 
-              {/* Max Height */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-neutral-600">
-                  أقصى ارتفاع للصورة (Max Height):
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="50"
-                    max="300"
-                    step="5"
-                    value={localSettings.licenseConfig?.maxHeight || 95}
-                    onChange={(e) => {
-                      const val = Number(e.target.value) || 95;
-                      setLocalSettings({
-                        ...localSettings,
-                        licenseConfig: {
-                          ...(localSettings.licenseConfig || {
-                            enabled: true,
-                            imageUrl: "",
-                            width: 340,
-                            alignment: "right"
-                          }),
-                          maxHeight: val
-                        }
-                      });
-                    }}
-                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-neutral-250 bg-neutral-50/50 font-mono"
-                  />
-                  <span className="text-xs text-neutral-400">px</span>
-                </div>
-                {/* Presets */}
-                <div className="flex gap-1 pt-0.5">
-                  {[75, 95, 120, 160].map(px => (
-                    <button
-                      key={px}
-                      type="button"
-                      onClick={() => {
-                        setLocalSettings({
-                          ...localSettings,
-                          licenseConfig: {
-                            ...(localSettings.licenseConfig || { enabled: true, imageUrl: "", width: 340, alignment: "right" }),
-                            maxHeight: px
-                          }
-                        });
-                      }}
-                      className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 cursor-pointer"
-                    >
-                      {px}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Alignment */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-neutral-600">
-                  محاذاة العرض في الصفحة:
-                </label>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['right', 'center', 'left'] as const).map(align => (
-                    <button
-                      key={align}
-                      type="button"
-                      onClick={() => {
-                        setLocalSettings({
-                          ...localSettings,
-                          licenseConfig: {
-                            ...(localSettings.licenseConfig || {
-                              enabled: true,
-                              imageUrl: "",
-                              width: 340,
-                              maxHeight: 95
-                            }),
-                            alignment: align
-                          }
-                        });
-                      }}
-                      className={`py-1.5 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                        (localSettings.licenseConfig?.alignment || 'right') === align
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                          : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
-                      }`}
-                    >
-                      {align === 'right' ? 'يمين' : align === 'center' ? 'وسط' : 'يسار'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Title & Notes */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* License Number & Supervisory Body Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 mb-1">
-                  عنوان الوثيقة التوضيحي:
+                <label className="block text-xs font-bold text-emerald-950 mb-1 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>رقم الترخيص الوزاري الرسمي للجمعية:</span>
                 </label>
-                <input
-                  type="text"
-                  value={localSettings.licenseConfig?.titleAr || ""}
-                  onChange={(e) => {
-                    setLocalSettings({
-                      ...localSettings,
-                      licenseConfig: {
-                        ...(localSettings.licenseConfig || { enabled: true, imageUrl: "", width: 340, maxHeight: 95, alignment: "right" }),
-                        titleAr: e.target.value
-                      }
-                    });
-                  }}
-                  placeholder="شهادة ترخيص جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"
-                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-neutral-250 bg-neutral-50/50"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={localSettings.licenseNumber || "5081"}
+                    onChange={(e) => {
+                      setLocalSettings({
+                        ...localSettings,
+                        licenseNumber: e.target.value
+                      });
+                    }}
+                    placeholder="5081"
+                    className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-emerald-300 bg-white text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
+                  <span className="absolute left-3 top-2.5 text-[10px] text-emerald-600 font-bold">
+                    المركز الوطني
+                  </span>
+                </div>
+                <p className="text-[10px] text-emerald-700/80 mt-1">
+                  رقم ترخيص الجمعية المعتمد والصادر من المركز الوطني لتنمية القطاع غير الربحي بمكة المكرمة.
+                </p>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 mb-1">
-                  ملاحظات ونص الترخيص المرافق:
+                <label className="block text-xs font-bold text-emerald-950 mb-1">
+                  الجهة الإشرافية والتنظيمية:
                 </label>
-                <input
-                  type="text"
-                  value={localSettings.licenseConfig?.notes || ""}
-                  onChange={(e) => {
-                    setLocalSettings({
-                      ...localSettings,
-                      licenseConfig: {
-                        ...(localSettings.licenseConfig || { enabled: true, imageUrl: "", width: 340, maxHeight: 95, alignment: "right" }),
-                        notes: e.target.value
-                      }
-                    });
-                  }}
-                  placeholder="مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
-                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-neutral-250 bg-neutral-50/50"
-                />
+                <div className="p-2.5 rounded-xl bg-white border border-emerald-200 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+                  <span>المركز الوطني لتنمية القطاع غير الربحي</span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                    نظام المنظمات غير الربحية
+                  </span>
+                </div>
+                <p className="text-[10px] text-neutral-500 mt-1">
+                  يظهر هذا الإشراف رسمياً بجانب رقم الترخيص في الهيدر والفوتر والصفحة الرئيسية.
+                </p>
               </div>
             </div>
 
-            {/* Real-time Interactive Preview of License Strip */}
-            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-2">
+            {/* License Image Controls: Upload, Preview, Replace, Delete */}
+            <div className="space-y-4">
+              <label className="block text-xs font-bold text-neutral-800">
+                صورة وثيقة الترخيص الرسمية (مخزنة في السيرفر وتظهر كصورة مربعة صغيرة قابلة للنقر):
+              </label>
+
+              {(localSettings.licenseImage || localSettings.licenseConfig?.imageUrl) ? (
+                /* When Image is Present: Show Thumbnails, Replace, Delete, Preview */
+                <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    {/* Small Square Image Display */}
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <div className="relative group w-20 h-20 rounded-2xl overflow-hidden bg-white border-2 border-emerald-500 shadow-md flex items-center justify-center shrink-0 aspect-square">
+                        <img
+                          src={localSettings.licenseImage || localSettings.licenseConfig?.imageUrl}
+                          alt="صورة وثيقة الترخيص"
+                          className="w-full h-full object-cover rounded-xl aspect-square"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setIsLicensePreviewModalOpen(true)}
+                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
+                          title="اضغط للتكبير"
+                        >
+                          <Maximize2 className="w-5 h-5 drop-shadow" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-1 text-right">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-emerald-800">
+                            وثيقة الترخيص الرسمية المرفوعة
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            مخزنة في الموقع ✓
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-neutral-500">
+                          تظهر حالياً في الصفحة الرئيسية كصورة مربعة صغيرة بجانب اسم ورقم ترخيص الجمعية.
+                        </p>
+                        <p className="text-[10px] text-neutral-400 font-mono">
+                          {localSettings.licenseConfig.imageUrl.startsWith("data:") 
+                            ? "تخزين مباشر مشفر Base64" 
+                            : localSettings.licenseConfig.imageUrl}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons: Replace, Preview, Delete */}
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setIsLicensePreviewModalOpen(true)}
+                        className="px-3 py-2 text-xs font-bold text-neutral-700 bg-white hover:bg-neutral-100 border border-neutral-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-neutral-600" />
+                        <span>معاينة وتكبير</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isUploadingLicense}
+                        onClick={() => licenseFileInputRef.current?.click()}
+                        className="px-3.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isUploadingLicense ? 'animate-spin' : ''}`} />
+                        <span>استبدال الصورة</span>
+                      </button>
+
+                      {!showLicenseDeleteConfirm ? (
+                        <button
+                          type="button"
+                          disabled={isUploadingLicense}
+                          onClick={() => setShowLicenseDeleteConfirm(true)}
+                          className="px-3 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف الصورة</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5 bg-rose-100 p-1 rounded-xl border border-rose-300">
+                          <button
+                            type="button"
+                            disabled={isUploadingLicense}
+                            onClick={handleDeleteLicense}
+                            className="px-2.5 py-1 text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
+                          >
+                            تأكيد الحذف
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowLicenseDeleteConfirm(false)}
+                            className="px-2 py-1 text-[11px] font-bold text-neutral-600 hover:bg-white rounded-lg cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* When Image is NOT Present: Upload Dropzone Box */
+                <div 
+                  onClick={() => licenseFileInputRef.current?.click()}
+                  className="p-6 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all cursor-pointer text-center space-y-3 group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-white border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-xs group-hover:scale-105 transition-transform">
+                    {isUploadingLicense ? (
+                      <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+                    ) : (
+                      <Upload className="w-6 h-6 text-emerald-600" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-neutral-800">
+                      {isUploadingLicense ? "جاري رفع ومعالجة صورة الترخيص..." : "اضغط هنا لاختيار صورة وثيقة الترخيص من جهازك"}
+                    </h4>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      يدعم ملفات الصور: PNG, JPG, JPEG, WEBP, SVG (يتم حفظها في تخزين الموقع وعرضها للزوار)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isUploadingLicense}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>رفع صورة وثيقة الترخيص الرسمية</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Live Interactive Preview Box: Header & Hero appearance */}
+            <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 space-y-3">
               <span className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block">
-                معاينة حية للمظهر كما سيظهر للزوار كصورة صغيرة قابلة للنقر:
+                معاينة حية للمظهر كما يظهر للزوار في الموقع:
               </span>
-              <div className="bg-white border border-emerald-100 p-4 rounded-xl flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-neutral-500 font-bold">رقم الترخيص: 5081</span>
-                  {localSettings.licenseConfig?.imageUrl ? (
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px] font-bold shadow-2xs">
-                      <img
-                        src={localSettings.licenseConfig.imageUrl}
-                        alt="معاينة الترخيص"
-                        className="w-6 h-4.5 rounded object-cover border border-emerald-400/50"
-                      />
-                      <span>وثيقة الترخيص</span>
-                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Header Navbar Preview */}
+                <div className="bg-white p-3 rounded-xl border border-neutral-200 space-y-1.5">
+                  <span className="text-[10px] text-neutral-400 font-bold block">1. المظهر في شريط الهيدر العلوي:</span>
+                  <div className="flex items-center gap-2 p-1.5 rounded-xl border border-emerald-500/35 bg-emerald-50/80 w-fit">
+                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-white border border-emerald-400/50 flex items-center justify-center shrink-0 aspect-square shadow-2xs">
+                      {(localSettings.licenseImage || localSettings.licenseConfig?.imageUrl) ? (
+                        <img
+                          src={localSettings.licenseImage || localSettings.licenseConfig?.imageUrl}
+                          alt="معاينة"
+                          className="w-full h-full object-cover rounded aspect-square"
+                        />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      )}
                     </div>
-                  ) : (
-                    <div className="w-16 h-8 bg-neutral-200 rounded flex items-center justify-center text-neutral-400 text-[9px]">
-                      لا توجد صورة
+                    <div className="flex flex-col text-right leading-tight pr-1">
+                      <span className="text-xs font-black text-emerald-800">
+                        ترخيص: {localSettings.licenseNumber || "5081"}
+                      </span>
+                      <span className="text-[8px] text-neutral-500">
+                        المركز الوطني لتنمية القطاع غير الربحي
+                      </span>
                     </div>
-                  )}
+                  </div>
                 </div>
-                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  ✓ يفتح نافذة عرض الوثيقة الرسمية عند النقر
-                </span>
+
+                {/* Hero Banner Preview */}
+                <div className="bg-neutral-900 p-3 rounded-xl border border-neutral-800 space-y-1.5 text-white">
+                  <span className="text-[10px] text-neutral-400 font-bold block">2. المظهر في واجهة البانر الرئيسية (Hero):</span>
+                  <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white/10 border border-emerald-400/40 w-fit">
+                    <div className="w-9 h-9 rounded-lg overflow-hidden bg-white/20 border border-emerald-400/50 flex items-center justify-center shrink-0 aspect-square">
+                      {(localSettings.licenseImage || localSettings.licenseConfig?.imageUrl) ? (
+                        <img
+                          src={localSettings.licenseImage || localSettings.licenseConfig?.imageUrl}
+                          alt="معاينة"
+                          className="w-full h-full object-cover rounded aspect-square"
+                        />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="flex flex-col text-right">
+                      <span className="text-xs font-bold text-emerald-300">
+                        الترخيص الرسمي: {localSettings.licenseNumber || "5081"}
+                      </span>
+                      <span className="text-[9px] text-neutral-300">
+                        بإشراف المركز الوطني لتنمية القطاع غير الربحي
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Document Full Preview Modal (when clicking preview) */}
+            {isLicensePreviewModalOpen && (
+              <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl max-w-2xl w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                  <div className="flex items-center justify-between border-b pb-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                      <h4 className="text-sm font-bold text-neutral-900">
+                        معاينة وثيقة الترخيص الرسمية (ترخيص {localSettings.licenseNumber || "5081"})
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsLicensePreviewModalOpen(false)}
+                      className="p-1 rounded-full hover:bg-neutral-100 text-neutral-400"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="bg-neutral-100 p-2 rounded-2xl flex items-center justify-center min-h-[300px] max-h-[60vh] overflow-hidden">
+                    {(localSettings.licenseImage || localSettings.licenseConfig?.imageUrl) ? (
+                      <img
+                        src={localSettings.licenseImage || localSettings.licenseConfig?.imageUrl}
+                        alt="وثيقة الترخيص"
+                        className="max-h-[55vh] max-w-full object-contain rounded-xl shadow-md"
+                      />
+                    ) : (
+                      <p className="text-neutral-400 text-xs">لا توجد صورة وثيقة ترخيص مرفوعة حالياً</p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2">
+                    <span className="text-xs text-neutral-500 font-bold">
+                      رقم الترخيص: {localSettings.licenseNumber || "5081"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsLicensePreviewModalOpen(false)}
+                      className="px-4 py-2 bg-neutral-900 text-white rounded-xl text-xs font-bold"
+                    >
+                      إغلاق المعاينة
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 2: Hero background and CTA */}

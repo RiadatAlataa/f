@@ -5,13 +5,15 @@ import {
   Clock, Heart, ShieldCheck, ArrowRight, ArrowLeft, Send, 
   ExternalLink, Globe, Moon, Sun, BookOpen, Volume2, Video, 
   Image as ImageIcon, CheckCircle, ChevronRight, ChevronDown, X, AlertCircle, Play, Sparkles,
-  Menu, Home, ShoppingBag, Lock, Sliders, Trophy, Crown, Medal, Star, Maximize2, Printer
+  Menu, Home, ShoppingBag, Lock, Sliders, Trophy, Crown, Medal, Star, Maximize2, Printer,
+  ZoomIn, ZoomOut, RotateCcw, LayoutDashboard, HeartHandshake, Shield, Briefcase, Package, UserCheck
 } from "lucide-react";
 import { motion, AnimatePresence, useInView } from "motion/react";
 import { ImagePickerControl } from "./ImagePickerControl";
 import { TeamRegistrationModal } from "./TeamRegistrationModal";
 import { SendLetterModal } from "./SendLetterModal";
 import { VolunteerKnightsHomeCard, VolunteerKnightsModal } from "./VolunteerKnights";
+import { FullGalleryPage } from "./FullGalleryPage";
 import { 
   HomeSettings, NewsItem, PartnerItem, GalleryItem, 
   Initiative, Volunteer, Beneficiary, VolunteerTeam, Department,
@@ -24,6 +26,7 @@ import { HeroSlider } from "./HeroSlider";
 import { OrgChartSection } from "./OrgChartSection";
 import { OrgMember, HeroSlide } from "../types";
 import { UserSettingsModal } from "./UserSettingsModal";
+import { PartnersSlider } from "./PartnersSlider";
 import { playApplicationSubmittedChime } from "../utils/audioNotification";
 
 // -------------------------------------------------------------
@@ -120,6 +123,8 @@ interface OfficialHomePageProps {
   onSubmitOfficialLetter?: (letter: Partial<OfficialLetter>) => Promise<{ success: boolean; letter?: OfficialLetter; message?: string }>;
   orgMembers?: OrgMember[];
   heroSlides?: HeroSlide[];
+  authenticatedUser?: any | null;
+  onReturnToDashboard?: () => void;
 }
 
 export function OfficialHomePage({
@@ -153,7 +158,9 @@ export function OfficialHomePage({
   onDonate,
   onSubmitOfficialLetter,
   orgMembers = [],
-  heroSlides = []
+  heroSlides = [],
+  authenticatedUser,
+  onReturnToDashboard
 }: OfficialHomePageProps) {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
@@ -163,7 +170,7 @@ export function OfficialHomePage({
   const secondaryColor = settings?.themeSecondary || "#0d9488";
   
   // Modals state
-  const [currentPublicPage, setCurrentPublicPage] = useState<"home" | "opportunities">("home");
+  const [currentPublicPage, setCurrentPublicPage] = useState<"home" | "opportunities" | "gallery">("home");
   const [selectedOpportunityForJoin, setSelectedOpportunityForJoin] = useState<Initiative | null>(null);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [selectedJoinType, setSelectedJoinType] = useState<"none" | "volunteer" | "leader" | "beneficiary" | "register_new">("none");
@@ -174,9 +181,91 @@ export function OfficialHomePage({
   const [showKnightsModal, setShowKnightsModal] = useState(false);
   const [isUserSettingsOpen, setIsUserSettingsOpen] = useState(false);
   const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false);
+  const [licenseZoom, setLicenseZoom] = useState(1);
+  const [selectedHomeGalleryItem, setSelectedHomeGalleryItem] = useState<GalleryItem | null>(null);
 
-  // License Document URL
-  const licenseImageUrl = settings?.licenseConfig?.imageUrl || "https://images.unsplash.com/photo-1607344645866-009c320c5ab8?w=800&auto=format&fit=crop&q=80";
+  // Return to Dashboard details based on authenticated user's role
+  const returnBtnDetails = useMemo(() => {
+    if (!authenticatedUser) return null;
+    const role = authenticatedUser.role;
+    const deptId = authenticatedUser.departmentId;
+    const deptName = authenticatedUser.departmentName || '';
+
+    if (role === 'admin') {
+      return {
+        label: lang === 'ar' ? 'العودة إلى لوحة التحكم' : 'Return to Control Panel',
+        subtitle: lang === 'ar' ? 'الإدارة العامة' : 'General Administration',
+        icon: LayoutDashboard,
+        color: 'from-emerald-600 to-teal-700'
+      };
+    }
+    if (role === 'volunteer') {
+      return {
+        label: lang === 'ar' ? 'العودة إلى صفحة المتطوع' : 'Return to Volunteer Page',
+        subtitle: lang === 'ar' ? 'بوابة المتطوعين' : 'Volunteer Portal',
+        icon: HeartHandshake,
+        color: 'from-emerald-600 to-green-700'
+      };
+    }
+    if (role === 'department_admin') {
+      const isMedia = deptId === 'dep-6' || deptName.includes('إعلام');
+      const isOperations = deptId === 'dep-operations' || deptId === 'dep-7' || deptName.includes('عمليات') || deptName.includes('دعم فني');
+      return {
+        label: isMedia 
+          ? (lang === 'ar' ? 'العودة إلى إدارة الإعلام' : 'Return to Media Dept')
+          : isOperations
+          ? (lang === 'ar' ? 'العودة إلى لوحة العمليات' : 'Return to Operations')
+          : (lang === 'ar' ? 'العودة إلى لوحة الإدارة' : 'Return to Department'),
+        subtitle: isOperations
+          ? (lang === 'ar' ? 'مدير العمليات' : 'Operations Manager')
+          : (deptName || (lang === 'ar' ? 'إدارة الجمعية' : 'Department')),
+        icon: Shield,
+        color: isOperations ? 'from-indigo-600 to-slate-800' : 'from-teal-600 to-emerald-800'
+      };
+    }
+    if (role === 'employee') {
+      return {
+        label: lang === 'ar' ? 'العودة إلى لوحة العمل' : 'Return to Staff Workspace',
+        subtitle: lang === 'ar' ? 'حساب الموظف' : 'Staff Account',
+        icon: Briefcase,
+        color: 'from-slate-700 to-slate-900'
+      };
+    }
+    if (role === 'leader') {
+      return {
+        label: lang === 'ar' ? 'العودة إلى لوحة القائد' : 'Return to Leader Dashboard',
+        subtitle: lang === 'ar' ? 'قيادة الفرق التطوعية' : 'Volunteer Team',
+        icon: Users,
+        color: 'from-amber-600 to-orange-700'
+      };
+    }
+    if (role === 'storekeeper') {
+      return {
+        label: lang === 'ar' ? 'العودة إلى لوحة المستودع' : 'Return to Warehouse',
+        subtitle: lang === 'ar' ? 'إدارة المستودع العيني' : 'Warehouse Inventory',
+        icon: Package,
+        color: 'from-blue-600 to-indigo-700'
+      };
+    }
+    if (role === 'beneficiary') {
+      return {
+        label: lang === 'ar' ? 'العودة إلى بوابة المستفيد' : 'Return to Beneficiary Portal',
+        subtitle: lang === 'ar' ? 'خدمات المستفيدين' : 'Beneficiary Services',
+        icon: UserCheck,
+        color: 'from-emerald-600 to-teal-700'
+      };
+    }
+    return {
+      label: lang === 'ar' ? 'العودة إلى لوحة التحكم' : 'Return to Dashboard',
+      subtitle: authenticatedUser.name || '',
+      icon: LayoutDashboard,
+      color: 'from-emerald-600 to-teal-700'
+    };
+  }, [authenticatedUser, lang]);
+
+  // Official License Document URL & Number
+  const licenseImageUrl = settings?.licenseImage || settings?.licenseConfig?.imageUrl || "";
+  const licenseNumber = settings?.licenseNumber || "5081";
 
   // Registration Form States
   const [regName, setRegName] = useState("");
@@ -640,12 +729,24 @@ export function OfficialHomePage({
     setIsJoinModalOpen(true);
   };
 
-  // Gallery filtering
-  const filteredGallery = galleryList.filter(item => {
-    if (galleryTab === "photos") return item.type === "photo";
-    if (galleryTab === "videos") return item.type === "video";
-    return true;
-  });
+  // Curated, featured, and ordered Gallery items for Homepage template (بإشراف إدارة الإعلام)
+  const homeGalleryItems = useMemo(() => {
+    return [...galleryList]
+      .filter(item => {
+        if (galleryTab === "photos") return item.type === "photo";
+        if (galleryTab === "videos") return item.type === "video";
+        return true;
+      })
+      .sort((a, b) => {
+        // Items marked as featured by Media Dept come first
+        const aFeatured = (a as any).isFeatured !== false ? 1 : 0;
+        const bFeatured = (b as any).isFeatured !== false ? 1 : 0;
+        if (aFeatured !== bFeatured) return bFeatured - aFeatured;
+        return (b.date || "").localeCompare(a.date || "");
+      });
+  }, [galleryList, galleryTab]);
+
+  const filteredGallery = homeGalleryItems;
 
   return (
     <div 
@@ -674,6 +775,34 @@ export function OfficialHomePage({
         }
       `}</style>
 
+      {/* 0. Active Session Banner (شريط تنبيهي للجلسة النشطة وزر العودة التلقائي حسب الدور) */}
+      {authenticatedUser && onReturnToDashboard && returnBtnDetails && (
+        <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 text-white px-3 sm:px-6 py-2 border-b border-emerald-500/40 shadow-sm relative z-50 text-xs">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 text-right">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              <span className="font-bold text-emerald-200">
+                {lang === "ar" ? "أهلاً بك،" : "Welcome,"}
+              </span>
+              <span className="font-black text-white">{authenticatedUser.name || "مستخدم مسجل"}</span>
+              <span className="text-[10px] text-emerald-300 bg-white/10 px-2 py-0.5 rounded-md border border-white/10 font-bold">
+                {returnBtnDetails.subtitle}
+              </span>
+            </div>
+            <button
+              type="button"
+              id="top-bar-return-to-dashboard-btn"
+              onClick={onReturnToDashboard}
+              className={`px-4 py-1.5 bg-gradient-to-r ${returnBtnDetails.color} hover:brightness-110 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap hover:scale-105 active:scale-95 transition-all`}
+              title={returnBtnDetails.label}
+            >
+              <returnBtnDetails.icon className="w-3.5 h-3.5 shrink-0" />
+              <span>{returnBtnDetails.label}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. Header (ثابت أثناء التمرير ومرتب هندسياً مع دمج شارة الترخيص) */}
       <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 transition-all shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[4.5rem] py-2 flex items-center justify-between gap-3 sm:gap-6">
@@ -699,15 +828,43 @@ export function OfficialHomePage({
                   {lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
                 </h1>
 
-                {/* Integrated Compact License Badge (Shield icon with 'ترخيص 5081') */}
+                {/* Official Small Square License Thumbnail & Number Badge */}
                 <button
                   type="button"
-                  onClick={() => setIsLicenseModalOpen(true)}
-                  className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-emerald-500/30 dark:border-emerald-500/40 bg-emerald-50/90 dark:bg-emerald-950/70 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95 text-[10px] sm:text-xs font-bold whitespace-nowrap shrink-0 self-center"
-                  title={lang === "ar" ? "اضغط لعرض وتكبير وثيقة ترخيص الجمعية الرسمية رقم 5081" : "Click to view official license certificate 5081"}
+                  onClick={() => {
+                    setLicenseZoom(1);
+                    setIsLicenseModalOpen(true);
+                  }}
+                  className="group inline-flex items-center gap-1.5 p-1 rounded-xl border border-emerald-500/35 dark:border-emerald-500/40 bg-emerald-50/80 dark:bg-emerald-950/70 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 transition-all cursor-pointer shadow-2xs hover:scale-[1.03] active:scale-95 shrink-0 self-center"
+                  title={lang === "ar" ? `اضغط لعرض وتكبير وثيقة الترخيص الرسمية رقم ${licenseNumber}` : `Click to view official license document #${licenseNumber}`}
                 >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 group-hover:scale-110 transition-transform" />
-                  <span>{lang === "ar" ? `ترخيص ${settings?.licenseNumber || "5081"}` : `License ${settings?.licenseNumber || "5081"}`}</span>
+                  {/* Small Square Image Container */}
+                  <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-lg overflow-hidden bg-white dark:bg-neutral-800 border border-emerald-400/50 shadow-inner flex items-center justify-center shrink-0 aspect-square">
+                    {licenseImageUrl ? (
+                      <img
+                        src={licenseImageUrl}
+                        alt="وثيقة الترخيص الرسمية"
+                        className="w-full h-full object-cover rounded-md aspect-square group-hover:scale-110 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 text-emerald-700 dark:text-emerald-300">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-emerald-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Maximize2 className="w-3 h-3 text-emerald-800 dark:text-emerald-200" />
+                    </div>
+                  </div>
+
+                  {/* License Info Text */}
+                  <div className="flex flex-col text-right leading-tight pr-0.5">
+                    <span className="text-[10px] sm:text-xs font-black text-emerald-800 dark:text-emerald-300 whitespace-nowrap">
+                      {lang === "ar" ? `ترخيص: ${licenseNumber}` : `Lic: ${licenseNumber}`}
+                    </span>
+                    <span className="text-[8px] text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap hidden min-[540px]:inline">
+                      {lang === "ar" ? "المركز الوطني" : "National Center"}
+                    </span>
+                  </div>
                 </button>
               </div>
 
@@ -751,7 +908,18 @@ export function OfficialHomePage({
               <ExternalLink className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
             </a>
             {settings?.sectionVisibility?.news && <a href="#news" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "الأخبار" : "News"}</a>}
-            {settings?.sectionVisibility?.gallery && <a href="#gallery" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "المعرض" : "Gallery"}</a>}
+            {settings?.sectionVisibility?.gallery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentPublicPage('gallery');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="hover:text-emerald-600 transition-colors whitespace-nowrap cursor-pointer text-xs font-bold text-neutral-600 dark:text-neutral-300"
+              >
+                {lang === "ar" ? "معرض الصور" : "Gallery"}
+              </button>
+            )}
             {settings?.sectionVisibility?.partners && <a href="#partners" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "شركاء النجاح" : "Partners"}</a>}
             <a href="#contact" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "تواصل معنا" : "Contact"}</a>
           </nav>
@@ -818,35 +986,49 @@ export function OfficialHomePage({
               <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             </button>
 
-            {/* Join / Login Actions (Desktop only: 2xl) */}
-            <div className="hidden 2xl:flex items-center gap-1.5 border-r border-neutral-200 dark:border-neutral-800 pr-2">
-              <button
-                id="header-desktop-join-btn"
-                onClick={() => {
-                  setSelectedJoinType("none");
-                  setIsJoinModalOpen(true);
-                }}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer whitespace-nowrap"
-              >
-                {lang === "ar" ? "انضم الآن" : "Join Now"}
-              </button>
-              
-              {currentBeneficiary ? (
+            {/* Authenticated Dashboard Return Action OR Guest Join/Login Actions */}
+            {authenticatedUser && onReturnToDashboard && returnBtnDetails ? (
+              <div className="flex items-center gap-2 border-r border-neutral-200 dark:border-neutral-800 pr-2">
                 <button
-                  onClick={() => onOpenLogin('beneficiary')}
-                  className="px-3 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-neutral-700 dark:text-neutral-300 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                  type="button"
+                  onClick={onReturnToDashboard}
+                  className={`px-3 sm:px-3.5 py-1.5 sm:py-2 bg-gradient-to-r ${returnBtnDetails.color} hover:brightness-110 text-white font-black text-[11px] sm:text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap hover:scale-[1.02] active:scale-95`}
+                  title={returnBtnDetails.label}
                 >
-                  {lang === "ar" ? `بوابة المستفيد` : `Beneficiary Portal`}
+                  <returnBtnDetails.icon className="w-3.5 h-3.5 shrink-0" />
+                  <span>{returnBtnDetails.label}</span>
                 </button>
-              ) : (
+              </div>
+            ) : (
+              <div className="hidden 2xl:flex items-center gap-1.5 border-r border-neutral-200 dark:border-neutral-800 pr-2">
                 <button
-                  onClick={() => onOpenLogin('volunteer')}
-                  className="px-3 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-neutral-700 dark:text-neutral-300 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                  id="header-desktop-join-btn"
+                  onClick={() => {
+                    setSelectedJoinType("none");
+                    setIsJoinModalOpen(true);
+                  }}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer whitespace-nowrap"
                 >
-                  {lang === "ar" ? "تسجيل دخول" : "Login"}
+                  {lang === "ar" ? "انضم الآن" : "Join Now"}
                 </button>
-              )}
-            </div>
+                
+                {currentBeneficiary ? (
+                  <button
+                    onClick={() => onOpenLogin('beneficiary')}
+                    className="px-3 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-neutral-700 dark:text-neutral-300 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    {lang === "ar" ? `بوابة المستفيد` : `Beneficiary Portal`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onOpenLogin('volunteer')}
+                    className="px-3 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-neutral-700 dark:text-neutral-300 font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    {lang === "ar" ? "تسجيل دخول" : "Login"}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Menu Hamburger Toggle */}
             <button
@@ -925,6 +1107,40 @@ export function OfficialHomePage({
 
                 {/* Scrollable Navigation Items */}
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
+                  {/* Official License Badge in Mobile Sidebar */}
+                  <div
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setLicenseZoom(1);
+                      setIsLicenseModalOpen(true);
+                    }}
+                    className="p-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-3 cursor-pointer hover:bg-emerald-100/70 dark:hover:bg-emerald-900/50 transition-all shadow-xs"
+                    title={lang === "ar" ? "اضغط لعرض وثيقة الترخيص الرسمية" : "Click to view official license document"}
+                  >
+                    <div className="w-11 h-11 rounded-xl overflow-hidden bg-white dark:bg-neutral-800 border border-emerald-400/50 flex items-center justify-center shrink-0 aspect-square shadow-inner">
+                      {licenseImageUrl ? (
+                        <img
+                          src={licenseImageUrl}
+                          alt="وثيقة الترخيص"
+                          className="w-full h-full object-cover rounded-lg aspect-square"
+                        />
+                      ) : (
+                        <ShieldCheck className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 text-right">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-emerald-900 dark:text-emerald-200">
+                          {lang === "ar" ? `الترخيص الرسمي: ${licenseNumber}` : `License: ${licenseNumber}`}
+                        </span>
+                        <Maximize2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                        {lang === "ar" ? "المركز الوطني لتنمية القطاع غير الربحي" : "National Center for Non-Profit Sector"}
+                      </p>
+                    </div>
+                  </div>
+
                   <nav className="flex flex-col gap-2 text-xs font-bold text-neutral-700 dark:text-neutral-300">
                     <a 
                       href="#about" 
@@ -994,14 +1210,23 @@ export function OfficialHomePage({
                       </a>
                     )}
                     {settings?.sectionVisibility?.gallery && (
-                      <a 
-                        href="#gallery" 
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setCurrentPublicPage('gallery');
+                          setIsMobileMenuOpen(false);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 w-full text-right cursor-pointer"
                       >
-                        <span>{lang === "ar" ? "المعرض" : "Gallery"}</span>
-                        <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                      </a>
+                        <div className="flex items-center gap-2">
+                          <ImageIcon className="w-4 h-4 text-emerald-600" />
+                          <span>{lang === "ar" ? "معرض الصور والإعلام (الأرشيف الكامل)" : "Full Media Gallery"}</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono font-bold">
+                          {galleryList.length}
+                        </span>
+                      </button>
                     )}
                     {settings?.sectionVisibility?.partners && (
                       <a 
@@ -1024,47 +1249,79 @@ export function OfficialHomePage({
                   </nav>
 
                   <div className="flex flex-col gap-2.5 pt-3 border-t border-neutral-100 dark:border-neutral-800">
-                    {/* Donate Now Button */}
-                    <a 
-                      href={settings?.donationLink || "#"} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="flex items-center justify-center gap-1.5 bg-rose-600 text-white font-bold text-xs py-2.5 rounded-xl hover:bg-rose-700 transition-all shadow-xs"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                    >
-                      <Heart className="w-3.5 h-3.5 fill-current animate-pulse text-white" />
-                      <span>{lang === "ar" ? "تبرع الآن" : "Donate Now"}</span>
-                    </a>
-
-                    {/* Join Now Button */}
-                    <button
-                      id="mobile-drawer-join-now-btn"
-                      onClick={() => { 
-                        setSelectedJoinType("none");
-                        setIsJoinModalOpen(true); 
-                        setIsMobileMenuOpen(false); 
-                      }}
-                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer"
-                    >
-                      {lang === "ar" ? "انضم الآن" : "Join Now"}
-                    </button>
-
-                    {/* Portal Sign-ins */}
-                    {currentBeneficiary ? (
-                      <button
-                        onClick={() => { onOpenLogin('beneficiary'); setIsMobileMenuOpen(false); }}
-                        className="w-full py-2.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-neutral-700 dark:text-neutral-300 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
-                      >
-                        {lang === "ar" ? `بوابة المستفيد` : `Beneficiary Portal`}
-                      </button>
+                    {/* Authenticated User Return to Dashboard OR Guest Actions */}
+                    {authenticatedUser && onReturnToDashboard && returnBtnDetails ? (
+                      <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 space-y-2.5 shadow-sm">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                            {authenticatedUser.name ? authenticatedUser.name.charAt(0) : "م"}
+                          </div>
+                          <div className="min-w-0 text-right">
+                            <p className="text-xs font-bold text-neutral-900 dark:text-white truncate">
+                              {authenticatedUser.name || "مستخدم مسجل"}
+                            </p>
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold block">
+                              {returnBtnDetails.subtitle}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMobileMenuOpen(false);
+                            onReturnToDashboard();
+                          }}
+                          className={`w-full py-2.5 px-3 bg-gradient-to-r ${returnBtnDetails.color} hover:brightness-110 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all`}
+                        >
+                          <returnBtnDetails.icon className="w-4 h-4" />
+                          <span>{returnBtnDetails.label}</span>
+                        </button>
+                      </div>
                     ) : (
-                      <button
-                        onClick={() => { onOpenLogin('volunteer'); setIsMobileMenuOpen(false); }}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>{lang === "ar" ? "تسجيل الدخول الموحد" : "Unified Portal Login"}</span>
-                      </button>
+                      <>
+                        {/* Donate Now Button */}
+                        <a 
+                          href={settings?.donationLink || "#"} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="flex items-center justify-center gap-1.5 bg-rose-600 text-white font-bold text-xs py-2.5 rounded-xl hover:bg-rose-700 transition-all shadow-xs"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                        >
+                          <Heart className="w-3.5 h-3.5 fill-current animate-pulse text-white" />
+                          <span>{lang === "ar" ? "تبرع الآن" : "Donate Now"}</span>
+                        </a>
+
+                        {/* Join Now Button */}
+                        <button
+                          id="mobile-drawer-join-now-btn"
+                          onClick={() => { 
+                            setSelectedJoinType("none");
+                            setIsJoinModalOpen(true); 
+                            setIsMobileMenuOpen(false); 
+                          }}
+                          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer"
+                        >
+                          {lang === "ar" ? "انضم الآن" : "Join Now"}
+                        </button>
+
+                        {/* Portal Sign-ins */}
+                        {currentBeneficiary ? (
+                          <button
+                            onClick={() => { onOpenLogin('beneficiary'); setIsMobileMenuOpen(false); }}
+                            className="w-full py-2.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-neutral-700 dark:text-neutral-300 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+                          >
+                            {lang === "ar" ? `بوابة المستفيد` : `Beneficiary Portal`}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { onOpenLogin('volunteer'); setIsMobileMenuOpen(false); }}
+                            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer text-center flex items-center justify-center gap-2 shadow-xs"
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "تسجيل الدخول الموحد" : "Unified Portal Login"}</span>
+                          </button>
+                        )}
+                      </>
                     )}
 
                     {/* Dark Mode Switcher */}
@@ -1108,6 +1365,18 @@ export function OfficialHomePage({
             setIsJoinModalOpen(true);
           }}
           onOpenLogin={onOpenLogin}
+        />
+      ) : currentPublicPage === 'gallery' ? (
+        <FullGalleryPage
+          galleryList={galleryList}
+          lang={lang}
+          isDark={isDark}
+          onBackToHome={() => {
+            setCurrentPublicPage('home');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          authenticatedUser={authenticatedUser}
+          onReturnToDashboard={onReturnToDashboard}
         />
       ) : (
         <>
@@ -1162,6 +1431,48 @@ export function OfficialHomePage({
             >
               {lang === "ar" ? settings?.heroDescAr : settings?.heroDescEn}
             </motion.p>
+
+            {/* Official License Badge Card with Square Image in Hero */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.6 }}
+              onClick={() => {
+                setLicenseZoom(1);
+                setIsLicenseModalOpen(true);
+              }}
+              className="mt-6 inline-flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900/80 backdrop-blur-md border border-emerald-500/40 hover:border-emerald-400 shadow-xl transition-all cursor-pointer group text-right hover:scale-[1.02] active:scale-98"
+              title={lang === "ar" ? `اضغط لعرض وتكبير وثيقة ترخيص الجمعية رقم ${licenseNumber}` : `Click to view official license document #${licenseNumber}`}
+            >
+              {/* Small Square Image Container */}
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl overflow-hidden bg-white/10 border border-emerald-400/50 shadow-xs shrink-0 flex items-center justify-center relative aspect-square">
+                {licenseImageUrl ? (
+                  <img
+                    src={licenseImageUrl}
+                    alt="وثيقة الترخيص"
+                    className="w-full h-full object-cover rounded-lg aspect-square group-hover:scale-110 transition-transform duration-300"
+                  />
+                ) : (
+                  <ShieldCheck className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                )}
+                <div className="absolute inset-0 bg-emerald-950/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Maximize2 className="w-3.5 h-3.5 text-white" />
+                </div>
+              </div>
+              <div className="flex flex-col text-right">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs sm:text-sm font-black text-emerald-300">
+                    {lang === "ar" ? `الترخيص الرسمي: ${licenseNumber}` : `Official License: ${licenseNumber}`}
+                  </span>
+                  <span className="text-[9px] text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.2 rounded-md font-mono">
+                    {lang === "ar" ? "معتمد" : "Verified"}
+                  </span>
+                </div>
+                <p className="text-[10px] sm:text-xs text-neutral-300 mt-0.5">
+                  {lang === "ar" ? "بإشراف المركز الوطني لتنمية القطاع غير الربحي" : "Supervised by National Center for Non-Profit Sector"}
+                </p>
+              </div>
+            </motion.div>
 
             {/* Action CTAs */}
             <motion.div 
@@ -1803,27 +2114,27 @@ export function OfficialHomePage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-            {filteredGallery.map(item => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredGallery.slice(0, 6).map(item => (
               <div 
                 key={item.id} 
-                className="group relative h-64 rounded-3xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-850 shadow-xs"
+                onClick={() => setSelectedHomeGalleryItem(item)}
+                className="group relative h-64 rounded-3xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-850 shadow-xs cursor-pointer hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
               >
                 {item.type === "photo" ? (
                   <img 
                     src={item.url} 
                     alt={item.titleAr} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500"
+                    loading="lazy"
                   />
                 ) : (
                   <div className="w-full h-full relative">
-                    {/* Fallback to poster photo if video, we play mock button */}
                     <div className="absolute inset-0 bg-slate-950/40 flex items-center justify-center group-hover:bg-slate-950/20 transition-all z-10">
-                      <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                      <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg group-hover:scale-115 transition-transform">
                         <Play className="w-5 h-5 fill-current ml-0.5" />
                       </div>
                     </div>
-                    {/* Video elements using mixkit loop */}
                     <video 
                       src={item.url} 
                       muted 
@@ -1835,9 +2146,27 @@ export function OfficialHomePage({
                   </div>
                 )}
 
+                {/* Badges on Top */}
+                <div className="absolute top-3 inset-x-3 flex items-center justify-between gap-2 z-20 pointer-events-none">
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-neutral-900/80 backdrop-blur-md text-white border border-white/10 flex items-center gap-1">
+                    {item.type === "video" ? <Video className="w-3 h-3 text-emerald-400" /> : <ImageIcon className="w-3 h-3 text-teal-400" />}
+                    <span>{item.type === "video" ? (lang === "ar" ? "فيديو" : "Video") : (lang === "ar" ? "صورة" : "Photo")}</span>
+                  </span>
+
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-600/90 backdrop-blur-md text-white shadow-xs">
+                    {item.category || (lang === "ar" ? "مبادرات الجمعية" : "Initiatives")}
+                  </span>
+                </div>
+
                 {/* Dark gradient card text overlay */}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent p-5 text-white z-20 flex flex-col justify-end h-32">
-                  <span className="text-[9px] font-mono text-emerald-400">{item.date}</span>
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent p-5 text-white z-20 flex flex-col justify-end h-32">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-mono text-emerald-400">{item.date}</span>
+                    <span className="text-[9px] text-neutral-300 font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Maximize2 className="w-3 h-3 text-emerald-400" />
+                      <span>{lang === "ar" ? "تكبير" : "Enlarge"}</span>
+                    </span>
+                  </div>
                   <h4 className="text-xs font-bold mt-1 line-clamp-1">{lang === "ar" ? item.titleAr : item.titleEn}</h4>
                   <p className="text-[10px] text-neutral-300 mt-0.5 capitalize flex items-center gap-1">
                     {item.type === "video" ? <Video className="w-3.5 h-3.5 text-emerald-400" /> : <ImageIcon className="w-3.5 h-3.5 text-teal-400" />}
@@ -1847,140 +2176,104 @@ export function OfficialHomePage({
               </div>
             ))}
           </div>
+
+          {/* More Gallery Button (الانتقال لصفحة معرض الصور والإعلام) */}
+          <div className="mt-10 text-center flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentPublicPage('gallery');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-8 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm shadow-lg hover:shadow-emerald-600/30 transition-all flex items-center justify-center gap-2.5 cursor-pointer group hover:scale-[1.02] active:scale-98"
+            >
+              <span>{lang === "ar" ? "المزيد" : "More"}</span>
+              <span className="text-emerald-100 text-xs font-semibold">
+                {lang === "ar" ? "(معرض الصور والإعلام الكامل)" : "(Full Media Gallery)"}
+              </span>
+              <span className="bg-emerald-800/90 text-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                {galleryList.length} مادة
+              </span>
+              {lang === "ar" ? (
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1.5 transition-transform" />
+              ) : (
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
+              )}
+            </button>
+          </div>
+
+          {/* Homepage Lightbox Modal */}
+          {selectedHomeGalleryItem && (
+            <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-hidden">
+              <div className="relative w-full max-w-4xl bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white">
+                      {selectedHomeGalleryItem.category || (lang === "ar" ? "مبادرة" : "Initiative")}
+                    </span>
+                    <span className="text-xs text-neutral-400 font-mono">{selectedHomeGalleryItem.date}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHomeGalleryItem(null)}
+                    className="w-9 h-9 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-2 sm:p-4 bg-black flex items-center justify-center min-h-[300px]">
+                  {selectedHomeGalleryItem.type === "photo" ? (
+                    <img 
+                      src={selectedHomeGalleryItem.url} 
+                      alt={selectedHomeGalleryItem.titleAr} 
+                      className="max-h-[60vh] w-auto object-contain mx-auto rounded-lg"
+                    />
+                  ) : (
+                    <video 
+                      src={selectedHomeGalleryItem.url} 
+                      controls 
+                      autoPlay 
+                      className="max-h-[60vh] w-full object-contain mx-auto"
+                    />
+                  )}
+                </div>
+                <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {lang === "ar" ? selectedHomeGalleryItem.titleAr : selectedHomeGalleryItem.titleEn}
+                    </h3>
+                    {selectedHomeGalleryItem.descriptionAr && (
+                      <p className="text-xs text-neutral-300 mt-1">{selectedHomeGalleryItem.descriptionAr}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedHomeGalleryItem(null);
+                      setCurrentPublicPage('gallery');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    {lang === "ar" ? "فتح المعرض الكامل" : "View Full Gallery"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
-      {/* 10. Partners & Sponsors (شركاء النجاح - شريط متحرك احترافي مستمر يدعم عدد لا نهائي من الشركاء والتحكم الكامل) */}
-      {settings?.sectionVisibility?.partners && (() => {
-        const partnerSettings = settings?.partnersSectionSettings || {
-          enabled: true,
-          speed: 28,
-          logoSize: "medium" as const,
-          gap: "medium" as const,
-          titleAr: "شركاء التنمية والنجاح والرعاة",
-          titleEn: "Partners of Reyadat Al-Ata",
-          subtitleAr: "الذين نعتز برعايتهم وتضافر جهودهم المباركة",
-          subtitleEn: "OUR STRATEGIC ALLIANCES & VALUED PARTNERS"
-        };
-
-        if (partnerSettings.enabled === false) return null;
-
-        // Default verified partners as base
-        const defaultPartners: PartnerItem[] = [
-          { id: "p-def-1", nameAr: "منصة إحسان الوطنية للعمل الخيري", nameEn: "Ehsan National Platform", logo: "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=200&h=200&fit=crop", link: "https://ehsan.sa", category: "منصة وطنية", active: true, order: 1 },
-          { id: "p-def-2", nameAr: "مؤسسة سليمان بن عبد العزيز الراجحي الخيرية", nameEn: "Sulaiman Al Rajhi Foundation", logo: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=200&h=200&fit=crop", link: "https://rf.org.sa", category: "مؤسسة مانحة", active: true, order: 2 },
-          { id: "p-def-3", nameAr: "المركز الوطني لتنمية القطاع غير الربحي", nameEn: "National Center for Non-Profit Sector", logo: "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=200&h=200&fit=crop", link: "https://ncenter.gov.sa", category: "جهة إشرافية", active: true, order: 3 },
-          { id: "p-def-4", nameAr: "وزارة الموارد البشرية والتنمية الاجتماعية", nameEn: "Ministry of Human Resources & Social Development", logo: "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=200&h=200&fit=crop", link: "https://hrsd.gov.sa", category: "قطاع حكومي", active: true, order: 4 },
-          { id: "p-def-5", nameAr: "المنصة الوطنية للعمل التطوعي (تطوع)", nameEn: "National Volunteer Platform", logo: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=200&h=200&fit=crop", link: "https://nvp.gov.sa", category: "منصة تطوعية", active: true, order: 5 },
-          { id: "p-def-6", nameAr: "جمعية إكرام الجود لخدمة ضيوف الرحمن", nameEn: "Ekram Al-Jood Association", logo: "https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=200&h=200&fit=crop", link: "https://ekram.sa", category: "شريك قطاع ثالث", active: true, order: 6 },
-          { id: "p-def-7", nameAr: "أمانة العاصمة المقدسة بمكة المكرمة", nameEn: "Holy Makkah Municipality", logo: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=200&h=200&fit=crop", link: "https://www.holymakkah.gov.sa", category: "قطاع بلدي حكومي", active: true, order: 7 }
-        ];
-
-        // Active user partners
-        const userActive = (partnersList || []).filter(p => p.active !== false);
-
-        // Combine user partners (prioritized) with default partners (if list is small)
-        let displayList: PartnerItem[] = [];
-        if (userActive.length > 0) {
-          // Sort by user defined order
-          const sortedUser = [...userActive].sort((a, b) => (a.order || 999) - (b.order || 999));
-          // If fewer than 4 user partners, complement with defaults without duplicating IDs
-          const existingIds = new Set(sortedUser.map(u => u.id));
-          const complementary = defaultPartners.filter(d => !existingIds.has(d.id));
-          displayList = [...sortedUser, ...(sortedUser.length < 5 ? complementary : [])];
-        } else {
-          displayList = defaultPartners;
-        }
-
-        // Loop array to ensure infinite seamless CSS/Framer scroll
-        const loopList = [...displayList, ...displayList, ...displayList];
-
-        // Dynamic size classes
-        const logoDimensions = 
-          partnerSettings.logoSize === "small" ? "w-12 h-10" :
-          partnerSettings.logoSize === "large" ? "w-20 h-16" :
-          "w-16 h-12"; // medium
-
-        const cardGap = 
-          partnerSettings.gap === "small" ? "gap-4" :
-          partnerSettings.gap === "large" ? "gap-8" :
-          "gap-6"; // medium
-
-        const marqueeSpeed = Number(partnerSettings.speed) || 28;
-
-        return (
-          <section id="partners" className="py-8 sm:py-12 bg-neutral-50 dark:bg-neutral-900/90 border-y border-neutral-200/80 dark:border-neutral-800 overflow-hidden relative">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center mb-8">
-              <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60 px-3 py-1 rounded-full inline-block mb-2">
-                {lang === "ar" ? (partnerSettings.subtitleAr || "الذين نعتز برعايتهم وتضافر جهودهم") : (partnerSettings.subtitleEn || "OUR STRATEGIC ALLIANCES")}
-              </span>
-              <h2 className="text-xl sm:text-2xl font-black text-neutral-900 dark:text-white">
-                {lang === "ar" ? (partnerSettings.titleAr || "شركاء التنمية والنجاح والرعاة") : (partnerSettings.titleEn || "Partners of Reyadat Al-Ata")}
-              </h2>
-            </div>
-
-            {/* Continuous Marquee Ticker Right to Left with pause on hover */}
-            <div className="relative w-full overflow-hidden py-4">
-              {/* Fade Gradient Overlay Edges */}
-              <div className="absolute top-0 bottom-0 right-0 w-24 sm:w-36 bg-gradient-to-l from-neutral-50 dark:from-neutral-900 to-transparent z-10 pointer-events-none" />
-              <div className="absolute top-0 bottom-0 left-0 w-24 sm:w-36 bg-gradient-to-r from-neutral-50 dark:from-neutral-900 to-transparent z-10 pointer-events-none" />
-
-              <motion.div 
-                className={`flex items-center ${cardGap} whitespace-nowrap w-max`}
-                animate={{ x: ["0%", "-50%"] }}
-                transition={{
-                  x: {
-                    repeat: Infinity,
-                    repeatType: "loop",
-                    duration: marqueeSpeed,
-                    ease: "linear"
-                  }
-                }}
-                whileHover={{ animationPlayState: "paused" }}
-              >
-                {loopList.map((item, idx) => (
-                  <a 
-                    key={`${item.id}-${idx}`} 
-                    href={item.link || "#"} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="group flex items-center gap-4 bg-white dark:bg-neutral-800/90 border border-neutral-200/90 dark:border-neutral-700/80 px-5 py-3 rounded-2xl shadow-xs hover:shadow-xl hover:border-emerald-500 dark:hover:border-emerald-400 transition-all transform hover:-translate-y-1 shrink-0"
-                    title={item.link ? `زيارة الموقع الرسمي: ${item.nameAr}` : item.nameAr}
-                  >
-                    {/* Clear, High-Res Full Color Logo */}
-                    <div className={`${logoDimensions} flex items-center justify-center p-1.5 bg-neutral-50 dark:bg-neutral-900/50 rounded-xl border border-neutral-100 dark:border-neutral-800 shrink-0`}>
-                      <img 
-                        src={item.logo} 
-                        alt={item.nameAr} 
-                        className="max-h-full max-w-full object-contain filter-none" 
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=150&h=150&fit=crop";
-                        }}
-                      />
-                    </div>
-                    {/* Partner Name, category and link indicator */}
-                    <div className="text-right flex flex-col justify-center">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-black text-neutral-800 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                          {lang === "ar" ? item.nameAr : item.nameEn}
-                        </span>
-                        {item.link && (
-                          <ExternalLink className="w-2.5 h-2.5 text-neutral-400 group-hover:text-emerald-500 transition-colors shrink-0" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/80 px-2 py-0.5 rounded-md inline-block border border-emerald-200/50 dark:border-emerald-800/50">
-                          {item.category || (lang === "ar" ? "شريك معتمد" : "Verified Partner")}
-                        </span>
-                      </div>
-                    </div>
-                  </a>
-                ))}
-              </motion.div>
-            </div>
-          </section>
-        );
-      })()}
+      {/* 10. Partners & Sponsors (سلايدر شركاء النجاح التفاعلي الاحترافي بالبطاقات الفخمة) */}
+      {settings?.sectionVisibility?.partners && (
+        <PartnersSlider
+          partners={partnersList || []}
+          lang={lang}
+          isDark={isDark}
+          sectionTitle={lang === "ar" ? (settings?.partnersSectionSettings?.titleAr || "شركاء النجاح والعطاء") : (settings?.partnersSectionSettings?.titleEn || "Partners of Reyadat Al-Ata")}
+          sectionSubtitle={lang === "ar" ? (settings?.partnersSectionSettings?.subtitleAr || "شراكات وطنية استراتيجية وتنموية") : (settings?.partnersSectionSettings?.subtitleEn || "OUR STRATEGIC ALLIANCES & VALUED PARTNERS")}
+        />
+      )}
 
       {/* 13. Contact Us Section (تواصل معنا) */}
       <section id="contact" className="py-10 sm:py-14 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -2138,19 +2431,25 @@ export function OfficialHomePage({
             </p>
             <button
               type="button"
-              onClick={() => setIsLicenseModalOpen(true)}
-              className="group inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 bg-white/5 border border-white/5 hover:border-emerald-400/40 px-2.5 py-1 rounded-md transition-all cursor-pointer hover:bg-white/10"
-              title={lang === "ar" ? "اضغط لعرض وتكبير وثيقة الترخيص الرسمية" : "Click to view official license document"}
+              onClick={() => {
+                setLicenseZoom(1);
+                setIsLicenseModalOpen(true);
+              }}
+              className="group inline-flex items-center gap-2 text-[10px] font-bold text-emerald-400 bg-white/5 border border-white/10 hover:border-emerald-400/50 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer hover:bg-white/10"
+              title={lang === "ar" ? `اضغط لعرض وتكبير وثيقة الترخيص الرسمية رقم ${licenseNumber}` : `Click to view official license document #${licenseNumber}`}
             >
-              <img
-                src={licenseImageUrl}
-                alt="وثيقة الترخيص"
-                className="w-4 h-3 object-cover rounded border border-emerald-400/40"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1607344645866-009c320c5ab8?w=800&auto=format&fit=crop&q=80";
-                }}
-              />
-              <span>{lang === "ar" ? `رقم الترخيص: ${settings?.licenseNumber || "5081"}` : `Licence No: ${settings?.licenseNumber || "5081"}`}</span>
+              <div className="w-5 h-5 rounded-md overflow-hidden bg-white/10 border border-emerald-400/40 flex items-center justify-center shrink-0 aspect-square">
+                {licenseImageUrl ? (
+                  <img
+                    src={licenseImageUrl}
+                    alt="وثيقة الترخيص"
+                    className="w-full h-full object-cover rounded aspect-square"
+                  />
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+              </div>
+              <span>{lang === "ar" ? `رقم الترخيص: ${licenseNumber}` : `Licence No: ${licenseNumber}`}</span>
               <Maximize2 className="w-2.5 h-2.5 text-emerald-400" />
             </button>
           </div>
@@ -2308,7 +2607,18 @@ export function OfficialHomePage({
         {/* Bottom copyright line */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-white/5 pt-6 text-center text-[10px] text-neutral-500 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p>© {new Date().getFullYear()} {lang === "ar" ? "جميع الحقوق محفوظة لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة." : "Reyadat Al-Ata Association. All rights reserved."}</p>
-          <div className="flex gap-4">
+          <div className="flex gap-3 sm:gap-4 items-center flex-wrap justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                setLicenseZoom(1);
+                setIsLicenseModalOpen(true);
+              }}
+              className="font-bold text-emerald-400 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/30 px-2.5 py-0.5 rounded-md transition-all cursor-pointer hover:border-emerald-400"
+              title={lang === "ar" ? `عرض وثيقة الترخيص رقم ${licenseNumber}` : `View license document #${licenseNumber}`}
+            >
+              {lang === "ar" ? `رقم الترخيص: ${licenseNumber}` : `License No: ${licenseNumber}`}
+            </button>
             <span className="font-mono">VER 2.5 | VITE HYBRID</span>
             <span className="font-bold text-neutral-400">تحت إشراف المركز الوطني لتنمية القطاع غير الربحي</span>
           </div>
@@ -2336,7 +2646,7 @@ export function OfficialHomePage({
                 initial={{ scale: 0.92, opacity: 0, y: 16 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.92, opacity: 0, y: 16 }}
-                className="relative bg-white dark:bg-neutral-900 rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl z-20 border border-emerald-500/20 text-right overflow-hidden my-auto"
+                className="relative bg-white dark:bg-neutral-900 rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl z-20 border border-emerald-500/20 text-right overflow-hidden my-auto"
                 onClick={(e) => e.stopPropagation()}
                 dir={lang === "ar" ? "rtl" : "ltr"}
               >
@@ -2351,7 +2661,7 @@ export function OfficialHomePage({
                         {lang === "ar" ? "وثيقة تسجيل وترخيص الجمعية الرسمية" : "Official NGO Registration & License"}
                       </h3>
                       <p className="text-[11px] text-neutral-500 dark:text-neutral-400 font-mono mt-0.5">
-                        {lang === "ar" ? "رقم الترخيص: 5081 | المركز الوطني لتنمية القطاع غير الربحي" : "License No: 5081 | National Center for Non-Profit Sector"}
+                        {lang === "ar" ? `رقم الترخيص: ${licenseNumber} | المركز الوطني لتنمية القطاع غير الربحي` : `License No: ${licenseNumber} | National Center for Non-Profit Sector`}
                       </p>
                     </div>
                   </div>
@@ -2364,17 +2674,74 @@ export function OfficialHomePage({
                   </button>
                 </div>
 
-                {/* High-res Image Preview */}
-                <div className="relative rounded-2xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-inner flex items-center justify-center max-h-[65vh]">
-                  <img
-                    src={licenseImageUrl}
-                    alt="شهادة تسجيل وترخيص الجمعية الرسمية رقم 5081"
-                    className="max-h-[65vh] w-auto max-w-full object-contain rounded-xl select-none"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1607344645866-009c320c5ab8?w=800&auto=format&fit=crop&q=80";
-                    }}
-                  />
-                </div>
+                {/* License Document Preview Area */}
+                {licenseImageUrl ? (
+                  <div className="space-y-3">
+                    {/* Zoom bar controls */}
+                    <div className="flex items-center justify-between bg-neutral-50 dark:bg-neutral-850 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setLicenseZoom(z => Math.min(z + 0.25, 3))}
+                          className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-colors"
+                          title="تكبير (+)"
+                        >
+                          <ZoomIn className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLicenseZoom(z => Math.max(z - 0.25, 0.75))}
+                          className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-colors"
+                          title="تصغير (-)"
+                        >
+                          <ZoomOut className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLicenseZoom(1)}
+                          className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-colors flex items-center gap-1 text-[10px] font-bold"
+                          title="إعادة ضبط الحجم"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>100%</span>
+                        </button>
+                        <span className="text-[11px] font-mono text-neutral-500 mr-2">
+                          {Math.round(licenseZoom * 100)}%
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-neutral-400 font-medium hidden sm:inline">
+                        يمكنك استخدام أزرار التكبير لقراءة تفاصيل وثيقة الترخيص
+                      </span>
+                    </div>
+
+                    <div className="relative rounded-2xl overflow-auto bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-inner flex items-center justify-center max-h-[60vh] p-2">
+                      <img
+                        src={licenseImageUrl}
+                        alt={`شهادة تسجيل وترخيص الجمعية الرسمية رقم ${licenseNumber}`}
+                        style={{ transform: `scale(${licenseZoom})`, transformOrigin: "center center", transition: "transform 0.15s ease-out" }}
+                        className="max-h-[58vh] w-auto max-w-full object-contain rounded-xl select-none"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-12 px-6 rounded-2xl bg-neutral-50 dark:bg-neutral-850 border border-dashed border-neutral-300 dark:border-neutral-700 text-center flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3 shadow-inner">
+                      <ShieldCheck className="w-8 h-8" />
+                    </div>
+                    <h4 className="text-base font-bold text-neutral-800 dark:text-neutral-200">
+                      جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                    </h4>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 font-black mt-1">
+                      الترخيص الرسمي رقم: {licenseNumber}
+                    </p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2 max-w-md">
+                      مسجلة ومعتمدة لدى المركز الوطني لتنمية القطاع غير الربحي بمكة المكرمة.
+                    </p>
+                    <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-[11px] text-amber-800 dark:text-amber-300">
+                      لم يتم رفع صورة وثيقة الترخيص بعد. يستطيع مدير النظام رفع صورة الوثيقة الرسمية من لوحة تحكم الإدارة (قسم إدارة الصفحة الرئيسية).
+                    </div>
+                  </div>
+                )}
 
                 {/* Footer Controls */}
                 <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
@@ -2382,33 +2749,28 @@ export function OfficialHomePage({
                     {lang === "ar" ? "الجهة المصرحة: المركز الوطني لتنمية القطاع غير الربحي - مكة المكرمة" : "Authorized by: National Center for Non-Profit Sector - Makkah"}
                   </span>
                   <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    <a
-                      href={licenseImageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-2 text-xs font-bold text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-xl transition-colors flex items-center gap-1.5"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>{lang === "ar" ? "فتح بدقة كاملة" : "Open Full Image"}</span>
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const win = window.open('');
-                        win?.document.write(`
-                          <html>
-                            <head><title>وثيقة الترخيص رقم 5081</title></head>
-                            <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#fff;">
-                              <img src="${licenseImageUrl}" style="max-width:95%;max-height:95vh;object-contain:fit;" onload="window.print();window.close()"/>
-                            </body>
-                          </html>
-                        `);
-                      }}
-                      className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>{lang === "ar" ? "طباعة الوثيقة" : "Print License"}</span>
-                    </button>
+                    {licenseImageUrl && (
+                      <>
+                        <a
+                          href={licenseImageUrl}
+                          download={`ترخيص_جمعية_ريادة_العطاء_${licenseNumber}.png`}
+                          className="px-3.5 py-2 text-xs font-bold text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-xl transition-colors flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "فتح بدقة كاملة" : "Open Full Image"}</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.print();
+                          }}
+                          className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "طباعة الوثيقة" : "Print License"}</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </motion.div>

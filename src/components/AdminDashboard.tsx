@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, BarChart3, Database, FileSpreadsheet, FileDown, 
   Trash2, Plus, Edit3, Shield, Copy, Archive, Check, AlertTriangle, 
   Moon, Sun, Search, Printer, RefreshCw, Smartphone, ShieldAlert, Lock, Trophy, Send, Eye, Settings, Activity, FileText, Globe, X,
-  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon
+  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home
 } from "lucide-react";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, OperationLog, SystemStats,
@@ -17,6 +17,7 @@ import { ImageUploadField } from "./ImageUploadField";
 import { HomepageAdminPanel } from "./HomepageAdminPanel";
 import { OrgChartAdminPanel } from "./OrgChartAdminPanel";
 import { HeroSlidesAdminPanel } from "./HeroSlidesAdminPanel";
+import { PartnersManagementPanel } from "./PartnersManagementPanel";
 import { JoinApplicationsPanel } from "./JoinApplicationsPanel";
 import { InternalChatPanel } from "./InternalChatPanel";
 import { SupportAdminPanel } from "./SupportAdminPanel";
@@ -30,7 +31,7 @@ import { TeamJoinApplicationsPanel } from "./TeamJoinApplicationsPanel";
 import { VolunteerCardTemplatesPanel } from "./VolunteerCardTemplatesPanel";
 import { ModernAppSidebar, NavGroup, NavItem } from "./ModernAppSidebar";
 import { StoreProject, StoreDonation, FinancialTransaction, TeamApplication, OfficialLetter } from "../types";
-import { MessageSquare, Headphones, ShoppingBag, Boxes, Package, UsersRound, CreditCard, Pin, PinOff, HeartHandshake, Mail, Wallet, Star } from "lucide-react";
+import { MessageSquare, Headphones, ShoppingBag, Boxes, Package, UsersRound, CreditCard, Pin, PinOff, HeartHandshake, Mail, Wallet, Star, Sparkles } from "lucide-react";
 import { BeneficiariesManager } from "./BeneficiariesManager";
 import { DistributionsManager } from "./DistributionsManager";
 import { BeneficiaryRatingsManager } from "./BeneficiaryRatingsManager";
@@ -163,12 +164,16 @@ interface AdminDashboardProps {
   initialSubTab?: string;
   onSubTabChange?: (tab: string) => void;
   onRefreshGlobalData?: () => void;
+  onBackToHome?: () => void;
+  authenticatedUser?: any;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   data,
   initialSubTab,
   onSubTabChange,
+  onBackToHome,
+  authenticatedUser,
   onAddDepartment,
   onDeleteDepartment,
   onAddTeam,
@@ -240,7 +245,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRequestEmployeeModification,
   onRefreshGlobalData
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -319,6 +324,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'deps', label: 'هيكلة الإدارات', icon: Building2, badge: data.departments?.length || 0 },
         { id: 'org_chart', label: 'إدارة الهيكل الإداري', icon: Network, badge: (data.orgMembers || []).length || undefined },
         { id: 'hero_slides', label: 'إدارة صور الصفحة الرئيسية', icon: ImageIcon, badge: (data.heroSlides || []).length || undefined },
+        { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data.partners || []).length || undefined },
         { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: (data.letters || []).filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
@@ -727,6 +733,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Top Quick Actions (Organized, Aligned) */}
             <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end flex-wrap">
+              {/* Return to Public Homepage CTA */}
+              {onBackToHome && (
+                <button
+                  type="button"
+                  id="btn-admin-back-to-home"
+                  onClick={onBackToHome}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700/80 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95 shrink-0"
+                  title="العودة إلى الصفحة التعريفية الرئيسية للموقع مع بقاء تسجيل الدخول نشطاً"
+                >
+                  <Home className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>العودة إلى الصفحة الرئيسية</span>
+                </button>
+              )}
+
               {/* Primary ☰ Comprehensive Sidebar Trigger */}
               <button
                 id="btn-toggle-sidebar"
@@ -2622,6 +2642,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               { key: 'finance_ledger', label: 'الإدارة المالية والمصروفات' },
                               { key: 'projects_list', label: 'المشاريع والبرامج التنموية' },
                               { key: 'media_news', label: 'المركز الإعلامي والأخبار' },
+                              { key: 'partners_mgmt', label: 'إدارة شركاء النجاح والرعاة' },
                               { key: 'directives', label: 'تكليفات مجلس الإدارة' },
                               { key: 'tasks', label: 'المهام والتكليفات التشغيلية' },
                               { key: 'letters', label: 'الخطابات والمراسلات الرسمية' },
@@ -3167,7 +3188,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
                 associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
                 associationNameEn: "Reyadat Al-Ata Association",
-                licenseNumber: "100088868",
+                licenseNumber: "5081",
                 heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
                 heroTitleEn: "Leadership in Giving",
                 heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",
@@ -3260,6 +3281,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               lang={lang}
             />
           )}
+
+          {/* TAB: PARTNERS MANAGEMENT (إدارة شركاء النجاح والرعاة) */}
+          {activeSubTab === 'partners_mgmt' && (() => {
+            const isAuthorized = !authenticatedUser || 
+              authenticatedUser.role === 'admin' ||
+              authenticatedUser.permissions?.includes('manage_partners') ||
+              authenticatedUser.permissions?.includes('super_admin') ||
+              authenticatedUser.permissions?.includes('all_permissions') ||
+              authenticatedUser.allowedPages?.includes('partners_mgmt');
+
+            if (!isAuthorized) {
+              return (
+                <div className="bg-white p-8 rounded-3xl border border-rose-200 text-center space-y-3 shadow-xs">
+                  <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+                    <ShieldAlert className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-black text-neutral-800">صلاحية غير متوفرة</h3>
+                  <p className="text-xs text-neutral-500 max-w-md mx-auto leading-relaxed">
+                    عذراً، هذا القسم مخصص للإداريين المصرح لهم بإدارة شركاء النجاح والرعاة الرسميين. يرجى التواصل مع الإدارة العامة لمنحك الصلاحية اللازمة.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <PartnersManagementPanel
+                partners={data.partners || []}
+                onAddPartner={onAddPartnerItem || (async () => false)}
+                onDeletePartner={onDeletePartnerItem || (async () => false)}
+                onBatchUpdatePartners={onBatchUpdatePartners}
+                lang={lang}
+                isDark={isDark}
+              />
+            );
+          })()}
           
           {/* TAB 8: DATABASE BACKUP / RESTORE */}
           {activeSubTab === 'backup' && (

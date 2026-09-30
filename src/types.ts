@@ -790,6 +790,7 @@ export interface HomeSettings {
   fontFamily: string;
   volunteerCardTemplateUrl?: string;
   femaleUnifiedCardPhoto?: string;
+  licenseImage?: string;
   licenseConfig?: {
     enabled?: boolean;
     imageUrl?: string;
@@ -1128,6 +1129,8 @@ export interface PartnerItem {
   descriptionEn?: string;
   active?: boolean;
   order?: number;
+  isFeatured?: boolean;
+  showInHome?: boolean;
 }
 
 export interface GalleryItem {
@@ -1137,6 +1140,11 @@ export interface GalleryItem {
   titleAr: string;
   titleEn: string;
   date: string;
+  category?: 'مبادرات' | 'مشاريع' | 'فعاليات' | 'إعلام' | 'أخرى' | string;
+  descriptionAr?: string;
+  descriptionEn?: string;
+  isFeatured?: boolean;
+  order?: number;
 }
 
 export interface Beneficiary {

@@ -3,7 +3,7 @@ import {
   User, ClipboardList, Bell, ShieldCheck, Phone, Mail, MapPin, 
   Users, CheckCircle2, AlertTriangle, Clock, Calendar, HelpCircle, 
   Send, Plus, Eye, CheckCircle, Ban, Hourglass, Download, Printer,
-  Star, CheckCheck, Loader2, Package, Sparkles
+  Star, CheckCheck, Loader2, Package, Sparkles, ArrowRight, Home
 } from "lucide-react";
 import { Beneficiary, BenefitRequest, Initiative, DistributionHandoverRecord, AidDistribution, BeneficiaryRating } from "../types";
 import { BeneficiaryRatingModal } from "./BeneficiaryRatingModal";
@@ -20,6 +20,7 @@ interface BeneficiaryDashboardProps {
   onConfirmAidReceipt?: (payload: { aidId: string; aidType?: string; beneficiaryId: string }) => Promise<any>;
   onSubmitBeneficiaryRating?: (ratingData: Partial<BeneficiaryRating>) => Promise<any>;
   onLogout: () => void;
+  onBackToHome?: () => void;
   lang: "ar" | "en";
 }
 
@@ -35,6 +36,7 @@ export function BeneficiaryDashboard({
   onConfirmAidReceipt,
   onSubmitBeneficiaryRating,
   onLogout,
+  onBackToHome,
   lang = "ar"
 }: BeneficiaryDashboardProps) {
   const [activeTab, setActiveTab] = useState<"portal" | "apply" | "history" | "initiatives" | "profile">("portal");
@@ -266,6 +268,18 @@ export function BeneficiaryDashboard({
           </div>
 
           <div className="flex items-center gap-2">
+            {onBackToHome && (
+              <button
+                type="button"
+                id="beneficiary-back-to-home-btn"
+                onClick={onBackToHome}
+                className="px-3.5 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold text-xs transition-all border border-white/20 flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="العودة إلى الصفحة الرئيسية للجمعية"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>العودة إلى الصفحة الرئيسية</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab("apply")}
               className="px-4 py-2 bg-white text-emerald-700 hover:bg-emerald-50 rounded-xl font-bold text-xs transition-all shadow-sm flex items-center gap-1 cursor-pointer"

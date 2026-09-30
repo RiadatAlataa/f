@@ -36,7 +36,15 @@ import {
   X,
   Calendar,
   MapPin,
-  ExternalLink
+  ExternalLink,
+  Home,
+  Play,
+  Video,
+  Trash2,
+  Edit3,
+  Star,
+  Upload,
+  CheckCircle
 } from 'lucide-react';
 import { 
   Department, 
@@ -115,6 +123,7 @@ export interface DepartmentDashboardProps {
   onAddGalleryItem?: (item: any) => Promise<boolean>;
   onDeleteGalleryItem?: (id: string) => Promise<boolean>;
   onLogout?: () => void;
+  onBackToHome?: () => void;
 }
 
 export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
@@ -170,7 +179,8 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   onDeletePartnerItem,
   onAddGalleryItem,
   onDeleteGalleryItem,
-  onLogout
+  onLogout,
+  onBackToHome
 }) => {
   // Resolve Target Department
   const deptId = currentDepartment?.id || userDepartmentId || currentUser?.departmentId || currentUser?.primaryDepartmentId || 'dep-1';
@@ -272,7 +282,10 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     if (isHRDept) tabs.push({ id: 'hr_staff', label: 'سجل الكوادر والموظفين' });
     if (isFinanceDept) tabs.push({ id: 'finance_ledger', label: 'المعاملات وسندات الصرف والقبض' });
     if (isProjectsDept) tabs.push({ id: 'projects_list', label: 'المشاريع والبرامج التنموية' });
-    if (isMediaDept) tabs.push({ id: 'media_news', label: 'المركز الإعلامي والأخبار' });
+    if (isMediaDept) {
+      tabs.push({ id: 'media_news', label: 'المركز الإعلامي والأخبار' });
+      tabs.push({ id: 'media_gallery', label: 'معرض الصور والمواد الإعلامية' });
+    }
     tabs.push({ id: 'directives', label: 'تكليفات الإدارة العليا' });
     tabs.push({ id: 'tasks', label: 'المهام والتكليفات' });
     tabs.push({ id: 'staff', label: 'كوادر الإدارة والتوظيف' });
@@ -510,6 +523,96 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     }
   };
 
+  // Media Gallery Management State (for Media Department)
+  const [showAddGalleryModal, setShowAddGalleryModal] = useState(false);
+  const [editingGalleryItem, setEditingGalleryItem] = useState<any | null>(null);
+  const [galleryFormData, setGalleryFormData] = useState({
+    titleAr: '',
+    titleEn: '',
+    type: 'photo' as 'photo' | 'video',
+    url: '',
+    category: 'مبادرات',
+    date: new Date().toISOString().split('T')[0],
+    descriptionAr: '',
+    isFeatured: true
+  });
+  const [galleryFilterType, setGalleryFilterType] = useState<'all' | 'photo' | 'video'>('all');
+  const [gallerySearchQuery, setGallerySearchQuery] = useState('');
+
+  const handleOpenAddGallery = (item?: any) => {
+    if (item) {
+      setEditingGalleryItem(item);
+      setGalleryFormData({
+        titleAr: item.titleAr || '',
+        titleEn: item.titleEn || '',
+        type: item.type || 'photo',
+        url: item.url || '',
+        category: item.category || 'مبادرات',
+        date: item.date || new Date().toISOString().split('T')[0],
+        descriptionAr: item.descriptionAr || '',
+        isFeatured: item.isFeatured !== false
+      });
+    } else {
+      setEditingGalleryItem(null);
+      setGalleryFormData({
+        titleAr: '',
+        titleEn: '',
+        type: 'photo',
+        url: '',
+        category: 'مبادرات',
+        date: new Date().toISOString().split('T')[0],
+        descriptionAr: '',
+        isFeatured: true
+      });
+    }
+    setShowAddGalleryModal(true);
+  };
+
+  const handleSaveGalleryItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onAddGalleryItem) return;
+    if (!galleryFormData.titleAr || !galleryFormData.url) {
+      alert('يرجى إدخال عنوان الصورة أو الفيديو والرابط');
+      return;
+    }
+
+    const payload = editingGalleryItem
+      ? { ...editingGalleryItem, ...galleryFormData }
+      : { ...galleryFormData, id: 'gal-' + Date.now() };
+
+    const success = await onAddGalleryItem(payload);
+    if (success !== false) {
+      setShowAddGalleryModal(false);
+      setEditingGalleryItem(null);
+      if (onRefreshGlobalData) onRefreshGlobalData();
+    }
+  };
+
+  const handleToggleGalleryFeatured = async (item: any) => {
+    if (!onAddGalleryItem) return;
+    await onAddGalleryItem({ ...item, isFeatured: !item.isFeatured });
+    if (onRefreshGlobalData) onRefreshGlobalData();
+  };
+
+  const handleDeleteGallery = async (id: string) => {
+    if (!onDeleteGalleryItem) return;
+    if (window.confirm('هل أنت متأكد من حذف هذه المادة الإعلامية من المعرض؟')) {
+      await onDeleteGalleryItem(id);
+      if (onRefreshGlobalData) onRefreshGlobalData();
+    }
+  };
+
+  const handleGalleryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setGalleryFormData(prev => ({ ...prev, url: event.target?.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <div className="w-full text-slate-100 font-sans dir-rtl" dir="rtl">
       <div className="w-full space-y-6">
@@ -592,6 +695,18 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
             {/* Quick Actions */}
             <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+              {onBackToHome && (
+                <button
+                  type="button"
+                  onClick={onBackToHome}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-xs transition-all border border-emerald-700/60 shadow-md flex items-center gap-1.5 cursor-pointer hover:border-emerald-500"
+                  title="العودة إلى الصفحة الرئيسية للجمعية دون تسجيل خروج"
+                >
+                  <Home className="w-4 h-4 text-emerald-400" />
+                  <span>العودة إلى الصفحة الرئيسية</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => setIsLetterModalOpen(true)}
@@ -793,6 +908,24 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
               <span>المركز الإعلامي والأخبار</span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-900/90 text-[10px] font-mono font-bold text-emerald-300 border border-emerald-700">
                 {news.length} خبر
+              </span>
+            </button>
+          )}
+
+          {isMediaDept && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('media_gallery')}
+              className={`px-5 py-3 rounded-t-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'media_gallery'
+                  ? 'bg-emerald-600 text-white shadow-lg border-b-2 border-emerald-400'
+                  : 'bg-slate-900/80 text-emerald-300 hover:bg-slate-800 border-t border-x border-slate-800'
+              }`}
+            >
+              <Image className="w-4 h-4 text-emerald-300" />
+              <span>معرض الصور والمواد الإعلامية</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-900/90 text-[10px] font-mono font-bold text-emerald-300 border border-emerald-700">
+                {gallery.length} مادة
               </span>
             </button>
           )}
@@ -1381,6 +1514,284 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 8.1 MEDIA GALLERY MANAGEMENT TAB (خاص بإدارة الإعلام) */}
+        {activeTab === 'media_gallery' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    <Image className="w-6 h-6 text-emerald-400" />
+                    معرض الصور والمواد الإعلامية والتوثيق ({gallery.length})
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    إدارة وأرشفة الصور ومقاطع الفيديو، وتحديد المواد الإعلامية المميزة التي تظهر في قالب الصفحة الرئيسية للموقع.
+                  </p>
+                </div>
+
+                {hasPermission('create_data') && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddGallery()}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إضافة مادة إعلامية جديدة</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Stats Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block mb-1">إجمالي المواد</span>
+                  <span className="text-xl font-black text-white font-mono">{gallery.length}</span>
+                </div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block mb-1">الصور الميدانية</span>
+                  <span className="text-xl font-black text-emerald-400 font-mono">
+                    {gallery.filter((g: any) => g.type === 'photo').length}
+                  </span>
+                </div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block mb-1">المقاطع المرئية</span>
+                  <span className="text-xl font-black text-amber-400 font-mono">
+                    {gallery.filter((g: any) => g.type === 'video').length}
+                  </span>
+                </div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block mb-1">مميز في الصفحة الرئيسية</span>
+                  <span className="text-xl font-black text-teal-400 font-mono">
+                    {gallery.filter((g: any) => (g as any).isFeatured !== false).length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Items Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+                {gallery.map((item: any, idx: number) => (
+                  <div
+                    key={item.id || idx}
+                    className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden flex flex-col justify-between hover:border-emerald-600/40 transition-all group"
+                  >
+                    <div className="relative h-44 bg-slate-900 overflow-hidden">
+                      {item.type === 'photo' ? (
+                        <img src={item.url} alt={item.titleAr} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      ) : (
+                        <div className="w-full h-full relative">
+                          <video src={item.url} className="w-full h-full object-cover" muted />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <Play className="w-8 h-8 text-white" />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="absolute top-2 inset-x-2 flex items-center justify-between gap-1 z-10">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-900/80 text-white backdrop-blur-xs">
+                          {item.type === 'video' ? 'فيديو' : 'صورة'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
+                          {item.category || 'مبادرات'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-slate-400">{item.date}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleGalleryFeatured(item)}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
+                            item.isFeatured !== false
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                          title="تثبيت أو إلغاء التثبيت في قالب الصفحة الرئيسية"
+                        >
+                          <Star className={`w-3 h-3 ${item.isFeatured !== false ? 'fill-current text-amber-400' : ''}`} />
+                          <span>{item.isFeatured !== false ? 'معروض بالرئيسية' : 'تثبيت بالرئيسية'}</span>
+                        </button>
+                      </div>
+
+                      <h4 className="font-bold text-white text-xs sm:text-sm line-clamp-2 leading-snug">
+                        {item.titleAr}
+                      </h4>
+                      {item.descriptionAr && (
+                        <p className="text-[11px] text-slate-400 line-clamp-2">{item.descriptionAr}</p>
+                      )}
+                    </div>
+
+                    <div className="p-3 pt-0 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+                      {hasPermission('edit_data') && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddGallery(item)}
+                          className="text-emerald-400 hover:text-emerald-300 text-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>تعديل</span>
+                        </button>
+                      )}
+                      {hasPermission('delete_data') && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGallery(item.id)}
+                          className="text-rose-400 hover:text-rose-300 text-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal for Adding / Editing Media Item */}
+            {showAddGalleryModal && (
+              <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Image className="w-5 h-5 text-emerald-400" />
+                      <span>{editingGalleryItem ? 'تعديل مادة إعلامية بالمعرض' : 'إضافة مادة إعلامية جديدة'}</span>
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddGalleryModal(false)}
+                      className="text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveGalleryItem} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">عنوان المادة الإعلامية (بالعربية) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={galleryFormData.titleAr}
+                        onChange={(e) => setGalleryFormData({ ...galleryFormData, titleAr: e.target.value })}
+                        placeholder="مثال: توثيق مبادرة إفطار المعتمرين 1448"
+                        className="w-full text-xs p-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">نوع المادة *</label>
+                        <select
+                          value={galleryFormData.type}
+                          onChange={(e) => setGalleryFormData({ ...galleryFormData, type: e.target.value as any })}
+                          className="w-full text-xs p-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:outline-none"
+                        >
+                          <option value="photo">صورة فوتوغرافية</option>
+                          <option value="video">مقطع مرئي (فيديو)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">التصنيف *</label>
+                        <select
+                          value={galleryFormData.category}
+                          onChange={(e) => setGalleryFormData({ ...galleryFormData, category: e.target.value })}
+                          className="w-full text-xs p-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:outline-none"
+                        >
+                          <option value="مبادرات">مبادرات ميدانية</option>
+                          <option value="مشاريع">مشاريع وبرامج</option>
+                          <option value="فعاليات">فعاليات وأنشطة</option>
+                          <option value="إعلام">تغطيات وبيانات صحفية</option>
+                          <option value="أخرى">أخرى</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">رابط أو ملف المادة الإعلامية *</label>
+                      <input
+                        type="text"
+                        required
+                        value={galleryFormData.url}
+                        onChange={(e) => setGalleryFormData({ ...galleryFormData, url: e.target.value })}
+                        placeholder="أدخل رابط الصورة/الفيديو أو ارفع ملف من جهازك"
+                        className="w-full text-xs p-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:outline-none font-mono"
+                      />
+                      <div className="mt-2 flex items-center gap-2">
+                        <label className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold rounded-xl border border-slate-700 cursor-pointer flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>رفع ملف من الجهاز</span>
+                          <input
+                            type="file"
+                            accept="image/*,video/*"
+                            onChange={handleGalleryFileChange}
+                            className="hidden"
+                          />
+                        </label>
+                        {galleryFormData.url && (
+                          <span className="text-[10px] text-emerald-400 font-bold">✓ تم إرفاق الملف</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">تاريخ المادة الإعلامية</label>
+                      <input
+                        type="date"
+                        value={galleryFormData.date}
+                        onChange={(e) => setGalleryFormData({ ...galleryFormData, date: e.target.value })}
+                        className="w-full text-xs p-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">وصف أو تفاصيل إضافية</label>
+                      <textarea
+                        rows={2}
+                        value={galleryFormData.descriptionAr}
+                        onChange={(e) => setGalleryFormData({ ...galleryFormData, descriptionAr: e.target.value })}
+                        placeholder="نبذة موجزة عن المادة الإعلامية وسياقها الميداني..."
+                        className="w-full text-xs p-2.5 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <input
+                        type="checkbox"
+                        id="checkFeatured"
+                        checked={galleryFormData.isFeatured}
+                        onChange={(e) => setGalleryFormData({ ...galleryFormData, isFeatured: e.target.checked })}
+                        className="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                      />
+                      <label htmlFor="checkFeatured" className="text-xs font-bold text-slate-200 cursor-pointer select-none">
+                        تثبيت كعنصر مميز في قالب الصفحة الرئيسية للموقع
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddGalleryModal(false)}
+                        className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-700 cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer"
+                      >
+                        {editingGalleryItem ? 'حفظ التعديلات' : 'إضافة للمعرض'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

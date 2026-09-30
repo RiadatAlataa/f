@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { 
-  Award, Calendar, Clock, Inbox, ShieldCheck, Heart, ArrowLeft, ArrowUpRight, 
+  Award, Calendar, Clock, Inbox, ShieldCheck, Heart, ArrowLeft, ArrowUpRight, ArrowRight,
   CheckCircle, Smartphone, User, FileText, Bot, LogOut, CheckCircle2, MapPin, Send, HelpCircle, Star, BadgeAlert, Trophy, Lock, LockOpen, Globe
 } from "lucide-react";
 import { SmartCard } from "./SmartCard";
@@ -29,6 +29,7 @@ interface VolunteerDashboardProps {
   onReissueCard: (id: string) => void;
   onCheckoutInitiative?: (initiativeId: string, volunteerId: string) => void;
   onSubmitRating?: (payload: any) => Promise<boolean>;
+  onBackToHome?: () => void;
 }
 
 export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
@@ -46,7 +47,8 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   onApplyInitiative,
   onReissueCard,
   onCheckoutInitiative,
-  onSubmitRating
+  onSubmitRating,
+  onBackToHome
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'certificates' | 'leaderboard' | 'initiatives' | 'notifications' | 'assistant' | 'profile'>(() => {
     try {
@@ -177,6 +179,20 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
               <FileText className="w-4 h-4 text-emerald-700" />
               <span>تقرير الإنجاز الشهري (PDF)</span>
             </button>
+
+            {/* Return to Homepage Button */}
+            {onBackToHome && (
+              <button
+                type="button"
+                id="volunteer-back-to-home-btn"
+                onClick={onBackToHome}
+                className="bg-white/20 hover:bg-white/30 text-white font-black text-xs px-3.5 py-2.5 rounded-xl border border-white/20 shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
+                title="العودة إلى الصفحة التعريفية الرئيسية للموقع"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>العودة إلى الصفحة الرئيسية</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

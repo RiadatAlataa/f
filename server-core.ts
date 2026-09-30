@@ -51,15 +51,23 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "50mb" }));
 
 const cardTemplatesDir = path.join(process.cwd(), "public", "card_templates");
+const uploadsDir = path.join(process.cwd(), "public", "uploads");
+const licenseDir = path.join(uploadsDir, "license");
 try {
   if (!fs.existsSync(cardTemplatesDir)) {
     fs.mkdirSync(cardTemplatesDir, { recursive: true });
+  }
+  if (!fs.existsSync(licenseDir)) {
+    fs.mkdirSync(licenseDir, { recursive: true });
   }
 } catch {
   // Read-only filesystem in serverless environments
 }
 if (fs.existsSync(cardTemplatesDir)) {
   app.use("/card_templates", express.static(cardTemplatesDir));
+}
+if (fs.existsSync(uploadsDir)) {
+  app.use("/uploads", express.static(uploadsDir));
 }
 
 const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
@@ -7991,6 +7999,110 @@ app.post("/api/db/homeSettings", (req, res) => {
   });
   writeDb(db);
   res.json(db);
+});
+
+// 12.1 Upload and save official license image directly to site storage
+app.post("/api/db/license/upload", (req, res) => {
+  try {
+    const { imageBase64, licenseNumber } = req.body;
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      return res.status(400).json({ error: "صورة الترخيص بصيغة Base64 مطلوبة" });
+    }
+
+    const db = readDb();
+    if (!db.homeSettings) db.homeSettings = {} as any;
+    if (!db.homeSettings.licenseConfig) db.homeSettings.licenseConfig = {};
+
+    let localUrl = imageBase64; // fallback for serverless read-only filesystem
+
+    // Parse image extension and base64 payload
+    const matches = imageBase64.match(/^data:image\/([a-zA-Z0-9\+\-\.]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      let ext = matches[1].toLowerCase();
+      if (ext === "jpeg") ext = "jpg";
+      const base64Data = matches[2];
+      const filename = `license_official_${Date.now()}.${ext}`;
+      const filePath = path.join(licenseDir, filename);
+
+      try {
+        if (!fs.existsSync(licenseDir)) {
+          fs.mkdirSync(licenseDir, { recursive: true });
+        }
+        const buffer = Buffer.from(base64Data, "base64");
+        fs.writeFileSync(filePath, buffer);
+        localUrl = `/uploads/license/${filename}`;
+      } catch (fsErr) {
+        console.warn("Could not write file to disk (falling back to base64 storage):", fsErr);
+      }
+    }
+
+    db.homeSettings.licenseImage = localUrl;
+    db.homeSettings.licenseConfig = {
+      ...db.homeSettings.licenseConfig,
+      enabled: true,
+      imageUrl: localUrl,
+      titleAr: db.homeSettings.licenseConfig.titleAr || "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 5081",
+      notes: db.homeSettings.licenseConfig.notes || "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
+    };
+
+    if (licenseNumber) {
+      db.homeSettings.licenseNumber = String(licenseNumber);
+      if (db.systemSettings) {
+        db.systemSettings.licenseNumber = String(licenseNumber);
+      }
+    }
+
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: new Date().toISOString(),
+      user: "الإدارة العامة",
+      action: "رفع وتحديث صورة وثيقة الترخيص الرسمي للجمعية",
+      ip: req.ip || "127.0.0.1",
+      device: req.headers["user-agent"] || "System"
+    });
+
+    writeDb(db);
+    res.json({
+      status: "success",
+      imageUrl: localUrl,
+      licenseConfig: db.homeSettings.licenseConfig,
+      licenseNumber: db.homeSettings.licenseNumber || "5081",
+      db
+    });
+  } catch (err: any) {
+    console.error("Error saving license image:", err);
+    res.status(500).json({ error: "فشل في حفظ صورة الترخيص", details: err?.message });
+  }
+});
+
+// 12.2 Delete official license image
+app.post("/api/db/license/delete", (req, res) => {
+  try {
+    const db = readDb();
+    if (db.homeSettings) {
+      db.homeSettings.licenseImage = "";
+      if (db.homeSettings.licenseConfig) {
+        db.homeSettings.licenseConfig.imageUrl = "";
+      }
+    }
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: new Date().toISOString(),
+      user: "الإدارة العامة",
+      action: "حذف صورة وثيقة الترخيص الرسمية",
+      ip: req.ip || "127.0.0.1",
+      device: req.headers["user-agent"] || "System"
+    });
+    writeDb(db);
+    res.json({
+      status: "success",
+      licenseConfig: db.homeSettings?.licenseConfig,
+      db
+    });
+  } catch (err: any) {
+    console.error("Error deleting license image:", err);
+    res.status(500).json({ error: "فشل في حذف صورة الترخيص", details: err?.message });
+  }
 });
 
 // 13. News Add/Edit
