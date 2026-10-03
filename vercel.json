@@ -4,49 +4,22 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/*.ts": {
-      "includeFiles": "{db.json,server-core.ts,server/**,src/types.ts,src/types/**}"
+    "api/index.ts": {
+      "includeFiles": "db.json"
     }
   },
   "rewrites": [
     {
-      "source": "/api/health",
-      "destination": "/api/health"
-    },
-    {
-      "source": "/api/health/",
-      "destination": "/api/health"
-    },
-    {
-      "source": "/health",
-      "destination": "/api/health"
-    },
-    {
-      "source": "/health/",
-      "destination": "/api/health"
-    },
-    {
       "source": "/api/(.*)",
-      "destination": "/api/index?__path=$1"
+      "destination": "/api/index"
     },
     {
       "source": "/api",
       "destination": "/api/index"
     },
     {
-      "source": "/((?!api/|health|assets/|favicon|.*\\..*).*)",
+      "source": "/((?!api/|assets/|favicon|.*\\..*).*)",
       "destination": "/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Credentials", "value": "true" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT,HEAD" },
-        { "key": "Access-Control-Allow-Headers", "value": "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-user-id, x-user-role, x-department-id, x-national-id, x-team-id" }
-      ]
     }
   ]
 }

@@ -86,7 +86,7 @@ export const sanitizeApiBaseUrl = (rawUrl: string): { cleanUrl: string; error?: 
   } catch {
     return {
       cleanUrl: '',
-      error: 'صيغة الرابط غير صحيحة، يرجى كتابة عنوان خادم صالح مثل: https://example.onrender.com'
+      error: 'صيغة الرابط غير صحيحة، يرجى كتابة عنوان خادم صالح.'
     };
   }
 };
@@ -212,9 +212,6 @@ export const checkHealthEndpoint = async (targetBaseUrl?: string): Promise<Healt
     if (vercelId || serverHeader.includes('vercel')) {
       return 'Vercel Serverless (دوال سيرفرليس على Vercel)';
     }
-    if (testedUrl.includes('onrender.com') || serverHeader.includes('render')) {
-      return 'Render Cloud Platform (خادم Render)';
-    }
     if (cfRay || serverHeader.includes('cloudflare')) {
       return 'Cloudflare CDN Proxy (بروكسي كلاودفلير)';
     }
@@ -316,7 +313,7 @@ export const checkHealthEndpoint = async (targetBaseUrl?: string): Promise<Healt
         contentType: '',
         isJson: false,
         url,
-        serverSource: url.includes('onrender.com') ? 'Render Cloud (غير متاح)' : 'غير محدد',
+        serverSource: 'غير محدد',
         errorMessage: err.message || 'تعذر الاتصال بالخادم عبر الشبكة. يرجى التأكد من تشغيل الخادم وصلاحية شهادة SSL وإعدادات CORS.'
       };
     }

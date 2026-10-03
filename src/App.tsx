@@ -1423,68 +1423,23 @@ export default function App() {
               <AlertCircle className="w-6 h-6 text-rose-600 dark:text-rose-400 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-black text-rose-900 dark:text-rose-200">فشل في الاتصال بالخادم الرئيسي</h2>
+              <h2 className="text-base font-black text-rose-900 dark:text-rose-200">تعذر الاتصال بالخادم</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</p>
             </div>
           </div>
 
-          <div className="bg-rose-50/80 dark:bg-rose-950/30 p-3.5 rounded-2xl border border-rose-100 dark:border-rose-900/30 text-xs text-rose-800 dark:text-rose-300 leading-relaxed">
-            {error || "تعذر إتمام الاتصال بخادم Express الخلفي أو تحميل قاعدة البيانات."}
+          <div className="bg-rose-50/80 dark:bg-rose-950/30 p-4 rounded-2xl border border-rose-100 dark:border-rose-900/30 text-xs text-rose-800 dark:text-rose-300 leading-relaxed text-center">
+            {error || "تعذر الاتصال بالخادم، يرجى المحاولة مرة أخرى."}
           </div>
 
-          {/* Health Status Badge */}
-          {healthStatusBadge && (
-            <div className={`p-3 rounded-2xl border text-xs leading-relaxed flex items-center gap-2 ${
-              healthStatusBadge.ok 
-                ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' 
-                : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-            }`}>
-              {healthStatusBadge.ok ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              )}
-              <span>{healthStatusBadge.message}</span>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <button 
-              onClick={() => fetchDatabase(false)}
-              disabled={isRetrying || isCheckingHealth}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
-              <span>{isRetrying ? "جاري إعادة التحقق والربط..." : "إعادة محاولة المزامنة والربط"}</span>
-            </button>
-
-            <button
-              onClick={() => handleQuickHealthCheck()}
-              disabled={isCheckingHealth}
-              className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingHealth ? 'animate-spin' : ''}`} />
-              <span>{isCheckingHealth ? "جاري فحص مسار الصحة..." : "فحص تشخيصي سريع لمسار الصحة (/api/health)"}</span>
-            </button>
-          </div>
-
-          {/* Diagnostic details drawer */}
-          {connectionDiagnostics && (
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-              <details className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                <summary className="cursor-pointer font-bold hover:text-neutral-700 dark:hover:text-neutral-200 py-1 flex items-center justify-between">
-                  <span>سجل تشخيص الخادم (للمطورين والدعم الفني)</span>
-                  <span className="font-mono text-[10px] text-neutral-400">{connectionDiagnostics.timestamp}</span>
-                </summary>
-                <div className="mt-2 p-2.5 bg-neutral-900 text-neutral-200 rounded-xl font-mono text-[10px] text-left overflow-x-auto space-y-1" dir="ltr">
-                  <div>Host: {typeof window !== 'undefined' ? window.location.host : 'unknown'}</div>
-                  <div>URL: {connectionDiagnostics.url}</div>
-                  <div>Status: {connectionDiagnostics.status || 'Network Error / Blocked'}</div>
-                  <div className="text-neutral-400">{connectionDiagnostics.details}</div>
-                </div>
-              </details>
-            </div>
-          )}
+          <button 
+            onClick={() => fetchDatabase(false)}
+            disabled={isRetrying}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
+            <span>{isRetrying ? "جاري إعادة الاتصال..." : "إعادة المحاولة"}</span>
+          </button>
 
           <div className="text-[11px] text-neutral-400 text-center">
             يعتمد النظام على الاتصال التلقائي المركزي لكافة الإدارات والمستفيدين والمتطوعين دون الحاجة لضبط يدوي.
