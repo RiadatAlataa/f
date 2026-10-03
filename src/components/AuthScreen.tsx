@@ -5,6 +5,8 @@ import {
   ChevronDown, ChevronUp, HeartHandshake, Award, X,
   KeyRound, CreditCard, Mail, Check, User
 } from "lucide-react";
+import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
+import { evaluatePasswordStrength, generateStrongPassword } from "../utils/passwordSecurity";
 
 interface AuthScreenProps {
   onLoginSuccess: (role: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'supervisor' | 'department_admin' | 'storekeeper' | string, user: any) => void;
@@ -30,12 +32,31 @@ export function AuthScreen({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Password recovery modal state
+  // Multi-Step Password Recovery with Salted OTP & Bcrypt
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<1 | 2 | 3 | 4>(1);
   const [recoveryIdentifier, setRecoveryIdentifier] = useState("");
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState("");
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState("");
+  const [showRecNewPass, setShowRecNewPass] = useState(false);
+  const [showRecConfirmPass, setShowRecConfirmPass] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoverySuccess, setRecoverySuccess] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+
+  // OTP Countdown Timer
+  useEffect(() => {
+    if (otpTimer <= 0) return;
+    const interval = setInterval(() => {
+      setOtpTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [otpTimer]);
 
   // Google Login modal/state
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -166,17 +187,17 @@ export function AuthScreen({
     }
   };
 
-  // Password Recovery Handler
-  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Multi-Step Password Recovery Handlers (OTP & Bcrypt)
+  const handleRequestOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setRecoveryError(null);
     setRecoverySuccess(null);
 
     if (!recoveryIdentifier.trim()) {
       setRecoveryError(
         lang === 'ar' 
-          ? "يرجى إدخال رقم الهوية أو البريد الإلكتروني المسجل." 
-          : "Please enter your registered ID or email."
+          ? "يرجى إدخال رقم الهوية أو اسم المستخدم أو البريد الإلكتروني المسجل." 
+          : "Please enter your registered ID, username, or email."
       );
       return;
     }
@@ -189,16 +210,108 @@ export function AuthScreen({
         body: JSON.stringify({ identifier: recoveryIdentifier.trim() })
       });
       const data = await res.json().catch(() => null);
+
       if (res.ok && data?.status === "success") {
+        setRecoveryEmail(data.email || recoveryIdentifier.trim());
+        setMaskedEmail(data.maskedEmail || data.email || recoveryIdentifier.trim());
+        setRecoveryStep(2);
+        setOtpTimer(60); // 60 seconds countdown for resend
+        setRecoverySuccess(data.message || (lang === 'ar' ? "تم إرسال رمز التحقق OTP بنجاح." : "OTP code has been sent."));
+      } else {
+        setRecoveryError(data?.error || (lang === 'ar' ? "تعذر إرسال رمز التحقق، يرجى المحاولة لاحقاً." : "Failed to process request."));
+      }
+    } catch {
+      setRecoveryError(lang === 'ar' ? "حدث خطأ أثناء الاتصال بالخادم." : "An error occurred.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError(null);
+    setRecoverySuccess(null);
+
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setRecoveryError(lang === 'ar' ? "يرجى إدخال رمز التحقق المكون من 6 أرقام." : "Please enter the 6-digit OTP code.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/db/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: recoveryEmail,
+          otpCode: otpCode.trim()
+        })
+      });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.status === "success") {
+        setResetToken(data.resetToken);
+        setRecoveryStep(3);
+        setRecoverySuccess(data.message || (lang === 'ar' ? "تم التحقق من الرمز بنجاح." : "Code verified successfully."));
+      } else {
+        setRecoveryError(data?.error || (lang === 'ar' ? "رمز التحقق غير صحيح أو منتهي الصلاحية." : "Invalid or expired OTP."));
+      }
+    } catch {
+      setRecoveryError(lang === 'ar' ? "حدث خطأ أثناء الاتصال بالخادم." : "An error occurred.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleResetPasswordWithOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError(null);
+    setRecoverySuccess(null);
+
+    if (!recoveryNewPassword.trim()) {
+      setRecoveryError(lang === 'ar' ? "يرجى إدخال كلمة المرور الجديدة." : "Please enter new password.");
+      return;
+    }
+
+    if (recoveryNewPassword.trim() !== recoveryConfirmPassword.trim()) {
+      setRecoveryError(lang === 'ar' ? "كلمتا المرور غير متطابقتين، يرجى إعادة التحقق." : "Passwords do not match.");
+      return;
+    }
+
+    const evalResult = evaluatePasswordStrength(recoveryNewPassword.trim());
+    if (!evalResult.allPassed) {
+      setRecoveryError(
+        lang === 'ar'
+          ? `كلمة المرور لا تستوفي شروط الأمان: ${evalResult.errors.join(" ")}`
+          : "Password does not meet security criteria."
+      );
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/db/auth/reset-password-with-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: recoveryEmail,
+          resetToken,
+          newPassword: recoveryNewPassword.trim(),
+          confirmPassword: recoveryConfirmPassword.trim()
+        })
+      });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.status === "success") {
+        setRecoveryStep(4);
         setRecoverySuccess(
-          data.message || (
-            lang === 'ar'
-              ? "تم إرسال رابط إعادة تعيين كلمة المرور إلى البريد المسجل بحسابك بنجاح."
-              : "Password recovery link has been sent to your registered address."
-          )
+          data.message || 
+          (lang === 'ar' 
+            ? "تم تحديث كلمة المرور وتشفيرها بنجاح بواسطة نظام Bcrypt." 
+            : "Password has been updated and hashed with Bcrypt.")
         );
       } else {
-        setRecoveryError(data?.error || (lang === 'ar' ? "تعذر إرسال طلب الاستعادة." : "Failed to process request."));
+        setRecoveryError(data?.error || (lang === 'ar' ? "فشل حفظ كلمة المرور الجديدة." : "Failed to reset password."));
       }
     } catch {
       setRecoveryError(lang === 'ar' ? "حدث خطأ أثناء معالجة الطلب." : "An error occurred.");
@@ -825,74 +938,89 @@ export function AuthScreen({
               <X className="w-5 h-5" />
             </button>
 
-            <div className="space-y-2">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <KeyRound className="w-5 h-5" />
+            {/* Stepper Header */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                {/* Step indicator badge */}
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
+                  <span>الخطوة {recoveryStep} من 3</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>{recoveryStep === 1 ? 'طلب OTP' : recoveryStep === 2 ? 'التحقق' : recoveryStep === 3 ? 'تشفير Bcrypt' : 'مكتمل'}</span>
+                </div>
               </div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                {lang === 'ar' ? "استعادة كلمة المرور" : "Password Recovery"}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                {lang === 'ar'
-                  ? "أدخل رقم الهوية أو اسم المستخدم أو البريد الإلكتروني المرتبط بحسابك، وسنرسل لك تعليمات استعادة كلمة المرور فورًا."
-                  : "Enter your registered ID, username, or email to receive recovery instructions."}
-              </p>
+
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  {recoveryStep === 1 && (lang === 'ar' ? "استعادة كلمة المرور عبر البريد" : "Password Recovery via Email")}
+                  {recoveryStep === 2 && (lang === 'ar' ? "إدخال رمز التحقق OTP" : "Enter Verification OTP")}
+                  {recoveryStep === 3 && (lang === 'ar' ? "تعيين كلمة المرور الجديدة (Bcrypt)" : "Set New Bcrypt Password")}
+                  {recoveryStep === 4 && (lang === 'ar' ? "تم تحديث كلمة المرور بنجاح 🎉" : "Password Updated Successfully")}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                  {recoveryStep === 1 && "أدخل رقم الهوية أو اسم المستخدم أو البريد المسجل لإرسال رمز تحقق مؤقت."}
+                  {recoveryStep === 2 && `أدخل رمز التحقق (OTP) المكون من 6 أرقام المرسل إلى: ${maskedEmail}`}
+                  {recoveryStep === 3 && "أدخل كلمة مرور قوية تطابق معايير الأمان ليتم تشفيرها بخوارزمية Bcrypt."}
+                  {recoveryStep === 4 && "تم حفظ وتشفير كلمة مرورك بنجاح وإنهاء الجلسات السابقة لحماية حسابك."}
+                </p>
+              </div>
             </div>
 
-            {/* Error in modal */}
+            {/* Error banner in modal */}
             {recoveryError && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{recoveryError}</span>
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span className="font-bold leading-relaxed">{recoveryError}</span>
               </div>
             )}
 
-            {/* Success in modal */}
-            {recoverySuccess ? (
-              <div className="space-y-4">
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs space-y-2">
-                  <div className="flex items-center gap-2 font-black">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span>{lang === 'ar' ? "تم إرسال الطلب بنجاح" : "Request Submitted"}</span>
-                  </div>
-                  <p className="leading-relaxed font-medium">
-                    {recoverySuccess}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowForgotModal(false)}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
-                >
-                  {lang === 'ar' ? "العودة لصفحة الدخول" : "Back to Sign In"}
-                </button>
+            {/* Success banner in modal (Step 1 to 3) */}
+            {recoverySuccess && recoveryStep !== 4 && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span className="font-bold leading-relaxed">{recoverySuccess}</span>
               </div>
-            ) : (
-              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+            )}
+
+            {/* STEP 1: Enter Identifier */}
+            {recoveryStep === 1 && (
+              <form onSubmit={handleRequestOtp} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {lang === 'ar' ? "رقم الهوية أو البريد الإلكتروني" : "National ID or Email"}
+                    رقم الهوية أو اسم المستخدم أو البريد الإلكتروني:
                   </label>
                   <input
                     type="text"
                     value={recoveryIdentifier}
                     onChange={(e) => setRecoveryIdentifier(e.target.value)}
-                    placeholder={lang === 'ar' ? "مثال: 1087654321 أو name@example.com" : "e.g. 1087654321 or email"}
+                    placeholder="مثال: 1087654321 أو user@example.com"
                     className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     autoFocus
+                    required
                   />
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    ملاحظة أمنية: يجب أن يكون للحساب بريد إلكتروني موثق ليتم إرسال رمز التحقق إليه.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="submit"
                     disabled={recoveryLoading}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
                   >
                     {recoveryLoading ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>جاري التحقق والبحث...</span>
+                      </>
                     ) : (
-                      <span>{lang === 'ar' ? "إرسال رابط الاستعادة" : "Send Recovery Link"}</span>
+                      <>
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>إرسال رمز التحقق OTP</span>
+                      </>
                     )}
                   </button>
                   <button
@@ -900,10 +1028,223 @@ export function AuthScreen({
                     onClick={() => setShowForgotModal(false)}
                     className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
                   >
-                    {lang === 'ar' ? "إلغاء" : "Cancel"}
+                    إلغاء
                   </button>
                 </div>
               </form>
+            )}
+
+            {/* STEP 2: Enter 6-digit OTP Code */}
+            {recoveryStep === 2 && (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      رمز التحقق (OTP):
+                    </label>
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                      صالح لمدة 10 دقائق
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder="••••••"
+                    className="w-full px-3.5 py-3 text-center text-lg tracking-[0.5em] font-mono font-black rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    autoFocus
+                    required
+                  />
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      disabled={otpTimer > 0 || recoveryLoading}
+                      onClick={() => handleRequestOtp()}
+                      className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {otpTimer > 0 ? `إعادة الإرسال بعد (${otpTimer}) ثانية` : "إعادة إرسال رمز جديد"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecoveryStep(1);
+                        setOtpCode("");
+                        setRecoveryError(null);
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      تغيير الحساب
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading || otpCode.length !== 6}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                  >
+                    {recoveryLoading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>جاري التحقق من الرمز...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>التحقق ومتابعة التعيين</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 3: Enter New Password (with Strength Meter & Bcrypt) */}
+            {recoveryStep === 3 && (
+              <form onSubmit={handleResetPasswordWithOtp} className="space-y-4">
+                {/* New Password */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      كلمة المرور الجديدة:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const strong = generateStrongPassword();
+                        setRecoveryNewPassword(strong);
+                        setRecoveryConfirmPassword(strong);
+                        setRecoveryError(null);
+                      }}
+                      className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-500" />
+                      <span>توليد كلمة قوية</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showRecNewPass ? "text" : "password"}
+                      value={recoveryNewPassword}
+                      onChange={(e) => setRecoveryNewPassword(e.target.value)}
+                      placeholder="أدخل كلمة مرور قوية (8 خانات فأكثر)"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 pl-10 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+                      autoFocus
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRecNewPass(!showRecNewPass)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showRecNewPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  {/* Real-time strength meter */}
+                  <PasswordStrengthMeter password={recoveryNewPassword} />
+                </div>
+
+                {/* Confirm Password */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    تأكيد كلمة المرور الجديدة:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showRecConfirmPass ? "text" : "password"}
+                      value={recoveryConfirmPassword}
+                      onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                      placeholder="أعد إدخال كلمة المرور"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 pl-10 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRecConfirmPass(!showRecConfirmPass)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showRecConfirmPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  {recoveryConfirmPassword && recoveryNewPassword !== recoveryConfirmPassword && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">
+                      ⚠️ كلمتا المرور غير متطابقتين.
+                    </p>
+                  )}
+                  {recoveryConfirmPassword && recoveryNewPassword === recoveryConfirmPassword && (
+                    <p className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      كلمتا المرور متطابقتان.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading || !recoveryNewPassword || recoveryNewPassword !== recoveryConfirmPassword}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                  >
+                    {recoveryLoading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>جاري الحفظ والتشفير عبر Bcrypt...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>تأكيد وحفظ كلمة المرور الجديدة</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 4: Success confirmation */}
+            {recoveryStep === 4 && (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-black text-sm">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>تم تحديث وتشفير كلمة المرور بنجاح!</span>
+                  </div>
+                  <p className="leading-relaxed font-medium">
+                    تم تشفير كلمة مرورك الجديدة بواسطة نظام Bcrypt وإنهاء الجلسات القديمة لضمان أقصى درجات الأمان. يمكنك الآن تسجيل الدخول مباشرة ببياناتك الجديدة.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotModal(false);
+                    setIdentifier(recoveryIdentifier);
+                    setPassword("");
+                    setError(null);
+                    setRecoveryStep(1);
+                  }}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
+                >
+                  <User className="w-4 h-4" />
+                  <span>تسجيل الدخول الآن بحسابك</span>
+                </button>
+              </div>
             )}
 
           </div>

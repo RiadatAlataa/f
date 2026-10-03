@@ -27,6 +27,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { SupportBubbleWidget } from "./components/SupportBubbleWidget";
 import { NotificationBell } from "./components/NotificationBell";
 import { UserSettingsModal } from "./components/UserSettingsModal";
+import { ForceChangePasswordModal } from "./components/ForceChangePasswordModal";
 import { playApplicationSubmittedChime } from "./utils/audioNotification";
 import { DashboardErrorBoundary } from "./components/DashboardErrorBoundary";
 import { 
@@ -138,7 +139,7 @@ export default function App() {
   const initialAuthSession = getStoredSession();
 
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
-  const [currentRole, setCurrentRole] = useState<'admin' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(
+  const [currentRole, setCurrentRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(
     initialAuthSession?.role || 'public'
   );
   const [activeMainTab, setActiveMainTab] = useState<'system' | 'ai' | 'guide'>(
@@ -150,7 +151,7 @@ export default function App() {
   const [authenticatedUser, setAuthenticatedUser] = useState<any | null>(
     initialAuthSession?.user || null
   );
-  const [savedUserRole, setSavedUserRole] = useState<'admin' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | null>(() => {
+  const [savedUserRole, setSavedUserRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | null>(() => {
     const stored = getStoredSession();
     return stored?.role && stored.role !== 'public' ? (stored.role as any) : null;
   });
@@ -1597,7 +1598,7 @@ export default function App() {
                   <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 </button>
 
-                {currentRole === 'admin' && (
+                {(currentRole === 'admin' || currentRole === 'operations_manager') && (
                   <button
                     id="btn-header-settings"
                     onClick={() => {
@@ -1665,9 +1666,9 @@ export default function App() {
               />
             ) : (
               <>
-                {/* 1. ADMINISTRATION VIEW */}
-                {currentRole === 'admin' && (
-                  <DashboardErrorBoundary pageName="لوحة التحكم العامة للإدارة">
+                {/* 1. ADMINISTRATION & OPERATIONS VIEW */}
+                {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                  <DashboardErrorBoundary pageName="لوحة التحكم العامة للإدارة والعمليات">
                     <AdminDashboard 
                       data={dbData}
                       initialSubTab={adminSubTab}
@@ -2074,6 +2075,30 @@ export default function App() {
         isDark={isDark}
         onToggleDark={() => setIsDark(!isDark)}
       />
+
+      {/* MANDATORY FORCE PASSWORD CHANGE MODAL */}
+      {authenticatedUser && !!authenticatedUser.mustChangePassword && (
+        <ForceChangePasswordModal
+          isOpen={true}
+          userId={authenticatedUser.id || authenticatedUser.userId}
+          userName={authenticatedUser.name}
+          userRole={currentRole}
+          onSuccess={() => {
+            const updatedUser = { ...authenticatedUser, mustChangePassword: false };
+            setAuthenticatedUser(updatedUser);
+            try {
+              const currentStored = getStoredSession();
+              if (currentStored) {
+                localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+                  ...currentStored,
+                  user: updatedUser
+                }));
+              }
+            } catch {}
+          }}
+          onLogout={handleLogout}
+        />
+      )}
 
     </div>
   );

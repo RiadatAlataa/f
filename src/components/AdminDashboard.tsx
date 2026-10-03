@@ -44,6 +44,7 @@ import { HRDashboard } from "./HRDashboard";
 import { VolunteerKnightsModal } from "./VolunteerKnights";
 import { AidDistribution, DistributionHandoverRecord, Employee, EmployeeRequest, TeamStaffAssignment } from "../types";
 import { DepartmentPermissionsManager } from "./DepartmentPermissionsManager";
+import { UsersManager } from "./UsersManager";
 import { expandPermissionsWithLegacyKeys } from "../data/departmentPermissionsRegistry";
 import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
 import { AccessDeniedCard } from "./AccessDeniedCard";
@@ -245,7 +246,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRequestEmployeeModification,
   onRefreshGlobalData
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -327,6 +328,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data.partners || []).length || undefined },
         { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: (data.letters || []).filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
+        { id: 'users_mgmt', label: 'إدارة المستخدمين', icon: Users, badge: 'جديد' },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
         { id: 'chat', label: 'الدردشة الداخلية', icon: MessageSquare },
         { id: 'notifications', label: 'الإشعارات والتعاميم', icon: Send }
@@ -2090,6 +2092,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
           )}
+
+          {/* TAB: USERS MANAGEMENT (نظام إدارة المستخدمين والصلاحيات والأمان) */}
+          {activeSubTab === 'users_mgmt' && (() => {
+            const isAuthorized = authenticatedUser?.role === 'admin' || 
+              authenticatedUser?.role === 'operations_manager' ||
+              authenticatedUser?.permissions?.includes('super_admin') ||
+              authenticatedUser?.permissions?.includes('operations_manager') ||
+              authenticatedUser?.permissions?.includes('manage_users') ||
+              !authenticatedUser;
+
+            if (!isAuthorized) {
+              return (
+                <AccessDeniedCard 
+                  pageTitle="إدارة المستخدمين والحسابات"
+                  requiredPermission="إدارة المستخدمين (manage_users) أو رتبة مدير العمليات / الإدارة العليا"
+                  userPermissions={authenticatedUser?.permissions || []}
+                  allowedWorkspaces={authenticatedUser?.allowedPages || []}
+                  onNavigateToAllowed={(pageId) => setActiveSubTab(pageId as any)}
+                  onGoBack={() => setActiveSubTab('enterprise_finance')}
+                />
+              );
+            }
+
+            return (
+              <DashboardErrorBoundary pageName="إدارة المستخدمين">
+                <UsersManager
+                  currentUser={authenticatedUser}
+                  currentUserRole={authenticatedUser?.role || 'admin'}
+                  departments={data.departments || []}
+                  onOpenDepartment={(deptId) => {
+                    setActiveSubTab('deps');
+                  }}
+                  onRefreshDatabase={onRefreshGlobalData}
+                />
+              </DashboardErrorBoundary>
+            );
+          })()}
 
           {/* TAB 9: ROLE & PERMISSION SYSTEM (ENTERPRISE RBAC MATRIX) */}
           {activeSubTab === 'permissions' && (() => {
