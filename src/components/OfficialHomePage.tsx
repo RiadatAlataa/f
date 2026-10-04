@@ -263,6 +263,25 @@ export function OfficialHomePage({
     };
   }, [authenticatedUser, lang]);
 
+  // Smooth navigation to a section anchor, switching back to home page if currently on another page
+  const navigateToSection = (sectionId: string) => {
+    setIsMobileMenuOpen(false);
+    if (currentPublicPage !== 'home') {
+      setCurrentPublicPage('home');
+      setTimeout(() => {
+        const el = document.getElementById(sectionId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    } else {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  };
+
   // Official License Document URL & Number
   const licenseImageUrl = settings?.licenseImage || settings?.licenseConfig?.imageUrl || "";
   const licenseNumber = settings?.licenseNumber || "5081";
@@ -803,84 +822,81 @@ export function OfficialHomePage({
         </div>
       )}
 
-      {/* 1. Header (ثابت أثناء التمرير ومرتب هندسياً مع دمج شارة الترخيص) */}
-      <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 transition-all shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[4.5rem] py-2 flex items-center justify-between gap-3 sm:gap-6">
+      {/* 1. Header (ثابت أثناء التمرير ومرتب هندسياً وفخم بالكامل) */}
+      <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 transition-all shadow-xs border-b border-neutral-200/70 dark:border-neutral-800/80">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 min-h-[4.25rem] py-2 flex items-center justify-between gap-2 sm:gap-4 lg:gap-6">
           
-          {/* Logo & Association Info with Integrated Compact License Badge */}
-          <div className="flex items-center gap-3 sm:gap-4 shrink-0 min-w-0 max-w-[70%] sm:max-w-lg lg:max-w-xl">
+          {/* Logo & Association Info */}
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              if (currentPublicPage !== 'home') {
+                setCurrentPublicPage('home');
+              }
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 min-w-0 group cursor-pointer focus:outline-hidden"
+            title={lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
+          >
             <div className="relative shrink-0 flex items-center justify-center">
               <img 
                 src={settings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"} 
                 alt="شعار الجمعية" 
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover shadow-xs ring-2 ring-emerald-500/25 dark:ring-emerald-400/20 bg-white shrink-0"
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover shadow-xs ring-2 ring-emerald-600/30 dark:ring-emerald-400/30 bg-white shrink-0 group-hover:scale-105 transition-transform"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop";
                 }}
               />
             </div>
-            <div className="flex flex-col justify-center min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 
-                  className="text-xs sm:text-sm lg:text-base font-bold text-neutral-900 dark:text-white leading-snug break-words tracking-tight select-text"
-                  title={lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
-                >
-                  {lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
-                </h1>
-
-                {/* Official Small Square License Thumbnail & Number Badge */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLicenseZoom(1);
-                    setIsLicenseModalOpen(true);
-                  }}
-                  className="group inline-flex items-center gap-1.5 p-1 rounded-xl border border-emerald-500/35 dark:border-emerald-500/40 bg-emerald-50/80 dark:bg-emerald-950/70 hover:bg-emerald-100 dark:hover:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 transition-all cursor-pointer shadow-2xs hover:scale-[1.03] active:scale-95 shrink-0 self-center"
-                  title={lang === "ar" ? `اضغط لعرض وتكبير وثيقة الترخيص الرسمية رقم ${licenseNumber}` : `Click to view official license document #${licenseNumber}`}
-                >
-                  {/* Small Square Image Container */}
-                  <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-lg overflow-hidden bg-white dark:bg-neutral-800 border border-emerald-400/50 shadow-inner flex items-center justify-center shrink-0 aspect-square">
-                    {licenseImageUrl ? (
-                      <img
-                        src={licenseImageUrl}
-                        alt="وثيقة الترخيص الرسمية"
-                        className="w-full h-full object-cover rounded-md aspect-square group-hover:scale-110 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 text-emerald-700 dark:text-emerald-300">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-emerald-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Maximize2 className="w-3 h-3 text-emerald-800 dark:text-emerald-200" />
-                    </div>
-                  </div>
-
-                  {/* License Info Text */}
-                  <div className="flex flex-col text-right leading-tight pr-0.5">
-                    <span className="text-[10px] sm:text-xs font-black text-emerald-800 dark:text-emerald-300 whitespace-nowrap">
-                      {lang === "ar" ? `ترخيص: ${licenseNumber}` : `Lic: ${licenseNumber}`}
-                    </span>
-                    <span className="text-[8px] text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap hidden min-[540px]:inline">
-                      {lang === "ar" ? "المركز الوطني" : "National Center"}
-                    </span>
-                  </div>
-                </button>
-              </div>
-
-              <p className="text-[10px] sm:text-xs text-neutral-500 dark:text-neutral-400 font-semibold tracking-normal whitespace-nowrap hidden sm:block mt-0.5">
+            <div className="flex flex-col justify-center min-w-0 text-right">
+              <h1 
+                className="text-xs sm:text-sm lg:text-[15px] font-black text-neutral-900 dark:text-white leading-tight tracking-tight select-text group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors"
+              >
+                {lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
+              </h1>
+              <p className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 font-semibold tracking-normal mt-0.5 hidden sm:block">
                 {lang === "ar" ? "بإشراف المركز الوطني لتنمية القطاع غير الربحي" : "Supervised by the National Center for Non-Profit Sector"}
               </p>
             </div>
-          </div>
+          </a>
 
           {/* Center Navigation Links (Desktop: xl and up) */}
-          <nav className="hidden xl:flex items-center gap-5 text-xs font-bold text-neutral-600 dark:text-neutral-300 shrink-0">
-            <a href="#about" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "من نحن" : "About"}</a>
+          <nav className="hidden xl:flex items-center gap-1 2xl:gap-2 text-xs font-bold text-neutral-700 dark:text-neutral-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => navigateToSection("about")}
+              className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+            >
+              {lang === "ar" ? "من نحن" : "About"}
+            </button>
             {settings?.sectionVisibility?.orgChart !== false && (
-              <a href="#administrative-structure" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "الهيكل الإداري" : "Org Structure"}</a>
+              <button
+                type="button"
+                onClick={() => navigateToSection("administrative-structure")}
+                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                {lang === "ar" ? "الهيكل الإداري" : "Org Structure"}
+              </button>
             )}
-            {settings?.sectionVisibility?.stats && <a href="#stats" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "الإحصائيات" : "Stats"}</a>}
+            {settings?.sectionVisibility?.stats && (
+              <button
+                type="button"
+                onClick={() => navigateToSection("stats")}
+                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                {lang === "ar" ? "الإحصائيات" : "Stats"}
+              </button>
+            )}
+            {settings?.sectionVisibility?.initiatives && (
+              <button
+                type="button"
+                onClick={() => navigateToSection("initiatives")}
+                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                {lang === "ar" ? "المبادرات" : "Initiatives"}
+              </button>
+            )}
             {settings?.sectionVisibility?.initiatives && (
               <button
                 type="button"
@@ -888,26 +904,22 @@ export function OfficialHomePage({
                   setCurrentPublicPage('opportunities');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 px-3 py-1.5 rounded-xl font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer border border-emerald-200 dark:border-emerald-800/80 shadow-2xs"
+                className="text-emerald-800 dark:text-emerald-300 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/70 dark:hover:bg-emerald-900/70 px-2.5 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer border border-emerald-200/80 dark:border-emerald-800/80 shadow-2xs"
               >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>{lang === "ar" ? "الفرص التطوعية" : "Opportunities"}</span>
                 <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white text-[10px] font-mono font-black">{initiatives.length}</span>
               </button>
             )}
-            {settings?.sectionVisibility?.initiatives && <a href="#initiatives" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "المبادرات" : "Initiatives"}</a>}
-            <a
-              href={settings?.donationLink || "https://store.riadataleata.org.sa"}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-neutral-700 dark:text-neutral-300 hover:text-emerald-600 font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
-              title={lang === "ar" ? "الانتقال لمتجر الجمعية والتبرعات (مشروع منفصل)" : "Go to external donation store"}
-            >
-              <ShoppingBag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>{lang === "ar" ? "متجر الجمعية والتبرعات" : "Store"}</span>
-              <ExternalLink className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
-            </a>
-            {settings?.sectionVisibility?.news && <a href="#news" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "الأخبار" : "News"}</a>}
+            {settings?.sectionVisibility?.news && (
+              <button
+                type="button"
+                onClick={() => navigateToSection("news")}
+                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                {lang === "ar" ? "الأخبار" : "News"}
+              </button>
+            )}
             {settings?.sectionVisibility?.gallery && (
               <button
                 type="button"
@@ -915,13 +927,38 @@ export function OfficialHomePage({
                   setCurrentPublicPage('gallery');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="hover:text-emerald-600 transition-colors whitespace-nowrap cursor-pointer text-xs font-bold text-neutral-600 dark:text-neutral-300"
+                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "معرض الصور" : "Gallery"}
               </button>
             )}
-            {settings?.sectionVisibility?.partners && <a href="#partners" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "شركاء النجاح" : "Partners"}</a>}
-            <a href="#contact" className="hover:text-emerald-600 transition-colors whitespace-nowrap">{lang === "ar" ? "تواصل معنا" : "Contact"}</a>
+            {settings?.sectionVisibility?.partners && (
+              <button
+                type="button"
+                onClick={() => navigateToSection("partners")}
+                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                {lang === "ar" ? "شركاء النجاح" : "Partners"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => navigateToSection("contact")}
+              className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+            >
+              {lang === "ar" ? "تواصل معنا" : "Contact"}
+            </button>
+            <a
+              href={settings?.donationLink || "https://store.riadataleata.org.sa"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+              title={lang === "ar" ? "الانتقال لمتجر الجمعية والتبرعات" : "Go to store"}
+            >
+              <ShoppingBag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{lang === "ar" ? "متجر الجمعية والتبرعات" : "Store"}</span>
+              <ExternalLink className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+            </a>
           </nav>
 
           {/* Right Actions & Utilities (Buttons & Responsive Menu) */}
@@ -1030,16 +1067,27 @@ export function OfficialHomePage({
               </div>
             )}
 
-            {/* Menu Hamburger Toggle */}
+            {/* Clear 3-Line Hamburger Button (☰) for Mobile and Tablet */}
             <button
               id="btn-homepage-menu-toggle"
               onClick={() => setIsMobileMenuOpen(prev => !prev)}
-              className="p-2 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 border border-neutral-200 dark:border-neutral-700 shadow-xs shrink-0"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-750 text-neutral-800 dark:text-neutral-100 border border-neutral-200/80 dark:border-neutral-700 shadow-2xs transition-all cursor-pointer active:scale-95 shrink-0 xl:hidden"
               title="القائمة (☰)"
               aria-label="القائمة الرئيسية"
+              aria-expanded={isMobileMenuOpen}
             >
-              {isMobileMenuOpen ? <X className="w-5 h-5 text-emerald-600 shrink-0" /> : <Menu className="w-5 h-5 text-emerald-600 shrink-0" />}
-              <span className="hidden sm:inline text-xs font-bold text-neutral-700 dark:text-neutral-200 whitespace-nowrap">القائمة</span>
+              {isMobileMenuOpen ? (
+                <X className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              ) : (
+                <div className="w-4.5 h-3.5 flex flex-col justify-between shrink-0" aria-hidden="true">
+                  <span className="w-full h-[2px] bg-neutral-800 dark:bg-neutral-100 rounded-full"></span>
+                  <span className="w-full h-[2px] bg-emerald-600 dark:bg-emerald-400 rounded-full"></span>
+                  <span className="w-full h-[2px] bg-neutral-800 dark:bg-neutral-100 rounded-full"></span>
+                </div>
+              )}
+              <span className="text-xs font-bold whitespace-nowrap hidden min-[380px]:inline">
+                {isMobileMenuOpen ? (lang === "ar" ? "إغلاق" : "Close") : (lang === "ar" ? "☰ القائمة" : "☰ Menu")}
+              </span>
             </button>
 
           </div>
@@ -1106,70 +1154,62 @@ export function OfficialHomePage({
                 </div>
 
                 {/* Scrollable Navigation Items */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
-                  {/* Official License Badge in Mobile Sidebar */}
-                  <div
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      setLicenseZoom(1);
-                      setIsLicenseModalOpen(true);
-                    }}
-                    className="p-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-3 cursor-pointer hover:bg-emerald-100/70 dark:hover:bg-emerald-900/50 transition-all shadow-xs"
-                    title={lang === "ar" ? "اضغط لعرض وثيقة الترخيص الرسمية" : "Click to view official license document"}
-                  >
-                    <div className="w-11 h-11 rounded-xl overflow-hidden bg-white dark:bg-neutral-800 border border-emerald-400/50 flex items-center justify-center shrink-0 aspect-square shadow-inner">
-                      {licenseImageUrl ? (
-                        <img
-                          src={licenseImageUrl}
-                          alt="وثيقة الترخيص"
-                          className="w-full h-full object-cover rounded-lg aspect-square"
-                        />
-                      ) : (
-                        <ShieldCheck className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 text-right">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-black text-emerald-900 dark:text-emerald-200">
-                          {lang === "ar" ? `الترخيص الرسمي: ${licenseNumber}` : `License: ${licenseNumber}`}
-                        </span>
-                        <Maximize2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                      <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
-                        {lang === "ar" ? "المركز الوطني لتنمية القطاع غير الربحي" : "National Center for Non-Profit Sector"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <nav className="flex flex-col gap-2 text-xs font-bold text-neutral-700 dark:text-neutral-300">
-                    <a 
-                      href="#about" 
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+                <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
+                  <nav className="flex flex-col gap-1.5 text-sm font-bold text-neutral-800 dark:text-neutral-100">
+                    <button 
+                      type="button"
+                      onClick={() => navigateToSection("about")}
+                      className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
                     >
-                      <span>{lang === "ar" ? "من نحن" : "About"}</span>
-                      <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                    </a>
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                        <span>{lang === "ar" ? "من نحن" : "About"}</span>
+                      </div>
+                      <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                    </button>
+
                     {settings?.sectionVisibility?.orgChart !== false && (
-                      <a 
-                        href="#administrative-structure" 
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+                      <button 
+                        type="button"
+                        onClick={() => navigateToSection("administrative-structure")}
+                        className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
                       >
-                        <span>{lang === "ar" ? "الهيكل الإداري" : "Org Structure"}</span>
-                        <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                      </a>
+                        <div className="flex items-center gap-2.5">
+                          <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{lang === "ar" ? "الهيكل الإداري" : "Org Structure"}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                      </button>
                     )}
+
                     {settings?.sectionVisibility?.stats && (
-                      <a 
-                        href="#stats" 
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+                      <button 
+                        type="button"
+                        onClick={() => navigateToSection("stats")}
+                        className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
                       >
-                        <span>{lang === "ar" ? "الإحصائيات" : "Stats"}</span>
-                        <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                      </a>
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          <span>{lang === "ar" ? "الإحصائيات" : "Stats"}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                      </button>
                     )}
+
+                    {settings?.sectionVisibility?.initiatives && (
+                      <button 
+                        type="button"
+                        onClick={() => navigateToSection("initiatives")}
+                        className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Heart className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{lang === "ar" ? "المبادرات" : "Initiatives"}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                      </button>
+                    )}
+
                     {settings?.sectionVisibility?.initiatives && (
                       <button
                         type="button"
@@ -1178,37 +1218,32 @@ export function OfficialHomePage({
                           setIsMobileMenuOpen(false);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="w-full flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold transition-all border border-emerald-200 dark:border-emerald-850 cursor-pointer"
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold transition-all border border-emerald-200 dark:border-emerald-850 cursor-pointer active:scale-[0.99]"
                       >
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="w-4 h-4 text-emerald-600" />
-                          <span>{lang === "ar" ? "الفرص التطوعية (صفحة مستقلة)" : "Volunteer Opportunities"}</span>
+                        <div className="flex items-center gap-2.5">
+                          <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{lang === "ar" ? "الفرص التطوعية" : "Volunteer Opportunities"}</span>
                         </div>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-mono font-bold">
                           {initiatives.length}
                         </span>
                       </button>
                     )}
-                    {settings?.sectionVisibility?.initiatives && (
-                      <a 
-                        href="#initiatives" 
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
-                      >
-                        <span>{lang === "ar" ? "المبادرات" : "Initiatives"}</span>
-                        <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                      </a>
-                    )}
+
                     {settings?.sectionVisibility?.news && (
-                      <a 
-                        href="#news" 
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+                      <button 
+                        type="button"
+                        onClick={() => navigateToSection("news")}
+                        className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
                       >
-                        <span>{lang === "ar" ? "الأخبار" : "News"}</span>
-                        <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                      </a>
+                        <div className="flex items-center gap-2.5">
+                          <BookOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{lang === "ar" ? "الأخبار" : "News"}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                      </button>
                     )}
+
                     {settings?.sectionVisibility?.gallery && (
                       <button 
                         type="button"
@@ -1217,34 +1252,57 @@ export function OfficialHomePage({
                           setIsMobileMenuOpen(false);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 w-full text-right cursor-pointer"
+                        className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 w-full text-right cursor-pointer active:scale-[0.99]"
                       >
-                        <div className="flex items-center gap-2">
-                          <ImageIcon className="w-4 h-4 text-emerald-600" />
-                          <span>{lang === "ar" ? "معرض الصور والإعلام (الأرشيف الكامل)" : "Full Media Gallery"}</span>
+                        <div className="flex items-center gap-2.5">
+                          <ImageIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{lang === "ar" ? "معرض الصور والإعلام" : "Media Gallery"}</span>
                         </div>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono font-bold">
                           {galleryList.length}
                         </span>
                       </button>
                     )}
+
                     {settings?.sectionVisibility?.partners && (
-                      <a 
-                        href="#partners" 
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+                      <button 
+                        type="button"
+                        onClick={() => navigateToSection("partners")}
+                        className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
                       >
-                        <span>{lang === "ar" ? "شركاء النجاح" : "Partners"}</span>
-                        <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
-                      </a>
+                        <div className="flex items-center gap-2.5">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{lang === "ar" ? "شركاء النجاح" : "Partners"}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                      </button>
                     )}
-                    <a 
-                      href="#contact" 
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="flex items-center justify-between p-2.5 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750"
+
+                    <button 
+                      type="button"
+                      onClick={() => navigateToSection("contact")}
+                      className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800/80 hover:text-emerald-600 transition-all border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-750 text-right w-full cursor-pointer active:scale-[0.99]"
                     >
-                      <span>{lang === "ar" ? "تواصل معنا" : "Contact"}</span>
-                      <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-neutral-400" />
+                      <div className="flex items-center gap-2.5">
+                        <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>{lang === "ar" ? "تواصل معنا" : "Contact"}</span>
+                      </div>
+                      <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
+                    </button>
+
+                    {/* External Donation Store Link */}
+                    <a
+                      href={settings?.donationLink || "https://store.riadataleata.org.sa"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-neutral-800 dark:text-neutral-100 hover:text-emerald-600 transition-all border border-neutral-200/60 dark:border-neutral-750 active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <ShoppingBag className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>{lang === "ar" ? "متجر الجمعية والتبرعات" : "Association Store"}</span>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
                     </a>
                   </nav>
 
