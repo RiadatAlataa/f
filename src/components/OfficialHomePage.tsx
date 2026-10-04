@@ -862,11 +862,11 @@ export function OfficialHomePage({
           </a>
 
           {/* Center Navigation Links (Desktop: xl and up) */}
-          <nav className="hidden xl:flex items-center gap-1 2xl:gap-2 text-xs font-bold text-neutral-700 dark:text-neutral-200 shrink-0">
+          <nav className="hidden xl:flex items-center gap-0.5 xl:gap-1 2xl:gap-2 text-[11px] xl:text-xs font-bold text-neutral-700 dark:text-neutral-200 shrink-0">
             <button
               type="button"
               onClick={() => navigateToSection("about")}
-              className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
             >
               {lang === "ar" ? "من نحن" : "About"}
             </button>
@@ -874,7 +874,7 @@ export function OfficialHomePage({
               <button
                 type="button"
                 onClick={() => navigateToSection("administrative-structure")}
-                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "الهيكل الإداري" : "Org Structure"}
               </button>
@@ -883,7 +883,7 @@ export function OfficialHomePage({
               <button
                 type="button"
                 onClick={() => navigateToSection("stats")}
-                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "الإحصائيات" : "Stats"}
               </button>
@@ -892,7 +892,7 @@ export function OfficialHomePage({
               <button
                 type="button"
                 onClick={() => navigateToSection("initiatives")}
-                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "المبادرات" : "Initiatives"}
               </button>
@@ -904,7 +904,7 @@ export function OfficialHomePage({
                   setCurrentPublicPage('opportunities');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="text-emerald-800 dark:text-emerald-300 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/70 dark:hover:bg-emerald-900/70 px-2.5 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer border border-emerald-200/80 dark:border-emerald-800/80 shadow-2xs"
+                className="text-emerald-800 dark:text-emerald-300 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/70 dark:hover:bg-emerald-900/70 px-2 py-1.5 2xl:px-2.5 rounded-lg font-bold transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer border border-emerald-200/80 dark:border-emerald-800/80 shadow-2xs"
               >
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>{lang === "ar" ? "الفرص التطوعية" : "Opportunities"}</span>
@@ -915,7 +915,7 @@ export function OfficialHomePage({
               <button
                 type="button"
                 onClick={() => navigateToSection("news")}
-                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "الأخبار" : "News"}
               </button>
@@ -927,7 +927,7 @@ export function OfficialHomePage({
                   setCurrentPublicPage('gallery');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "معرض الصور" : "Gallery"}
               </button>
@@ -936,7 +936,7 @@ export function OfficialHomePage({
               <button
                 type="button"
                 onClick={() => navigateToSection("partners")}
-                className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {lang === "ar" ? "شركاء النجاح" : "Partners"}
               </button>
@@ -944,7 +944,7 @@ export function OfficialHomePage({
             <button
               type="button"
               onClick={() => navigateToSection("contact")}
-              className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
+              className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors whitespace-nowrap cursor-pointer"
             >
               {lang === "ar" ? "تواصل معنا" : "Contact"}
             </button>
@@ -952,7 +952,18 @@ export function OfficialHomePage({
               href={settings?.donationLink || "https://store.riadataleata.org.sa"}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2.5 py-1.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+              className="px-2 py-1.5 2xl:px-2.5 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50/70 dark:hover:bg-rose-950/40 transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap"
+              title={lang === "ar" ? "الانتقال لمتجر التبرعات" : "Go to Donation Store"}
+            >
+              <Heart className="w-3.5 h-3.5 fill-rose-600/20 text-rose-600 dark:text-rose-400 shrink-0" />
+              <span>{lang === "ar" ? "متجر التبرعات" : "Donations"}</span>
+              <ExternalLink className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
+            </a>
+            <a
+              href={settings?.donationLink || "https://store.riadataleata.org.sa"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-1.5 2xl:px-2.5 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap"
               title={lang === "ar" ? "الانتقال لمتجر الجمعية والتبرعات" : "Go to store"}
             >
               <ShoppingBag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -964,12 +975,12 @@ export function OfficialHomePage({
           {/* Right Actions & Utilities (Buttons & Responsive Menu) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             
-            {/* External Store & Donations Link (Desktop only: lg and up) */}
+            {/* External Store & Donations Link (Responsive: visible on sm-lg and 2xl+, tucked in xl where nav has it) */}
             <a 
               href={settings?.donationLink || "https://store.riadataleata.org.sa"}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden lg:inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3.5 py-2 rounded-full transition-all shadow-xs cursor-pointer whitespace-nowrap"
+              className="hidden sm:inline-flex xl:hidden 2xl:inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3 py-1.5 2xl:px-3.5 2xl:py-2 rounded-full transition-all shadow-xs cursor-pointer whitespace-nowrap"
               title={lang === "ar" ? "الانتقال لمتجر الجمعية والتبرعات الإلكتروني" : "Go to Donation Store"}
             >
               <Heart className="w-3.5 h-3.5 fill-current animate-pulse text-white shrink-0" />
@@ -1290,7 +1301,22 @@ export function OfficialHomePage({
                       <ChevronDown className="w-4 h-4 -rotate-90 text-neutral-400" />
                     </button>
 
-                    {/* External Donation Store Link */}
+                    {/* External Donations Store Link */}
+                    <a
+                      href={settings?.donationLink || "https://store.riadataleata.org.sa"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center justify-between p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100/70 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 hover:text-rose-800 transition-all border border-rose-200/60 dark:border-rose-900/40 active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Heart className="w-4 h-4 text-rose-600 dark:text-rose-400 fill-rose-600/20" />
+                        <span>{lang === "ar" ? "متجر التبرعات" : "Donation Store"}</span>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-rose-400" />
+                    </a>
+
+                    {/* External Association Store Link */}
                     <a
                       href={settings?.donationLink || "https://store.riadataleata.org.sa"}
                       target="_blank"
