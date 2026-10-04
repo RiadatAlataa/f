@@ -851,21 +851,13 @@ export function OfficialHomePage({
             </div>
             <div className="flex flex-col justify-center min-w-0 text-right">
               <h1 
-                className="text-xs sm:text-sm lg:text-[15px] font-black text-neutral-900 dark:text-white leading-tight tracking-tight select-text group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors truncate max-w-[130px] min-[390px]:max-w-[190px] sm:max-w-none"
+                className="text-xs sm:text-sm lg:text-[15px] font-black text-neutral-900 dark:text-white leading-tight tracking-tight select-text group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors truncate max-w-[140px] min-[390px]:max-w-[200px] sm:max-w-none"
               >
                 {lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
               </h1>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <p className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 font-semibold tracking-normal hidden sm:block whitespace-nowrap">
-                  {lang === "ar" ? "بإشراف المركز الوطني لتنمية القطاع غير الربحي" : "Supervised by the National Center for Non-Profit Sector"}
-                </p>
-                {/* Unified License Badge: Compact on mobile with shield icon, text on sm+ */}
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800 shrink-0">
-                  <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="hidden sm:inline">ترخيص: </span>
-                  <span className="font-mono">5081</span>
-                </span>
-              </div>
+              <p className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 font-semibold tracking-normal mt-0.5 hidden sm:block whitespace-nowrap">
+                {lang === "ar" ? "بإشراف المركز الوطني لتنمية القطاع غير الربحي" : "Supervised by the National Center for Non-Profit Sector"}
+              </p>
             </div>
           </a>
 

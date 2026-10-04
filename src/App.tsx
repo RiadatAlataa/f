@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, ShieldCheck, Heart, Sparkles, Smartphone, 
   Moon, Sun, HelpCircle, Bot, RefreshCw, Layers, ChevronRight, CheckCircle2,
   AlertCircle, BookOpen, ExternalLink, Award, Globe, HeartHandshake, Boxes, Shield,
-  LogOut, ArrowRight, Settings, Sliders
+  LogOut, ArrowRight, Settings, Sliders, X, Menu
 } from "lucide-react";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, JoinRequest, 
@@ -156,6 +156,7 @@ export default function App() {
     return stored?.role && stored.role !== 'public' ? (stored.role as any) : null;
   });
   const [isUserSettingsOpen, setIsUserSettingsOpen] = useState<boolean>(false);
+  const [isPortalMobileMenuOpen, setIsPortalMobileMenuOpen] = useState<boolean>(false);
 
   // Track user dashboard role whenever in internal view
   useEffect(() => {
@@ -1472,39 +1473,35 @@ export default function App() {
       {currentRole !== 'public' && authenticatedUser && (
         <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-30 no-print">
           <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-2.5">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-3">
+            {/* Main Header Bar */}
+            <div className="flex justify-between items-center gap-2 sm:gap-4">
               
-              {/* Right Side: Association Identity & Return to Public Site */}
-              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-xs shrink-0 font-black text-xs">
-                    ر
-                  </div>
-                  <div className="text-right">
-                    <div className="flex items-center gap-1.5">
-                      <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight tracking-tight">
-                        جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
-                      </h1>
-                      <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md">
-                        5081
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">بوابة الإدارة والأنظمة الموحدة</p>
-                  </div>
+              {/* Right Side: Association Identity & Return to Public Site (Desktop) */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-xs shrink-0 font-black text-xs sm:text-sm">
+                  ر
+                </div>
+                <div className="text-right min-w-0">
+                  <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[150px] min-[390px]:max-w-[210px] sm:max-w-none">
+                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                  </h1>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block">
+                    بوابة الإدارة والأنظمة الموحدة
+                  </p>
                 </div>
 
                 <button 
                   onClick={handleNavigateToPublicHome}
-                  className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-800 transition-all cursor-pointer shrink-0"
+                  className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-800 transition-all cursor-pointer shrink-0"
                   title="العودة إلى الصفحة الرئيسية للجمعية مع الحفاظ على تسجيل الدخول"
                 >
                   <ArrowRight className="w-3.5 h-3.5" />
-                  <span>العودة إلى الصفحة الرئيسية</span>
+                  <span>الرئيسية</span>
                 </button>
               </div>
 
-              {/* Center: Core System Navigation Switcher */}
-              <div className="flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl gap-1 border border-slate-200/70 dark:border-slate-700/70 shadow-2xs">
+              {/* Center: Core System Navigation Switcher (Desktop: md and up) */}
+              <div className="hidden md:flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl gap-1 border border-slate-200/70 dark:border-slate-700/70 shadow-2xs shrink-0">
                 <button
                   id="main-tab-system"
                   onClick={() => setActiveMainTab('system')}
@@ -1531,8 +1528,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Left Side: Notifications, Settings, Theme Toggle, and User Logout */}
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              {/* Left Side: Actions, Utilities & Mobile Hamburger Menu */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <NotificationBell
                   notifications={dbData?.notifications || []}
                   currentUserId={authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : currentRole === 'supervisor' ? 'supervisor' : currentRole === 'support' ? 'support' : 'all')}
@@ -1542,17 +1539,18 @@ export default function App() {
                   onOpenUserSettings={() => setIsUserSettingsOpen(true)}
                 />
 
-                {/* User Settings & Preferences Button */}
+                {/* User Settings & Preferences Button (Desktop) */}
                 <button
                   id="btn-header-user-settings"
                   onClick={() => setIsUserSettingsOpen(true)}
-                  className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center text-xs"
+                  className="hidden md:flex text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer items-center justify-center text-xs"
                   title="إعدادات وتفضيلات المستخدم والتنبيهات الصوتية"
                   aria-label="إعدادات وتفضيلات المستخدم"
                 >
                   <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 </button>
 
+                {/* System Settings for Admin / Operations (Desktop) */}
                 {(currentRole === 'admin' || currentRole === 'operations_manager') && (
                   <button
                     id="btn-header-settings"
@@ -1560,7 +1558,7 @@ export default function App() {
                       setActiveMainTab('system');
                       setAdminSubTab('system_settings');
                     }}
-                    className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center text-xs"
+                    className="hidden md:flex text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer items-center justify-center text-xs"
                     title="إعدادات النظام الشاملة"
                     aria-label="إعدادات النظام"
                   >
@@ -1568,33 +1566,148 @@ export default function App() {
                   </button>
                 )}
 
+                {/* Theme Toggle */}
                 <button
                   id="btn-dark-toggle"
                   onClick={() => setIsDark(!isDark)}
-                  className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center text-xs"
+                  className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center text-xs shrink-0"
                   title={isDark ? "تفعيل الوضع المضيء ☀️" : "تفعيل الوضع الليلي 🌙"}
                   aria-label="تبديل مظهر العرض"
                 >
                   {isDark ? (
                     <Sun className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
                   ) : (
-                    <Moon className="w-4 h-4 text-slate-600" />
+                    <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
                   )}
                 </button>
 
+                {/* User Logout Button (Desktop) */}
                 {authenticatedUser && (
                   <button
                     onClick={handleLogout}
-                    className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    className="hidden md:flex bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer items-center gap-1.5 shadow-2xs shrink-0"
                     title="تسجيل الخروج من النظام"
                   >
                     <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     <span>خروج ({authenticatedUser.name.split(" ")[0]})</span>
                   </button>
                 )}
+
+                {/* Clean Mobile Hamburger Menu Button (max-width: 768px / md:hidden) */}
+                <button
+                  onClick={() => setIsPortalMobileMenuOpen(prev => !prev)}
+                  className="md:hidden flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 shadow-2xs transition-all cursor-pointer active:scale-95 shrink-0"
+                  title="القائمة"
+                  aria-label="القائمة"
+                >
+                  {isPortalMobileMenuOpen ? (
+                    <X className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <Menu className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+                  )}
+                </button>
               </div>
 
             </div>
+
+            {/* Mobile Collapsible Navigation Menu (max-width: 768px) */}
+            {isPortalMobileMenuOpen && (
+              <div className="md:hidden mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 animate-fadeIn">
+                {/* Core Navigation Switcher */}
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70">
+                  <button
+                    onClick={() => {
+                      setActiveMainTab('system');
+                      setIsPortalMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      activeMainTab === 'system'
+                        ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs font-black'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Layers className="w-4 h-4 text-emerald-600" />
+                    <span>النظام الإداري</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveMainTab('ai');
+                      setIsPortalMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      activeMainTab === 'ai'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-xs font-black'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Bot className="w-4 h-4 text-indigo-500" />
+                    <span>المساعد الذكي</span>
+                  </button>
+                </div>
+
+                {/* Return to Public Home */}
+                <button
+                  onClick={() => {
+                    handleNavigateToPublicHome();
+                    setIsPortalMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200/60 dark:border-emerald-800 transition-all cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <ArrowRight className="w-4 h-4 text-emerald-600" />
+                    <span>العودة إلى الصفحة الرئيسية للجمعية</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-emerald-500 rtl:rotate-180" />
+                </button>
+
+                {/* User Settings */}
+                <button
+                  onClick={() => {
+                    setIsUserSettingsOpen(true);
+                    setIsPortalMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-slate-700/70 transition-all cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>إعدادات وتفضيلات المستخدم والتنبيهات الصوتية</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                </button>
+
+                {/* Admin System Settings */}
+                {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                  <button
+                    onClick={() => {
+                      setActiveMainTab('system');
+                      setAdminSubTab('system_settings');
+                      setIsPortalMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-slate-700/70 transition-all cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                      <span>إعدادات النظام الشاملة</span>
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                  </button>
+                )}
+
+                {/* User Logout Button */}
+                {authenticatedUser && (
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setIsPortalMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800/80 transition-all cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                    <span>تسجيل الخروج ({authenticatedUser.name})</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </header>
       )}
