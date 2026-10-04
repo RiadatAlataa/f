@@ -72,7 +72,8 @@ app.use((req, res, next) => {
   if (reqOrigin) {
     const isAllowed = allowedOriginsList.includes(reqOrigin) || 
       reqOrigin.endsWith('.run.app') || 
-      reqOrigin.endsWith('.vercel.app');
+      reqOrigin.endsWith('.vercel.app') ||
+      reqOrigin.endsWith('.onrender.com');
     res.header("Access-Control-Allow-Origin", isAllowed ? reqOrigin : allowedOriginsList[0]);
     res.header("Access-Control-Allow-Credentials", "true");
   }
@@ -154,7 +155,48 @@ export function findSourceDbJson(): string | null {
   return null;
 }
 
+function getPersistentDiskDir(): string | null {
+  const candidateDirs = [
+    process.env.DATA_DIR,
+    process.env.RENDER_DISK_PATH,
+    process.env.PERSISTENT_DIR,
+    "/var/data",
+    "/data"
+  ].filter(Boolean) as string[];
+
+  for (const dir of candidateDirs) {
+    try {
+      if (fs.existsSync(dir)) {
+        return dir;
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export function getActiveDbPath(): string {
+  // 1. Check for Render or Docker Persistent Disk
+  const persistentDir = getPersistentDiskDir();
+  if (persistentDir) {
+    const persistentDb = path.join(persistentDir, "db.json");
+    if (!fs.existsSync(persistentDb)) {
+      const source = findSourceDbJson();
+      if (source && source !== persistentDb) {
+        try {
+          fs.copyFileSync(source, persistentDb);
+          console.log(`[DATABASE] seeded persistent database from ${source} to ${persistentDb}`);
+        } catch (copyErr) {
+          console.warn("[DATABASE] failed seeding persistent db:", copyErr);
+        }
+      }
+    }
+    if (fs.existsSync(persistentDb)) {
+      console.log(`[DATABASE] using persistent disk at: ${persistentDb}`);
+      return persistentDb;
+    }
+  }
+
+  // 2. Serverless environment fallback
   const isServerless = !!(
     process.env.VERCEL || 
     process.env.NOW_REGION || 
