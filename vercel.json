@@ -3,19 +3,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "functions": {
-    "api/index.ts": {
-      "includeFiles": "db.json"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index"
+      "destination": "https://riadataleata-api.onrender.com/api/$1"
     },
     {
       "source": "/api",
-      "destination": "/api/index"
+      "destination": "https://riadataleata-api.onrender.com/api"
     },
     {
       "source": "/((?!api/|assets/|favicon|.*\\..*).*)",
