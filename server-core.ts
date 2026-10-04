@@ -23,10 +23,12 @@ import type {
   OpportunityRequest,
   TeamApplication,
   OfficialLetter
-} from "./src/types";
-import { setupFinancialRoutes } from "./server/financeRoutes";
-import { setupEmailRoutes } from "./server/emailRoutes";
-import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService";
+} from "./src/types.ts";
+import { setupFinancialRoutes } from "./server/financeRoutes.ts";
+import { setupEmailRoutes } from "./server/emailRoutes.ts";
+import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService.ts";
+
+console.log("[SERVER CORE] loading");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -34,12 +36,48 @@ const PORT = Number(process.env.PORT) || 3000;
 // Enable trust proxy for Cloud Run, Nginx, Cloudflare, and custom domain proxies
 app.set('trust proxy', 1);
 
+// Ensure req.socket and req.ip are safely defined in serverless environments
+app.use((req, res, next) => {
+  if (!req.socket) {
+    req.socket = { remoteAddress: '127.0.0.1' } as any;
+  } else if (!req.socket.remoteAddress) {
+    (req.socket as any).remoteAddress = '127.0.0.1';
+  }
+  const forwarded = req.headers['x-forwarded-for'];
+  const clientIp = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '') || 
+                   (req.headers['x-real-ip'] as string) || 
+                   '127.0.0.1';
+  try {
+    Object.defineProperty(req, 'ip', {
+      value: clientIp,
+      writable: true,
+      configurable: true
+    });
+  } catch {}
+  next();
+});
+
+const allowedOriginsList = [
+  "https://www.riadataleata.com",
+  "https://riadataleata.com",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173"
+];
+
 // CORS and Pre-flight Handling for Custom Domains & SSL Proxies
 app.use((req, res, next) => {
-  const origin = req.headers.origin || "*";
-  res.header("Access-Control-Allow-Origin", origin);
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  const reqOrigin = req.headers.origin;
+  if (reqOrigin) {
+    const isAllowed = allowedOriginsList.includes(reqOrigin) || 
+      reqOrigin.endsWith('.run.app') || 
+      reqOrigin.endsWith('.vercel.app');
+    res.header("Access-Control-Allow-Origin", isAllowed ? reqOrigin : allowedOriginsList[0]);
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
+
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-user-id, x-user-role, x-department-id, x-national-id, x-team-id"
@@ -76,27 +114,43 @@ const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
 const DB_FILE_TMP = path.join("/tmp", "db.json");
 
 export function findSourceDbJson(): string | null {
+  console.log("[DATABASE] resolving source");
   let moduleDir = process.cwd();
   try {
-    if (typeof import.meta !== "undefined" && import.meta.url) {
+    if (typeof import.meta !== "undefined" && import.meta && import.meta.url) {
       moduleDir = path.dirname(fileURLToPath(import.meta.url));
     }
   } catch {}
 
+  let dirNameCandidate: string | null = null;
+  try {
+    if (typeof __dirname !== "undefined" && __dirname) {
+      dirNameCandidate = __dirname;
+    }
+  } catch {}
+
+  const lambdaTaskRoot = process.env.LAMBDA_TASK_ROOT || null;
+
   const candidatePaths = [
     path.join(process.cwd(), "db.json"),
+    dirNameCandidate ? path.join(dirNameCandidate, "db.json") : null,
+    dirNameCandidate ? path.join(dirNameCandidate, "..", "db.json") : null,
     path.join(moduleDir, "db.json"),
     path.join(moduleDir, "..", "db.json"),
+    lambdaTaskRoot ? path.join(lambdaTaskRoot, "db.json") : null,
     path.resolve("db.json"),
     path.join("/tmp", "db.json")
-  ];
+  ].filter(Boolean) as string[];
+
   for (const p of candidatePaths) {
     try {
       if (fs.existsSync(p)) {
+        console.log(`[DATABASE] using source database from: ${p}`);
         return p;
       }
     } catch {}
   }
+  console.warn("[DATABASE] no source database file found in candidate paths");
   return null;
 }
 
@@ -109,11 +163,13 @@ export function getActiveDbPath(): string {
     process.env.VERCEL_ENV
   );
   if (isServerless) {
+    console.log("[DATABASE] using /tmp database");
     if (!fs.existsSync(DB_FILE_TMP)) {
       const source = findSourceDbJson();
-      if (source) {
+      if (source && source !== DB_FILE_TMP) {
         try {
           fs.copyFileSync(source, DB_FILE_TMP);
+          console.log(`[DATABASE] copied initial database from ${source} to ${DB_FILE_TMP}`);
         } catch {
           // ignore
         }
@@ -3641,8 +3697,12 @@ export function writeDb(data: any) {
   }
 }
 
-// Ensure database file is initialized
-readDb();
+// Ensure database file is initialized fail-safely on module load
+try {
+  readDb();
+} catch (initErr) {
+  console.error("[DATABASE] initial readDb safe-fallback caught error:", initErr);
+}
 
 // ==========================================
 // RBAC & Department Data Isolation Subsystem

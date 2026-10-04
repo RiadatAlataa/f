@@ -1,6 +1,6 @@
 import path from "path";
 import express from "express";
-import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath } from "./server-core";
+import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath } from "./server-core.ts";
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;

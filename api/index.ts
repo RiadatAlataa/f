@@ -1,14 +1,29 @@
-import app, { readDb } from '../server-core';
+import app, { readDb } from '../server-core.ts';
+
+const allowedOrigins = [
+  'https://www.riadataleata.com',
+  'https://riadataleata.com',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173'
+];
 
 /**
  * Vercel Serverless Function entry point
- * Directs all /api/* requests to the Express backend application
+ * Directs all /api/* requests to the Express backend application in server-core.ts
  */
 export default function handler(req: any, res: any) {
-  // CORS Headers
-  const origin = req.headers?.origin || '*';
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  // 1. CORS Headers with Credentials support (No wildcard with credentials)
+  const reqOrigin = req.headers?.origin;
+  if (reqOrigin) {
+    const isAllowed = allowedOrigins.includes(reqOrigin) || 
+      reqOrigin.endsWith('.run.app') || 
+      reqOrigin.endsWith('.vercel.app');
+    res.setHeader('Access-Control-Allow-Origin', isAllowed ? reqOrigin : allowedOrigins[0]);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -21,129 +36,86 @@ export default function handler(req: any, res: any) {
     return;
   }
 
-  // 1. Resolve actual path from Vercel rewrite headers or query parameters
+  // 2. Resolve and normalize actual path from Vercel headers or URL
+  const rawPath = req.headers?.['x-original-url'] || req.headers?.['x-matched-path'] || req.url || '/';
+  console.log(`[API ROUTER] incoming request: ${req.method} ${rawPath}`);
+
+  let parsedUrl: URL;
   try {
-    const parsedUrl = new URL(req.url || '/', 'http://localhost');
-    const matchedPath = req.headers?.['x-matched-path'] || req.headers?.['x-vercel-matched-path'] || req.headers?.['x-original-url'] || '';
-    const paramPath = parsedUrl.searchParams.get('__path') || req.query?.__path || parsedUrl.searchParams.get('path') || req.query?.path || '';
-
-    if (paramPath) {
-      req.url = `/api/${paramPath.replace(/^\/+/, '')}`;
-    } else if (matchedPath && matchedPath.startsWith('/api') && !matchedPath.startsWith('/api/index')) {
-      req.url = matchedPath;
-    } else if (req.url && !req.url.startsWith('/api')) {
-      req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
-    } else if (parsedUrl.pathname === '/api/index' || parsedUrl.pathname === '/api/index.ts') {
-      req.url = '/api';
-    }
-  } catch (e) {
-    console.error("Error parsing URL in api/index.ts handler:", e);
+    parsedUrl = new URL(req.url || '/', 'http://localhost');
+  } catch {
+    parsedUrl = new URL('/', 'http://localhost');
   }
 
-  const cleanUrl = (req.url || '').split('?')[0];
-
-  // 2. Direct Root API Info Endpoint
-  if (cleanUrl === '/api' || cleanUrl === '/api/') {
-    try {
-      const db = readDb();
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.statusCode = 200;
-      res.end(JSON.stringify({
-        ok: true,
-        message: 'بوابة واجهة برمجة التطبيقات لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة',
-        service: 'Reyadat Al-Ataa Central API Gateway',
-        status: 'healthy',
-        database: {
-          connected: Boolean(db && Array.isArray(db.departments) && db.departments.length > 0),
-          departmentsCount: (db?.departments || []).length,
-          volunteersCount: (db?.volunteers || []).length,
-          initiativesCount: (db?.initiatives || []).length
-        },
-        timestamp: new Date().toISOString()
-      }));
-      return;
-    } catch (err: any) {
-      res.statusCode = 500;
-      res.end(JSON.stringify({ ok: false, error: err.message }));
-      return;
+  let clientPath = '';
+  const originalUrlHeader = req.headers?.['x-original-url'];
+  if (originalUrlHeader && typeof originalUrlHeader === 'string' && originalUrlHeader.startsWith('/api')) {
+    clientPath = originalUrlHeader.split('?')[0];
+  } else if (parsedUrl.pathname && parsedUrl.pathname.startsWith('/api') && !parsedUrl.pathname.startsWith('/api/index')) {
+    clientPath = parsedUrl.pathname;
+  } else {
+    const queryParam = parsedUrl.searchParams.get('__path') || req.query?.__path || parsedUrl.searchParams.get('path');
+    if (queryParam) {
+      clientPath = `/api/${String(queryParam).replace(/^\/+/, '')}`;
+    } else if (parsedUrl.pathname.startsWith('/api/index')) {
+      clientPath = '/api';
+    } else if (parsedUrl.pathname.startsWith('/api')) {
+      clientPath = parsedUrl.pathname;
+    } else {
+      clientPath = `/api${parsedUrl.pathname.startsWith('/') ? parsedUrl.pathname : '/' + parsedUrl.pathname}`;
     }
   }
 
-  // 3. Direct Health Check with DB verification
-  if (cleanUrl === '/api/health' || cleanUrl === '/api/health/' || cleanUrl === '/health' || cleanUrl === '/health/') {
-    try {
-      const db = readDb();
-      const isDbConnected = Boolean(db && Array.isArray(db.departments) && db.departments.length > 0);
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  // Avoid duplicate /api/api
+  clientPath = clientPath.replace(/^\/api\/api(\/|$)/, '/api$1');
+  if (!clientPath.startsWith('/api')) {
+    clientPath = `/api${clientPath.startsWith('/') ? clientPath : '/' + clientPath}`;
+  }
 
-      if (!isDbConnected) {
-        res.statusCode = 503;
-        res.end(JSON.stringify({
-          ok: false,
-          status: 'unhealthy',
-          error: 'قاعدة البيانات المركزية غير متصلة أو لم يتم تهيئتها بنجاح',
-          timestamp: new Date().toISOString(),
-          database: { status: 'disconnected' }
-        }));
-        return;
-      }
+  // Preserve query string
+  const search = parsedUrl.search || '';
+  const normalizedUrl = `${clientPath}${search}`;
 
-      res.statusCode = 200;
-      res.end(JSON.stringify({
-        ok: true,
-        status: 'healthy',
-        message: 'خادم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة وقاعدة البيانات متصلان وقيد العمل بنجاح',
-        service: 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - البوابة المركزية',
-        timestamp: new Date().toISOString(),
-        uptimeSeconds: Math.floor(process.uptime ? process.uptime() : 0),
-        environment: process.env.NODE_ENV || 'production',
-        platform: 'vercel-serverless',
-        configuredApiUrl: process.env.VITE_API_URL || process.env.API_URL || null,
-        database: {
-          status: 'connected',
-          departmentsCount: (db.departments || []).length,
-          volunteersCount: (db.volunteers || []).length,
-          initiativesCount: (db.initiatives || []).length,
-          beneficiariesCount: (db.beneficiaries || []).length,
-          inventoryCount: (db.inventoryItems || []).length
-        },
-        services: {
-          database: 'operational',
-          auth: 'operational',
-          volunteering: 'operational',
-          beneficiaries: 'operational',
-          warehouse: 'operational',
-          finance: 'operational'
+  req.url = normalizedUrl;
+  req.originalUrl = normalizedUrl;
+  req.path = clientPath;
+
+  console.log(`[API ROUTER] normalized path: ${normalizedUrl}`);
+  console.log(`[API ROUTER] forwarding to Express`);
+
+  // Ensure req.socket is defined for Serverless runtime compatibility
+  if (!req.socket) {
+    req.socket = { remoteAddress: '127.0.0.1' };
+  } else if (!req.socket.remoteAddress) {
+    req.socket.remoteAddress = '127.0.0.1';
+  }
+
+  // 3. Forward request to Express App with error handling
+  try {
+    const result = app(req, res);
+    if (result && typeof result.then === 'function') {
+      result.then(() => {
+        console.log(`[API EXPRESS] completed: ${req.method} ${normalizedUrl}`);
+      }).catch((err: any) => {
+        console.error(`[API EXPRESS] promise rejection:`, err);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ success: false, error: "Internal Server Error" }));
         }
-      }));
-      return;
-    } catch (err: any) {
-      res.statusCode = 503;
-      res.end(JSON.stringify({
-        ok: false,
-        status: 'unhealthy',
-        error: err.message || 'خطأ في فحص صحة الخادم'
-      }));
-      return;
+      });
+      return result;
     }
-  }
-
-  // 4. Delegate to Express App
-  try {
-    return app(req, res);
+    console.log(`[API EXPRESS] completed: ${req.method} ${normalizedUrl}`);
+    return result;
   } catch (err: any) {
-    console.error("Critical error in api/index.ts handler:", err);
+    console.error(`[API EXPRESS] synchronous error:`, err);
     if (!res.headersSent) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({
-        ok: false,
-        error: err.message || "حدث خطأ داخلي في معالجة طلب الخادم",
-        code: "SERVERLESS_HANDLER_EXCEPTION",
-        path: req.url,
-        timestamp: new Date().toISOString()
-      }));
+      res.end(JSON.stringify({ success: false, error: "Internal Server Error" }));
     }
   }
 }
+
+export { readDb };
