@@ -7632,7 +7632,7 @@
       "updatedBy": "النظام المركزي",
       "passwordHash": "$2b$10$ddRbnPLBwhvY.O3r35iDYeubJjFr./bv6TxAkJTFpyxmD4i9Cydx6",
       "mustChangePassword": false,
-      "lastLogin": "2026-10-04T16:40:30.676Z"
+      "lastLogin": "2026-10-04T16:51:08.762Z"
     },
     {
       "id": "perm-ops-manager",
@@ -8125,6 +8125,22 @@
     }
   ],
   "accessAuditLogs": [
+    {
+      "id": "audit-login-1791132668765-fqax",
+      "timestamp": "2026-10-04T16:51:08.765Z",
+      "userId": "admin-user",
+      "userName": "مجلس الجمعية والمدير التنفيذي",
+      "userRole": "admin",
+      "userDepartmentId": "dep-1",
+      "targetDepartmentId": "dep-1",
+      "action": "login",
+      "resource": "بوابة الدخول الموحد",
+      "endpoint": "/api/db/auth/login",
+      "status": "allowed",
+      "ip": "127.0.0.1",
+      "device": "Web Client",
+      "notes": "تسجيل دخول الإدارة العليا بنجاح"
+    },
     {
       "id": "audit-login-1791132030791-ktdv",
       "timestamp": "2026-10-04T16:40:30.791Z",
@@ -10034,6 +10050,56 @@
       "createdAt": 1791132030809,
       "lastActive": 1791132030809,
       "expiresAt": 1791736830809
+    },
+    {
+      "token": "sess_1791132668768_f8rwo5vac7fz7p",
+      "userId": "admin-user",
+      "role": "admin",
+      "user": {
+        "id": "admin-user",
+        "name": "مجلس الجمعية والمدير التنفيذي",
+        "email": "admin@riadataleata.org.sa",
+        "phone": "0550000000",
+        "nationalId": "1000000000",
+        "role": "admin",
+        "jobTitle": "المدير العام والمدير التنفيذي",
+        "primaryDepartmentId": "dep-1",
+        "primaryDepartmentName": "الإدارة التنفيذية",
+        "allowedDepartmentIds": [
+          "dep-1",
+          "dep-2",
+          "dep-3",
+          "dep-4",
+          "dep-5",
+          "dep-6",
+          "dep-7",
+          "dep-8",
+          "dep-9"
+        ],
+        "permissions": [
+          "super_admin",
+          "view_department",
+          "create_data",
+          "edit_data",
+          "delete_data",
+          "export_pdf",
+          "export_excel",
+          "manage_staff",
+          "manage_tasks",
+          "view_reports",
+          "cross_department_access",
+          "all_permissions"
+        ],
+        "mustChangePassword": false,
+        "status": "active",
+        "lastLogin": "2026-10-04T16:51:08.762Z"
+      },
+      "departmentId": "dep-1",
+      "nationalId": "1000000000",
+      "teamId": "",
+      "createdAt": 1791132668768,
+      "lastActive": 1791132668768,
+      "expiresAt": 1791737468768
     }
   ],
   "passwordResetOtps": [

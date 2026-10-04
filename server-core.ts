@@ -23,10 +23,10 @@ import type {
   OpportunityRequest,
   TeamApplication,
   OfficialLetter
-} from "./src/types.ts";
-import { setupFinancialRoutes } from "./server/financeRoutes.ts";
-import { setupEmailRoutes } from "./server/emailRoutes.ts";
-import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService.ts";
+} from "./src/types";
+import { setupFinancialRoutes } from "./server/financeRoutes";
+import { setupEmailRoutes } from "./server/emailRoutes";
+import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService";
 
 console.log("[SERVER CORE] loading");
 
