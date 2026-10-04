@@ -107,7 +107,7 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
 
   return (
     <div
-      className="relative w-full flex-1 flex flex-col justify-center min-h-[480px] sm:min-h-[560px] lg:min-h-[600px] overflow-hidden select-none"
+      className="relative w-full flex-1 flex flex-col justify-center min-h-[360px] sm:min-h-[500px] lg:min-h-[580px] overflow-hidden select-none bg-gradient-to-b from-slate-900 via-emerald-950/80 to-neutral-900"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -116,6 +116,9 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
     >
       {/* Background Slides Container with Smooth Crossfade */}
       <div className="absolute inset-0 z-0">
+        {/* Ambient Subtle Grid Pattern Behind Slides */}
+        <div className="absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:24px_24px] opacity-15 pointer-events-none" />
+
         {activeSlides.map((slide, index) => {
           const isActive = index === currentIndex;
           return (
@@ -138,9 +141,9 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
           );
         })}
 
-        {/* Global Dark Gradient & Vignette Overlay to ensure text readability */}
-        <div className="absolute inset-0 z-20 bg-gradient-to-t from-neutral-950/95 via-neutral-950/70 to-neutral-950/40 pointer-events-none" />
-        <div className="absolute inset-0 z-20 bg-radial from-transparent via-black/30 to-black/70 pointer-events-none" />
+        {/* Responsive Overlay: soft readability scrim on mobile without heavy black vignette */}
+        <div className="absolute inset-0 z-20 bg-gradient-to-t from-neutral-950/90 via-neutral-950/40 to-neutral-950/20 sm:from-neutral-950/95 sm:via-neutral-950/70 sm:to-neutral-950/40 pointer-events-none" />
+        <div className="hidden sm:block absolute inset-0 z-20 bg-radial from-transparent via-black/20 to-black/60 pointer-events-none" />
       </div>
 
       {/* Slide-specific Title Tag (Optional top-corner indicator) */}

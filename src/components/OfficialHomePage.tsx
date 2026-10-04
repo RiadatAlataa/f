@@ -836,7 +836,7 @@ export function OfficialHomePage({
               }
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 min-w-0 group cursor-pointer focus:outline-hidden"
+            className="flex items-center gap-2 sm:gap-3.5 shrink-0 min-w-0 group cursor-pointer focus:outline-hidden"
             title={lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
           >
             <div className="relative shrink-0 flex items-center justify-center">
@@ -851,13 +851,21 @@ export function OfficialHomePage({
             </div>
             <div className="flex flex-col justify-center min-w-0 text-right">
               <h1 
-                className="text-xs sm:text-sm lg:text-[15px] font-black text-neutral-900 dark:text-white leading-tight tracking-tight select-text group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors"
+                className="text-xs sm:text-sm lg:text-[15px] font-black text-neutral-900 dark:text-white leading-tight tracking-tight select-text group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors truncate max-w-[130px] min-[390px]:max-w-[190px] sm:max-w-none"
               >
                 {lang === "ar" ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : (settings?.associationNameEn || "Reyadat Al-Ata Association")}
               </h1>
-              <p className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 font-semibold tracking-normal mt-0.5 hidden sm:block">
-                {lang === "ar" ? "بإشراف المركز الوطني لتنمية القطاع غير الربحي" : "Supervised by the National Center for Non-Profit Sector"}
-              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-[10px] sm:text-[11px] text-neutral-500 dark:text-neutral-400 font-semibold tracking-normal hidden sm:block whitespace-nowrap">
+                  {lang === "ar" ? "بإشراف المركز الوطني لتنمية القطاع غير الربحي" : "Supervised by the National Center for Non-Profit Sector"}
+                </p>
+                {/* Unified License Badge: Compact on mobile with shield icon, text on sm+ */}
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800 shrink-0">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="hidden sm:inline">ترخيص: </span>
+                  <span className="font-mono">5081</span>
+                </span>
+              </div>
             </div>
           </a>
 
@@ -1027,7 +1035,7 @@ export function OfficialHomePage({
             <button
               id="header-user-settings-btn"
               onClick={() => setIsUserSettingsOpen(true)}
-              className="p-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-all cursor-pointer flex items-center justify-center text-xs"
+              className="hidden sm:flex p-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-all cursor-pointer items-center justify-center text-xs"
               title={lang === "ar" ? "إعدادات وتفضيلات المستخدم والتنبيهات الصوتية" : "User Settings & Audio Notifications"}
               aria-label="User Settings"
             >
@@ -1468,7 +1476,7 @@ export function OfficialHomePage({
           <main id="main-content" className={`flex-1 w-full ${isDark ? "bg-neutral-900 text-neutral-100" : "bg-white text-neutral-900"}`}>
 
       {/* 2. Hero Section (معرض صور متحرك في أعلى الصفحة الرئيسية) */}
-      <section className="relative w-full min-h-[480px] sm:min-h-[560px] lg:min-h-[600px] bg-neutral-950 text-white text-center overflow-hidden flex flex-col">
+      <section className="relative w-full min-h-[360px] sm:min-h-[500px] lg:min-h-[580px] bg-gradient-to-b from-slate-900 via-emerald-950 to-neutral-900 text-white text-center overflow-hidden flex flex-col">
         <HeroSlider
           slides={heroSlides && heroSlides.length > 0 ? heroSlides : (settings?.heroSlides || [])}
           fallbackImageUrl={settings?.videoCoverUrl || "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop"}
@@ -1476,14 +1484,14 @@ export function OfficialHomePage({
           lang={lang}
         >
           {/* Content Over the Slider */}
-          <div className="relative z-20 max-w-4xl mx-auto px-4 py-16 flex flex-col items-center">
+          <div className="relative z-20 max-w-4xl mx-auto px-4 py-8 sm:py-12 lg:py-16 flex flex-col items-center">
             <motion.img 
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8 }}
               src={settings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"} 
               alt="شعار ريادة العطاء" 
-              className="w-20 h-20 rounded-full object-cover shadow-2xl mb-4 border border-white/20"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shadow-2xl mb-3 sm:mb-4 border border-white/20"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop";
               }}
@@ -2198,12 +2206,12 @@ export function OfficialHomePage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredGallery.slice(0, 6).map(item => (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {filteredGallery.slice(0, 2).map(item => (
               <div 
                 key={item.id} 
                 onClick={() => setSelectedHomeGalleryItem(item)}
-                className="group relative h-64 rounded-3xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-850 shadow-xs cursor-pointer hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+                className="group relative h-64 sm:h-72 lg:h-80 rounded-3xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-850 shadow-xs cursor-pointer hover:shadow-xl transition-all duration-300 hover:scale-[1.01]"
               >
                 {item.type === "photo" ? (
                   <img 
@@ -2261,10 +2269,11 @@ export function OfficialHomePage({
             ))}
           </div>
 
-          {/* More Gallery Button (الانتقال لصفحة معرض الصور والإعلام) */}
-          <div className="mt-10 text-center flex flex-col sm:flex-row items-center justify-center gap-3">
+          {/* More Gallery Button (الانتقال لصفحة أرشيف معرض الصور والإعلام الكامل) */}
+          <div className="mt-8 text-center flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               type="button"
+              id="btn-homepage-more-gallery"
               onClick={() => {
                 setCurrentPublicPage('gallery');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2273,10 +2282,10 @@ export function OfficialHomePage({
             >
               <span>{lang === "ar" ? "المزيد" : "More"}</span>
               <span className="text-emerald-100 text-xs font-semibold">
-                {lang === "ar" ? "(معرض الصور والإعلام الكامل)" : "(Full Media Gallery)"}
+                {lang === "ar" ? "(عرض الصور والإعلام الكامل)" : "(Full Media Gallery)"}
               </span>
-              <span className="bg-emerald-800/90 text-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
-                {galleryList.length} مادة
+              <span className="bg-emerald-800/90 text-emerald-200 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold">
+                +{Math.max(0, galleryList.length - 2)} {lang === "ar" ? "مادة إضافية" : "more"}
               </span>
               {lang === "ar" ? (
                 <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1.5 transition-transform" />

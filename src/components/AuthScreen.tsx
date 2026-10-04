@@ -333,12 +333,12 @@ export function AuthScreen({
       dir={isRtl ? "rtl" : "ltr"}
     >
       {/* 1. TOP UTILITY BAR (Official Association Bar) */}
-      <header className="w-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 z-20 py-3.5 px-4 sm:px-8">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-all shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[4.25rem] py-2 flex items-center justify-between gap-2 sm:gap-4">
           
           {/* Logo & Association Info */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-sm ring-2 ring-emerald-500/20 overflow-hidden shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3.5 shrink-0 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-white ring-2 ring-emerald-600/30 dark:ring-emerald-400/30 shadow-xs flex items-center justify-center overflow-hidden shrink-0">
               {homeSettings?.logoUrl ? (
                 <img 
                   src={homeSettings.logoUrl} 
@@ -349,46 +349,48 @@ export function AuthScreen({
                   }}
                 />
               ) : (
-                <Sparkles className="w-5 h-5 text-emerald-100" />
+                <Sparkles className="w-5 h-5 text-emerald-600" />
               )}
             </div>
-            <div>
-              <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+            <div className="flex flex-col justify-center min-w-0 text-right">
+              <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[130px] min-[390px]:max-w-[190px] sm:max-w-none">
                 {lang === 'ar' ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : "Reyadat Al-Ata Association"}
               </h1>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                  {lang === 'ar' ? "ترخيص رقم: 5081" : "License No: 5081"}
-                </span>
-                <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
-                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-semibold tracking-normal hidden sm:block whitespace-nowrap">
                   {lang === 'ar' ? "بوابة النفاذ الموحدة" : "Unified Access Portal"}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800 shrink-0">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="hidden sm:inline">{lang === 'ar' ? "ترخيص: " : "License: "}</span>
+                  <span className="font-mono">5081</span>
                 </span>
               </div>
             </div>
           </div>
 
           {/* Top Actions: Language & Return to Home */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {onToggleLang && (
               <button
                 type="button"
                 onClick={() => onToggleLang(lang === 'ar' ? 'en' : 'ar')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/70 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
                 title="تغيير اللغة / Switch Language"
+                aria-label="تغيير اللغة"
               >
-                <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>{lang === 'ar' ? "English" : "العربية"}</span>
+                <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="hidden sm:inline font-mono">{lang === 'ar' ? "English" : "العربية"}</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={onBackToHome}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-400 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
               title={lang === 'ar' ? "العودة للموقع الرسمي للجمعية" : "Back to official homepage"}
             >
-              {isRtl ? <ArrowRight className="w-3.5 h-3.5" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+              {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
               <span className="hidden sm:inline">{lang === 'ar' ? "الرئيسية" : "Home"}</span>
             </button>
           </div>
@@ -401,9 +403,9 @@ export function AuthScreen({
         <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
           
           {/* ======================================================== */}
-          {/* SECTION 1: CHARITY BRANDING & MISSION SIDE (القسم التعريفي) */}
+          {/* SECTION 1: CHARITY BRANDING & MISSION SIDE (القسم التعريفي - يظهر للشاشات الكبيرة فقط) */}
           {/* ======================================================== */}
-          <div className="lg:col-span-5 flex flex-col justify-between p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 text-white shadow-xl relative overflow-hidden order-2 lg:order-1 border border-emerald-700/40">
+          <div className="hidden lg:flex lg:col-span-5 flex-col justify-between p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 text-white shadow-xl relative overflow-hidden order-2 lg:order-1 border border-emerald-700/40">
             {/* Background Decorative Accents */}
             <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
             <div className="absolute bottom-0 left-0 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20"></div>
@@ -510,7 +512,7 @@ export function AuthScreen({
           {/* ======================================================== */}
           {/* SECTION 2: THE UNIFIED LOGIN CARD (بطاقة تسجيل الدخول) */}
           {/* ======================================================== */}
-          <div className="lg:col-span-7 flex flex-col justify-center order-1 lg:order-2">
+          <div className="w-full lg:col-span-7 flex flex-col justify-center order-1 lg:order-2 max-w-xl mx-auto lg:max-w-none">
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xl p-6 sm:p-10 space-y-6">
               
               {/* Card Header */}
