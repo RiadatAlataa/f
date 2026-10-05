@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Building2, Users, Calendar, ShieldCheck, Heart, Sparkles, Smartphone, 
   Moon, Sun, HelpCircle, Bot, RefreshCw, Layers, ChevronRight, CheckCircle2,
@@ -146,7 +146,7 @@ export default function App() {
     initialAuthSession?.activeMainTab || 'system'
   );
   const [adminSubTab, setAdminSubTab] = useState<string | undefined>(
-    initialAuthSession?.adminSubTab || undefined
+    initialAuthSession?.adminSubTab || 'stats'
   );
   const [authenticatedUser, setAuthenticatedUser] = useState<any | null>(
     initialAuthSession?.user || null
@@ -161,7 +161,7 @@ export default function App() {
   // Track user dashboard role whenever in internal view
   useEffect(() => {
     if (currentRole && currentRole !== 'public') {
-      setSavedUserRole(currentRole);
+      setSavedUserRole(prev => (prev === currentRole ? prev : currentRole));
     }
   }, [currentRole]);
 
@@ -295,6 +295,15 @@ export default function App() {
   const [selectedVolunteerId, setSelectedVolunteerId] = useState<string>("");
   const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState<string>("");
 
+  // Memoized handlers to stabilize dashboard rendering and prevent re-render loops
+  const handleAdminSubTabChange = useCallback((newTab: string) => {
+    setAdminSubTab(newTab);
+  }, []);
+
+  const handleRefreshGlobalData = useCallback(() => {
+    fetchDatabase(true);
+  }, []);
+
   // Backend Connection & Health Check States
   const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
   const [healthStatusBadge, setHealthStatusBadge] = useState<{ ok: boolean; message: string } | null>(null);
@@ -395,7 +404,11 @@ export default function App() {
         ? "تعذر الوصول إلى خادم الجمعية عبر هذا النطاق، يرجى التحقق من اتصالك بالإنترنت وصلاحية شهادة SSL أو إعدادات CORS."
         : (err.message || "حدث خطأ غير متوقع في جلب البيانات من الخادم الرئيسي");
       
-      setError(friendlyMessage);
+      // Only set fatal error if we do not have dbData yet.
+      // If data is already loaded, background polling or transient network errors must NEVER unmount the active UI.
+      if (!dbData) {
+        setError(friendlyMessage);
+      }
       if (!connectionDiagnostics) {
         setConnectionDiagnostics({
           status: 0,
@@ -1414,7 +1427,7 @@ export default function App() {
     );
   }
 
-  if (error || !dbData) {
+  if ((error && !dbData) || (!loading && !dbData)) {
     return (
       <div className="min-h-screen bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-sans" dir="rtl">
         <div className="bg-white dark:bg-slate-950 p-6 sm:p-8 rounded-3xl border border-rose-200 dark:border-rose-900/50 shadow-2xl max-w-md w-full space-y-5 text-right">
@@ -1471,7 +1484,7 @@ export default function App() {
       
       {/* INTERNAL PORTAL HEADER (Shown only when in management portal AND authenticated, not on login or public homepage) */}
       {currentRole !== 'public' && authenticatedUser && (
-        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-30 no-print">
+        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-40 no-print">
           <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-2.5">
             {/* Main Header Bar */}
             <div className="flex justify-between items-center gap-2 sm:gap-4">
@@ -1740,7 +1753,7 @@ export default function App() {
                     <AdminDashboard 
                       data={dbData}
                       initialSubTab={adminSubTab}
-                      onSubTabChange={(newTab) => setAdminSubTab(newTab)}
+                      onSubTabChange={handleAdminSubTabChange}
                       onAddDepartment={handleAddDepartment}
                       onDeleteDepartment={handleDeleteDepartment}
                       onAddTeam={handleAddTeam}
@@ -1812,6 +1825,8 @@ export default function App() {
                       onRejectEmployeeRequest={handleRejectEmployeeRequest}
                       onRequestEmployeeModification={handleRequestEmployeeModification}
                       onBackToHome={handleNavigateToPublicHome}
+                      authenticatedUser={authenticatedUser}
+                      onRefreshGlobalData={handleRefreshGlobalData}
                     />
                   </DashboardErrorBoundary>
                 )}

@@ -199,8 +199,17 @@ export function HomepageAdminPanel({
     }
   };
 
+  const prevSettingsJsonRef = React.useRef<string>("");
   useEffect(() => {
-    setLocalSettings({ ...settings });
+    try {
+      const currentJson = JSON.stringify(settings);
+      if (currentJson && currentJson !== prevSettingsJsonRef.current) {
+        prevSettingsJsonRef.current = currentJson;
+        setLocalSettings({ ...settings });
+      }
+    } catch {
+      // Fallback
+    }
   }, [settings]);
 
   // News State

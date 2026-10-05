@@ -60,11 +60,12 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [aidSearchQuery, setAidSearchQuery] = useState('');
   const [aidStatusFilter, setAidStatusFilter] = useState<'all' | 'delivered' | 'pending'>('all');
 
+  const distributionsIdsKey = useMemo(() => (distributions || []).map(d => d.id).join(','), [distributions]);
   useEffect(() => {
-    if (distributions.length > 0 && (!selectedAidDistId || !distributions.some(d => d.id === selectedAidDistId))) {
+    if (distributions && distributions.length > 0 && (!selectedAidDistId || !distributions.some(d => d.id === selectedAidDistId))) {
       setSelectedAidDistId(distributions[0].id);
     }
-  }, [distributions]);
+  }, [distributionsIdsKey]);
 
   // State
   const [items, setItems] = useState<InventoryItem[]>([]);

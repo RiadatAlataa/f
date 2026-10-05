@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { 
   Building2, Users, Calendar, BarChart3, Database, FileSpreadsheet, FileDown, 
   Trash2, Plus, Edit3, Shield, Copy, Archive, Check, AlertTriangle, 
   Moon, Sun, Search, Printer, RefreshCw, Smartphone, ShieldAlert, Lock, Trophy, Send, Eye, Settings, Activity, FileText, Globe, X,
-  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home
+  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard
 } from "lucide-react";
+import { ExecutiveKpiDashboard } from "./ExecutiveKpiDashboard";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, OperationLog, SystemStats,
   HomeSettings, NewsItem, PartnerItem, GalleryItem, Beneficiary, BenefitRequest,
@@ -48,6 +49,49 @@ import { UsersManager } from "./UsersManager";
 import { expandPermissionsWithLegacyKeys } from "../data/departmentPermissionsRegistry";
 import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
 import { AccessDeniedCard } from "./AccessDeniedCard";
+
+const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
+  logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+  videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
+  videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+  associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+  associationNameEn: "Reyadat Al-Ata Association",
+  licenseNumber: "5081",
+  heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
+  heroTitleEn: "Leadership in Giving",
+  heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",
+  heroDescEn: "We strive to provide innovative and sustainable developmental and charitable services",
+  aboutUsAr: "تأسست جمعية ريادة العطاء لخدمة الإنسان بالعسيلة لتباشر مسؤوليتها المجتمعية والخيرية",
+  aboutUsEn: "Established to carry out community and charitable responsibility",
+  visionAr: "الريادة في تمكين العمل الخيري والتطوعي وخدمة ضيوف الرحمن وأهالي العسيلة بجودة وتميز",
+  visionEn: "Leadership in charity",
+  missionAr: "تقديم خدمات إنسانية وتنموية ومبادرات تطوعية مبتكرة تسهم في سد الاحتياجات وبناء القدرات",
+  missionEn: "Providing innovative humanitarian and developmental services",
+  goalsAr: [],
+  goalsEn: [],
+  valuesAr: [],
+  valuesEn: [],
+  donationLink: "https://store.riadataleata.org.sa",
+  contactPhone: "0550123456",
+  contactEmail: "info@riadataleata.org.sa",
+  contactLocationAr: "مكة المكرمة - مخطط العسيلة",
+  contactLocationEn: "Mecca - Al-Asilah Scheme",
+  contactHoursAr: "الأحد - الخميس",
+  contactHoursEn: "Sunday - Thursday",
+  themePrimary: "#059669",
+  themeSecondary: "#0d9488",
+  fontFamily: "Inter",
+  sectionVisibility: {
+    about: true,
+    stats: true,
+    initiatives: true,
+    news: true,
+    achievements: true,
+    partners: true,
+    gallery: true,
+    contact: true
+  }
+};
 
 interface AdminDashboardProps {
   data: {
@@ -251,30 +295,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
     } catch {}
-    return (initialSubTab as any) || 'enterprise_finance';
+    return (initialSubTab as any) || 'stats';
   });
 
+  const prevInitialSubTabRef = useRef(initialSubTab);
   useEffect(() => {
-    try {
-      if (activeSubTab) {
-        localStorage.setItem('reyadat_admin_subtab', activeSubTab);
-        if (onSubTabChange) onSubTabChange(activeSubTab);
-      }
-    } catch {}
-  }, [activeSubTab, onSubTabChange]);
-
-  useEffect(() => {
-    if (initialSubTab && initialSubTab !== activeSubTab) {
+    if (initialSubTab && initialSubTab !== prevInitialSubTabRef.current && initialSubTab !== activeSubTab) {
+      prevInitialSubTabRef.current = initialSubTab;
       setActiveSubTab(initialSubTab as any);
+      try {
+        localStorage.setItem('reyadat_admin_subtab', initialSubTab);
+      } catch {}
     }
-  }, [initialSubTab]);
+  }, [initialSubTab, activeSubTab]);
+
+  const handleSelectTab = useCallback((tabId: string) => {
+    setActiveSubTab(tabId as any);
+    try {
+      localStorage.setItem('reyadat_admin_subtab', tabId);
+    } catch {}
+    if (onSubTabChange) {
+      onSubTabChange(tabId);
+    }
+  }, [onSubTabChange]);
   
   // Modern Off-Canvas & Dockable Sidebar States
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showKnightsModal, setShowKnightsModal] = useState(false);
 
-  // Define the 8 Core Administrative Categories (Consolidated, Distinct, Well-Categorized)
+  // Define the Core Administrative Categories (Consolidated, Distinct, Well-Categorized)
   const primaryCategories = useMemo(() => [
+    {
+      id: 'kpis' as const,
+      label: "لوحة المؤشرات",
+      icon: LayoutDashboard,
+      description: "لوحة المؤشرات والإحصائيات الشاملة لأداء الجمعية والبرامج والعمليات",
+      badge: 'رئيسي',
+      items: [
+        { id: 'stats', label: 'لوحة المؤشرات والإحصائيات', icon: LayoutDashboard, badge: 'مباشر' }
+      ]
+    },
     {
       id: 'volunteers' as const,
       label: "إدارة التطوع",
@@ -363,7 +423,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       icon: BarChart3,
       description: "الإحصائيات والبحث ولوحة الشرف وسجل العمليات",
       items: [
-        { id: 'stats', label: 'الإحصائيات والتحليلات', icon: BarChart3 },
         { id: 'leaderboard', label: 'لوحة الشرف الصدارة', icon: Trophy },
         { id: 'globalsearch', label: 'البحث الشامل المتقدم', icon: Search },
         { id: 'logs', label: 'سجل العمليات والتدقيق', icon: Shield }
@@ -391,6 +450,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }));
   }, [primaryCategories]);
 
+  // Valid registered subtabs set to prevent false AccessDeniedCard renders
+  const validSubTabs = useMemo(() => {
+    const set = new Set<string>();
+    primaryCategories.forEach(cat => cat.items.forEach(item => set.add(item.id)));
+    set.add('users_mgmt');
+    set.add('partners_mgmt');
+    set.add('stats');
+    return set;
+  }, [primaryCategories]);
+
   const totalPendingCount = useMemo(() => {
     return (data.teamApplications || []).filter(a => a.status === 'pending').length +
       (data.volunteerApplications || []).filter(a => a.status === 'pending').length +
@@ -405,46 +474,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return "لوحة التحكم";
   };
 
-  const getActiveCategory = (tabId: string) => {
-    return primaryCategories.find(cat => cat.items.some(i => i.id === tabId)) || primaryCategories[0];
-  };
-
-  const activeCategory = getActiveCategory(activeSubTab);
-  const [activeCategoryId, setActiveCategoryId] = useState<string>(activeCategory.id);
-  const [openDropdownCategoryId, setOpenDropdownCategoryId] = useState<string | null>(null);
-
-  // Keep active category synchronized whenever activeSubTab changes externally
-  useEffect(() => {
-    const matched = primaryCategories.find(cat => cat.items.some(i => i.id === activeSubTab));
-    if (matched && matched.id !== activeCategoryId) {
-      setActiveCategoryId(matched.id);
-    }
-  }, [activeSubTab, primaryCategories, activeCategoryId]);
-
-  // Support jumping to subtab from external props (e.g. Header Settings button)
-  useEffect(() => {
-    if (initialSubTab) {
-      setActiveSubTab(initialSubTab as any);
-      const matched = primaryCategories.find(cat => cat.items.some(i => i.id === initialSubTab));
-      if (matched) {
-        setActiveCategoryId(matched.id);
-      }
-    }
-  }, [initialSubTab, primaryCategories]);
-
-  // Close floating dropdowns on click outside
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.category-dropdown-group')) {
-        setOpenDropdownCategoryId(null);
-      }
-    };
-    if (openDropdownCategoryId) {
-      document.addEventListener('mousedown', handleOutsideClick);
-      return () => document.removeEventListener('mousedown', handleOutsideClick);
-    }
-  }, [openDropdownCategoryId]);
+  const activeCategory = useMemo(() => {
+    return primaryCategories.find(cat => cat.items.some(i => i.id === activeSubTab)) || primaryCategories[0];
+  }, [primaryCategories, activeSubTab]);
+  const activeCategoryId = activeCategory.id;
 
   // Opportunity Request Review Modal state
   const [reviewingOpp, setReviewingOpp] = useState<OpportunityRequest | null>(null);
@@ -697,7 +730,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onClose={() => setIsSidebarOpen(false)}
         activeSubTab={activeSubTab}
         onSelectTab={(tabId) => {
-          setActiveSubTab(tabId as any);
+          handleSelectTab(tabId);
         }}
         navGroups={navGroups}
         totalVolunteersCount={data.volunteers?.length || 0}
@@ -706,14 +739,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           (data.volunteerApplications || []).filter(a => a.status === 'pending').length
         }
         pendingOpportunitiesCount={opportunityRequests.filter(r => r.status === 'pending').length}
-        onOpenQuickSupport={() => setActiveSubTab('support')}
-        onOpenQuickSettings={() => setActiveSubTab('system_settings')}
+        onOpenQuickSupport={() => handleSelectTab('support')}
+        onOpenQuickSettings={() => handleSelectTab('system_settings')}
       />
 
       {/* Main Content Area */}
       <div className="w-full space-y-6">
         {/* Modern Categorized Command Center & Navigation */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative z-30 overflow-visible space-y-0">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative z-10 overflow-hidden space-y-0">
           
           {/* Top Administrative Context & Fast Actions */}
           <div className="p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/40 rounded-t-2xl">
@@ -767,7 +800,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               {/* Fast Global Search Shortcut */}
               <button
-                onClick={() => setActiveSubTab('globalsearch')}
+                onClick={() => handleSelectTab('globalsearch')}
                 className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
                   activeSubTab === 'globalsearch'
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-black'
@@ -781,7 +814,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               {/* Fast Support & Tickets Shortcut */}
               <button
-                onClick={() => setActiveSubTab('support')}
+                onClick={() => handleSelectTab('support')}
                 className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
                   activeSubTab === 'support'
                     ? 'bg-red-600 text-white border-red-600 shadow-xs font-black'
@@ -795,163 +828,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Mobile Responsive Category Selector (< md) */}
-          <div className="md:hidden p-3 bg-slate-50/90 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">القسم الإداري النشط:</span>
-              <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/60 dark:border-emerald-800/60">
-                {activeCategory.label}
-              </span>
-            </div>
-            <div className="relative">
-              <select
-                id="mobile-category-select"
-                value={activeCategoryId}
-                onChange={(e) => {
-                  const catId = e.target.value;
-                  setActiveCategoryId(catId);
-                  const foundCat = primaryCategories.find(c => c.id === catId);
-                  if (foundCat && foundCat.items.length > 0) {
-                    if (!foundCat.items.some(i => i.id === activeSubTab)) {
-                      setActiveSubTab(foundCat.items[0].id as any);
-                    }
-                  }
-                }}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 shadow-xs appearance-none pr-8 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-emerald-500/40"
-              >
-                {primaryCategories.map(cat => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.label} ({cat.items.length} {cat.items.length === 1 ? 'صفحة' : 'صفحات'})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          {/* Mobile Responsive Category Bar (< md) */}
+          <div className="md:hidden p-2.5 bg-slate-50/90 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-800 overflow-x-auto scrollbar-none">
+            <div className="flex items-center gap-1.5 min-w-max pb-0.5">
+              {primaryCategories.map(cat => {
+                const CatIcon = cat.icon;
+                const isSelected = activeCategoryId === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      if (!cat.items.some(i => i.id === activeSubTab)) {
+                        handleSelectTab(cat.items[0].id);
+                      }
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all shrink-0 cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-black'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <CatIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                    <span>{cat.label}</span>
+                    {cat.badge !== undefined && typeof cat.badge === 'number' && cat.badge > 0 && (
+                      <span className={`text-[9px] px-1 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-red-500 text-white font-bold'}`}>
+                        {cat.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Primary Navigation Level: The 8 Clear Categories (Desktop & Tablet) */}
-          <div className="hidden md:block p-3 bg-slate-50/70 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800/80 relative z-30 overflow-visible">
-            {/* Responsive Categories Bar */}
-            <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 relative overflow-visible">
-              {primaryCategories.map((cat, catIndex) => {
+          {/* Primary Navigation Level: The 9 Clear Categories (Desktop & Tablet) */}
+          <div className="hidden md:block p-3 bg-slate-50/70 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800/80 relative z-10 overflow-hidden">
+            <div className="grid grid-cols-3 sm:grid-cols-5 xl:grid-cols-9 gap-1.5 sm:gap-2">
+              {primaryCategories.map((cat) => {
                 const CatIcon = cat.icon;
                 const isSelected = activeCategoryId === cat.id;
-                const hasMultipleSubPages = cat.items.length > 1;
-                const isDropdownOpen = openDropdownCategoryId === cat.id;
 
                 return (
-                  <div key={cat.id} className={`relative category-dropdown-group ${isDropdownOpen ? 'z-50' : 'z-10'}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveCategoryId(cat.id);
-                        if (hasMultipleSubPages) {
-                          // Toggle dropdown on click
-                          setOpenDropdownCategoryId(isDropdownOpen ? null : cat.id);
-                          if (!cat.items.some(i => i.id === activeSubTab)) {
-                            setActiveSubTab(cat.items[0].id as any);
-                          }
-                        } else {
-                          setActiveSubTab(cat.items[0].id as any);
-                          setOpenDropdownCategoryId(null);
-                        }
-                      }}
-                      className={`w-full h-11 px-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-1.5 border transition-all cursor-pointer ${
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      if (!cat.items.some(i => i.id === activeSubTab)) {
+                        handleSelectTab(cat.items[0].id);
+                      }
+                    }}
+                    className={`h-11 px-2 rounded-xl text-xs font-bold flex items-center justify-between gap-1.5 border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-black scale-[1.01]'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700/80 hover:border-emerald-500/60 hover:bg-emerald-50/50 dark:hover:bg-slate-750'
+                    }`}
+                    title={cat.description}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 truncate">
+                      <CatIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                      <span className="truncate">{cat.label}</span>
+                    </div>
+
+                    {cat.badge !== undefined && (
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-bold shrink-0 ${
                         isSelected
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-black'
-                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700/80 hover:border-emerald-500/60 hover:bg-emerald-50/50 dark:hover:bg-slate-700'
-                      }`}
-                      title={cat.description}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0 truncate">
-                        <CatIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`} />
-                        <span className="truncate">{cat.label}</span>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        {cat.badge !== undefined && (
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                            isSelected
-                              ? 'bg-white/20 text-white'
-                              : typeof cat.badge === 'number' && cat.badge > 0
-                              ? 'bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-300'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                          }`}>
-                            {cat.badge}
-                          </span>
-                        )}
-                        {hasMultipleSubPages && (
-                          <ChevronDown className={`w-3 h-3 transition-transform ${isDropdownOpen ? 'rotate-180 text-white' : isSelected ? 'text-white' : 'text-slate-400'}`} />
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Floating Dropdown for Categories with Multiple Sub-Pages */}
-                    {isDropdownOpen && hasMultipleSubPages && (
-                      <div 
-                        className={`absolute top-full mt-2.5 ${catIndex >= 4 ? 'left-0' : 'right-0'} w-64 sm:w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 dropdown-menu-floating`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400">
-                            صفحات {cat.label} ({cat.items.length})
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setOpenDropdownCategoryId(null)}
-                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-md"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="py-1 max-h-64 overflow-y-auto">
-                          {cat.items.map((subItem) => {
-                            const SubIcon = subItem.icon;
-                            const isSubActive = activeSubTab === subItem.id;
-                            return (
-                              <button
-                                key={subItem.id}
-                                type="button"
-                                onClick={() => {
-                                  setActiveCategoryId(cat.id);
-                                  setActiveSubTab(subItem.id as any);
-                                  setOpenDropdownCategoryId(null);
-                                }}
-                                className={`w-full px-3 py-2 text-xs font-bold flex items-center justify-between text-right transition-colors cursor-pointer ${
-                                  isSubActive
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-black'
-                                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <SubIcon className={`w-3.5 h-3.5 shrink-0 ${isSubActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                                  <span className="truncate">{subItem.label}</span>
-                                </div>
-                                {subItem.badge !== undefined && (
-                                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                                    isSubActive
-                                      ? 'bg-emerald-600 text-white'
-                                      : typeof subItem.badge === 'number' && subItem.badge > 0
-                                      ? 'bg-red-500 text-white'
-                                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                                  }`}>
-                                    {subItem.badge}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                          ? 'bg-white/20 text-white'
+                          : typeof cat.badge === 'number' && cat.badge > 0
+                          ? 'bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-300'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                      }`}>
+                        {cat.badge}
+                      </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </div>
 
           {/* Secondary Sub-Pages Level (Filtered cleanly by the chosen Category) */}
-          <div className="p-3 bg-white dark:bg-slate-900 border-t md:border-t-0 border-slate-100 dark:border-slate-800/80 rounded-b-2xl">
+          <div className="p-3 bg-white dark:bg-slate-900 border-t md:border-t-0 border-slate-100 dark:border-slate-800/80 rounded-b-2xl overflow-x-auto">
             {(() => {
               const currentCat = primaryCategories.find(c => c.id === activeCategoryId) || activeCategory;
               const CurrentCatIcon = currentCat.icon;
@@ -972,7 +929,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button
                           key={subItem.id}
                           id={`subtab-${subItem.id}`}
-                          onClick={() => setActiveSubTab(subItem.id as any)}
+                          onClick={() => handleSelectTab(subItem.id)}
                           className={`h-9 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap shadow-2xs ${
                             isSubActive
                               ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs font-black scale-[1.01]'
@@ -1004,10 +961,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Main Dynamic Panel Container */}
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-right">
+        <div 
+          key={activeSubTab}
+          className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-right min-h-[420px] relative transition-opacity duration-150"
+        >
           <DashboardErrorBoundary 
+            key={`boundary-${activeSubTab}`}
             pageName={`قسم: ${getActiveTabTitle(activeSubTab)}`}
-            onReset={() => setActiveSubTab('enterprise_finance')}
+            onReset={() => setActiveSubTab('stats')}
           >
           {/* TAB: OFFICIAL LETTERS & CORRESPONDENCE */}
           {activeSubTab === 'letters' && (
@@ -1322,116 +1283,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             />
           )}
 
-          {/* TAB 1: SYSTEM STATISTICS BREAKDOWN */}
+          {/* TAB 1: EXECUTIVE KPI DASHBOARD (لوحة المؤشرات والإحصائيات الرئيسية) */}
           {activeSubTab === 'stats' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-md font-black text-neutral-800">إحصائيات وأداء الجمعية الكلي</h3>
-                <p className="text-xs text-neutral-500 mt-0.5">تقرير إحصائي فوري مستخرج لحظياً من سجلات النظام</p>
-              </div>
-
-              {/* Stats Bento Grid Layout */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-emerald-50/40 border border-emerald-100/50 p-4 rounded-2xl text-right">
-                  <div className="flex justify-between items-center text-emerald-600 mb-1">
-                    <Building2 className="w-5 h-5" />
-                    <span className="text-[10px] font-bold">نشط</span>
-                  </div>
-                  <strong className="text-lg font-black text-emerald-800 block leading-none">{data.departments?.length || 0}</strong>
-                  <span className="text-[10px] text-neutral-500 font-bold mt-1 block">إدارات هيكلية</span>
-                </div>
-
-                <div className="bg-emerald-50/40 border border-emerald-100/50 p-4 rounded-2xl text-right">
-                  <div className="flex justify-between items-center text-emerald-600 mb-1">
-                    <Users className="w-5 h-5" />
-                    <span className="text-[10px] font-bold">نشط</span>
-                  </div>
-                  <strong className="text-lg font-black text-emerald-800 block leading-none">{data.teams?.length || 0}</strong>
-                  <span className="text-[10px] text-neutral-500 font-bold mt-1 block">فرق تطوعية</span>
-                </div>
-
-                <div className="bg-emerald-50/40 border border-emerald-100/50 p-4 rounded-2xl text-right">
-                  <div className="flex justify-between items-center text-emerald-600 mb-1">
-                    <Users className="w-5 h-5" />
-                    <span className="text-[10px] font-bold">مسجل</span>
-                  </div>
-                  <strong className="text-lg font-black text-emerald-800 block leading-none">{data.volunteers?.length || 0}</strong>
-                  <span className="text-[10px] text-neutral-500 font-bold mt-1 block">متطوع معتمد</span>
-                </div>
-
-                <div className="bg-emerald-50/40 border border-emerald-100/50 p-4 rounded-2xl text-right">
-                  <div className="flex justify-between items-center text-emerald-600 mb-1">
-                    <Calendar className="w-5 h-5" />
-                    <span className="text-[10px] font-bold">إجمالي</span>
-                  </div>
-                  <strong className="text-lg font-black text-emerald-800 block leading-none">{data.initiatives?.length || 0}</strong>
-                  <span className="text-[10px] text-neutral-500 font-bold mt-1 block">مبادرة تطوعية</span>
-                </div>
-              </div>
-
-              {/* Core Analytics Rates */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="border border-neutral-100 p-5 rounded-2xl space-y-4">
-                  <h4 className="text-xs font-black text-neutral-800">نسبة التزام الحضور مقابل الغياب الكلي</h4>
-                  <div className="flex gap-4 items-center">
-                    <div className="flex-1 space-y-1">
-                      <div className="flex justify-between text-[11px] font-bold">
-                        <span className="text-emerald-700">الحضور الكامل (3 نقاط)</span>
-                        <span>80%</span>
-                      </div>
-                      <div className="w-full bg-neutral-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: '80%' }} />
-                      </div>
-                    </div>
-                    <div className="text-center shrink-0">
-                      <span className="text-lg font-black text-emerald-600 block leading-none">80%</span>
-                      <span className="text-[8.5px] text-neutral-400 block mt-1">نسبة الحضور</span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 items-center border-t border-neutral-50 pt-3">
-                    <div className="flex-1 space-y-1">
-                      <div className="flex justify-between text-[11px] font-bold">
-                        <span className="text-rose-700">الغياب والاعتذار</span>
-                        <span>20%</span>
-                      </div>
-                      <div className="w-full bg-neutral-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-rose-500 h-full rounded-full" style={{ width: '20%' }} />
-                      </div>
-                    </div>
-                    <div className="text-center shrink-0">
-                      <span className="text-lg font-black text-rose-500 block leading-none">20%</span>
-                      <span className="text-[8.5px] text-neutral-400 block mt-1">نسبة الغياب</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rank lists */}
-                <div className="border border-neutral-100 p-5 rounded-2xl space-y-3">
-                  <h4 className="text-xs font-black text-neutral-800">لوحة الشرف الصدارة والترتيب</h4>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between items-center bg-neutral-50 p-2 rounded-lg">
-                      <span className="text-neutral-500">🏆 أفضل متطوع (نقاط):</span>
-                      <strong className="text-neutral-800">
-                        {(data.volunteers && data.volunteers.length > 0) ? [...data.volunteers].sort((a,b)=> (b.points || 0) - (a.points || 0))[0]?.name || "أحمد الغامدي" : "أحمد الغامدي"}
-                      </strong>
-                    </div>
-                    <div className="flex justify-between items-center bg-neutral-50 p-2 rounded-lg">
-                      <span className="text-neutral-500">👔 أفضل قائد فريق:</span>
-                      <strong className="text-neutral-800">سعود الحربي (فريق التنظيم)</strong>
-                    </div>
-                    <div className="flex justify-between items-center bg-neutral-50 p-2 rounded-lg">
-                      <span className="text-neutral-500">👥 أفضل فريق تطوعي:</span>
-                      <strong className="text-neutral-800">فريق الإعلام (إدارة الإعلام)</strong>
-                    </div>
-                    <div className="flex justify-between items-center bg-neutral-50 p-2 rounded-lg">
-                      <span className="text-neutral-500">🏢 أفضل إدارة فاعلة:</span>
-                      <strong className="text-neutral-800">إدارة التطوع (ريادة العطاء)</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ExecutiveKpiDashboard
+              data={data}
+              authenticatedUser={authenticatedUser}
+              onNavigateTab={(targetTab) => {
+                setActiveSubTab(targetTab as any);
+                if (onSubTabChange) onSubTabChange(targetTab);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onRefreshData={onRefreshGlobalData}
+              isDark={isDark}
+              lang={lang}
+            />
           )}
 
           {/* TAB 2: DEPARTMENTS & BOARD DIRECTIVES (CRUD) */}
@@ -3221,48 +3086,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 13: HOMEPAGE & BENEFICIARIES CONTENT MANAGER */}
           {activeSubTab === 'homepage' && (
             <HomepageAdminPanel
-              settings={data.homeSettings || {
-                logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
-                videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
-                videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
-                associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
-                associationNameEn: "Reyadat Al-Ata Association",
-                licenseNumber: "5081",
-                heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
-                heroTitleEn: "Leadership in Giving",
-                heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",
-                heroDescEn: "We strive to provide innovative and sustainable developmental and charitable services",
-                aboutUsAr: "تأسست جمعية ريادة العطاء لخدمة الإنسان بالعسيلة لتباشر مسؤوليتها المجتمعية والخيرية",
-                aboutUsEn: "Established to carry out community and charitable responsibility",
-                visionAr: "الريادة في تمكين العمل الخيري والتطوعي وخدمة ضيوف الرحمن وأهالي العسيلة بجودة وتميز",
-                visionEn: "Leadership in charity",
-                missionAr: "تقديم خدمات إنسانية وتنموية ومبادرات تطوعية مبتكرة تسهم في سد الاحتياجات وبناء القدرات",
-                missionEn: "Providing innovative humanitarian and developmental services",
-                goalsAr: [],
-                goalsEn: [],
-                valuesAr: [],
-                valuesEn: [],
-                donationLink: "https://store.riadataleata.org.sa",
-                contactPhone: "0550123456",
-                contactEmail: "info@riadataleata.org.sa",
-                contactLocationAr: "مكة المكرمة - مخطط العسيلة",
-                contactLocationEn: "Mecca - Al-Asilah Scheme",
-                contactHoursAr: "الأحد - الخميس",
-                contactHoursEn: "Sunday - Thursday",
-                themePrimary: "#059669",
-                themeSecondary: "#0d9488",
-                fontFamily: "Inter",
-                sectionVisibility: {
-                  about: true,
-                  stats: true,
-                  initiatives: true,
-                  news: true,
-                  achievements: true,
-                  partners: true,
-                  gallery: true,
-                  contact: true
-                }
-              }}
+              settings={data.homeSettings || DEFAULT_ADMIN_HOMESETTINGS}
               news={data.news || []}
               partners={data.partners || []}
               gallery={data.gallery || []}
@@ -3455,24 +3279,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* Fallback for Unrecognized / Unmapped Subtabs to prevent white screen */}
-          {![
-            'letters', 'inventory', 'custody', 'email_settings', 'system_settings', 'chat',
-            'support', 'volunteer_mgmt_dashboard', 'opp_requests', 'team_join_requests',
-            'joinrequests', 'stats', 'deps', 'hr_dashboard', 'employee_requests', 'teams',
-            'vols', 'cards', 'init', 'logs', 'permissions', 'notifications', 'leaderboard',
-            'globalsearch', 'beneficiaries', 'distributions', 'beneficiary_ratings', 'homepage',
-            'org_chart', 'hero_slides', 'backup', 'enterprise_finance', 'store_finance'
-          ].includes(activeSubTab) && (
+          {!validSubTabs.has(activeSubTab) && (
             <AccessDeniedCard
               pageTitle={getActiveTabTitle(activeSubTab)}
               allowedPages={[
+                { id: 'stats', label: 'لوحة المؤشرات والإحصائيات' },
                 { id: 'enterprise_finance', label: 'الإدارة المالية الشاملة' },
                 { id: 'deps', label: 'هيكلة الإدارات والتكليفات' },
                 { id: 'permissions', label: 'إدارة الصلاحيات والمستخدمين' },
                 { id: 'beneficiaries', label: 'إدارة المستفيدين' }
               ]}
               onNavigateToAllowed={(pageId) => setActiveSubTab(pageId as any)}
-              onGoBack={() => setActiveSubTab('enterprise_finance')}
+              onGoBack={() => setActiveSubTab('stats')}
             />
           )}
           </DashboardErrorBoundary>

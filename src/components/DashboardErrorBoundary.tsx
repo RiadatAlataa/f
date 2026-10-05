@@ -6,6 +6,7 @@ export interface DashboardErrorBoundaryProps {
   pageName?: string;
   fallbackTitle?: string;
   onReset?: () => void;
+  key?: React.Key;
 }
 
 interface DashboardErrorBoundaryState {

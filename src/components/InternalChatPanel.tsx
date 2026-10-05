@@ -93,8 +93,8 @@ export const InternalChatPanel: React.FC<InternalChatPanelProps> = ({
 
   // Scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
+  }, [messages.length]);
 
   // Voice recording simulation
   const startRecording = () => {

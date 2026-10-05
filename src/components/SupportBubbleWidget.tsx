@@ -46,10 +46,12 @@ export const SupportBubbleWidget: React.FC<SupportBubbleWidgetProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setHasUnreadAlert(false);
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      if (hasUnreadAlert) {
+        setHasUnreadAlert(false);
+      }
+      chatEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
     }
-  }, [isOpen, messages]);
+  }, [isOpen, hasUnreadAlert, messages.length]);
 
   // Handle message sending to AI / Support endpoint
   const handleSendMessage = async (customText?: string) => {

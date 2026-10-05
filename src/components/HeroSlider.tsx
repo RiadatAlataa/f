@@ -55,7 +55,7 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
 
   // Keep index within bounds if activeSlides count changes
   useEffect(() => {
-    if (currentIndex >= activeSlides.length) {
+    if (activeSlides.length > 0 && currentIndex >= activeSlides.length) {
       setCurrentIndex(0);
     }
   }, [activeSlides.length, currentIndex]);

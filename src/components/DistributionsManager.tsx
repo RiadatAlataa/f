@@ -80,13 +80,14 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   }, [selectedDistId]);
 
   // Keep selected distribution valid if distributions change
+  const distributionsIdsKey = useMemo(() => (distributions || []).map(d => d.id).join(','), [distributions]);
   useEffect(() => {
     if (selectedDistId && !distributions.some(d => d.id === selectedDistId) && distributions[0]) {
       setSelectedDistId(distributions[0].id);
     } else if (!selectedDistId && distributions[0]) {
       setSelectedDistId(distributions[0].id);
     }
-  }, [distributions]);
+  }, [distributionsIdsKey]);
   
   // Modals
   const [isScannerOpen, setIsScannerOpen] = useState(false);

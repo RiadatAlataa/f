@@ -90,13 +90,14 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   const manualInputRef = useRef<HTMLInputElement>(null);
 
   // Sync initial distribution
+  const distributionsIdsKey = React.useMemo(() => (distributions || []).map(d => d.id).join(','), [distributions]);
   useEffect(() => {
     if (initialDistId) {
-      setActiveDistId(initialDistId);
-    } else if (distributions.length > 0 && !activeDistId) {
+      setActiveDistId(prev => (prev === initialDistId ? prev : initialDistId));
+    } else if (distributions && distributions.length > 0 && !activeDistId) {
       setActiveDistId(distributions[0].id);
     }
-  }, [initialDistId, distributions]);
+  }, [initialDistId, distributionsIdsKey, activeDistId]);
 
   // Current active distribution object
   const currentDistribution = distributions.find(d => d.id === activeDistId);

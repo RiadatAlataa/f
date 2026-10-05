@@ -98,10 +98,11 @@ export const sanitizeApiBaseUrl = (rawUrl: string): { cleanUrl: string; error?: 
  */
 export const getApiBaseUrl = (): string => {
   // 1. Central Project & Deployment Environment Variable (Vercel / Render / Cloud Run)
+  const envMeta = (typeof import.meta !== 'undefined' && import.meta && (import.meta as any).env) ? (import.meta as any).env : {};
   const envUrl = (
-    import.meta.env.VITE_API_URL || 
-    import.meta.env.VITE_BACKEND_URL || 
-    import.meta.env.VITE_API_BASE_URL || 
+    envMeta.VITE_API_URL || 
+    envMeta.VITE_BACKEND_URL || 
+    envMeta.VITE_API_BASE_URL || 
     ''
   );
 

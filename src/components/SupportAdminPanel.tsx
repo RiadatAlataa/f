@@ -77,9 +77,10 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
       const res = await fetch("/api/support/tickets");
       if (res.ok) {
         const data = await res.json();
-        setTickets(data);
-        if (data.length > 0 && !selectedTicketId) {
-          setSelectedTicketId(data[0].id);
+        const list = Array.isArray(data) ? data : (data?.tickets || []);
+        setTickets(list);
+        if (list.length > 0 && !selectedTicketId) {
+          setSelectedTicketId(list[0].id);
         }
       }
     } catch (err) {
@@ -95,7 +96,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
       const res = await fetch("/api/support/tasks");
       if (res.ok) {
         const data = await res.json();
-        setTasks(data);
+        setTasks(Array.isArray(data) ? data : (data?.tasks || []));
       }
     } catch (err) {
       console.error("Failed to load support tasks", err);
@@ -108,7 +109,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
       const res = await fetch("/api/support/agents");
       if (res.ok) {
         const data = await res.json();
-        setAgents(data);
+        setAgents(Array.isArray(data) ? data : (data?.agents || []));
       }
     } catch (err) {
       console.error("Failed to load support agents", err);
@@ -648,7 +649,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
 
                   {/* Messages Feed */}
                   <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50/30">
-                    {selectedTicket.messages.map((msg) => {
+                    {(selectedTicket.messages || []).map((msg) => {
                       const isAgent = msg.senderType === "agent" || msg.senderType === "support_agent";
                       return (
                         <div
@@ -910,7 +911,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {agents.map((agent) => (
+            {(Array.isArray(agents) ? agents : []).map((agent) => (
               <div key={agent.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black text-sm">
@@ -1024,7 +1025,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
                     className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-bold"
                   >
                     <option value="">اختر الموظف...</option>
-                    {agents.map(a => (
+                    {(Array.isArray(agents) ? agents : []).map(a => (
                       <option key={a.id} value={a.id}>{a.name} ({a.activeTasksCount || 0} مهام جارية)</option>
                     ))}
                   </select>
