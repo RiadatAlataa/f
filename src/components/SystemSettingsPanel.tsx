@@ -538,7 +538,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
           </div>
 
           <div className="space-y-3">
-            {settings.socialLinks.map((link, idx) => (
+            {(Array.isArray(settings?.socialLinks) ? settings.socialLinks : []).map((link, idx) => (
               <div key={link.id} className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div className="flex items-center gap-2 w-48 shrink-0">
                   <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center justify-center font-mono">
@@ -745,7 +745,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-neutral-900">الأدوار المعتمدة في النظام:</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {settings.customRoles.map(role => (
+              {(Array.isArray(settings?.customRoles) ? settings.customRoles : []).map(role => (
                 <div key={role.id} className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-md">
@@ -755,7 +755,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
                   </div>
                   <p className="text-xs text-neutral-600">{role.description}</p>
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {role.allowedPages.map(page => (
+                    {(Array.isArray(role.allowedPages) ? role.allowedPages : []).map(page => (
                       <span key={page} className="bg-white text-neutral-700 text-[10px] font-mono border border-neutral-300 px-2 py-0.5 rounded">
                         {page}
                       </span>
@@ -1119,7 +1119,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-bold text-neutral-900">إدارة الردود السريعة المباشرة (Canned Responses):</h3>
             <div className="space-y-2">
-              {settings.aiAssistant.cannedResponses.map(cr => (
+              {(Array.isArray(settings?.aiAssistant?.cannedResponses) ? settings.aiAssistant.cannedResponses : []).map(cr => (
                 <div key={cr.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between text-xs">
                   <div>
                     <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded me-2">
@@ -1251,7 +1251,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
             <div className="pt-2 space-y-3">
               <h3 className="text-xs font-bold text-neutral-900">إدارة الأسئلة الشائعة (FAQ):</h3>
               <div className="space-y-2">
-                {settings.documents.faqAr.map(faq => (
+                {(Array.isArray(settings?.documents?.faqAr) ? settings.documents.faqAr : []).map(faq => (
                   <div key={faq.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-start justify-between text-xs gap-3">
                     <div>
                       <div className="font-bold text-neutral-900 mb-1">س: {faq.question}</div>
@@ -1564,7 +1564,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
           <div className="space-y-3 pt-2">
             <h3 className="text-xs font-bold text-neutral-900">قائمة عناوين IP المحظورة من النظام:</h3>
             <div className="flex flex-wrap gap-2">
-              {settings.security.blockedIps.map(ip => (
+              {(Array.isArray(settings?.security?.blockedIps) ? settings.security.blockedIps : []).map(ip => (
                 <span key={ip} className="bg-red-50 text-red-800 border border-red-200 px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-2">
                   <span>{ip}</span>
                   <button

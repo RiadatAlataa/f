@@ -334,36 +334,40 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
   };
 
   // Filtered tickets
-  const filteredTickets = tickets.filter(t => {
+  const filteredTickets = (Array.isArray(tickets) ? tickets : []).filter(t => {
+    if (!t) return false;
     const matchesStatus = filterStatus === "all" || t.status === filterStatus;
+    const q = (searchQuery || "").toLowerCase();
     const matchesSearch = 
-      t.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.requesterName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.subject.toLowerCase().includes(searchQuery.toLowerCase());
+      (t.ticketNumber || "").toLowerCase().includes(q) ||
+      (t.requesterName || "").toLowerCase().includes(q) ||
+      (t.subject || "").toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
   });
 
   // Filtered tasks
-  const filteredTasks = tasks.filter(t => {
+  const filteredTasks = (Array.isArray(tasks) ? tasks : []).filter(t => {
+    if (!t) return false;
+    const q = (taskSearchQuery || "").toLowerCase();
     const matchesSearch = 
-      t.taskNumber.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-      t.title.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-      t.requesterName.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-      t.assignedAgentName.toLowerCase().includes(taskSearchQuery.toLowerCase());
+      (t.taskNumber || "").toLowerCase().includes(q) ||
+      (t.title || "").toLowerCase().includes(q) ||
+      (t.requesterName || "").toLowerCase().includes(q) ||
+      (t.assignedAgentName || "").toLowerCase().includes(q);
     const matchesStatus = taskFilterStatus === "all" || t.status === taskFilterStatus;
     const matchesPriority = taskFilterPriority === "all" || t.priority === taskFilterPriority;
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
   // Stats
-  const totalTickets = tickets.length;
-  const newTickets = tickets.filter(t => t.status === "new").length;
-  const inProgressTickets = tickets.filter(t => t.status === "in_progress").length;
-  const closedTickets = tickets.filter(t => t.status === "closed").length;
+  const totalTickets = (Array.isArray(tickets) ? tickets : []).length;
+  const newTickets = (Array.isArray(tickets) ? tickets : []).filter(t => t?.status === "new").length;
+  const inProgressTickets = (Array.isArray(tickets) ? tickets : []).filter(t => t?.status === "in_progress").length;
+  const closedTickets = (Array.isArray(tickets) ? tickets : []).filter(t => t?.status === "closed").length;
 
-  const totalTasks = tasks.length;
-  const pendingTasks = tasks.filter(t => t.status === "new" || t.status === "in_progress").length;
-  const completedTasks = tasks.filter(t => t.status === "completed" || t.status === "closed").length;
+  const totalTasks = (Array.isArray(tasks) ? tasks : []).length;
+  const pendingTasks = (Array.isArray(tasks) ? tasks : []).filter(t => t?.status === "new" || t?.status === "in_progress").length;
+  const completedTasks = (Array.isArray(tasks) ? tasks : []).filter(t => t?.status === "completed" || t?.status === "closed").length;
 
   return (
     <div id="support-admin-panel" className="space-y-6 text-right font-sans" dir="rtl">
@@ -602,13 +606,15 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
                       {/* Convert to Task Button */}
                       <button
                         onClick={() => {
+                          const ticketMessages = selectedTicket.chatTranscript || (selectedTicket as any).messages || [];
+                          const firstContent = ticketMessages[0]?.content || selectedTicket.subject;
                           setTaskFormData({
                             title: `معالجة تذكرة #${selectedTicket.ticketNumber}: ${selectedTicket.subject}`,
-                            description: selectedTicket.messages[0]?.content || selectedTicket.subject,
+                            description: firstContent,
                             requesterName: selectedTicket.requesterName,
-                            requesterContact: selectedTicket.requesterContact || "",
-                            requesterRole: selectedTicket.requesterType === "volunteer" ? "متطوع" : "مستفيد",
-                            assignedAgentId: agents[0]?.id || "",
+                            requesterContact: (selectedTicket as any).requesterPhone || (selectedTicket as any).requesterContact || "",
+                            requesterRole: selectedTicket.requesterRole === "volunteer" ? "متطوع" : "مستفيد",
+                            assignedAgentId: (Array.isArray(agents) && agents.length > 0) ? agents[0].id : "",
                             priority: selectedTicket.priority === "urgent" ? "urgent" : "medium",
                             dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split("T")[0],
                             notes: `تم إنشاء المهمة من تذكرة الدعم #${selectedTicket.ticketNumber}`,
@@ -649,8 +655,8 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
 
                   {/* Messages Feed */}
                   <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50/30">
-                    {(selectedTicket.messages || []).map((msg) => {
-                      const isAgent = msg.senderType === "agent" || msg.senderType === "support_agent";
+                    {(selectedTicket.chatTranscript || (selectedTicket as any).messages || []).map((msg) => {
+                      const isAgent = msg.senderType === "agent" || (msg as any).senderType === "support_agent";
                       return (
                         <div
                           key={msg.id}
@@ -1226,7 +1232,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
                 onChange={(e) => setReassignAgentId(e.target.value)}
                 className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-bold"
               >
-                {agents.map(a => (
+                {(Array.isArray(agents) ? agents : []).map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
@@ -1276,7 +1282,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
             </div>
 
             <div className="space-y-3 max-h-72 overflow-y-auto">
-              {selectedTask.history && selectedTask.history.length > 0 ? (
+              {Array.isArray(selectedTask.history) && selectedTask.history.length > 0 ? (
                 selectedTask.history.map((h, idx) => (
                   <div key={h.id || idx} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
                     <div className="flex items-center justify-between">

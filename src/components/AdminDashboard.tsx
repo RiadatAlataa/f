@@ -388,7 +388,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data.partners || []).length || undefined },
         { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: (data.letters || []).filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
-        { id: 'users_mgmt', label: 'إدارة المستخدمين', icon: Users, badge: 'جديد' },
+        { id: 'users_mgmt', label: 'إدارة المستخدمين الإداريين', icon: Users, badge: 'جديد' },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
         { id: 'chat', label: 'الدردشة الداخلية', icon: MessageSquare },
         { id: 'notifications', label: 'الإشعارات والتعاميم', icon: Send }
@@ -684,9 +684,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const triggerBatchPrint = () => {
     const win = window.open("", "_blank");
     if (win) {
-      const cardsHtml = data.volunteers.map(v => {
-        const team = data.teams.find(t => t.id === v.teamId);
-        const dept = data.departments.find(d => d.id === v.departmentId);
+      const cardsHtml = (data.volunteers || []).map(v => {
+        const team = (data.teams || []).find(t => t.id === v.teamId);
+        const dept = (data.departments || []).find(d => d.id === v.departmentId);
         return `
           <div class="print-card" style="page-break-inside: avoid; margin-bottom: 30px; width: 350px; border: 2px solid #16a34a; border-radius: 16px; padding: 15px; background: #fff; direction: rtl; font-family: sans-serif; position: relative;">
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px;">
@@ -910,8 +910,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* Secondary Sub-Pages Level (Filtered cleanly by the chosen Category) */}
           <div className="p-3 bg-white dark:bg-slate-900 border-t md:border-t-0 border-slate-100 dark:border-slate-800/80 rounded-b-2xl overflow-x-auto">
             {(() => {
-              const currentCat = primaryCategories.find(c => c.id === activeCategoryId) || activeCategory;
-              const CurrentCatIcon = currentCat.icon;
+              const currentCat = primaryCategories.find(c => c.id === activeCategoryId) || activeCategory || primaryCategories[0];
+              if (!currentCat) return null;
+              const CurrentCatIcon = currentCat.icon || LayoutDashboard;
               return (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2 shrink-0">
@@ -922,7 +923,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-                    {currentCat.items.map((subItem) => {
+                    {(currentCat.items || []).map((subItem) => {
                       const SubIcon = subItem.icon;
                       const isSubActive = activeSubTab === subItem.id;
                       return (
@@ -1436,9 +1437,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Grid of 8 Executive Departments */}
+                {/* Grid of Executive Departments */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
-                  {data.departments.map((d, index) => (
+                  {(data.departments || []).map((d, index) => (
                     <div key={d.id} className="border border-neutral-150 bg-white p-5 rounded-2xl flex flex-col justify-between hover:border-emerald-500 transition-all shadow-2xs hover:shadow-md space-y-4">
                       <div className="space-y-3">
                         <div className="flex justify-between items-start gap-2 border-b border-neutral-100 pb-3">
@@ -1589,8 +1590,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {data.teams.map(t => {
-                  const dep = data.departments.find(d => d.id === t.departmentId);
+                {(data.teams || []).map(t => {
+                  const dep = (data.departments || []).find(d => d.id === t.departmentId);
                   return (
                     <div key={t.id} className="border border-neutral-100 p-4 rounded-2xl flex flex-col justify-between hover:border-emerald-500 transition-all">
                       <div>
@@ -1699,10 +1700,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onChange={(e) => setVolTeamFilter(e.target.value)}
                       className="bg-transparent outline-none cursor-pointer font-bold text-xs pr-1"
                     >
-                      <option value="all">جميع الفرق ({data.volunteers.length})</option>
-                      {data.teams.map((t) => (
+                      <option value="all">جميع الفرق ({(data.volunteers || []).length})</option>
+                      {(data.teams || []).map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.nameAr} ({data.volunteers.filter(v => v.teamId === t.id).length})
+                          {t.nameAr} ({(data.volunteers || []).filter(v => v.teamId === t.id).length})
                         </option>
                       ))}
                     </select>
@@ -1842,9 +1843,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-50">
-                    {data.initiatives.map(i => {
-                      const dep = data.departments.find(d => d.id === i.departmentId);
-                      const team = data.teams.find(t => t.id === i.teamId);
+                    {(data.initiatives || []).map(i => {
+                      const dep = (data.departments || []).find(d => d.id === i.departmentId);
+                      const team = (data.teams || []).find(t => t.id === i.teamId);
                       return (
                         <tr key={i.id} className="hover:bg-neutral-50/20 transition-all">
                           <td className="p-3">
@@ -1970,7 +1971,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             if (!isAuthorized) {
               return (
                 <AccessDeniedCard 
-                  pageTitle="إدارة المستخدمين والحسابات"
+                  pageTitle="إدارة المستخدمين الإداريين"
                   requiredPermission="إدارة المستخدمين (manage_users) أو رتبة مدير العمليات / الإدارة العليا"
                   userPermissions={authenticatedUser?.permissions || []}
                   allowedWorkspaces={authenticatedUser?.allowedPages || []}
@@ -1981,7 +1982,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }
 
             return (
-              <DashboardErrorBoundary pageName="إدارة المستخدمين">
+              <DashboardErrorBoundary pageName="إدارة المستخدمين الإداريين">
                 <UsersManager
                   currentUser={authenticatedUser}
                   currentUserRole={authenticatedUser?.role || 'admin'}
@@ -1999,6 +2000,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'permissions' && (() => {
             // Aggregate all accounts across departments, employees, storekeepers, leaders, and volunteers
             const allAccountsList: any[] = [];
+
+            // 0. Operations Manager (مدير العمليات - دور إداري مستقل بأعلى صلاحيات تشغيلية)
+            allAccountsList.push({
+              id: 'ops-manager',
+              type: 'operations',
+              name: 'م. سلطان الزهراني (مدير العمليات)',
+              nationalId: '1020000000',
+              phone: '0559000000',
+              email: 'operations@riadataleata.org.sa',
+              departmentId: 'dep-1',
+              departmentName: 'مكتب إدارة العمليات (دور إداري مستقل)',
+              jobTitle: 'مدير العمليات والتشغيل',
+              role: 'operations_manager',
+              status: 'active',
+              permissions: [
+                'super_admin', 'operations_manager', 'manage_users', 'manage_permissions',
+                'view_department', 'create_data', 'edit_data', 'delete_data',
+                'export_pdf', 'export_excel', 'manage_staff', 'manage_tasks',
+                'view_reports', 'cross_department_access', 'all_permissions'
+              ],
+              allowedPages: ['inventory', 'volunteer_ops', 'requests', 'beneficiaries', 'hr_staff', 'finance_ledger', 'projects_list', 'media_news', 'directives', 'tasks', 'staff', 'letters', 'users_mgmt']
+            });
 
             // 1. Department Directors
             (data.departments || []).forEach(d => {
@@ -2036,7 +2059,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   phone: e.phone,
                   email: e.email,
                   departmentId: e.departmentId || (isWarehouse ? 'dep-8' : 'dep-1'),
-                  departmentName: e.departmentName || (data.departments.find(d => d.id === e.departmentId)?.nameAr) || (isWarehouse ? 'إدارة المستودع والمخزن' : 'إدارة عامة'),
+                  departmentName: e.departmentName || ((data.departments || []).find(d => d.id === e.departmentId)?.nameAr) || (isWarehouse ? 'إدارة المستودع والمخزن' : 'إدارة عامة'),
                   jobTitle: e.jobTitle || (isWarehouse ? 'أمين مستودع' : 'موظف إدارة'),
                   role: e.role || (isWarehouse ? 'storekeeper' : 'employee'),
                   status: e.status || 'active',
@@ -2079,7 +2102,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   email: v.email,
                   membershipNumber: v.membershipNumber,
                   departmentId: v.departmentId || 'dep-5',
-                  departmentName: (data.departments.find(d => d.id === v.departmentId)?.nameAr) || 'إدارة العمل التطوعي',
+                  departmentName: ((data.departments || []).find(d => d.id === v.departmentId)?.nameAr) || 'إدارة العمل التطوعي',
                   jobTitle: (v as any).jobTitle || (v as any).titleAr || 'متطوع معتمد',
                   role: (v as any).role || 'volunteer',
                   status: v.status || 'active',

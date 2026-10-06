@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { AlertTriangle, RefreshCw, Home, ShieldAlert } from "lucide-react";
 
 export interface DashboardErrorBoundaryProps {
   children: React.ReactNode;
@@ -13,6 +13,19 @@ interface DashboardErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
   errorId: string | null;
+  componentName: string | null;
+  retryCount: number;
+}
+
+// Helper to sanitize sensitive information (passwords, tokens, keys) before logging
+function sanitizeErrorData(text: string | null | undefined): string | null {
+  if (!text) return null;
+  return text
+    .replace(/(password|pwd|pass|token|sessionToken|secret|key)=([^& \n\r]+)/gi, "$1=[REDACTED]")
+    .replace(/(bearer\s+)([A-Za-z0-9_\-\.]+)/gi, "$1[REDACTED]")
+    .replace(/("password"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"')
+    .replace(/("token"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"')
+    .replace(/("sessionToken"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"');
 }
 
 export class DashboardErrorBoundary extends (React.Component as any) {
@@ -25,33 +38,53 @@ export class DashboardErrorBoundary extends (React.Component as any) {
     this.state = {
       hasError: false,
       error: null,
-      errorId: null
+      errorId: null,
+      componentName: null,
+      retryCount: 0
     };
   }
 
-  public static getDerivedStateFromError(error: Error): DashboardErrorBoundaryState {
+  public static getDerivedStateFromError(error: Error): Partial<DashboardErrorBoundaryState> {
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     return { hasError: true, error, errorId };
   }
 
   public componentDidCatch(error: Error, errorInfo: any) {
-    const errorId = this.state.errorId || `err_${Date.now()}`;
-    // Log error locally to developer console
-    console.error(`[DashboardErrorBoundary] Captured error in [${this.props.pageName || 'Unknown Page'}]:`, error, errorInfo);
-
-    // Securely dispatch error to server developer error logs without leaking sensitive information
+    const errorId = this.state.errorId || `err_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    
+    // Extract originating component name from React component stack
+    let componentName = "Unknown";
     try {
+      const match = errorInfo?.componentStack?.match(/at\s+([A-Za-z0-9_]+)/);
+      if (match && match[1]) {
+        componentName = match[1];
+      }
+    } catch {}
+
+    this.setState({ componentName });
+
+    // Log securely to developer console
+    console.error(`[DashboardErrorBoundary] Captured error in [${this.props.pageName || 'Unknown Page'}] at Component <${componentName}>:`, error, errorInfo);
+
+    // Sanitize and dispatch error report to server logs
+    try {
+      const sanitizedUrl = sanitizeErrorData(window.location.href) || "";
+      const sanitizedMessage = sanitizeErrorData(error?.message || "Unknown error") || "";
+      const sanitizedStack = sanitizeErrorData(error?.stack || null);
+      const sanitizedCompStack = sanitizeErrorData(errorInfo?.componentStack || null);
+
       fetch("/api/logs/developer-error", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           errorId,
           pageName: this.props.pageName || "لوحة التحكم",
-          message: error?.message || "Unknown error",
-          stack: error?.stack || null,
-          componentStack: errorInfo?.componentStack || null,
+          componentName,
+          message: sanitizedMessage,
+          stack: sanitizedStack,
+          componentStack: sanitizedCompStack,
           timestamp: new Date().toISOString(),
-          url: window.location.href,
+          url: sanitizedUrl,
           userAgent: navigator.userAgent
         })
       }).catch(() => {
@@ -63,14 +96,47 @@ export class DashboardErrorBoundary extends (React.Component as any) {
   }
 
   private handleRetry = () => {
-    this.setState({ hasError: false, error: null, errorId: null });
+    const currentRetries = this.state.retryCount + 1;
+    
+    // Check if session in localStorage is expired or invalid
+    try {
+      const sessionRaw = localStorage.getItem("reyadat_auth_session");
+      if (sessionRaw) {
+        const session = JSON.parse(sessionRaw);
+        if (session.timestamp && Date.now() - session.timestamp > 7 * 24 * 60 * 60 * 1000) {
+          localStorage.removeItem("reyadat_auth_session");
+          window.location.reload();
+          return;
+        }
+      }
+    } catch {}
+
+    // If repeated errors occur, clear transient subtab/filters to prevent infinite crash loops
+    if (currentRetries >= 2) {
+      try {
+        localStorage.removeItem("reyadat_admin_subtab");
+        localStorage.removeItem("reyadat_inventory_tab");
+        localStorage.removeItem("reyadat_beneficiaries_tab");
+      } catch {}
+    }
+
+    this.setState({ 
+      hasError: false, 
+      error: null, 
+      errorId: null, 
+      componentName: null,
+      retryCount: currentRetries 
+    });
+
     if (this.props.onReset) {
-      this.props.onReset();
+      try {
+        this.props.onReset();
+      } catch {}
     }
   };
 
   private handleGoHome = () => {
-    this.setState({ hasError: false, error: null, errorId: null });
+    this.setState({ hasError: false, error: null, errorId: null, retryCount: 0 });
     try {
       localStorage.removeItem("reyadat_admin_subtab");
       localStorage.removeItem("reyadat_inventory_tab");

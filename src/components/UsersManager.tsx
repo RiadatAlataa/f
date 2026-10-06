@@ -38,7 +38,8 @@ import {
   Sparkles,
   FileSpreadsheet,
   Download,
-  Info
+  Info,
+  Send
 } from "lucide-react";
 
 export interface SystemUser {
@@ -125,23 +126,23 @@ export const PERMISSION_CATEGORIES: {
     ]
   },
   {
-    id: "media",
-    nameAr: "الإعلام والعلاقات العامة (Media)",
-    icon: ExternalLink,
-    color: "from-purple-600 to-pink-600",
+    id: "partnerships",
+    nameAr: "تنمية الموارد المالية والشراكات (Fundraising & Partnerships)",
+    icon: Sparkles,
+    color: "from-purple-600 to-indigo-600",
     permissions: [
-      { key: "manage_homepage", labelAr: "إدارة الصفحة الرئيسية", descAr: "تعديل محتوى البوابة وسلايدر الواجهة والأخبار" },
-      { key: "manage_media", labelAr: "إدارة المركز الإعلامي", descAr: "نشر الأخبار والتغطيات وألبوم الصور" },
-      { key: "manage_partners", labelAr: "إدارة شركاء النجاح", descAr: "إضافة وتعديل وترتيب شركاء النجاح والرعاة" }
+      { key: "manage_partners", labelAr: "إدارة الشراكات والرعايات", descAr: "إضافة وتوثيق مذكرات التفاهم وعقود الرعاية والداعمين" },
+      { key: "manage_campaigns", labelAr: "إدارة الحملات والمبادرات الداعمة", descAr: "إعداد وتنفيذ حملات تنمية الموارد والتمويل" },
+      { key: "manage_grants", labelAr: "متابعة المنح والتمويل", descAr: "متابعة المنح الحكومية والخاصة وتنمية الاستدامة المالية" }
     ]
   },
   {
     id: "operations",
-    nameAr: "إدارة العمليات والتشغيل (Operations)",
+    nameAr: "دور مدير العمليات المستقل (Operations Role)",
     icon: Sliders,
     color: "from-amber-600 to-orange-600",
     permissions: [
-      { key: "operations_manager", labelAr: "صلاحيات مدير العمليات الكاملة", descAr: "أعلى مستوى تشغيلي للإشراف على كافة الإدارات" },
+      { key: "operations_manager", labelAr: "صلاحيات مدير العمليات الكاملة", descAr: "أعلى مستوى تشغيلي للإشراف على كافة الإدارات كدور إداري مستقل" },
       { key: "cross_department_access", labelAr: "الوصول العابر للإدارات", descAr: "الدخول والتنقل بين كافة الإدارات بدون قيود" },
       { key: "manage_directives", labelAr: "إدارة التوجيهات والتعاميم", descAr: "إصدار التوجيهات التشغيلية للإدارات" }
     ]
@@ -158,14 +159,16 @@ export const PERMISSION_CATEGORIES: {
     ]
   },
   {
-    id: "inventory",
-    nameAr: "المستودعات والمخزون (Inventory)",
+    id: "support_services",
+    nameAr: "إدارة الخدمات المساندة (Support Services)",
     icon: Building2,
     color: "from-emerald-700 to-teal-800",
     permissions: [
-      { key: "view_stock", labelAr: "عرض حركة المخزون", descAr: "مراقبة أرصدة الأصناف ومستويات التخزين" },
-      { key: "receive_data", labelAr: "استلام وتوريد بضائع", descAr: "تسجيل أذونات الإدخال وسندات الاستلام" },
-      { key: "disburse_data", labelAr: "صرف وتسليم أصناف", descAr: "تسجيل أذونات الإخراج وسندات الصرف" }
+      { key: "manage_it", labelAr: "إدارة تقنية المعلومات والأنظمة", descAr: "الإشراف على البنية التحتية والأنظمة التقنية وتوفير الاحتياجات" },
+      { key: "view_stock", labelAr: "إدارة المستودعات والعهد", descAr: "مراقبة أرصدة الأصناف ومستويات التخزين والعهد" },
+      { key: "receive_data", labelAr: "استلام وتوريد أصناف", descAr: "تسجيل أذونات الإدخال وسندات الاستلام" },
+      { key: "disburse_data", labelAr: "صرف وتسليم أصناف", descAr: "تسجيل أذونات الإخراج وسندات الصرف" },
+      { key: "manage_facilities", labelAr: "النقل والصيانة والمرافق والأمن", descAr: "الإشراف على النقل والصيانة الدورية والمرافق والأمن والسلامة" }
     ]
   },
   {
@@ -216,6 +219,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
   const [selectedUserForDetails, setSelectedUserForDetails] = useState<SystemUser | null>(null);
   const [selectedUserForReset, setSelectedUserForReset] = useState<SystemUser | null>(null);
   const [selectedUserForActivity, setSelectedUserForActivity] = useState<SystemUser | null>(null);
+  const [resetLinkModal, setResetLinkModal] = useState<{ user: SystemUser; resetLink: string; userEmail: string } | null>(null);
 
   // Modals Form States
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -421,6 +425,47 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
     }
   };
 
+  // Send Password Reset Link
+  const handleSendResetLink = async (user: SystemUser) => {
+    try {
+      const res = await fetch("/api/db/users/send-reset-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.userId || user.id })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "فشل إرسال رابط تغيير كلمة المرور.");
+
+      setResetLinkModal({
+        user,
+        resetLink: data.resetLink,
+        userEmail: data.userEmail || user.email || ""
+      });
+      setSuccessToast(`تم توليد رابط إعادة تعيين كلمة المرور بنجاح للمستخدم (${user.name}).`);
+    } catch (err: any) {
+      alert(err.message || "حدث خطأ أثناء توليد رابط استعادة كلمة المرور.");
+    }
+  };
+
+  // Toggle Email Verification
+  const handleToggleEmailVerification = async (user: SystemUser) => {
+    try {
+      const nextStatus = !user.emailVerified;
+      const res = await fetch("/api/db/users/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.userId || user.id, emailVerified: nextStatus })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "فشل تحديث حالة التحقق من البريد.");
+
+      setSuccessToast(data.message || `تم تحديث حالة التحقق من البريد للمستخدم (${user.name}).`);
+      fetchUsers();
+    } catch (err: any) {
+      alert(err.message || "حدث خطأ أثناء تحديث حالة البريد.");
+    }
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
       {/* Toast Notification */}
@@ -441,17 +486,17 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
             <div className="flex items-center gap-2.5">
               <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 px-3 py-1 rounded-full text-xs font-black flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                مركز إدارة الهوية والحوكمة الرقمية
+                مركز إدارة الحسابات والصلاحيات
               </span>
               <span className="bg-white/10 text-slate-300 px-3 py-1 rounded-full text-xs font-semibold">
-                صلاحيات تشغيلية مركزية
+                إدارة المستخدمين الإداريين
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              إدارة المستخدمين والصلاحيات والأمان
+              إدارة المستخدمين الإداريين
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              المنظومة المركزية لإدارة حسابات الإدارة العليا، مدير العمليات، مدراء الإدارات، الموظفين، الفرق التطوعية، وكافة المستخدمين، مع التحكم الكامل بكلمات المرور المشفرة وفرض التحديث ومصفوفة الصلاحيات.
+              المنظومة المركزية لإدارة حسابات الإدارة العليا، مدير العمليات، مدراء الإدارات الثماني، الموظفين، وأصحاب الصلاحيات، مع التحكم الكامل بكلمات المرور المشفرة وإرسال روابط الاستعادة والتحقق البريدي ومصفوفة الصلاحيات وسجلات النشاط.
             </p>
           </div>
 
@@ -712,7 +757,19 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                         {u.email && (
                           <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
                             <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[150px]" title={u.email}>{u.email}</span>
+                            <span className="truncate max-w-[130px]" title={u.email}>{u.email}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleEmailVerification(u)}
+                              title={u.emailVerified ? "البريد مؤكد وموثق (انقر لتغيير الحالة)" : "انقر لتأكيد والتحقق من البريد"}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-colors ${
+                                u.emailVerified
+                                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                              }`}
+                            >
+                              {u.emailVerified ? "موثق ✓" : "غير موثق"}
+                            </button>
                           </div>
                         )}
                         {u.phone && (
@@ -783,6 +840,15 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                             title="إعادة تعيين كلمة المرور"
                           >
                             <KeyRound className="w-4 h-4" />
+                          </button>
+
+                          {/* Send Password Reset Link */}
+                          <button
+                            onClick={() => handleSendResetLink(u)}
+                            className="p-2 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                            title="إرسال رابط تغيير كلمة المرور"
+                          >
+                            <Send className="w-4 h-4" />
                           </button>
 
                           {/* Toggle Active / Suspended */}
@@ -888,6 +954,75 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
           user={selectedUserForActivity}
           onClose={() => setSelectedUserForActivity(null)}
         />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: PASSWORD RESET LINK (رابط تغيير كلمة المرور) */}
+      {/* ========================================================================= */}
+      {resetLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in" dir="rtl">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-800 via-indigo-900 to-slate-900 p-6 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center text-purple-300">
+                  <Send className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black">رابط تغيير كلمة المرور</h2>
+                  <p className="text-xs text-purple-200">{resetLinkModal.user.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setResetLinkModal(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-2xl border border-purple-200 dark:border-purple-900 text-xs text-purple-900 dark:text-purple-200">
+                تم توليد رابط آمن صالح لمدة 24 ساعة للمستخدم <b>{resetLinkModal.user.name}</b> وإرسال إشعار إلى بريده: <span className="font-mono">{resetLinkModal.userEmail}</span>
+              </div>
+
+              <div>
+                <label className="text-xs font-black text-slate-700 dark:text-slate-300 block mb-1">
+                  رابط إعادة التعيين المباشر:
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    readOnly
+                    value={resetLinkModal.resetLink}
+                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 pl-24 font-mono text-xs text-slate-800 dark:text-slate-200 select-all"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(resetLinkModal.resetLink);
+                      setSuccessToast("تم نسخ رابط إعادة تعيين كلمة المرور إلى الحافظة!");
+                    }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs"
+                  >
+                    نسخ الرابط
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-400">
+                يمكنك مشاركة هذا الرابط مع الموظف أو المدير مباشرة لتسجيل كلمة مرور خاصة به، أو الاعتماد على الرابط المرسل تلقائياً إلى بريده المعتمد.
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => setResetLinkModal(null)}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1280,7 +1415,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {cat.permissions.map((p) => {
+                      {(cat.permissions || []).map((p) => {
                         const isChecked = selectedPermissions.includes(p.key);
                         return (
                           <label
@@ -1783,7 +1918,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        {cat.permissions.map((p) => {
+                        {(cat.permissions || []).map((p) => {
                           const isChecked = permissions.includes(p.key);
                           return (
                             <label

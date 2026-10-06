@@ -1465,9 +1465,9 @@ export default function App() {
 
   // Active Leader Object
   const activeLeaderTeam = authenticatedUser?.role === 'leader' 
-    ? (dbData.teams.find(t => t.id === authenticatedUser.teamId) || dbData.teams.find(t => t.leaderName === authenticatedUser.name) || dbData.teams[0])
-    : (dbData.teams.find(t => t.id === selectedLeaderId) || dbData.teams[0]);
-  const activeLeaderDept = dbData.departments.find(d => d.id === activeLeaderTeam?.departmentId) || dbData.departments[0];
+    ? (dbData?.teams?.find(t => t.id === authenticatedUser.teamId) || dbData?.teams?.find(t => t.leaderName === authenticatedUser.name) || dbData?.teams?.[0])
+    : (dbData?.teams?.find(t => t.id === selectedLeaderId) || dbData?.teams?.[0]);
+  const activeLeaderDept = dbData?.departments?.find(d => d.id === activeLeaderTeam?.departmentId) || dbData?.departments?.[0] || { id: 'dep-5', nameAr: 'إدارة التطوع' };
 
   // Active Volunteer Object
   const activeVolunteer = authenticatedUser?.role === 'volunteer'
@@ -1836,9 +1836,10 @@ export default function App() {
                   <DashboardErrorBoundary pageName="لوحة تحكم الإدارة">
                     <DepartmentDashboard
                       currentDepartment={
-                        dbData.departments.find(d => d.id === authenticatedUser?.departmentId) || 
-                        (currentRole === 'storekeeper' ? dbData.departments.find(d => d.id === 'dep-8') : undefined) || 
-                        dbData.departments[0]
+                        dbData?.departments?.find(d => d.id === authenticatedUser?.departmentId) || 
+                        (currentRole === 'storekeeper' ? dbData?.departments?.find(d => d.id === 'dep-8') : undefined) || 
+                        dbData?.departments?.[0] ||
+                        { id: authenticatedUser?.departmentId || 'dep-1', nameAr: authenticatedUser?.departmentName || 'إدارة الجمعية' }
                       }
                       currentUser={authenticatedUser}
                       userRole={currentRole}

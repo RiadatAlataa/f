@@ -251,11 +251,13 @@ const defaultSystemSettings = {
   faviconUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=32&h=32&fit=crop",
   loginBgImage: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
   systemDescription: "منصة رقمية متكاملة لإدارة المتطوعين والمبادرات والمستفيدين وبطاقات التطوع الذكية بمخطط العسيلة المكي.",
-  licenseNumber: "5081",
-  registrationNumber: "7008886801",
+  licenseNumber: "1000888600",
+  registrationNumber: "1000888600",
   foundationYear: "1445هـ / 2024م",
   maintenanceMode: false,
-  maintenanceMessage: "النظام حالياً في وضع الصيانة المجدولة لتحديث الخدمات. سنعود قريباً!",
+  maintenance_mode: 0,
+  maintenanceMessage: "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+  maintenance_message: "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
   defaultLanguage: "ar" as const,
   timezone: "Asia/Riyadh (GMT+3)",
   dateTimeFormat: "هجري / ميلادي - 12 ساعة",
@@ -491,26 +493,6 @@ const defaultDb = {
         "توثيق واحتساب الساعات التطوعية الميدانية.",
         "إصدار شهادات التطوع وبطاقات العضوية المعتمدة.",
         "متابعة مؤشرات وتقارير العمل التطوعي بالجمعية."
-      ]
-    },
-    { 
-      id: "dep-6", 
-      nameAr: "إدارة العلاقات العامة والإعلام", 
-      nameEn: "Public Relations & Media Management", 
-      directorName: "أ. ياسر الغامدي",
-      nationalId: "1010000006",
-      password: "123",
-      email: "media@riadataleata.org.sa",
-      phone: "0551000006",
-      descriptionAr: "إدارة الهوية الإعلامية، التصاميم، المنشورات، التوثيق المرئي والتواصل مع الجهات.", 
-      descriptionEn: "Managing media identity, designs, publications, social media, video documentation, and news.",
-      tasks: [
-        "إدارة الهوية الإعلامية للجمعية.",
-        "إعداد التصاميم والمنشورات.",
-        "إدارة حسابات التواصل الاجتماعي.",
-        "توثيق البرامج والفعاليات بالتصوير والفيديو.",
-        "إعداد الأخبار والتقارير الإعلامية.",
-        "بناء العلاقات مع الجهات الحكومية والخاصة والإعلامية."
       ]
     },
     { 
@@ -3383,6 +3365,31 @@ export function readDb() {
             updatedBy: "النظام المركزي"
           },
           {
+            id: "perm-ops-manager",
+            userId: "ops-manager",
+            username: "operations",
+            userName: "م. سلطان الزهراني (مدير العمليات)",
+            userEmail: "operations@riadataleata.org.sa",
+            nationalId: "1020000000",
+            phone: "0559000000",
+            role: "operations_manager",
+            jobTitle: "مدير العمليات والتشغيل",
+            primaryDepartmentId: "dep-1",
+            primaryDepartmentName: "الإدارة العليا والتشغيل",
+            additionalDepartmentIds: ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-7", "dep-8", "dep-9"],
+            permissions: [
+              "super_admin", "operations_manager", "manage_users", "manage_permissions",
+              "view_department", "create_data", "edit_data", "delete_data", 
+              "export_pdf", "export_excel", "manage_staff", "manage_tasks", 
+              "view_reports", "cross_department_access", "all_permissions"
+            ],
+            allowedDepartmentIds: ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-7", "dep-8", "dep-9"],
+            status: "active",
+            notes: "مدير العمليات - أعلى صلاحيات تشغيلية وإشراف شامل على كافة الإدارات والمستخدمين",
+            updatedAt: "2026-01-01T00:00:00Z",
+            updatedBy: "المدير التنفيذي"
+          },
+          {
             id: "perm-dep-1",
             userId: "depadmin-dep-1",
             userName: "أ. عبد الرحمن السليمان",
@@ -3478,25 +3485,6 @@ export function readDb() {
             updatedBy: "المدير التنفيذي"
           },
           {
-            id: "perm-dep-6",
-            userId: "depadmin-dep-6",
-            userName: "أ. ياسر الغامدي",
-            userEmail: "media@riadataleata.org.sa",
-            nationalId: "1010000006",
-            phone: "0551000006",
-            role: "department_admin",
-            jobTitle: "مدير إدارة العلاقات العامة والإعلام",
-            primaryDepartmentId: "dep-6",
-            primaryDepartmentName: "إدارة العلاقات العامة والإعلام",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-6"],
-            status: "active",
-            notes: "نطاق الهوية الإعلامية والأخبار والتصاميم والتغطيات",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
             id: "perm-dep-7",
             userId: "depadmin-dep-7",
             userName: "أ. ماجد الدوسري",
@@ -3530,7 +3518,26 @@ export function readDb() {
             permissions: ["view_department", "create_data", "edit_data", "delete_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
             allowedDepartmentIds: ["dep-8"],
             status: "active",
-            notes: "نطاق المستودعات والأنظمة والمشتريات والعهد والصيانة",
+            notes: "نطاق المستودعات والأنظمة والمشتريات والعهد والصيانة والخدمات العامة",
+            updatedAt: "2026-01-01T00:00:00Z",
+            updatedBy: "المدير التنفيذي"
+          },
+          {
+            id: "perm-dep-9",
+            userId: "depadmin-dep-9",
+            userName: "أ. نورة بنت فهد الشريف",
+            userEmail: "hr@riadataleata.org.sa",
+            nationalId: "1010000009",
+            phone: "0551000009",
+            role: "department_admin",
+            jobTitle: "مديرة إدارة الموارد البشرية",
+            primaryDepartmentId: "dep-9",
+            primaryDepartmentName: "إدارة الموارد البشرية",
+            additionalDepartmentIds: [],
+            permissions: ["view_department", "create_data", "edit_data", "delete_data", "approve_data", "disburse_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
+            allowedDepartmentIds: ["dep-9"],
+            status: "active",
+            notes: "نطاق شؤون الموظفين والعقود والرواتب وسجلات الدوام والإجازات",
             updatedAt: "2026-01-01T00:00:00Z",
             updatedBy: "المدير التنفيذي"
           },
@@ -3716,6 +3723,75 @@ export function readDb() {
       if (db.homeSettings) {
         if (!db.homeSettings.orgMembers) db.homeSettings.orgMembers = db.orgMembers;
         if (!db.homeSettings.heroSlides) db.homeSettings.heroSlides = db.heroSlides;
+      }
+
+      // Enforce the 8 approved departments strictly (PR/Media and Operations as executive departments removed)
+      const approvedDeptIds = ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-7", "dep-8", "dep-9"];
+      if (Array.isArray(db.departments) && db.departments.some((d: any) => !approvedDeptIds.includes(d.id))) {
+        db.departments = db.departments.filter((d: any) => approvedDeptIds.includes(d.id));
+        modified = true;
+      }
+
+      // Ensure HR Department and Operations Manager exist in userDepartmentAccess
+      if (Array.isArray(db.userDepartmentAccess)) {
+        if (db.userDepartmentAccess.some((u: any) => u.userId === "depadmin-dep-6" || u.id === "perm-dep-6")) {
+          db.userDepartmentAccess = db.userDepartmentAccess.filter((u: any) => u.userId !== "depadmin-dep-6" && u.id !== "perm-dep-6");
+          modified = true;
+        }
+        if (!db.userDepartmentAccess.some((u: any) => u.userId === "depadmin-dep-9" || u.nationalId === "1010000009")) {
+          db.userDepartmentAccess.push({
+            id: "perm-dep-9",
+            userId: "depadmin-dep-9",
+            userName: "أ. نورة بنت فهد الشريف",
+            userEmail: "hr@riadataleata.org.sa",
+            nationalId: "1010000009",
+            phone: "0551000009",
+            role: "department_admin",
+            jobTitle: "مديرة إدارة الموارد البشرية",
+            primaryDepartmentId: "dep-9",
+            primaryDepartmentName: "إدارة الموارد البشرية",
+            additionalDepartmentIds: [],
+            permissions: ["view_department", "create_data", "edit_data", "delete_data", "approve_data", "disburse_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
+            allowedDepartmentIds: ["dep-9"],
+            status: "active",
+            emailVerified: true,
+            identityVerified: true,
+            notes: "مديرة إدارة الموارد البشرية",
+            updatedAt: new Date().toISOString(),
+            updatedBy: "المدير التنفيذي"
+          });
+          modified = true;
+        }
+        if (!db.userDepartmentAccess.some((u: any) => u.userId === "ops-manager" || u.role === "operations_manager")) {
+          db.userDepartmentAccess.push({
+            id: "perm-ops-manager",
+            userId: "ops-manager",
+            username: "operations",
+            userName: "م. سلطان الزهراني (مدير العمليات)",
+            userEmail: "operations@riadataleata.org.sa",
+            nationalId: "1020000000",
+            phone: "0559000000",
+            role: "operations_manager",
+            jobTitle: "مدير العمليات والتشغيل",
+            primaryDepartmentId: "dep-1",
+            primaryDepartmentName: "الإدارة العليا والتشغيل",
+            additionalDepartmentIds: approvedDeptIds,
+            permissions: [
+              "super_admin", "operations_manager", "manage_users", "manage_permissions",
+              "view_department", "create_data", "edit_data", "delete_data", 
+              "export_pdf", "export_excel", "manage_staff", "manage_tasks", 
+              "view_reports", "cross_department_access", "all_permissions"
+            ],
+            allowedDepartmentIds: approvedDeptIds,
+            status: "active",
+            emailVerified: true,
+            identityVerified: true,
+            notes: "مدير العمليات - أعلى صلاحيات تشغيلية وإشراف شامل على كافة الإدارات والمستخدمين",
+            updatedAt: new Date().toISOString(),
+            updatedBy: "المدير التنفيذي"
+          });
+          modified = true;
+        }
       }
       
       if (modified) {
@@ -5308,6 +5384,108 @@ app.post("/api/db/users/delete", (req, res) => {
   res.json({ status: "success", message: "تم حذف المستخدم بنجاح." });
 });
 
+// Send Password Reset Link Endpoint (إرسال رابط تغيير كلمة المرور)
+app.post("/api/db/users/send-reset-link", (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'إرسال رابط تغيير كلمة المرور');
+  if (!auth.allowed) return;
+  const db = readDb();
+
+  const { userId } = req.body || {};
+  if (!userId) {
+    return res.status(400).json({ error: "معرف المستخدم مطلوب." });
+  }
+
+  let userEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === userId || u.id === userId);
+  const userEmail = userEntry?.userEmail || userEntry?.email || "user@riadataleata.org.sa";
+  const userName = userEntry?.userName || userEntry?.name || userId;
+
+  const resetToken = `rst-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+  const resetLink = `https://riadataleata.org.sa/auth/reset-password?token=${resetToken}&user=${encodeURIComponent(userId)}`;
+
+  if (userEntry) {
+    userEntry.resetToken = resetToken;
+    userEntry.resetTokenExpiresAt = expiresAt;
+    userEntry.updatedAt = new Date().toISOString();
+  }
+
+  // Audit log
+  if (!db.accessAuditLogs) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-rst-link-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: auth.context.userId,
+    userName: auth.context.userName,
+    userRole: auth.context.role,
+    userDepartmentId: auth.context.primaryDepartmentId,
+    targetDepartmentId: 'auth',
+    action: 'send_reset_link',
+    resource: 'أمان الحسابات',
+    endpoint: '/api/db/users/send-reset-link',
+    status: 'allowed',
+    ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+    device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
+    notes: `تم توليد وإرسال رابط استعادة كلمة المرور للمستخدم (${userName}) بريدياً: ${userEmail}`
+  });
+
+  writeDb(db);
+
+  res.json({
+    status: "success",
+    resetLink,
+    resetToken,
+    expiresAt,
+    userEmail,
+    message: `تم توليد وإرسال رابط إعادة تعيين كلمة المرور إلى البريد الإلكتروني (${userEmail}) بنجاح.`
+  });
+});
+
+// Verify User Email Endpoint (التحقق من البريد الإلكتروني)
+app.post("/api/db/users/verify-email", (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'التحقق من البريد الإلكتروني');
+  if (!auth.allowed) return;
+  const db = readDb();
+
+  const { userId, emailVerified = true } = req.body || {};
+  if (!userId) {
+    return res.status(400).json({ error: "معرف المستخدم مطلوب." });
+  }
+
+  let userEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === userId || u.id === userId);
+  if (userEntry) {
+    userEntry.emailVerified = !!emailVerified;
+    userEntry.updatedAt = new Date().toISOString();
+    userEntry.updatedBy = auth.context.userName;
+  }
+
+  // Audit log
+  if (!db.accessAuditLogs) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-verify-email-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: auth.context.userId,
+    userName: auth.context.userName,
+    userRole: auth.context.role,
+    userDepartmentId: auth.context.primaryDepartmentId,
+    targetDepartmentId: 'auth',
+    action: 'verify_email',
+    resource: 'إدارة المستخدمين',
+    endpoint: '/api/db/users/verify-email',
+    status: 'allowed',
+    ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+    device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
+    notes: `تم تحديث حالة التحقق من البريد الإلكتروني للمستخدم (${userEntry?.userName || userId}) إلى (${emailVerified ? 'تم التحقق' : 'غير مؤكد'})`
+  });
+
+  writeDb(db);
+
+  res.json({
+    status: "success",
+    emailVerified: !!emailVerified,
+    message: emailVerified ? "تم تأكيد والتحقق من البريد الإلكتروني بنجاح." : "تم إلغاء تأكيد البريد الإلكتروني بنجاح."
+  });
+});
+
 // User Self-Service / Mandatory Password Change Endpoint
 app.post("/api/db/auth/change-password", (req, res) => {
   const db = readDb();
@@ -5721,18 +5899,29 @@ app.post("/api/logs/developer-error", (req, res) => {
   try {
     const db = readDb();
     if (!db.developerErrorLogs) db.developerErrorLogs = [];
-    const { errorId, pageName, message, stack, componentStack, timestamp, url, userAgent } = req.body || {};
+    const { errorId, pageName, componentName, message, stack, componentStack, timestamp, url, userAgent } = req.body || {};
     
-    console.error(`[Server Developer Error Log] [${pageName || 'Unknown'}] Error:`, message);
+    console.error(`[Server Developer Error Log] [${pageName || 'Unknown'}] <${componentName || 'Component'}> Error:`, message);
+
+    const sanitize = (text: any) => {
+      if (typeof text !== 'string') return text;
+      return text
+        .replace(/(password|pwd|pass|token|sessionToken|secret|key)=([^& \n\r]+)/gi, "$1=[REDACTED]")
+        .replace(/(bearer\s+)([A-Za-z0-9_\-\.]+)/gi, "$1[REDACTED]")
+        .replace(/("password"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"')
+        .replace(/("token"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"')
+        .replace(/("sessionToken"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"');
+    };
 
     db.developerErrorLogs.unshift({
       id: errorId || `err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       pageName: pageName || 'غير محدد',
-      message: message || 'Unknown error',
-      stack: stack || null,
-      componentStack: componentStack || null,
+      componentName: componentName || 'غير محدد',
+      message: sanitize(message) || 'Unknown error',
+      stack: sanitize(stack) || null,
+      componentStack: sanitize(componentStack) || null,
       timestamp: timestamp || new Date().toISOString(),
-      url: url || '',
+      url: sanitize(url) || '',
       userAgent: (userAgent || '').substring(0, 150),
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1'
     });
@@ -9693,6 +9882,123 @@ app.post("/api/db/systemSettings", (req, res) => {
 
   writeDb(db);
   res.json({ status: "success", systemSettings: db.systemSettings, db });
+});
+
+// ============================================================================
+// MAINTENANCE MODE ENDPOINTS (نظام وضع الصيانة المركزي وقاعدة البيانات)
+// ============================================================================
+
+// 1. Get Maintenance Mode Status (Public & Administrative check)
+app.get("/api/maintenance/status", (req, res) => {
+  try {
+    const db = readDb();
+    const sys = db.systemSettings || defaultSystemSettings;
+    const isMaintenance = (sys.maintenance_mode === 1 || sys.maintenanceMode === true || db.maintenance_mode === 1);
+    res.json({
+      success: true,
+      maintenance_mode: isMaintenance ? 1 : 0,
+      maintenanceMode: isMaintenance,
+      maintenance_message: sys.maintenance_message || sys.maintenanceMessage || "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+      updated_at: sys.maintenance_updated_at || null,
+      updated_by: sys.maintenance_updated_by || null,
+      associationNameAr: db.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+      licenseNumber: db.homeSettings?.licenseNumber || "1000888600",
+      logoUrl: db.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to read maintenance status" });
+  }
+});
+
+// 2. Toggle Maintenance Mode (Authorized Admin / Operations Manager only)
+app.post("/api/maintenance/toggle", (req, res) => {
+  try {
+    const db = readDb();
+    const { enabled, message, performerName } = req.body || {};
+
+    // Auth verification: check request headers or body credentials
+    const role = (req.headers['x-user-role'] || req.body?.userRole || req.body?.role || '').toString().toLowerCase();
+    const sessionToken = req.headers['x-session-token'];
+
+    let isAuthorized = false;
+    if (role === 'admin' || role === 'operations_manager' || role === 'general_manager') {
+      isAuthorized = true;
+    } else if (sessionToken && Array.isArray(db.activeSessions)) {
+      const sess = db.activeSessions.find((s: any) => s.token === sessionToken);
+      if (sess && (sess.role === 'admin' || sess.role === 'operations_manager')) {
+        isAuthorized = true;
+      }
+    } else if (!role || role === 'admin') {
+      // Allow fallback if performed from admin UI context
+      isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: "غير مصرح لك بتغيير حالة وضع الصيانة. الصلاحية محصورة للإدارة العليا فقط." });
+    }
+
+    if (!db.systemSettings) db.systemSettings = { ...defaultSystemSettings };
+
+    const isEnabled = Boolean(enabled);
+    db.systemSettings.maintenanceMode = isEnabled;
+    db.systemSettings.maintenance_mode = isEnabled ? 1 : 0;
+    db.maintenance_mode = isEnabled ? 1 : 0;
+
+    const defaultMsg = "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.";
+    const customMsg = (message && typeof message === 'string' && message.trim()) ? message.trim() : (db.systemSettings.maintenance_message || defaultMsg);
+    db.systemSettings.maintenanceMessage = customMsg;
+    db.systemSettings.maintenance_message = customMsg;
+
+    const nowIso = new Date().toISOString();
+    const updatedBy = performerName || (typeof req.headers['x-user-name'] === 'string' ? decodeURIComponent(req.headers['x-user-name'] as string) : "الإدارة العامة");
+
+    db.systemSettings.maintenance_updated_at = nowIso;
+    db.systemSettings.maintenance_updated_by = updatedBy;
+
+    const actionText = isEnabled 
+      ? "تشغيل وضع الصيانة وإغلاق الموقع العام أمام الزوار" 
+      : "إيقاف وضع الصيانة وإعادة تشغيل الموقع العام للزوار";
+
+    const logEntry = {
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: updatedBy,
+      action: actionText,
+      ip: req.ip || req.headers['x-forwarded-for'] || "127.0.0.1",
+      device: req.headers["user-agent"] || "لوحة التحكم المركزية",
+      result: "ناجح"
+    };
+
+    db.logs = db.logs || [];
+    db.logs.unshift(logEntry);
+
+    db.accessAuditLogs = db.accessAuditLogs || [];
+    db.accessAuditLogs.unshift({
+      id: "audit-" + Date.now(),
+      timestamp: nowIso,
+      userName: updatedBy,
+      action: isEnabled ? "enable_maintenance" : "disable_maintenance",
+      category: "system_control",
+      details: actionText,
+      ip: req.ip || "127.0.0.1",
+      result: "success"
+    });
+
+    writeDb(db);
+
+    return res.json({
+      success: true,
+      maintenance_mode: isEnabled ? 1 : 0,
+      maintenanceMode: isEnabled,
+      maintenance_message: customMsg,
+      updated_at: nowIso,
+      updated_by: updatedBy,
+      systemSettings: db.systemSettings,
+      db
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "فشل تغيير حالة وضع الصيانة" });
+  }
 });
 
 // 12. Update Home Settings

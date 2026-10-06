@@ -184,7 +184,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 }) => {
   // Resolve Target Department
   const deptId = currentDepartment?.id || userDepartmentId || currentUser?.departmentId || currentUser?.primaryDepartmentId || 'dep-1';
-  const currentDept = currentDepartment || departments.find(d => d.id === deptId) || departments[0] || {
+  const currentDept = currentDepartment || (Array.isArray(departments) ? departments.find(d => d.id === deptId) : undefined) || (Array.isArray(departments) ? departments[0] : undefined) || {
     id: deptId,
     nameAr: currentUser?.departmentName || currentUser?.departmentNameAr || "إدارة الجمعية",
     nameEn: "Department Management",
@@ -199,7 +199,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     ]
   };
 
-  const deptNameAr = (currentDept.nameAr || currentUser?.departmentName || currentUser?.departmentNameAr || '').toLowerCase();
+  const deptNameAr = (currentDept?.nameAr || currentUser?.departmentName || currentUser?.departmentNameAr || '').toLowerCase();
   const jobTitle = (currentUser?.jobTitle || '').toLowerCase();
   const effectiveRole = currentUser?.role || userRole;
 
@@ -211,10 +211,10 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   const isFinanceDept = deptId === 'dep-2' || deptNameAr.includes('مالي') || jobTitle.includes('مالي') || jobTitle.includes('محاسب');
   const isProjectsDept = deptId === 'dep-3' || deptNameAr.includes('برامج') || deptNameAr.includes('مشاريع') || jobTitle.includes('مشاريع');
   const isMediaDept = deptId === 'dep-6' || deptNameAr.includes('إعلام') || deptNameAr.includes('علاقات عامة') || jobTitle.includes('إعلام');
-  const isExecutiveDept = deptId === 'dep-1' || deptNameAr.includes('تنفيذية') || effectiveRole === 'admin';
+  const isExecutiveDept = deptId === 'dep-1' || deptNameAr.includes('تنفيذية') || effectiveRole === 'admin' || effectiveRole === 'operations_manager';
 
   // Role & Granular RBAC Permissions
-  const isDirector = effectiveRole === 'department_admin' || effectiveRole === 'admin' || effectiveRole === 'storekeeper';
+  const isDirector = effectiveRole === 'department_admin' || effectiveRole === 'admin' || effectiveRole === 'operations_manager' || effectiveRole === 'storekeeper';
   const userPermissions: string[] = currentUser?.permissions || (isDirector ? [
     'view_department', 'create_data', 'edit_data', 'delete_data', 'approve_data', 
     'disburse_data', 'receive_data', 'print_data', 'export_pdf', 'export_excel', 
@@ -1024,13 +1024,13 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
         {/* ======================================================== */}
 
         <DashboardErrorBoundary 
-          pageName={`إدارة ${currentDept.nameAr} - ${allDepartmentTabs.find(t => t.id === activeTab)?.label || activeTab}`}
+          pageName={`إدارة ${currentDept?.nameAr || 'الجمعية'} - ${allDepartmentTabs.find(t => t.id === activeTab)?.label || activeTab}`}
           onReset={() => setActiveTab(getDefaultTab())}
         >
         {!isPageAllowed(activeTab) ? (
           <AccessDeniedCard
             pageTitle={allDepartmentTabs.find(t => t.id === activeTab)?.label || activeTab}
-            departmentName={currentDept.nameAr}
+            departmentName={currentDept?.nameAr || 'إدارة الجمعية'}
             allowedPages={allowedDepartmentTabs}
             onNavigateToAllowed={(pageId) => setActiveTab(pageId)}
           />

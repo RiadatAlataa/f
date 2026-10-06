@@ -50,25 +50,25 @@ export const OPERATION_TYPE_CONFIG: Record<OperationType, { label: string; badge
 
 // Base registry mapped to actual departments
 const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
-  // 1. إدارة المخزن (dep-8 / المستودع والمخزن والخدمات المساندة)
+  // 1. إدارة الخدمات المساندة (dep-8)
   {
     departmentId: 'dep-8',
-    departmentNameAr: 'إدارة المخزن والمستودع',
-    departmentNameEn: 'Warehouse & Inventory Management',
+    departmentNameAr: 'إدارة الخدمات المساندة',
+    departmentNameEn: 'Support Services Management',
     iconName: 'Boxes',
-    description: 'التحكم في حركة الأصناف، المخزون، التوريد، الصرف، الجرد، والباركود.',
+    description: 'إدارة تقنية المعلومات والأنظمة، المستودعات والعهد، النقل والحركة، الصيانة والمرافق والأمن والسلامة.',
     permissions: [
-      { id: 'warehouse_view_stock', label: 'عرض المخزون', operationType: 'view', departmentId: 'dep-8', legacyKeys: ['view_department'] },
-      { id: 'warehouse_add_item', label: 'إضافة صنف', operationType: 'create', departmentId: 'dep-8', legacyKeys: ['create_data', 'items'] },
-      { id: 'warehouse_edit_item', label: 'تعديل صنف', operationType: 'edit', departmentId: 'dep-8', legacyKeys: ['edit_data'] },
-      { id: 'warehouse_delete_item', label: 'حذف صنف', operationType: 'delete', departmentId: 'dep-8', legacyKeys: ['delete_data'] },
-      { id: 'warehouse_receive', label: 'استلام أصناف', operationType: 'receive', departmentId: 'dep-8', legacyKeys: ['receive_data', 'inbound'] },
-      { id: 'warehouse_disburse', label: 'صرف أصناف', operationType: 'disburse', departmentId: 'dep-8', legacyKeys: ['disburse_data', 'outbound'] },
-      { id: 'warehouse_manage_quantities', label: 'إدارة الكميات', operationType: 'manage', departmentId: 'dep-8', legacyKeys: ['edit_data', 'transfer'] },
-      { id: 'warehouse_manage_components', label: 'إدارة مكونات الأصناف', operationType: 'manage', departmentId: 'dep-8', legacyKeys: ['create_data', 'edit_data'] },
-      { id: 'warehouse_manage_barcodes', label: 'إدارة الباركود', operationType: 'manage', departmentId: 'dep-8', legacyKeys: ['print_data'] },
-      { id: 'warehouse_audit_logs', label: 'مشاهدة حركات المخزن', operationType: 'view', departmentId: 'dep-8', legacyKeys: ['audit', 'view_reports'] },
-      { id: 'warehouse_reports', label: 'التقارير', operationType: 'reports', departmentId: 'dep-8', legacyKeys: ['view_reports'] },
+      { id: 'support_view_services', label: 'عرض الخدمات المساندة والمرافق', operationType: 'view', departmentId: 'dep-8', legacyKeys: ['view_department'] },
+      { id: 'support_manage_it', label: 'إدارة الأنظمة وتقنية المعلومات', operationType: 'manage', departmentId: 'dep-8', legacyKeys: ['manage_tasks'] },
+      { id: 'warehouse_view_stock', label: 'عرض المستودعات والعهد', operationType: 'view', departmentId: 'dep-8', legacyKeys: ['view_department'] },
+      { id: 'warehouse_add_item', label: 'إضافة صنف وعهدة', operationType: 'create', departmentId: 'dep-8', legacyKeys: ['create_data', 'items'] },
+      { id: 'warehouse_edit_item', label: 'تعديل صنف وعهدة', operationType: 'edit', departmentId: 'dep-8', legacyKeys: ['edit_data'] },
+      { id: 'warehouse_delete_item', label: 'حذف صنف وعهدة', operationType: 'delete', departmentId: 'dep-8', legacyKeys: ['delete_data'] },
+      { id: 'warehouse_receive', label: 'استلام وتوريد أصناف', operationType: 'receive', departmentId: 'dep-8', legacyKeys: ['receive_data', 'inbound'] },
+      { id: 'warehouse_disburse', label: 'صرف وتسليم عهد', operationType: 'disburse', departmentId: 'dep-8', legacyKeys: ['disburse_data', 'outbound'] },
+      { id: 'support_maintenance', label: 'متابعة الصيانة الدورية والنقل', operationType: 'manage', departmentId: 'dep-8', legacyKeys: ['manage_tasks'] },
+      { id: 'support_safety', label: 'متابعة الأمن والسلامة والمرافق', operationType: 'manage', departmentId: 'dep-8', legacyKeys: ['manage_tasks'] },
+      { id: 'warehouse_reports', label: 'التقارير الإحصائية', operationType: 'reports', departmentId: 'dep-8', legacyKeys: ['view_reports'] },
       { id: 'warehouse_print', label: 'الطباعة', operationType: 'print', departmentId: 'dep-8', legacyKeys: ['print_data'] },
       { id: 'warehouse_export', label: 'التصدير', operationType: 'export', departmentId: 'dep-8', legacyKeys: ['export_excel', 'export_pdf'] }
     ]
@@ -185,27 +185,7 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
     ]
   },
 
-  // 7. إدارة العلاقات العامة والإعلام (dep-6)
-  {
-    departmentId: 'dep-6',
-    departmentNameAr: 'إدارة العلاقات العامة والإعلام',
-    departmentNameEn: 'Public Relations & Media Management',
-    iconName: 'Megaphone',
-    description: 'المركز الإعلامي، الأخبار، ألبومات التوثيق، والتواصل المؤسسي.',
-    permissions: [
-      { id: 'media_view_content', label: 'عرض المحتوى والأخبار', operationType: 'view', departmentId: 'dep-6', legacyKeys: ['view_department'] },
-      { id: 'media_add_news', label: 'إضافة خبر أو بيان صحفي', operationType: 'create', departmentId: 'dep-6', legacyKeys: ['create_data'] },
-      { id: 'media_edit_news', label: 'تعديل المحتوى الإعلامي', operationType: 'edit', departmentId: 'dep-6', legacyKeys: ['edit_data'] },
-      { id: 'media_delete_news', label: 'حذف خبر أو ألبوم', operationType: 'delete', departmentId: 'dep-6', legacyKeys: ['delete_data'] },
-      { id: 'media_approve_posts', label: 'اعتماد المنشورات الرسمية', operationType: 'approve', departmentId: 'dep-6', legacyKeys: ['approve_data'] },
-      { id: 'media_manage_gallery', label: 'إدارة الألبومات والتغطيات', operationType: 'manage', departmentId: 'dep-6', legacyKeys: ['manage_tasks'] },
-      { id: 'media_reports', label: 'التقارير', operationType: 'reports', departmentId: 'dep-6', legacyKeys: ['view_reports'] },
-      { id: 'media_print', label: 'الطباعة', operationType: 'print', departmentId: 'dep-6', legacyKeys: ['print_data'] },
-      { id: 'media_export', label: 'التصدير', operationType: 'export', departmentId: 'dep-6', legacyKeys: ['export_excel', 'export_pdf'] }
-    ]
-  },
-
-  // 8. إدارة تنمية الموارد المالية والشراكات (dep-7)
+  // 7. إدارة تنمية الموارد المالية والشراكات (dep-7)
   {
     departmentId: 'dep-7',
     departmentNameAr: 'إدارة تنمية الموارد المالية والشراكات',
@@ -298,7 +278,7 @@ export function getDepartmentPermissions(departmentId: string, customDepartments
  */
 export function getDepartmentPermissionIds(departmentId: string, customDepartments?: any[]): string[] {
   const group = getDepartmentPermissions(departmentId, customDepartments);
-  if (!group) return [];
+  if (!group || !Array.isArray(group.permissions)) return [];
   return group.permissions.map(p => p.id);
 }
 
@@ -307,12 +287,12 @@ export function getDepartmentPermissionIds(departmentId: string, customDepartmen
  */
 export function expandPermissionsWithLegacyKeys(permIds: string[], customDepartments?: any[]): string[] {
   const allGroups = getAllDepartmentPermissions(customDepartments);
-  const set = new Set<string>(permIds);
+  const set = new Set<string>(Array.isArray(permIds) ? permIds : []);
 
-  allGroups.forEach(group => {
-    group.permissions.forEach(p => {
+  (Array.isArray(allGroups) ? allGroups : []).forEach(group => {
+    (Array.isArray(group?.permissions) ? group.permissions : []).forEach(p => {
       if (set.has(p.id)) {
-        (p.legacyKeys || []).forEach(k => set.add(k));
+        (Array.isArray(p.legacyKeys) ? p.legacyKeys : []).forEach(k => set.add(k));
       }
     });
   });
