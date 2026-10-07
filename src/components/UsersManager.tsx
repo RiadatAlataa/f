@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { generateStrongPassword, evaluatePasswordStrength } from "../utils/passwordSecurity";
+import { buildApiUrl, getAuthHeaders } from "../config/api";
 import {
   Users,
   UserPlus,
@@ -237,16 +238,38 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/db/users");
+      const url = buildApiUrl("/api/db/users");
+      const headers = {
+        'Accept': 'application/json',
+        ...getAuthHeaders()
+      };
+      console.log(`[UsersManager] Fetching users from: ${url}`);
+      const res = await fetch(url, {
+        headers,
+        cache: 'no-store'
+      });
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(data?.error || "فشل جلب قائمة المستخدمين من الخادم.");
+        const status = res.status;
+        console.error(`[UsersManager] API returned error ${status}:`, data);
+        if (status === 401) {
+          throw new Error("انتهت الجلسة أو يجب تسجيل الدخول بحساب مصرح (401 Unauthorized)");
+        } else if (status === 403) {
+          throw new Error(data?.error || "ليس لديك الصلاحية المطلوبة (manage_staff) لعرض وإدارة المستخدمين (403 Forbidden). يتطلب حساب الإدارة العليا أو مدير العمليات.");
+        } else if (status === 404) {
+          throw new Error("مسار واجهة المستخدمين غير موجود على الخادم (404 Not Found). يرجى التأكد من تشغيل الـBackend.");
+        } else if (status >= 500) {
+          throw new Error(`خطأ في خادم التطبيق (${status}): ${data?.error || data?.message || 'يرجى مراجعة سجلات الخادم.'}`);
+        } else {
+          throw new Error(data?.error || data?.message || `فشل جلب قائمة المستخدمين من الخادم (كود الاستجابة: ${status}).`);
+        }
       }
 
-      setUsers(data.users || []);
+      setUsers(data?.users || []);
     } catch (err: any) {
-      setError(err.message || "حدث خطأ أثناء جلب بيانات المستخدمين.");
+      console.error("[UsersManager] Exception in fetchUsers:", err);
+      setError(err.message || "حدث خطأ أثناء جلب بيانات المستخدمين من الخادم.");
     } finally {
       setIsLoading(false);
     }
@@ -377,9 +400,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
     if (!window.confirm(confirmMessage)) return;
 
     try {
-      const res = await fetch("/api/db/users/toggle-status", {
+      const res = await fetch(buildApiUrl("/api/db/users/toggle-status"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           userId: user.userId || user.id,
           status: nextStatus,
@@ -409,9 +432,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
     }
 
     try {
-      const res = await fetch("/api/db/users/delete", {
+      const res = await fetch(buildApiUrl("/api/db/users/delete"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ userId: user.userId || user.id })
       });
 
@@ -428,9 +451,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
   // Send Password Reset Link
   const handleSendResetLink = async (user: SystemUser) => {
     try {
-      const res = await fetch("/api/db/users/send-reset-link", {
+      const res = await fetch(buildApiUrl("/api/db/users/send-reset-link"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ userId: user.userId || user.id })
       });
       const data = await res.json().catch(() => null);
@@ -451,9 +474,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
   const handleToggleEmailVerification = async (user: SystemUser) => {
     try {
       const nextStatus = !user.emailVerified;
-      const res = await fetch("/api/db/users/verify-email", {
+      const res = await fetch(buildApiUrl("/api/db/users/verify-email"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ userId: user.userId || user.id, emailVerified: nextStatus })
       });
       const data = await res.json().catch(() => null);
@@ -1111,9 +1134,9 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
 
     setIsLoading(true);
     try {
-      const res = await fetch("/api/db/users/create", {
+      const res = await fetch(buildApiUrl("/api/db/users/create"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           name: name.trim(),
           username: username.trim() || undefined,
@@ -1532,9 +1555,9 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch("/api/db/users/update", {
+      const res = await fetch(buildApiUrl("/api/db/users/update"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           userId: user.userId || user.id,
           name: name.trim(),
@@ -2030,9 +2053,9 @@ const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
     setIsLoading(true);
 
     try {
-      const res = await fetch("/api/db/users/reset-password", {
+      const res = await fetch(buildApiUrl("/api/db/users/reset-password"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           userId: user.userId || user.id,
           newPassword: newPassword.trim(),
@@ -2194,7 +2217,9 @@ const UserActivityTable: React.FC<{ userId: string }> = ({ userId }) => {
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        const res = await fetch(`/api/db/users/activity-logs?userId=${encodeURIComponent(userId)}`);
+        const res = await fetch(buildApiUrl(`/api/db/users/activity-logs?userId=${encodeURIComponent(userId)}`), {
+          headers: getAuthHeaders()
+        });
         const data = await res.json().catch(() => null);
         if (data && data.status === "success") {
           setLogs(data.logs || []);

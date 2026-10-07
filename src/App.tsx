@@ -1484,7 +1484,12 @@ export default function App() {
       
       {/* INTERNAL PORTAL HEADER (Shown only when in management portal AND authenticated, not on login or public homepage) */}
       {currentRole !== 'public' && authenticatedUser && (
-        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-40 no-print">
+        <header 
+          style={{
+            paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
+          }}
+          className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-[999] no-print max-w-full box-border"
+        >
           <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-2.5">
             {/* Main Header Bar */}
             <div className="flex justify-between items-center gap-2 sm:gap-4">

@@ -93,11 +93,12 @@ export const sanitizeApiBaseUrl = (rawUrl: string): { cleanUrl: string; error?: 
 
 /**
  * Returns the currently active API Base URL.
- * Automatically resolved centrally from environment configuration and domain.
- * Users never need to configure this manually.
+ * Automatically resolved from the VITE_API_URL environment variable.
+ * If empty, defaults to same-origin relative URL (e.g. standard for production reverse proxy & custom domain).
+ * Never hardcodes localhost or test URLs.
  */
 export const getApiBaseUrl = (): string => {
-  // 1. Central Project & Deployment Environment Variable (Vercel / Render / Cloud Run)
+  // 1. Central Project & Deployment Environment Variable: VITE_API_URL
   const envMeta = (typeof import.meta !== 'undefined' && import.meta && (import.meta as any).env) ? (import.meta as any).env : {};
   const envUrl = (
     envMeta.VITE_API_URL || 
@@ -106,14 +107,14 @@ export const getApiBaseUrl = (): string => {
     ''
   );
 
-  if (envUrl && envUrl.trim()) {
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     const sanitized = sanitizeApiBaseUrl(envUrl);
     if (sanitized.cleanUrl) {
       return sanitized.cleanUrl;
     }
   }
 
-  // 2. Global Server Injected Configuration
+  // 2. Global Server Injected Configuration (if runtime-provided by server)
   if (typeof window !== 'undefined' && (window as any).__API_URL__) {
     const sanitized = sanitizeApiBaseUrl(String((window as any).__API_URL__));
     if (sanitized.cleanUrl) {
@@ -121,8 +122,50 @@ export const getApiBaseUrl = (): string => {
     }
   }
 
-  // 3. Fallback to same-origin relative path (standard for Vercel Serverless & Custom Domains)
+  // 3. Fallback to same-origin relative path (standard for production reverse proxies, custom domains & same-origin)
   return '';
+};
+
+/**
+ * Resolves standard authorization and context headers from stored authenticated session
+ */
+export const getAuthHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'Accept': 'application/json',
+  };
+  if (typeof window === 'undefined') return headers;
+
+  try {
+    const raw = localStorage.getItem('reyadat_auth_session');
+    if (raw) {
+      const session = JSON.parse(raw);
+      if (session) {
+        if (session.sessionToken) {
+          headers['x-session-token'] = session.sessionToken;
+          headers['Authorization'] = `Bearer ${session.sessionToken}`;
+        }
+        if (session.user?.id || session.user?.userId) {
+          headers['x-user-id'] = session.user.id || session.user.userId;
+        }
+        if (session.role) {
+          headers['x-user-role'] = session.role;
+        }
+        if (session.user?.departmentId) {
+          headers['x-department-id'] = session.user.departmentId;
+        }
+        if (session.user?.nationalId) {
+          headers['x-national-id'] = session.user.nationalId;
+        }
+        if (session.user?.teamId) {
+          headers['x-team-id'] = session.user.teamId;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[getAuthHeaders] Error reading session headers:", e);
+  }
+
+  return headers;
 };
 
 /**

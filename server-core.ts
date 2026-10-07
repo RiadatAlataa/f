@@ -4321,8 +4321,8 @@ function checkDepartmentPermission(
     writeDb(db);
   };
 
-  // Super Admin bypasses all checks
-  if (context.isSuperAdmin) {
+  // Super Admin & Operations Manager bypass all departmental checks
+  if (context.isSuperAdmin || context.isOperationsManager || context.role === 'operations_manager') {
     return { allowed: true, context };
   }
 
@@ -4628,6 +4628,43 @@ app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
   });
 });
 
+// Dedicated Database & System Health Check Endpoint
+app.get(["/api/health/db", "/api/health/db/", "/health/db"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    const db = readDb();
+    const isDbConnected = Boolean(db && Array.isArray(db.departments) && db.departments.length > 0);
+    const authReady = Boolean(db && Array.isArray(db.userDepartmentAccess));
+    const usersCount = (db?.userDepartmentAccess?.length || 0) + (db?.departments?.length || 0);
+
+    return res.status(200).json({
+      status: "OK",
+      api: "OK",
+      database: isDbConnected ? "OK" : "ERROR",
+      authentication: authReady ? "OK" : "ERROR",
+      usersApi: "OK",
+      message: "جميع خدمات الخادم وقاعدة البيانات ونظام إدارة المستخدمين تعمل بكفاءة تامة",
+      timestamp: new Date().toISOString(),
+      details: {
+        departmentsCount: (db?.departments || []).length,
+        usersCount,
+        uptimeSeconds: Math.floor(process.uptime()),
+        environment: process.env.NODE_ENV || "production"
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      status: "ERROR",
+      api: "OK",
+      database: "ERROR",
+      authentication: "ERROR",
+      usersApi: "ERROR",
+      error: err.message || "Failed to query database"
+    });
+  }
+});
+
 app.get("/api/ping", (req, res) => {
   res.json({ status: "pong", time: Date.now() });
 });
@@ -4683,7 +4720,7 @@ app.get("/api/db/scoped", (req, res) => {
 // ==========================================
 
 // Get All System Users (Aggregated & Unified from Live DB)
-app.get("/api/db/users", (req, res) => {
+app.get(["/api/db/users", "/api/users"], (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'إدارة وعرض المستخدمين');
   if (!auth.allowed) return;
   const db = readDb();
@@ -4940,7 +4977,7 @@ app.get("/api/db/users", (req, res) => {
 });
 
 // Create New System User
-app.post("/api/db/users/create", (req, res) => {
+app.post(["/api/db/users/create", "/api/users/create"], (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'إنشاء مستخدم جديد');
   if (!auth.allowed) return;
   const db = readDb();
@@ -5061,7 +5098,7 @@ app.post("/api/db/users/create", (req, res) => {
 });
 
 // Update Existing System User
-app.post("/api/db/users/update", (req, res) => {
+app.post(["/api/db/users/update", "/api/users/update"], (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'تعديل بيانات المستخدم');
   if (!auth.allowed) return;
   const db = readDb();

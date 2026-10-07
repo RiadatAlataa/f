@@ -822,9 +822,14 @@ export function OfficialHomePage({
         </div>
       )}
 
-      {/* 1. Header (ثابت أثناء التمرير ومرتب هندسياً وفخم بالكامل) */}
-      <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 transition-all shadow-xs border-b border-neutral-200/70 dark:border-neutral-800/80">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 min-h-[4.25rem] py-2 flex items-center justify-between gap-2 sm:gap-4 lg:gap-6">
+      {/* 1. Header (ثابت أثناء التمرير ومرتب هندسياً وفخم بالكامل مع دعم حواف الجوال Safe Area) */}
+      <header 
+        style={{
+          paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
+        }}
+        className="sticky top-0 z-[999] w-full max-w-full backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 transition-all shadow-xs border-b border-neutral-200/70 dark:border-neutral-800/80 box-border overflow-hidden"
+      >
+        <div className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 min-h-[4rem] py-2 flex items-center justify-between gap-2 sm:gap-4 lg:gap-6">
           
           {/* Logo & Association Info */}
           <a
@@ -4224,44 +4229,64 @@ export function OfficialHomePage({
         )}
       </AnimatePresence>
 
-      {/* 8. Fixed Bottom Navigation Bar for Mobile Screens (شريط التنقل السفلي الاحترافي للموبايل) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white/95 dark:bg-neutral-900/95 border-t border-neutral-100 dark:border-neutral-850 shadow-2xl backdrop-blur-md px-4 py-2.5 flex items-center justify-around no-print pb-safe">
+      {/* 8. Fixed Bottom Navigation Bar for Mobile Screens (شريط التنقل السفلي الاحترافي للموبايل مع مراعاة حواف الشاشة) */}
+      <div 
+        id="mobile-bottom-nav-bar"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '75px',
+          boxSizing: 'content-box',
+          paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+        }}
+        className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white/95 dark:bg-neutral-900/95 border-t border-neutral-200/80 dark:border-neutral-800 shadow-[0_-4px_25px_rgba(0,0,0,0.1)] backdrop-blur-md px-3 sm:px-6 flex items-center justify-around no-print"
+      >
         <a 
           href="#about" 
-          className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+          className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer min-w-[52px]"
         >
           <Globe className="w-5 h-5" />
-          <span className="text-[9px] font-bold mt-1">{lang === "ar" ? "من نحن" : "About"}</span>
+          <span className="text-[10px] font-bold mt-1 leading-tight">{lang === "ar" ? "من نحن" : "About"}</span>
         </a>
 
         {settings?.sectionVisibility?.initiatives && (
           <a 
             href="#initiatives" 
-            className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+            className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer min-w-[52px]"
           >
             <Calendar className="w-5 h-5" />
-            <span className="text-[9px] font-bold mt-1">{lang === "ar" ? "المبادرات" : "Missions"}</span>
+            <span className="text-[10px] font-bold mt-1 leading-tight">{lang === "ar" ? "المبادرات" : "Missions"}</span>
           </a>
         )}
 
-        {/* Floating Center Action Button (تبرع الآن) */}
+        {/* Floating Center Action Button (زر القلب الدائري العائم - تبرع الآن) */}
         <a 
-          href={settings?.donationLink || "#"} 
+          href={settings?.donationLink || "https://store.riadataleata.org.sa"} 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="flex flex-col items-center justify-center relative -top-3.5 bg-rose-600 hover:bg-rose-700 text-white w-12 h-12 rounded-full shadow-lg transition-all transform hover:scale-105 shrink-0"
-          title="تبرع الآن"
+          style={{
+            transform: 'translateY(-15px)',
+            width: '60px',
+            height: '60px',
+          }}
+          className="flex flex-col items-center justify-center bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-full shadow-xl shadow-rose-600/40 transition-all duration-200 shrink-0 border-2 border-white dark:border-neutral-900"
+          title={lang === "ar" ? "تبرع الآن" : "Donate Now"}
         >
           <Heart className="w-5 h-5 fill-current text-white animate-pulse" />
+          <span className="text-[9.5px] font-black text-white mt-0.5 leading-none tracking-tight">
+            {lang === "ar" ? "تبرع الآن" : "Donate"}
+          </span>
         </a>
 
         {settings?.sectionVisibility?.gallery && (
           <a 
             href="#gallery" 
-            className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+            className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer min-w-[52px]"
           >
             <ImageIcon className="w-5 h-5" />
-            <span className="text-[9px] font-bold mt-1">{lang === "ar" ? "المعرض" : "Gallery"}</span>
+            <span className="text-[10px] font-bold mt-1 leading-tight">{lang === "ar" ? "المعرض" : "Gallery"}</span>
           </a>
         )}
 
@@ -4271,10 +4296,10 @@ export function OfficialHomePage({
             setSelectedJoinType("none");
             setIsJoinModalOpen(true);
           }}
-          className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer bg-transparent border-0 outline-none"
+          className="flex flex-col items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer bg-transparent border-0 outline-none min-w-[52px]"
         >
           <Users className="w-5 h-5" />
-          <span className="text-[9px] font-bold mt-1">{lang === "ar" ? "انضمام" : "Join"}</span>
+          <span className="text-[10px] font-bold mt-1 leading-tight">{lang === "ar" ? "انضمام" : "Join"}</span>
         </button>
       </div>
 
