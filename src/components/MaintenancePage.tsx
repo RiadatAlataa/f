@@ -9,16 +9,20 @@ export interface MaintenancePageProps {
   onOpenLogin?: () => void;
   onRefresh?: () => void;
   isDark?: boolean;
+  authenticatedUser?: any;
+  onReturnToDashboard?: () => void;
 }
 
 export const MaintenancePage: React.FC<MaintenancePageProps> = ({
-  message = "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+  message = "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
   associationName = "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
   licenseNumber = "1000888600",
   logoUrl = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
   onOpenLogin,
   onRefresh,
-  isDark = false
+  isDark = false,
+  authenticatedUser,
+  onReturnToDashboard
 }) => {
   const [isChecking, setIsChecking] = React.useState(false);
 
@@ -66,7 +70,17 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
         </div>
 
         {/* Administrative Staff Entrance Button */}
-        {onOpenLogin && (
+        {(authenticatedUser && onReturnToDashboard) ? (
+          <button
+            type="button"
+            onClick={onReturnToDashboard}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs hover:shadow-sm transition-all cursor-pointer"
+            title="العودة المباشرة إلى لوحة التحكم الإدارية"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-white" />
+            <span>العودة للوحة الإدارة ({authenticatedUser.name?.split(" ")[0] || "المسؤول"})</span>
+          </button>
+        ) : onOpenLogin ? (
           <button
             type="button"
             onClick={onOpenLogin}
@@ -76,7 +90,7 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
             <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>دخول الكوادر والإدارة</span>
           </button>
-        )}
+        ) : null}
       </header>
 
       {/* Center Main Card */}
@@ -102,7 +116,7 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              الموقع تحت الصيانة
+              الموقع تحت الصيانة والتطوير
             </h2>
           </div>
 
@@ -136,16 +150,25 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
               <span>{isChecking ? 'جاري فحص حالة الموقع...' : 'التحقق من جاهزية الموقع'}</span>
             </button>
 
-            {onOpenLogin && (
+            {(authenticatedUser && onReturnToDashboard) ? (
+              <button
+                type="button"
+                onClick={onReturnToDashboard}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>العودة للوحة التحكم الإدارية</span>
+              </button>
+            ) : onOpenLogin ? (
               <button
                 type="button"
                 onClick={onOpenLogin}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-slate-700"
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-slate-700"
               >
                 <Lock className="w-3.5 h-3.5 text-slate-500" />
                 <span>دخول الإدارة والعمليات</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </main>

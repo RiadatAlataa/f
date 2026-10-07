@@ -21,6 +21,7 @@ import { VolunteerDashboard } from "./components/VolunteerDashboard";
 import { DepartmentDashboard } from "./components/DepartmentDashboard";
 import { AiChatAssistant } from "./components/AiChatAssistant";
 import { OfficialHomePage } from "./components/OfficialHomePage";
+import { MaintenancePage } from "./components/MaintenancePage";
 import { BeneficiaryDashboard } from "./components/BeneficiaryDashboard";
 import { InventoryManager } from "./components/InventoryManager";
 import { AuthScreen } from "./components/AuthScreen";
@@ -75,6 +76,8 @@ export default function App() {
     beneficiaryRatings?: BeneficiaryRating[];
     orgMembers?: OrgMember[];
     heroSlides?: HeroSlide[];
+    systemSettings?: any;
+    maintenance_mode?: number;
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -485,6 +488,42 @@ export default function App() {
       return true;
     } catch (err: any) {
       alert(`خطأ: ${err.message}`);
+      return false;
+    }
+  };
+
+  // Centralized Maintenance Mode Handler (Persistent in database & audit logs)
+  const handleToggleMaintenance = async (enabled: boolean, message?: string): Promise<boolean> => {
+    try {
+      const authHeaders = getAuthHeaders();
+      const finalUrl = buildApiUrl("/api/maintenance/toggle");
+      const session = getStoredSession();
+      const performerName = session?.user?.name || authenticatedUser?.name || "الإدارة العامة";
+      
+      const res = await fetch(finalUrl, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          ...authHeaders,
+          'x-user-role': currentRole || session?.role || 'admin',
+          'x-user-name': encodeURIComponent(performerName)
+        },
+        body: JSON.stringify({
+          enabled,
+          message,
+          performerName
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || "فشل الخادم في تغيير حالة وضع الصيانة");
+      }
+
+      await fetchDatabase(true);
+      return true;
+    } catch (err: any) {
+      console.error("Failed to toggle maintenance mode:", err);
       return false;
     }
   };
@@ -1479,6 +1518,14 @@ export default function App() {
     ? (dbData.beneficiaries?.find(b => b.id === authenticatedUser.id) || dbData.beneficiaries?.[0])
     : (dbData.beneficiaries?.find(b => b.id === selectedBeneficiaryId) || dbData.beneficiaries?.[0]);
 
+  // Centralized Maintenance Mode Status Check
+  const isMaintenanceActive = Boolean(
+    dbData?.systemSettings?.maintenanceMode === true ||
+    dbData?.systemSettings?.maintenance_mode === 1 ||
+    (dbData as any)?.maintenance_mode === 1
+  );
+  const maintenanceMessage = dbData?.systemSettings?.maintenance_message || dbData?.systemSettings?.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+
   return (
     <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`} dir="rtl">
       
@@ -1832,6 +1879,7 @@ export default function App() {
                       onBackToHome={handleNavigateToPublicHome}
                       authenticatedUser={authenticatedUser}
                       onRefreshGlobalData={handleRefreshGlobalData}
+                      onToggleMaintenance={handleToggleMaintenance}
                     />
                   </DashboardErrorBoundary>
                 )}
@@ -1951,87 +1999,106 @@ export default function App() {
               />
             )}
 
-            {/* 4. OFFICIAL PUBLIC HOME PAGE VIEW */}
+            {/* 4. OFFICIAL PUBLIC HOME PAGE VIEW OR MAINTENANCE MODE */}
             {currentRole === 'public' && (
-              <OfficialHomePage
-                settings={dbData.homeSettings || {
-                  logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
-                  videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
-                  videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
-                  associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
-                  associationNameEn: "Reyadat Al-Ata Association",
-                  licenseNumber: "5081",
-                  heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
-                  heroTitleEn: "Leadership in Giving",
-                  heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",
-                  heroDescEn: "We strive to provide innovative and sustainable developmental and charitable services",
-                  aboutUsAr: "تأسست جمعية ريادة العطاء لخدمة الإنسان بالعسيلة لتباشر مسؤوليتها المجتمعية والخيرية",
-                  aboutUsEn: "Established to carry out community and charitable responsibility",
-                  visionAr: "الريادة في تمكين العمل الخيري والتطوعي وخدمة ضيوف الرحمن وأهالي العسيلة بجودة وتميز",
-                  visionEn: "Leadership in charity",
-                  missionAr: "تقديم خدمات إنسانية وتنموية ومبادرات تطوعية مبتكرة تسهم في سد الاحتياجات وبناء القدرات",
-                  missionEn: "Providing innovative humanitarian and developmental services",
-                  goalsAr: [],
-                  goalsEn: [],
-                  valuesAr: [],
-                  valuesEn: [],
-                  donationLink: "https://store.riadataleata.org.sa",
-                  contactPhone: "0550123456",
-                  contactEmail: "info@riadataleata.org.sa",
-                  contactLocationAr: "مكة المكرمة - مخطط العسيلة",
-                  contactLocationEn: "Mecca - Al-Asilah Scheme",
-                  contactHoursAr: "الأحد - الخميس",
-                  contactHoursEn: "Sunday - Thursday",
-                  themePrimary: "#059669",
-                  themeSecondary: "#0d9488",
-                  fontFamily: "Inter",
-                  sectionVisibility: {
-                    about: true,
-                    stats: true,
-                    initiatives: true,
-                    news: true,
-                    achievements: true,
-                    partners: true,
-                    gallery: true,
-                    contact: true
-                  }
-                }}
-                newsList={dbData.news || []}
-                partnersList={dbData.partners || []}
-                galleryList={dbData.gallery || []}
-                initiatives={dbData.initiatives || []}
-                volunteers={dbData.volunteers || []}
-                teams={dbData.teams || []}
-                departments={dbData.departments || []}
-                beneficiaries={dbData.beneficiaries || []}
-                notifications={dbData?.notifications || []}
-                onMarkNotificationRead={handleMarkNotificationRead}
-                onDeleteNotification={handleDeleteNotification}
-                isDark={isDark}
-                onToggleDark={() => setIsDark(!isDark)}
-                lang={lang}
-                onChangeLang={setLang}
-                onOpenLogin={(role) => {
-                  setCurrentRole(role);
-                  setActiveMainTab('system');
-                }}
-                onRegisterVolunteer={handleRegisterVolunteer}
-                onSubmitVolunteerApplication={handleSubmitVolunteerApplication}
-                onRegisterBeneficiary={handleRegisterBeneficiary}
-                onRegisterTeam={handleRegisterTeam}
-                teamApplications={dbData.teamApplications || []}
-                onSubmitTeamApplication={handleSubmitTeamApplication}
-                onApplyInitiative={handleApplyInitiativePublic}
-                currentVolunteer={authenticatedUser?.role === 'volunteer' ? activeVolunteer : null}
-                currentBeneficiary={authenticatedUser?.role === 'beneficiary' ? activeBeneficiary : null}
-                storeProjects={(dbData as any)?.storeProjects || []}
-                onDonate={handleDonateFromStore}
-                onSubmitOfficialLetter={handleSendOfficialLetter}
-                orgMembers={dbData.orgMembers || dbData.homeSettings?.orgMembers || []}
-                heroSlides={dbData.heroSlides || dbData.homeSettings?.heroSlides || []}
-                authenticatedUser={authenticatedUser}
-                onReturnToDashboard={handleReturnToDashboard}
-              />
+              isMaintenanceActive ? (
+                <MaintenancePage
+                  message={maintenanceMessage}
+                  associationName={dbData.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
+                  licenseNumber={dbData.homeSettings?.licenseNumber || "1000888600"}
+                  logoUrl={dbData.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"}
+                  onOpenLogin={() => {
+                    setCurrentRole('admin');
+                    setActiveMainTab('system');
+                  }}
+                  onRefresh={() => {
+                    fetchDatabase(true);
+                  }}
+                  isDark={isDark}
+                  authenticatedUser={authenticatedUser}
+                  onReturnToDashboard={handleReturnToDashboard}
+                />
+              ) : (
+                <OfficialHomePage
+                  settings={dbData.homeSettings || {
+                    logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+                    videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
+                    videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+                    associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+                    associationNameEn: "Reyadat Al-Ata Association",
+                    licenseNumber: "5081",
+                    heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
+                    heroTitleEn: "Leadership in Giving",
+                    heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",
+                    heroDescEn: "We strive to provide innovative and sustainable developmental and charitable services",
+                    aboutUsAr: "تأسست جمعية ريادة العطاء لخدمة الإنسان بالعسيلة لتباشر مسؤوليتها المجتمعية والخيرية",
+                    aboutUsEn: "Established to carry out community and charitable responsibility",
+                    visionAr: "الريادة في تمكين العمل الخيري والتطوعي وخدمة ضيوف الرحمن وأهالي العسيلة بجودة وتميز",
+                    visionEn: "Leadership in charity",
+                    missionAr: "تقديم خدمات إنسانية وتنموية ومبادرات تطوعية مبتكرة تسهم في سد الاحتياجات وبناء القدرات",
+                    missionEn: "Providing innovative humanitarian and developmental services",
+                    goalsAr: [],
+                    goalsEn: [],
+                    valuesAr: [],
+                    valuesEn: [],
+                    donationLink: "https://store.riadataleata.org.sa",
+                    contactPhone: "0550123456",
+                    contactEmail: "info@riadataleata.org.sa",
+                    contactLocationAr: "مكة المكرمة - مخطط العسيلة",
+                    contactLocationEn: "Mecca - Al-Asilah Scheme",
+                    contactHoursAr: "الأحد - الخميس",
+                    contactHoursEn: "Sunday - Thursday",
+                    themePrimary: "#059669",
+                    themeSecondary: "#0d9488",
+                    fontFamily: "Inter",
+                    sectionVisibility: {
+                      about: true,
+                      stats: true,
+                      initiatives: true,
+                      news: true,
+                      achievements: true,
+                      partners: true,
+                      gallery: true,
+                      contact: true
+                    }
+                  }}
+                  newsList={dbData.news || []}
+                  partnersList={dbData.partners || []}
+                  galleryList={dbData.gallery || []}
+                  initiatives={dbData.initiatives || []}
+                  volunteers={dbData.volunteers || []}
+                  teams={dbData.teams || []}
+                  departments={dbData.departments || []}
+                  beneficiaries={dbData.beneficiaries || []}
+                  notifications={dbData?.notifications || []}
+                  onMarkNotificationRead={handleMarkNotificationRead}
+                  onDeleteNotification={handleDeleteNotification}
+                  isDark={isDark}
+                  onToggleDark={() => setIsDark(!isDark)}
+                  lang={lang}
+                  onChangeLang={setLang}
+                  onOpenLogin={(role) => {
+                    setCurrentRole(role);
+                    setActiveMainTab('system');
+                  }}
+                  onRegisterVolunteer={handleRegisterVolunteer}
+                  onSubmitVolunteerApplication={handleSubmitVolunteerApplication}
+                  onRegisterBeneficiary={handleRegisterBeneficiary}
+                  onRegisterTeam={handleRegisterTeam}
+                  teamApplications={dbData.teamApplications || []}
+                  onSubmitTeamApplication={handleSubmitTeamApplication}
+                  onApplyInitiative={handleApplyInitiativePublic}
+                  currentVolunteer={authenticatedUser?.role === 'volunteer' ? activeVolunteer : null}
+                  currentBeneficiary={authenticatedUser?.role === 'beneficiary' ? activeBeneficiary : null}
+                  storeProjects={(dbData as any)?.storeProjects || []}
+                  onDonate={handleDonateFromStore}
+                  onSubmitOfficialLetter={handleSendOfficialLetter}
+                  orgMembers={dbData.orgMembers || dbData.homeSettings?.orgMembers || []}
+                  heroSlides={dbData.heroSlides || dbData.homeSettings?.heroSlides || []}
+                  authenticatedUser={authenticatedUser}
+                  onReturnToDashboard={handleReturnToDashboard}
+                />
+              )
             )}
 
             {/* 5. BENEFICIARY PORTAL VIEW */}

@@ -3564,6 +3564,24 @@
   ],
   "logs": [
     {
+      "id": "log-1791416372185",
+      "timestamp": "2026-10-07T23:39:32.185Z",
+      "user": "المدير العام",
+      "action": "إيقاف وضع الصيانة وإعادة تشغيل الموقع العام للزوار",
+      "ip": "127.0.0.1",
+      "device": "curl/7.88.1",
+      "result": "ناجح"
+    },
+    {
+      "id": "log-1791416367189",
+      "timestamp": "2026-10-07T23:39:27.189Z",
+      "user": "المدير العام",
+      "action": "تشغيل وضع الصيانة وإغلاق الموقع العام أمام الزوار",
+      "ip": "127.0.0.1",
+      "device": "curl/7.88.1",
+      "result": "ناجح"
+    },
+    {
       "id": "log-1791415965557",
       "timestamp": "2026-10-07T23:32:45.557Z",
       "user": "متطوع جديد تجريبي",
@@ -5041,7 +5059,7 @@
     "registrationNumber": "1000888600",
     "foundationYear": "1445هـ / 2024م",
     "maintenanceMode": false,
-    "maintenanceMessage": "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+    "maintenanceMessage": "الموقع تحت الصيانة والتطوير. نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
     "defaultLanguage": "ar",
     "timezone": "Asia/Riyadh (GMT+3)",
     "dateTimeFormat": "هجري / ميلادي - 12 ساعة",
@@ -5303,7 +5321,9 @@
       "femaleUnifiedCardPhoto": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80"
     },
     "maintenance_mode": 0,
-    "maintenance_message": "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا."
+    "maintenance_message": "الموقع تحت الصيانة والتطوير. نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
+    "maintenance_updated_at": "2026-10-07T23:39:32.185Z",
+    "maintenance_updated_by": "المدير العام"
   },
   "storekeepers": [
     {
@@ -9509,6 +9529,26 @@
     }
   ],
   "accessAuditLogs": [
+    {
+      "id": "audit-1791416372185",
+      "timestamp": "2026-10-07T23:39:32.185Z",
+      "userName": "المدير العام",
+      "action": "disable_maintenance",
+      "category": "system_control",
+      "details": "إيقاف وضع الصيانة وإعادة تشغيل الموقع العام للزوار",
+      "ip": "127.0.0.1",
+      "result": "success"
+    },
+    {
+      "id": "audit-1791416367189",
+      "timestamp": "2026-10-07T23:39:27.189Z",
+      "userName": "المدير العام",
+      "action": "enable_maintenance",
+      "category": "system_control",
+      "details": "تشغيل وضع الصيانة وإغلاق الموقع العام أمام الزوار",
+      "ip": "127.0.0.1",
+      "result": "success"
+    },
     {
       "id": "audit-google-1791415965778-25ot",
       "timestamp": "2026-10-07T23:32:45.778Z",

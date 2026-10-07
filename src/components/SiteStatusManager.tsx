@@ -17,7 +17,7 @@ export interface SiteStatusManagerProps {
 
 export const SiteStatusManager: React.FC<SiteStatusManagerProps> = ({
   maintenanceMode,
-  maintenanceMessage = "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+  maintenanceMessage = "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
   maintenanceUpdatedAt,
   maintenanceUpdatedBy,
   onToggleMaintenance,

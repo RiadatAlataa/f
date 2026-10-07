@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, BarChart3, Database, FileSpreadsheet, FileDown, 
   Trash2, Plus, Edit3, Shield, Copy, Archive, Check, AlertTriangle, 
   Moon, Sun, Search, Printer, RefreshCw, Smartphone, ShieldAlert, Lock, Trophy, Send, Eye, Settings, Activity, FileText, Globe, X,
-  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard
+  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2
 } from "lucide-react";
 import { ExecutiveKpiDashboard } from "./ExecutiveKpiDashboard";
 import { 
@@ -49,6 +49,7 @@ import { UsersManager } from "./UsersManager";
 import { expandPermissionsWithLegacyKeys } from "../data/departmentPermissionsRegistry";
 import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
 import { AccessDeniedCard } from "./AccessDeniedCard";
+import { SiteStatusManager } from "./SiteStatusManager";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
@@ -211,6 +212,7 @@ interface AdminDashboardProps {
   onRefreshGlobalData?: () => void;
   onBackToHome?: () => void;
   authenticatedUser?: any;
+  onToggleMaintenance?: (enabled: boolean, message?: string) => Promise<boolean>;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -288,15 +290,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApproveEmployeeRequest,
   onRejectEmployeeRequest,
   onRequestEmployeeModification,
-  onRefreshGlobalData
+  onRefreshGlobalData,
+  onToggleMaintenance
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
     } catch {}
     return (initialSubTab as any) || 'stats';
   });
+
+  // Maintenance Mode States
+  const isMaintenanceActive = Boolean(
+    (data as any)?.systemSettings?.maintenanceMode === true ||
+    (data as any)?.systemSettings?.maintenance_mode === 1 ||
+    (data as any)?.maintenance_mode === 1
+  );
+  const currentMaintenanceMessage = (data as any)?.systemSettings?.maintenance_message || (data as any)?.systemSettings?.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+  
+  const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
+  const [maintenanceMessageInput, setMaintenanceMessageInput] = useState(currentMaintenanceMessage);
+  const [maintenanceTargetAction, setMaintenanceTargetAction] = useState<'enable' | 'disable'>('enable');
+  const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
+  const [maintenanceFeedback, setMaintenanceFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (currentMaintenanceMessage) {
+      setMaintenanceMessageInput(currentMaintenanceMessage);
+    }
+  }, [currentMaintenanceMessage]);
+
+  const handleExecuteMaintenanceToggle = async () => {
+    setIsTogglingMaintenance(true);
+    setMaintenanceFeedback(null);
+    try {
+      const willEnable = maintenanceTargetAction === 'enable';
+      if (onToggleMaintenance) {
+        const success = await onToggleMaintenance(willEnable, maintenanceMessageInput);
+        if (success) {
+          setMaintenanceFeedback({
+            type: 'success',
+            text: willEnable 
+              ? "تم تشغيل وضع الصيانة بنجاح وإغلاق الموقع العام أمام الزوار." 
+              : "تم إلغاء وضع الصيانة بنجاح وإعادة إتاحة الموقع للزوار مباشرة."
+          });
+          setTimeout(() => {
+            setIsMaintenanceModalOpen(false);
+            setMaintenanceFeedback(null);
+          }, 1500);
+        } else {
+          setMaintenanceFeedback({
+            type: 'error',
+            text: "فشل تغيير حالة وضع الصيانة، يرجى مراجعة الصلاحيات والاتصال بالخادم."
+          });
+        }
+      }
+    } catch (err: any) {
+      setMaintenanceFeedback({
+        type: 'error',
+        text: err?.message || "حدث خطأ أثناء تغيير حالة وضع الصيانة."
+      });
+    } finally {
+      setIsTogglingMaintenance(false);
+    }
+  };
 
   const prevInitialSubTabRef = useRef(initialSubTab);
   useEffect(() => {
@@ -435,12 +493,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       description: "إعدادات البريد والنظام العام وقاعدة البيانات",
       badge: 'المدير',
       items: [
+        { id: 'maintenance_status', label: '🔧 وضع الصيانة وحالة الموقع', icon: Wrench, badge: isMaintenanceActive ? '🔴 تحت الصيانة' : '🟢 يعمل' },
         { id: 'email_settings', label: 'إعدادات البريد الحقيقي (Sender & SMTP)', icon: Mail, badge: 'جديد' },
         { id: 'system_settings', label: 'إعدادات النظام الشاملة', icon: Settings, badge: 'المدير' },
         { id: 'backup', label: 'قاعدة البيانات والنسخ', icon: Database }
       ]
     }
-  ], [data, opportunityRequests, employeeRequests]);
+  ], [data, opportunityRequests, employeeRequests, isMaintenanceActive]);
 
   // Derive navGroups for ModernAppSidebar to maintain 100% synchronization
   const navGroups: NavGroup[] = useMemo(() => {
@@ -768,6 +827,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Top Quick Actions (Organized, Aligned) */}
             <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end flex-wrap">
+              {/* 🔧 وضع الصيانة المباشر ومؤشر الحالة الإدارية */}
+              <button
+                type="button"
+                id="btn-admin-maintenance-mode"
+                onClick={() => {
+                  setMaintenanceTargetAction(isMaintenanceActive ? 'disable' : 'enable');
+                  setMaintenanceFeedback(null);
+                  setIsMaintenanceModalOpen(true);
+                }}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95 shrink-0 ${
+                  isMaintenanceActive
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500 shadow-rose-500/25 ring-2 ring-rose-400/40'
+                    : 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700/80'
+                }`}
+                title="التحكم في وضع صيانة الموقع العام وإغلاق/فتح البوابة للزوار"
+              >
+                <Wrench className={`w-3.5 h-3.5 ${isMaintenanceActive ? 'text-white animate-bounce' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                <span>🔧 وضع الصيانة</span>
+                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  isMaintenanceActive
+                    ? 'bg-rose-950 text-rose-200 border border-rose-400/50'
+                    : 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isMaintenanceActive ? 'bg-rose-400 animate-ping' : 'bg-emerald-500'}`} />
+                  <span>{isMaintenanceActive ? '🔴 الموقع تحت الصيانة' : '🟢 الموقع يعمل'}</span>
+                </span>
+              </button>
+
               {/* Return to Public Homepage CTA */}
               {onBackToHome && (
                 <button
@@ -1011,6 +1098,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               currentUser={{ name: "إدارة الجمعية والمستودع" }}
               logoUrl={data.homeSettings?.logoUrl || "/logo.png"}
               associationName={data.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
+            />
+          )}
+
+          {/* TAB: MAINTENANCE & SITE STATUS */}
+          {activeSubTab === 'maintenance_status' && (
+            <SiteStatusManager
+              maintenanceMode={isMaintenanceActive}
+              maintenanceMessage={currentMaintenanceMessage}
+              maintenanceUpdatedAt={(data as any)?.systemSettings?.maintenance_updated_at}
+              maintenanceUpdatedBy={(data as any)?.systemSettings?.maintenance_updated_by}
+              onToggleMaintenance={async (enabled, msg) => {
+                if (onToggleMaintenance) {
+                  return await onToggleMaintenance(enabled, msg);
+                }
+                return false;
+              }}
+              logs={data.logs || []}
+              currentUser={authenticatedUser}
+              lang={lang}
             />
           )}
 
@@ -4449,6 +4555,204 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           departments={data.departments}
           logoUrl={data.homeSettings?.logoUrl}
         />
+      )}
+
+      {/* 🔧 نافذة تأكيد وضع الصيانة (Maintenance Mode Confirmation Modal) */}
+      {isMaintenanceModalOpen && (
+        <div 
+          className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn"
+          dir="rtl"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isTogglingMaintenance) {
+              setIsMaintenanceModalOpen(false);
+            }
+          }}
+        >
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl relative space-y-6 text-right">
+            {/* Top Modal Header */}
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                  maintenanceTargetAction === 'enable'
+                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                    : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                }`}>
+                  <Wrench className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                    🔧 نافذة التحكم في وضع صيانة الموقع
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    إدارة ظهور بوابة الجمعية للزوار وقفل/فتح المحتوى العام
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsMaintenanceModalOpen(false)}
+                disabled={isTogglingMaintenance}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                title="إغلاق"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Active Status Indicator */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  الحالة الراهنة للموقع:
+                </span>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black ${
+                  isMaintenanceActive
+                    ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                    : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${isMaintenanceActive ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'}`} />
+                  <span>{isMaintenanceActive ? '🔴 الموقع تحت الصيانة' : '🟢 الموقع يعمل'}</span>
+                </span>
+              </div>
+
+              <span className="text-[11px] font-bold text-slate-400">
+                قاعدة البيانات المركزية
+              </span>
+            </div>
+
+            {/* Toggle Action Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                اختر الإجراء المطلوب تنفيذه:
+              </label>
+              <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaintenanceTargetAction('enable');
+                    setMaintenanceFeedback(null);
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    maintenanceTargetAction === 'enable'
+                      ? 'bg-rose-600 text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>تفعيل وضع الصيانة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaintenanceTargetAction('disable');
+                    setMaintenanceFeedback(null);
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    maintenanceTargetAction === 'disable'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>إلغاء وضع الصيانة</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Safety Confirmation Notice (حماية من التشغيل بالخطأ) */}
+            <div className={`p-4 rounded-2xl border text-xs leading-relaxed space-y-2 font-medium ${
+              maintenanceTargetAction === 'enable'
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-200'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/80 text-emerald-900 dark:text-emerald-200'
+            }`}>
+              <div className="flex items-center gap-2 font-black text-xs">
+                <AlertTriangle className={`w-4 h-4 shrink-0 ${maintenanceTargetAction === 'enable' ? 'text-amber-600' : 'text-emerald-600'}`} />
+                <span>
+                  {maintenanceTargetAction === 'enable' 
+                    ? "رسالة تأكيد قبل تفعيل وضع الصيانة (تنبيه أمني وإداري)" 
+                    : "رسالة تأكيد قبل إلغاء وضع الصيانة"}
+                </span>
+              </div>
+              <p>
+                {maintenanceTargetAction === 'enable'
+                  ? "هل أنت متأكد من تفعيل وضع الصيانة؟ عند التفعيل، سيتم فوراً إيقاف إتاحة الموقع العام للزوار وتحويلهم إلى صفحة الصيانة والتطوير، ولن يظهر لهم محتوى الموقع. ستبقى لوحة الإدارة متاحة لك كمسؤول للعمل وإيقاف الصيانة في أي وقت."
+                  : "هل أنت متأكد من رغبتك في إلغاء وضع الصيانة؟ سيعود الموقع فوراً للعمل بشكل كامل وطبيعي لكافة الزوار والجمهور دون الحاجة لأي إعداد يدوي إضافي."}
+              </p>
+            </div>
+
+            {/* Maintenance Message Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                رسالة الصيانة المعروضة لزوار الموقع:
+              </label>
+              <textarea
+                rows={3}
+                value={maintenanceMessageInput}
+                onChange={(e) => setMaintenanceMessageInput(e.target.value)}
+                disabled={maintenanceTargetAction === 'disable'}
+                className="w-full p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs leading-relaxed font-medium focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none disabled:opacity-60"
+                placeholder="نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله."
+              />
+              <p className="text-[11px] text-slate-400">
+                ستظهر هذه الرسالة في منتصف شاشة الصيانة الرسمية لجميع الزوار.
+              </p>
+            </div>
+
+            {/* Feedback / Toast Messages */}
+            {maintenanceFeedback && (
+              <div className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2 ${
+                maintenanceFeedback.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border-emerald-300'
+                  : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border-rose-300'
+              }`}>
+                {maintenanceFeedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-rose-600" />}
+                <span>{maintenanceFeedback.text}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsMaintenanceModalOpen(false)}
+                disabled={isTogglingMaintenance}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-all cursor-pointer"
+              >
+                إلغاء الأمر
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteMaintenanceToggle}
+                disabled={isTogglingMaintenance}
+                className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer active:scale-95 disabled:opacity-60 ${
+                  maintenanceTargetAction === 'enable'
+                    ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30'
+                }`}
+              >
+                {isTogglingMaintenance ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>جاري تحديث حالة الموقع...</span>
+                  </>
+                ) : maintenanceTargetAction === 'enable' ? (
+                  <>
+                    <Wrench className="w-4 h-4" />
+                    <span>تأكيد تفعيل وضع الصيانة</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>تأكيد إلغاء وضع الصيانة وإعادة الفتح</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

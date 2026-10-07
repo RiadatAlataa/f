@@ -256,8 +256,8 @@ const defaultSystemSettings = {
   foundationYear: "1445هـ / 2024م",
   maintenanceMode: false,
   maintenance_mode: 0,
-  maintenanceMessage: "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
-  maintenance_message: "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+  maintenanceMessage: "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
+  maintenance_message: "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
   defaultLanguage: "ar" as const,
   timezone: "Asia/Riyadh (GMT+3)",
   dateTimeFormat: "هجري / ميلادي - 12 ساعة",
@@ -10510,7 +10510,7 @@ app.get("/api/maintenance/status", (req, res) => {
       success: true,
       maintenance_mode: isMaintenance ? 1 : 0,
       maintenanceMode: isMaintenance,
-      maintenance_message: sys.maintenance_message || sys.maintenanceMessage || "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.",
+      maintenance_message: sys.maintenance_message || sys.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
       updated_at: sys.maintenance_updated_at || null,
       updated_by: sys.maintenance_updated_by || null,
       associationNameAr: db.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
@@ -10556,7 +10556,7 @@ app.post("/api/maintenance/toggle", (req, res) => {
     db.systemSettings.maintenance_mode = isEnabled ? 1 : 0;
     db.maintenance_mode = isEnabled ? 1 : 0;
 
-    const defaultMsg = "نعمل حاليًا على تطوير وتحسين الموقع، وسيعود الموقع للعمل قريبًا.";
+    const defaultMsg = "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
     const customMsg = (message && typeof message === 'string' && message.trim()) ? message.trim() : (db.systemSettings.maintenance_message || defaultMsg);
     db.systemSettings.maintenanceMessage = customMsg;
     db.systemSettings.maintenance_message = customMsg;
