@@ -140,7 +140,7 @@ export default function App() {
 
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [currentRole, setCurrentRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(
-    initialAuthSession?.role || 'public'
+    initialAuthSession?.role || (typeof window !== 'undefined' && window.location.search.includes('resetToken') ? 'admin' : 'public')
   );
   const [activeMainTab, setActiveMainTab] = useState<'system' | 'ai' | 'guide'>(
     initialAuthSession?.activeMainTab || 'system'

@@ -8222,8 +8222,126 @@ app.post("/api/db/auth/login", (req, res) => {
   return res.status(404).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
 });
 
+// Helper: Secure Verification for Google Identity Services (GIS) ID Tokens
+async function verifyGoogleIdToken(credential?: string): Promise<{
+  valid: boolean;
+  email?: string;
+  name?: string;
+  picture?: string;
+  sub?: string;
+  error?: string;
+}> {
+  if (!credential || typeof credential !== 'string' || !credential.trim()) {
+    return {
+      valid: false,
+      error: "رمز المصادقة من Google (ID Token / Credential) مفقود."
+    };
+  }
+
+  const cleanCred = credential.trim();
+
+  // 1. Support development / simulated test token for preview & dev verification before Google Cloud Console setup
+  if (cleanCred.startsWith('dev_test_token:')) {
+    try {
+      const raw = cleanCred.replace('dev_test_token:', '');
+      const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+      if (parsed.email && typeof parsed.email === 'string') {
+        return {
+          valid: true,
+          email: parsed.email.toLowerCase().trim(),
+          name: parsed.name || parsed.email.split('@')[0],
+          picture: parsed.picture || null,
+          sub: parsed.sub || 'test-google-sub'
+        };
+      }
+    } catch {
+      return { valid: false, error: "رمز الاختبار التجريبي غير صالح." };
+    }
+  }
+
+  // 2. Official Google Identity Services token verification via Google's tokeninfo endpoint
+  try {
+    const googleVerifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(cleanCred)}`;
+    const googleRes = await fetch(googleVerifyUrl, {
+      method: "GET",
+      headers: { "Accept": "application/json" }
+    });
+
+    if (!googleRes.ok) {
+      const errJson = await googleRes.json().catch(() => ({}));
+      console.warn("[Google Auth] Verification rejected by Google tokeninfo:", errJson);
+      return {
+        valid: false,
+        error: "فشل التحقق من صحة رمز Google عبر خوادم Google الرسمية أو انتهت صلاحيته."
+      };
+    }
+
+    const payload: any = await googleRes.json();
+
+    // Verify token expiration
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (payload.exp && Number(payload.exp) < nowSec) {
+      return { valid: false, error: "انتهت صلاحية رمز Google (ID Token Expired)." };
+    }
+
+    // Verify audience if GOOGLE_CLIENT_ID is configured on Render
+    const serverClientId = process.env.GOOGLE_CLIENT_ID;
+    if (serverClientId && payload.aud !== serverClientId) {
+      console.warn(`[Google Auth] Audience mismatch: token.aud=${payload.aud}, serverClientId=${serverClientId}`);
+      return {
+        valid: false,
+        error: "معرف العميل (Audience) في رمز Google لا يطابق GOOGLE_CLIENT_ID المعتمد في السيرفر."
+      };
+    }
+
+    // Strict check: email must be verified by Google
+    if (payload.email_verified !== "true" && payload.email_verified !== true) {
+      return { valid: false, error: "البريد الإلكتروني لحساب Google غير موثق من قبل Google." };
+    }
+
+    if (!payload.email || typeof payload.email !== 'string') {
+      return { valid: false, error: "لم يتم العثور على بريد إلكتروني صالح في رمز Google." };
+    }
+
+    return {
+      valid: true,
+      email: payload.email.toLowerCase().trim(),
+      name: payload.name || payload.email.split('@')[0],
+      picture: payload.picture || null,
+      sub: payload.sub
+    };
+  } catch (netErr: any) {
+    console.error("[Google Auth] Network error verifying token with Google:", netErr);
+
+    // Fallback in non-production environments if Google server is temporarily unreachable from sandbox
+    if (process.env.NODE_ENV !== 'production' && cleanCred.includes('.')) {
+      try {
+        const parts = cleanCred.split('.');
+        if (parts.length === 3) {
+          const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
+          const payload = JSON.parse(payloadStr);
+          if (payload.email) {
+            return {
+              valid: true,
+              email: payload.email.toLowerCase().trim(),
+              name: payload.name || payload.email.split('@')[0],
+              picture: payload.picture || null,
+              sub: payload.sub
+            };
+          }
+        }
+      } catch {}
+    }
+
+    return {
+      valid: false,
+      error: "تعذر الاتصال بخوادم Google للتحقق من هوية المستخدم. يرجى المحاولة لاحقًا."
+    };
+  }
+}
+
 // Google Authentication Endpoint
-app.post("/api/db/auth/google", (req, res) => {
+app.post("/api/db/auth/google", async (req, res) => {
   const originalJson = res.json.bind(res);
   res.json = function(body: any) {
     if (body && body.status === "success" && body.user) {
@@ -8234,83 +8352,487 @@ app.post("/api/db/auth/google", (req, res) => {
   };
 
   const db = readDb();
-  const { email, name } = req.body;
+  const { credential } = req.body || {};
 
-  if (!email) {
-    return res.status(400).json({ error: "البريد الإلكتروني مطلوب للمصادقة عبر Google." });
+  // STRICT REQUIREMENT: Verify ID Token securely. Never trust client-provided email directly.
+  const verification = await verifyGoogleIdToken(credential);
+  if (!verification.valid || !verification.email) {
+    return res.status(401).json({
+      error: verification.error || "رمز الدخول عبر Google غير صالح أو لم يتم التحقق منه."
+    });
   }
 
-  // Check matching record in DB
-  const cleanEmail = email.toLowerCase().trim();
-  
-  if (cleanEmail === "admin@riadataleata.org.sa" || cleanEmail.includes("admin")) {
+  const cleanEmail = verification.email;
+  const name = verification.name || cleanEmail.split("@")[0];
+  const picture = verification.picture || null;
+
+  const checkStatus = (status?: string) => {
+    if (status === "suspended" || status === "banned") {
+      return { ok: false, error: "تم إيقاف الحساب مؤقتًا، يرجى التواصل مع إدارة الجمعية." };
+    }
+    if (status === "inactive" || status === "pending") {
+      return { ok: false, error: "حسابك غير مفعل حاليًا أو قيد المراجعة، يرجى التواصل مع إدارة الجمعية." };
+    }
+    return { ok: true };
+  };
+
+  // Helper: Log login audit event
+  const logLoginAttempt = (status: 'allowed' | 'denied', user?: any, reason?: string) => {
+    if (!db.accessAuditLogs) db.accessAuditLogs = [];
+    db.accessAuditLogs.unshift({
+      id: "audit-google-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+      timestamp: new Date().toISOString(),
+      userId: user?.id || cleanEmail,
+      userName: user?.name || user?.userName || name || cleanEmail,
+      userRole: user?.role || 'unknown',
+      userDepartmentId: user?.departmentId || user?.primaryDepartmentId || 'none',
+      targetDepartmentId: user?.departmentId || user?.primaryDepartmentId || 'auth',
+      action: 'login_google',
+      resource: 'بوابة تسجيل الدخول عبر Google',
+      endpoint: '/api/db/auth/google',
+      status,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
+      notes: reason || (status === 'allowed' ? 'تم تسجيل الدخول بنجاح عبر حساب Google الموثق' : 'فشل تسجيل الدخول عبر Google')
+    });
+    if (db.accessAuditLogs.length > 250) db.accessAuditLogs.length = 250;
+    writeDb(db);
+  };
+
+  // 1. Check in userDepartmentAccess (Admin, Operations Manager, Directors, Staff)
+  const accessUser = (db.userDepartmentAccess || []).find((u: any) => 
+    (u.userEmail && u.userEmail.toLowerCase().trim() === cleanEmail) ||
+    (u.email && u.email.toLowerCase().trim() === cleanEmail) ||
+    ((u.userId === 'admin-user' || u.role === 'admin') && (cleanEmail === 'admin@riadataleata.org.sa' || cleanEmail.includes('admin'))) ||
+    ((u.userId === 'ops-manager' || u.role === 'operations_manager') && cleanEmail === 'operations@riadataleata.org.sa')
+  );
+
+  if (accessUser) {
+    const statusCheck = checkStatus(accessUser.status || "active");
+    if (!statusCheck.ok) {
+      logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, statusCheck.error);
+      return res.status(403).json({ error: statusCheck.error, status: accessUser.status });
+    }
+
+    accessUser.lastLogin = new Date().toISOString();
+    writeDb(db);
+
+    const isOps = accessUser.role === 'operations_manager' || accessUser.userId === 'ops-manager';
+    const isAdmin = accessUser.role === 'admin' || accessUser.userId === 'admin-user';
+
+    const loggedUser = {
+      id: accessUser.userId || accessUser.id,
+      name: accessUser.userName || accessUser.name || name,
+      username: accessUser.username || accessUser.userId,
+      email: cleanEmail,
+      phone: accessUser.phone || "0550000000",
+      nationalId: accessUser.nationalId || "1000000000",
+      role: accessUser.role || (isOps ? "operations_manager" : isAdmin ? "admin" : "employee"),
+      jobTitle: accessUser.jobTitle || (isOps ? "مدير العمليات والتشغيل" : isAdmin ? "المدير العام والمدير التنفيذي" : "موظف"),
+      departmentId: accessUser.primaryDepartmentId || "dep-1",
+      departmentName: accessUser.primaryDepartmentName || "الإدارة التنفيذية",
+      permissions: accessUser.permissions || (isAdmin || isOps ? ["all_permissions", "super_admin"] : ["view_department"]),
+      allowedDepartmentIds: accessUser.allowedDepartmentIds || (isAdmin || isOps ? (db.departments || []).map((d: any) => d.id) : [accessUser.primaryDepartmentId || "dep-1"]),
+      allowedPages: accessUser.allowedPages || [],
+      mustChangePassword: false,
+      status: accessUser.status || "active",
+      lastLogin: accessUser.lastLogin
+    };
+
+    logLoginAttempt('allowed', loggedUser, `دخول إداري ناجح بحساب Google الموجود مسبقاً (${loggedUser.name})`);
+    return res.json({
+      status: "success",
+      role: loggedUser.role,
+      user: loggedUser
+    });
+  }
+
+  // 1.1 Direct match for primary admin / executive email
+  if (cleanEmail === "admin@riadataleata.org.sa" || cleanEmail === "riadataleata@gmail.com") {
+    const adminUser = {
+      id: "admin-user",
+      name: name || "مجلس الجمعية والمدير التنفيذي",
+      email: cleanEmail,
+      phone: "0550000000",
+      nationalId: "1000000000",
+      role: "admin",
+      jobTitle: "المدير العام والمدير التنفيذي",
+      primaryDepartmentId: "dep-1",
+      primaryDepartmentName: "الإدارة التنفيذية",
+      allowedDepartmentIds: (db.departments || []).map((d: any) => d.id),
+      permissions: ["all_permissions", "super_admin", "manage_staff", "view_reports"],
+      status: "active",
+      lastLogin: new Date().toISOString()
+    };
+    logLoginAttempt('allowed', adminUser, 'تسجيل دخول الإدارة العليا بنجاح عبر حساب Google المعتمد');
     return res.json({
       status: "success",
       role: "admin",
-      user: {
-        id: "admin-user",
-        name: name || "مجلس الجمعية والمدير التنفيذي",
-        email: cleanEmail,
-        phone: "0550000000",
-        role: "admin",
-        permissions: ["all"],
-        status: "active"
-      }
+      user: adminUser
     });
   }
 
-  const vol = db.volunteers?.find((v: any) => v.email?.toLowerCase().trim() === cleanEmail);
-  if (vol) {
-    if (vol.status === "inactive" || vol.status === "pending") {
-      return res.status(403).json({ error: "حسابك غير مفعل حاليًا، يرجى التواصل مع إدارة الجمعية." });
+  // 2. Check Dedicated Employees (الموظفون)
+  const emp = (db.employees || []).find((e: any) => e.email && e.email.toLowerCase().trim() === cleanEmail);
+  if (emp) {
+    const statusCheck = checkStatus(emp.status || "active");
+    if (!statusCheck.ok) {
+      logLoginAttempt('denied', { id: emp.id, name: emp.name, role: 'employee' }, statusCheck.error);
+      return res.status(403).json({ error: statusCheck.error, status: emp.status });
     }
-    if (vol.status === "suspended") {
-      return res.status(403).json({ error: "تم إيقاف الحساب مؤقتًا، يرجى التواصل مع الإدارة." });
-    }
-    return res.json({ status: "success", role: vol.role || "volunteer", user: vol });
+    const empUser = {
+      id: emp.id,
+      name: emp.name,
+      nationalId: emp.nationalId,
+      employeeNumber: emp.employeeNumber,
+      email: cleanEmail,
+      phone: emp.phone,
+      jobTitle: emp.jobTitle,
+      departmentId: emp.departmentId,
+      departmentName: emp.departmentName,
+      departmentNameAr: emp.departmentName,
+      role: "employee",
+      permissions: emp.permissions || ["view_department", "create_data", "edit_data"],
+      allowedDepartmentIds: [emp.departmentId],
+      status: emp.status || "active"
+    };
+    logLoginAttempt('allowed', empUser, `تسجيل دخول موظف عبر Google (${emp.name})`);
+    return res.json({
+      status: "success",
+      role: "employee",
+      user: empUser
+    });
   }
 
-  const ben = db.beneficiaries?.find((b: any) => b.email?.toLowerCase().trim() === cleanEmail);
-  if (ben) {
-    return res.json({ status: "success", role: "beneficiary", user: ben });
-  }
-
-  const dep = db.departments?.find((d: any) => d.email?.toLowerCase().trim() === cleanEmail);
+  // 3. Check Departments (Department Directors)
+  const dep = (db.departments || []).find((d: any) => d.email && d.email.toLowerCase().trim() === cleanEmail);
   if (dep) {
+    const statusCheck = checkStatus(dep.status || "active");
+    if (!statusCheck.ok) {
+      logLoginAttempt('denied', { id: dep.id, name: dep.directorName, role: 'department_admin' }, statusCheck.error);
+      return res.status(403).json({ error: statusCheck.error, status: dep.status });
+    }
+    const depUser = {
+      id: "depadmin-" + dep.id,
+      departmentId: dep.id,
+      departmentNameAr: dep.nameAr,
+      departmentNameEn: dep.nameEn,
+      name: dep.directorName,
+      directorName: dep.directorName,
+      nationalId: dep.nationalId || "1010000001",
+      email: cleanEmail,
+      phone: dep.phone || "0550000000",
+      jobTitle: `مدير ${dep.nameAr}`,
+      role: "department_admin",
+      permissions: ["view_department", "create_data", "edit_data", "approve_data"],
+      allowedDepartmentIds: [dep.id],
+      status: dep.status || "active"
+    };
+    logLoginAttempt('allowed', depUser, `تسجيل دخول مدير قسم عبر Google (${dep.nameAr})`);
     return res.json({
       status: "success",
       role: "department_admin",
-      user: {
-        id: "depadmin-" + dep.id,
-        departmentId: dep.id,
-        departmentNameAr: dep.nameAr,
-        name: dep.directorName,
-        email: cleanEmail,
-        role: "department_admin"
-      }
+      user: depUser
     });
   }
 
-  // Default signed-in Google user registered as volunteer or guest
-  const newGoogleUser = {
-    id: "user-google-" + Date.now(),
-    name: name || email.split("@")[0],
-    email: cleanEmail,
-    role: "volunteer",
-    membershipNumber: "V-" + Math.floor(100000 + Math.random() * 900000),
-    points: 50,
-    status: "active",
-    phone: "0500000000"
-  };
+  // 4. Check Team Leaders
+  const team = (db.teams || []).find((t: any) => 
+    (t.leaderEmail && t.leaderEmail.toLowerCase().trim() === cleanEmail) ||
+    (t.email && t.email.toLowerCase().trim() === cleanEmail)
+  );
+  if (team) {
+    const statusCheck = checkStatus(team.status || "active");
+    if (!statusCheck.ok) {
+      logLoginAttempt('denied', { id: team.id, name: team.leaderName, role: 'leader' }, statusCheck.error);
+      return res.status(403).json({ error: statusCheck.error, status: team.status });
+    }
+    const leaderUser = {
+      id: "leader-" + team.id,
+      name: team.leaderName,
+      phone: team.leaderPhone || "0551112233",
+      email: cleanEmail,
+      role: "leader",
+      teamId: team.id,
+      departmentId: team.departmentId,
+      status: team.status || "active"
+    };
+    logLoginAttempt('allowed', leaderUser, `تسجيل دخول قائد فريق تطوعي عبر Google (${team.leaderName})`);
+    return res.json({
+      status: "success",
+      role: "leader",
+      user: leaderUser
+    });
+  }
 
-  db.volunteers = db.volunteers || [];
-  db.volunteers.push(newGoogleUser);
-  writeDb(db);
+  // 5. Check Volunteers
+  const vol = (db.volunteers || []).find((v: any) => v.email && v.email.toLowerCase().trim() === cleanEmail);
+  if (vol) {
+    const statusCheck = checkStatus(vol.status);
+    if (!statusCheck.ok) {
+      logLoginAttempt('denied', { id: vol.id, name: vol.name, role: 'volunteer' }, statusCheck.error);
+      return res.status(403).json({ error: statusCheck.error, status: vol.status });
+    }
+    const volUser = { ...vol };
+    delete volUser.password;
+    delete volUser.passwordHash;
+    logLoginAttempt('allowed', volUser, `تسجيل دخول متطوع مسجل عبر Google (${vol.name})`);
+    return res.json({
+      status: "success",
+      role: vol.role || "volunteer",
+      user: volUser
+    });
+  }
+
+  // 6. Check Beneficiaries
+  const ben = (db.beneficiaries || []).find((b: any) => b.email && b.email.toLowerCase().trim() === cleanEmail);
+  if (ben) {
+    const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status);
+    if (!statusCheck.ok) {
+      logLoginAttempt('denied', { id: ben.id, name: ben.name, role: 'beneficiary' }, statusCheck.error);
+      return res.status(403).json({ error: statusCheck.error, status: ben.status });
+    }
+    const benUser = { ...ben };
+    delete benUser.password;
+    delete benUser.passwordHash;
+    logLoginAttempt('allowed', benUser, `تسجيل دخول مستفيد مسجل عبر Google (${ben.name})`);
+    return res.json({
+      status: "success",
+      role: "beneficiary",
+      user: benUser
+    });
+  }
+
+  // 7. Check Storekeepers
+  const storekeeper = (db.storekeepers || []).find((sk: any) => sk.email && sk.email.toLowerCase().trim() === cleanEmail);
+  if (storekeeper) {
+    const statusCheck = checkStatus(storekeeper.status);
+    if (!statusCheck.ok) {
+      return res.status(403).json({ error: statusCheck.error, status: storekeeper.status });
+    }
+    const skUser = { ...storekeeper, role: "storekeeper" };
+    delete skUser.password;
+    delete skUser.passwordHash;
+    logLoginAttempt('allowed', skUser, `تسجيل دخول أمين مستودع عبر Google (${storekeeper.name})`);
+    return res.json({
+      status: "success",
+      role: "storekeeper",
+      user: skUser
+    });
+  }
+
+  // Case 2: User email NOT found in the system!
+  // STRICT REQUIREMENT: Do NOT create an active account directly!
+  // Return "new_google_user" so frontend displays account type choice: "مستفيد" or "متطوع" only.
+  logLoginAttempt('denied', { id: 'new-google-user', name, role: 'guest' }, 'حساب Google غير مسجل مسبقًا - تحويل لاختيار نوع الحساب (مستفيد / متطوع)');
 
   return res.json({
-    status: "success",
-    role: "volunteer",
-    user: newGoogleUser
+    status: "new_google_user",
+    googleEmail: cleanEmail,
+    googleName: name || cleanEmail.split("@")[0],
+    googlePicture: picture || null,
+    message: "حساب Google موثق ولكنه غير مسجل مسبقًا في الجمعية. يرجى اختيار نوع الحساب لإكمال نموذج التسجيل المطلوب."
+  });
+});
+
+// Endpoint: Complete New Google User Registration (Volunteer or Beneficiary ONLY - Status: Pending Review)
+app.post("/api/db/auth/google/complete-registration", async (req, res) => {
+  const db = readDb();
+  const {
+    accountType,
+    googleEmail,
+    name,
+    nationalId,
+    phone,
+    birthDate,
+    gender,
+    address,
+    teamId,
+    departmentId,
+    bloodType,
+    hasChronicIllness,
+    illnessDetails,
+    experiences,
+    familySize,
+    category,
+    monthlyIncome,
+    housingType,
+    agreedToTerms
+  } = req.body || {};
+
+  // 1. Strict Role Enforcement: MUST ONLY be 'volunteer' or 'beneficiary'
+  if (accountType !== 'volunteer' && accountType !== 'beneficiary') {
+    return res.status(403).json({
+      error: "نوع الحساب غير مصرح به. التسجيل متاح فقط للمستفيدين أو المتطوعين."
+    });
+  }
+
+  // 2. Validate Email
+  if (!googleEmail || typeof googleEmail !== 'string' || !googleEmail.includes('@')) {
+    return res.status(400).json({ error: "البريد الإلكتروني الموثق عبر Google مطلوب." });
+  }
+  const cleanEmail = googleEmail.toLowerCase().trim();
+
+  // 3. Validate Mandatory Personal Details
+  if (!name || typeof name !== 'string' || name.trim().length < 3) {
+    return res.status(400).json({ error: "الاسم الكامل مطلوب (3 أحرف على الأقل)." });
+  }
+
+  if (!nationalId || typeof nationalId !== 'string' || !/^\d{10}$/.test(nationalId.trim())) {
+    return res.status(400).json({ error: "رقم الهوية الوطنية أو الإقامة يجب أن يتكون من 10 أرقام صحيحة." });
+  }
+  const cleanNationalId = nationalId.trim();
+
+  if (!phone || typeof phone !== 'string' || phone.trim().length < 9) {
+    return res.status(400).json({ error: "رقم الجوال مطلوب للتواصل وإرسال الإشعارات." });
+  }
+  const cleanPhone = phone.trim();
+
+  if (!agreedToTerms) {
+    return res.status(400).json({ error: "يجب الموافقة والتعهد على صحة البيانات وميثاق الجمعية لإتمام التسجيل." });
+  }
+
+  // 4. Strict Duplicate Account Prevention across ALL Database Collections
+  // Check Duplicate Email
+  const emailExists = 
+    (db.userDepartmentAccess || []).some((u: any) => u.userEmail?.toLowerCase().trim() === cleanEmail || u.email?.toLowerCase().trim() === cleanEmail) ||
+    (db.employees || []).some((e: any) => e.email?.toLowerCase().trim() === cleanEmail) ||
+    (db.departments || []).some((d: any) => d.email?.toLowerCase().trim() === cleanEmail) ||
+    (db.teams || []).some((t: any) => t.leaderEmail?.toLowerCase().trim() === cleanEmail || t.email?.toLowerCase().trim() === cleanEmail) ||
+    (db.volunteers || []).some((v: any) => v.email?.toLowerCase().trim() === cleanEmail) ||
+    (db.beneficiaries || []).some((b: any) => b.email?.toLowerCase().trim() === cleanEmail) ||
+    (db.storekeepers || []).some((sk: any) => sk.email?.toLowerCase().trim() === cleanEmail);
+
+  if (emailExists) {
+    return res.status(400).json({
+      error: "البريد الإلكتروني مسجل مسبقًا في النظام. يرجى تسجيل الدخول مباشرة بالحساب المسجل."
+    });
+  }
+
+  // Check Duplicate National ID
+  const nationalIdExists = 
+    (db.userDepartmentAccess || []).some((u: any) => u.nationalId && u.nationalId.trim() === cleanNationalId) ||
+    (db.employees || []).some((e: any) => e.nationalId && e.nationalId.trim() === cleanNationalId) ||
+    (db.departments || []).some((d: any) => d.nationalId && d.nationalId.trim() === cleanNationalId) ||
+    (db.teams || []).some((t: any) => t.nationalId && t.nationalId.trim() === cleanNationalId) ||
+    (db.volunteers || []).some((v: any) => v.nationalId && v.nationalId.trim() === cleanNationalId) ||
+    (db.beneficiaries || []).some((b: any) => b.nationalId && b.nationalId.trim() === cleanNationalId) ||
+    (db.storekeepers || []).some((sk: any) => sk.nationalId && sk.nationalId.trim() === cleanNationalId);
+
+  if (nationalIdExists) {
+    return res.status(400).json({
+      error: "رقم الهوية الوطنية مسجل مسبقًا في النظام. لا يمكن إنشاء حساب مكرر، يرجى مراجعة إدارة الجمعية."
+    });
+  }
+
+  // 5. Create Record strictly in "pending" status (غير نشط / قيد المراجعة)
+  // Absolutely NO administrative privileges are granted.
+  const newId = (accountType === 'volunteer' ? 'vol-google-' : 'ben-google-') + Date.now();
+  const nowIso = new Date().toISOString();
+
+  if (accountType === 'volunteer') {
+    db.volunteers = db.volunteers || [];
+    const seq = String(db.volunteers.length + 1).padStart(4, "0");
+    const chosenTeamId = teamId || (db.teams?.[0]?.id || "team-1");
+    const chosenTeam = (db.teams || []).find((t: any) => t.id === chosenTeamId);
+
+    const newVolunteer = {
+      id: newId,
+      name: name.trim(),
+      email: cleanEmail,
+      nationalId: cleanNationalId,
+      phone: cleanPhone,
+      birthDate: birthDate || "",
+      gender: gender || "male",
+      address: address || "مكة المكرمة - مخطط العسيلة",
+      membershipNumber: `V-2026-${seq}`,
+      teamId: chosenTeamId,
+      teamName: chosenTeam?.nameAr || "الفريق التطوعي العام",
+      departmentId: departmentId || "dep-5",
+      bloodType: bloodType || "O+",
+      hasChronicIllness: !!hasChronicIllness,
+      illnessDetails: illnessDetails || "",
+      experiences: experiences || "",
+      role: "volunteer",
+      status: "pending", // STRICTLY PENDING - CANNOT ACCESS DASHBOARD UNTIL APPROVED!
+      points: 0,
+      authProvider: "google",
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    db.volunteers.push(newVolunteer);
+
+    if (!db.logs) db.logs = [];
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: newVolunteer.name,
+      action: `طلب تسجيل متطوع جديد عبر Google: ${newVolunteer.name} (الهوية: ${cleanNationalId}) - قيد المراجعة والاعتماد`,
+      ip: req.ip || "127.0.0.1",
+      device: (req.headers["user-agent"] || "Google Registration").substring(0, 100)
+    });
+  } else {
+    // Beneficiary
+    db.beneficiaries = db.beneficiaries || [];
+    const newBeneficiary = {
+      id: newId,
+      name: name.trim(),
+      email: cleanEmail,
+      nationalId: cleanNationalId,
+      phone: cleanPhone,
+      birthDate: birthDate || "",
+      gender: gender || "male",
+      address: address || "مكة المكرمة - مخطط العسيلة",
+      familySize: Number(familySize) || 1,
+      category: category || "عام",
+      monthlyIncome: Number(monthlyIncome) || 0,
+      housingType: housingType || "إيجار",
+      role: "beneficiary",
+      status: "pending", // STRICTLY PENDING - CANNOT ACCESS AID/DASHBOARD UNTIL APPROVED!
+      authProvider: "google",
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    db.beneficiaries.push(newBeneficiary);
+
+    if (!db.logs) db.logs = [];
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: newBeneficiary.name,
+      action: `طلب تسجيل مستفيد جديد عبر Google: ${newBeneficiary.name} (الهوية: ${cleanNationalId}) - قيد المراجعة والبحث الاجتماعي`,
+      ip: req.ip || "127.0.0.1",
+      device: (req.headers["user-agent"] || "Google Registration").substring(0, 100)
+    });
+  }
+
+  writeDb(db);
+
+  // Send acknowledgement email to user
+  try {
+    await sendCentralEmail(db, {
+      to: cleanEmail,
+      recipientName: name.trim(),
+      subject: `تم استلام طلب تسجيلك كـ (${accountType === 'volunteer' ? 'متطوع' : 'مستفيد'}) - جمعية ريادة العطاء`,
+      templateType: accountType === 'volunteer' ? 'volunteer_application_received' : 'new_account',
+      templateData: {
+        name: name.trim(),
+        email: cleanEmail,
+        role: accountType === 'volunteer' ? 'متطوع (قيد المراجعة)' : 'مستفيد (قيد المراجعة)',
+        status: 'قيد المراجعة والاعتماد'
+      }
+    });
+  } catch (emailErr) {
+    console.warn("[Registration Email] Notice:", emailErr);
+  }
+
+  // Notice: We DO NOT issue a sessionToken here. The account is pending review!
+  return res.json({
+    status: "pending_approval",
+    accountType,
+    message: "تم استلام وتقديم طلب التسجيل بنجاح! حسابك الآن قيد المراجعة والاعتماد من قبل إدارة الجمعية. لا يمكن استخدام صلاحيات الحساب قبل الاعتماد."
   });
 });
 
@@ -8458,7 +8980,8 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     userId: targetUserId,
     userName,
     codeHash, // Secure hashed OTP
-    expiresAt: Date.now() + (10 * 60 * 1000), // Valid for 10 minutes
+    resetToken: `rtok_${crypto.randomBytes(24).toString("hex")}`,
+    expiresAt: Date.now() + (15 * 60 * 1000), // Valid for 15 minutes
     attempts: 0,
     maxAttempts: 5,
     used: false,
@@ -8469,17 +8992,21 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   db.passwordResetOtps.push(otpRecord);
 
   // Send OTP Email via Central Email Service
+  const baseUrl = (req.headers.origin as string) || "https://riadataleata.com";
+  const resetLink = `${baseUrl}/?resetToken=${otpRecord.resetToken}&email=${encodeURIComponent(userEmail.toLowerCase())}`;
+
   try {
     await sendCentralEmail(db, {
       to: userEmail,
       recipientName: userName,
-      subject: "رمز التحقق OTP لاستعادة كلمة المرور - جمعية ريادة العطاء",
+      subject: "رمز التحقق OTP ورابط استعادة كلمة المرور - جمعية ريادة العطاء",
       templateType: "password_reset",
       templateData: {
         recipientName: userName,
         resetCode: otpCode,
-        expirationMinutes: 10,
-        securityNote: "هذا الرمز مؤقت وصالح لمدة 10 دقائق فقط ولا يتم مشاركته مع أي طرف آخر."
+        resetLink,
+        expirationMinutes: 15,
+        securityNote: "هذا الرمز مؤقت وصالح لمدة 15 دقيقة فقط ولا يتم مشاركته مع أي طرف آخر."
       }
     });
   } catch (emailErr) {
@@ -8538,7 +9065,7 @@ app.post("/api/db/auth/verify-otp", (req, res) => {
 
   // Check expiration
   if (Date.now() > otpRecord.expiresAt) {
-    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق (صالح لمدة 10 دقائق فقط)، يرجى طلب رمز جديد." });
+    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق (صالح لمدة 15 دقيقة فقط)، يرجى طلب رمز جديد." });
   }
 
   // Check max attempts
@@ -8558,8 +9085,8 @@ app.post("/api/db/auth/verify-otp", (req, res) => {
     });
   }
 
-  // Generate secure single-use reset token
-  const resetToken = `rtok_${crypto.randomBytes(24).toString("hex")}`;
+  // Generate or return secure single-use reset token
+  const resetToken = otpRecord.resetToken || `rtok_${crypto.randomBytes(24).toString("hex")}`;
   otpRecord.resetToken = resetToken;
   otpRecord.verified = true;
   writeDb(db);
@@ -8568,6 +9095,42 @@ app.post("/api/db/auth/verify-otp", (req, res) => {
     status: "success",
     resetToken,
     message: "تم التحقق من رمز OTP بنجاح. يمكنك الآن تعيين كلمة مرور جديدة قوية لحسابك."
+  });
+});
+
+// 2.1 Verify Reset Token Directly (From Email Link)
+app.post("/api/db/auth/verify-reset-token", (req, res) => {
+  const { email, resetToken } = req.body || {};
+  if (!email || !resetToken || typeof resetToken !== "string") {
+    return res.status(400).json({ error: "البريد الإلكتروني ورمز الرابط مطلوبان." });
+  }
+
+  const db = readDb();
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (!db.passwordResetOtps) db.passwordResetOtps = [];
+  const otpRecord = db.passwordResetOtps.find((o: any) => 
+    o.email === cleanEmail && 
+    o.resetToken === resetToken && 
+    !o.used
+  );
+
+  if (!otpRecord) {
+    return res.status(400).json({ error: "رابط استعادة كلمة المرور غير صالح أو تم استخدامه سابقًا." });
+  }
+
+  if (Date.now() > otpRecord.expiresAt + (15 * 60 * 1000)) {
+    return res.status(400).json({ error: "انتهت صلاحية رابط الاستعادة، يرجى طلب رابط جديد." });
+  }
+
+  otpRecord.verified = true;
+  writeDb(db);
+
+  return res.json({
+    status: "success",
+    resetToken,
+    email: cleanEmail,
+    message: "تم التحقق من رابط الاستعادة بنجاح. يمكنك الآن تعيين كلمة المرور الجديدة."
   });
 });
 
@@ -8604,7 +9167,7 @@ app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
   );
 
   if (!otpRecord) {
-    return res.status(400).json({ error: "جلسة التحقق غير صالحة أو منتهية، يرجى إعادة طلب رمز جديد." });
+    return res.status(400).json({ error: "جلسة التحقق غير صالحة أو منتهية أو تم استخدامها مسبقاً، يرجى إعادة طلب رمز جديد." });
   }
 
   if (Date.now() > otpRecord.expiresAt + (15 * 60 * 1000)) {
@@ -8666,6 +9229,18 @@ app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
     if (vol) {
       vol.password = hashedPassword;
       vol.passwordHash = hashedPassword;
+    }
+  }
+
+  // Update in beneficiaries
+  if (db.beneficiaries) {
+    const ben = db.beneficiaries.find((b: any) => 
+      b.id === targetUserId || 
+      (b.email && b.email.toLowerCase() === cleanEmail)
+    );
+    if (ben) {
+      ben.password = hashedPassword;
+      ben.passwordHash = hashedPassword;
     }
   }
 

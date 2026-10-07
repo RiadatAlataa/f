@@ -3,10 +3,45 @@ import {
   Lock, Eye, EyeOff, Sparkles, ShieldCheck, AlertCircle, 
   RefreshCw, Globe, ArrowRight, ArrowLeft, CheckCircle2, 
   ChevronDown, ChevronUp, HeartHandshake, Award, X,
-  KeyRound, CreditCard, Mail, Check, User
+  KeyRound, CreditCard, Mail, Check, User, Users, Heart,
+  Phone, Calendar, MapPin, Clock, FileCheck, CheckCircle, Info
 } from "lucide-react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { evaluatePasswordStrength, generateStrongPassword } from "../utils/passwordSecurity";
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential: string; select_by?: string }) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement | null,
+            options: {
+              type?: 'standard' | 'icon';
+              theme?: 'outline' | 'filled_blue' | 'filled_black';
+              size?: 'large' | 'medium' | 'small';
+              text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin';
+              shape?: 'rectangular' | 'pill' | 'circle' | 'square';
+              logo_alignment?: 'left' | 'center';
+              width?: number | string;
+              locale?: string;
+            }
+          ) => void;
+          prompt: (momentListener?: (notification: any) => void) => void;
+        };
+      };
+    };
+  }
+}
+
+// Read Google Client ID from environment variables (Vercel)
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").trim();
 
 interface AuthScreenProps {
   onLoginSuccess: (role: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'supervisor' | 'department_admin' | 'storekeeper' | string, user: any) => void;
@@ -58,8 +93,65 @@ export function AuthScreen({
     return () => clearInterval(interval);
   }, [otpTimer]);
 
-  // Google Login modal/state
+  // Google Login & Completion States
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [googleEmailInput, setGoogleEmailInput] = useState("");
+  const [googleModalError, setGoogleModalError] = useState<string | null>(null);
+
+  const [verifiedGoogleData, setVerifiedGoogleData] = useState<{ email: string; name: string; picture?: string } | null>(null);
+  const [showGoogleCompleteModal, setShowGoogleCompleteModal] = useState(false);
+  const [googleAccountType, setGoogleAccountType] = useState<'volunteer' | 'beneficiary' | null>(null);
+  const [googleRegSubmitted, setGoogleRegSubmitted] = useState(false);
+  const [googleRegSuccessMsg, setGoogleRegSuccessMsg] = useState("");
+  const [googleRegLoading, setGoogleRegLoading] = useState(false);
+  const [googleRegError, setGoogleRegError] = useState<string | null>(null);
+
+  // Registration Form Fields for New Google Users
+  const [gRegFullName, setGRegFullName] = useState("");
+  const [gRegNationalId, setGRegNationalId] = useState("");
+  const [gRegPhone, setGRegPhone] = useState("");
+  const [gRegBirthDate, setGRegBirthDate] = useState("");
+  const [gRegGender, setGRegGender] = useState<'male' | 'female'>('male');
+  const [gRegAddress, setGRegAddress] = useState("مكة المكرمة - مخطط العسيلة");
+  // Volunteer specific
+  const [gRegTeamId, setGRegTeamId] = useState("team-1");
+  const [gRegBloodType, setGRegBloodType] = useState("O+");
+  const [gRegHasChronicIllness, setGRegHasChronicIllness] = useState(false);
+  const [gRegIllnessDetails, setGRegIllnessDetails] = useState("");
+  const [gRegExperiences, setGRegExperiences] = useState("");
+  // Beneficiary specific
+  const [gRegFamilySize, setGRegFamilySize] = useState(4);
+  const [gRegCategory, setGRegCategory] = useState("أسر محتاجة");
+  const [gRegMonthlyIncome, setGRegMonthlyIncome] = useState(3000);
+  const [gRegHousingType, setGRegHousingType] = useState("إيجار");
+  // Mandatory charter & terms agreement
+  const [gRegAgreedToTerms, setGRegAgreedToTerms] = useState(false);
+
+  // Auto-detect password recovery link from email query parameters (?resetToken=...&email=...)
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const urlResetToken = params.get('resetToken');
+        const urlEmail = params.get('email');
+        if (urlResetToken && urlEmail) {
+          setRecoveryEmail(urlEmail);
+          setMaskedEmail(urlEmail.replace(/(.{2})(.*)(@.*)/, "$1•••$3"));
+          setResetToken(urlResetToken);
+          setRecoveryStep(3); // Directly open Step 3: Set New Password
+          setShowForgotModal(true);
+          setRecoverySuccess(
+            lang === 'ar' 
+              ? "تم فتح رابط استعادة كلمة المرور بنجاح. يرجى إدخال كلمة المرور الجديدة لحسابك."
+              : "Password reset link verified. Please enter your new password."
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("[AuthScreen] Error detecting URL reset params:", e);
+    }
+  }, [lang]);
 
   // Collapsible quick test credentials for evaluation
   const [showDemoCredentials, setShowDemoCredentials] = useState(false);
@@ -158,32 +250,223 @@ export function AuthScreen({
     }
   };
 
-  // Google Sign-In Handler
-  const handleGoogleSignIn = async () => {
+  // Google Identity Services (GIS): Send Verified ID Token to Backend
+  const sendGoogleCredentialToBackend = async (credential: string) => {
     setGoogleLoading(true);
+    setGoogleModalError(null);
     setError(null);
+
     try {
-      // Authenticate with Google identity endpoint
-      const googleEmail = identifier.includes("@") ? identifier : "volunteer.google@riadataleata.org.sa";
       const res = await fetch("/api/db/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          email: googleEmail, 
-          name: "مستخدم حساب Google" 
-        })
+        body: JSON.stringify({ credential })
       });
 
       const data = await res.json().catch(() => null);
-      if (res.ok && data?.status === "success") {
+
+      if (!res.ok) {
+        // Handle 403 (suspended/inactive/pending) or 401 (invalid token) or other error
+        const errorMsg = data?.error || (lang === 'ar' ? "فشل تسجيل الدخول عبر Google." : "Google login failed.");
+        setGoogleModalError(errorMsg);
+        setError(errorMsg);
+        return;
+      }
+
+      if (data?.status === "success" && data?.role && data?.user) {
+        // Case 1: Existing account (Admin, Operations Manager, Employee, Volunteer, Beneficiary)
+        setShowGoogleModal(false);
         onLoginSuccess(data.role, data.user);
+      } else if (data?.status === "new_google_user") {
+        // Case 2: New Google user -> show Choice Modal ("مستفيد" / "متطوع")
+        setShowGoogleModal(false);
+        setVerifiedGoogleData({
+          email: data.googleEmail || "",
+          name: data.googleName || "",
+          picture: data.googlePicture
+        });
+        setGRegFullName(data.googleName || "");
+        setGoogleAccountType(null); // Step 1: Select between Volunteer and Beneficiary
+        setGoogleRegSubmitted(false);
+        setGoogleRegError(null);
+        setShowGoogleCompleteModal(true);
       } else {
-        setError(data?.error || (lang === 'ar' ? "فشل تسجيل الدخول بواسطة Google." : "Google Sign-In failed."));
+        setGoogleModalError(data?.error || (lang === 'ar' ? "استجابة غير متوقعة من خادم Google." : "Unexpected response."));
       }
     } catch {
-      setError(lang === 'ar' ? "فشل الاتصال بخدمة Google." : "Could not connect to Google services.");
+      setGoogleModalError(lang === 'ar' ? "تعذر الاتصال بالخادم لإتمام تسجيل Google." : "Could not connect to server.");
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  // Simulation test helper (used during local preview & testing before Google Cloud Console setup)
+  const submitGoogleSimulationAuth = (targetEmail: string, targetName?: string) => {
+    if (!targetEmail || !targetEmail.trim() || !targetEmail.includes("@")) {
+      setGoogleModalError(lang === 'ar' ? "يرجى إدخال عنوان بريد إلكتروني صالح لحساب Google." : "Please enter a valid Google email.");
+      return;
+    }
+    const payload = JSON.stringify({
+      email: targetEmail.trim().toLowerCase(),
+      name: targetName?.trim() || targetEmail.split("@")[0],
+      sub: "simulated-test-sub-" + Date.now()
+    });
+    // Create safe Base64 token for testing
+    const testToken = "dev_test_token:" + btoa(unescape(encodeURIComponent(payload)));
+    sendGoogleCredentialToBackend(testToken);
+  };
+
+  // Google Authentication Modal Trigger (Opens test / manual selection modal)
+  const handleGoogleSignIn = () => {
+    setError(null);
+    setGoogleModalError(null);
+    setGoogleEmailInput(identifier.includes("@") ? identifier.trim() : "");
+    setShowGoogleModal(true);
+  };
+
+  // Google Identity Services (GIS) Auto-Initialization Hook
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+
+    let isMounted = true;
+    const initGis = () => {
+      if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (response: { credential: string }) => {
+              if (response && response.credential) {
+                sendGoogleCredentialToBackend(response.credential);
+              }
+            },
+            auto_select: false,
+            cancel_on_tap_outside: true,
+          });
+
+          const container = document.getElementById("gis-button-slot");
+          if (container && isMounted) {
+            container.innerHTML = "";
+            window.google.accounts.id.renderButton(container, {
+              type: "standard",
+              theme: "outline",
+              size: "large",
+              text: "signin_with",
+              shape: "rectangular",
+              logo_alignment: "left",
+              width: 320,
+              locale: lang === 'ar' ? 'ar' : 'en'
+            });
+          }
+        } catch (err) {
+          console.warn("[GIS] Error initializing Google button:", err);
+        }
+      }
+    };
+
+    if (window.google?.accounts?.id) {
+      initGis();
+    } else {
+      const interval = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(interval);
+          initGis();
+        }
+      }, 300);
+      return () => {
+        clearInterval(interval);
+        isMounted = false;
+      };
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [lang]);
+
+  // Submit Completed Registration Form for New Google User
+  const handleCompleteGoogleRegistration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGoogleRegError(null);
+
+    if (!googleAccountType) {
+      setGoogleRegError(lang === 'ar' ? "يرجى تحديد نوع الحساب أولاً (مستفيد أو متطوع)." : "Please select account type.");
+      return;
+    }
+
+    if (!gRegFullName.trim() || gRegFullName.trim().length < 3) {
+      setGoogleRegError(lang === 'ar' ? "يرجى إدخال الاسم الكامل (ثلاثي أو رباعي على الأقل)." : "Full name is required.");
+      return;
+    }
+
+    if (!gRegNationalId.trim() || !/^\d{10}$/.test(gRegNationalId.trim())) {
+      setGoogleRegError(lang === 'ar' ? "رقم الهوية الوطنية أو الإقامة غير صحيح (يجب أن يتكون من 10 أرقام دقيقة)." : "National ID must be exactly 10 digits.");
+      return;
+    }
+
+    if (!gRegPhone.trim() || gRegPhone.trim().length < 9) {
+      setGoogleRegError(lang === 'ar' ? "يرجى إدخال رقم الجوال بصيغة صحيحة للتواصل والإشعارات." : "Valid phone number is required.");
+      return;
+    }
+
+    if (!gRegAgreedToTerms) {
+      setGoogleRegError(lang === 'ar' ? "يجب الموافقة والتعهد على صحة البيانات وميثاق الجمعية لإتمام التسجيل." : "Please agree to terms and conditions.");
+      return;
+    }
+
+    setGoogleRegLoading(true);
+
+    try {
+      const payload: any = {
+        accountType: googleAccountType,
+        googleEmail: verifiedGoogleData?.email || googleEmailInput,
+        name: gRegFullName.trim(),
+        nationalId: gRegNationalId.trim(),
+        phone: gRegPhone.trim(),
+        birthDate: gRegBirthDate,
+        gender: gRegGender,
+        address: gRegAddress,
+        agreedToTerms: gRegAgreedToTerms
+      };
+
+      if (googleAccountType === 'volunteer') {
+        payload.teamId = gRegTeamId;
+        payload.bloodType = gRegBloodType;
+        payload.hasChronicIllness = gRegHasChronicIllness;
+        payload.illnessDetails = gRegIllnessDetails;
+        payload.experiences = gRegExperiences;
+      } else {
+        payload.familySize = gRegFamilySize;
+        payload.category = gRegCategory;
+        payload.monthlyIncome = gRegMonthlyIncome;
+        payload.housingType = gRegHousingType;
+      }
+
+      const res = await fetch("/api/db/auth/google/complete-registration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setGoogleRegError(data?.error || (lang === 'ar' ? "تعذر حفظ بيانات التسجيل، يرجى المحاولة لاحقاً." : "Registration failed."));
+        return;
+      }
+
+      if (data?.status === "pending_approval") {
+        setGoogleRegSubmitted(true);
+        setGoogleRegSuccessMsg(
+          data.message || 
+          (lang === 'ar' 
+            ? "تم تقديم طلبك بنجاح! حسابك الآن قيد المراجعة والاعتماد من قبل إدارة الجمعية (غير نشط حتى اكتمال المراجعة). لا يمكن استخدام صلاحيات الحساب قبل الاعتماد."
+            : "Registration request submitted! Your account is pending admin approval.")
+        );
+      }
+    } catch {
+      setGoogleRegError(lang === 'ar' ? "حدث خطأ أثناء الاتصال بالخادم." : "Network connection error.");
+    } finally {
+      setGoogleRegLoading(false);
     }
   };
 
@@ -682,39 +965,51 @@ export function AuthScreen({
                 </div>
               </div>
 
-              {/* GOOGLE SIGN IN BUTTON (Official Google Brand) */}
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={googleLoading || loading}
-                className="w-full py-3 px-4 bg-white dark:bg-slate-800/90 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-3 cursor-pointer shadow-xs disabled:opacity-60"
-              >
-                {googleLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
-                ) : (
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                )}
-                <span>
-                  {lang === 'ar' ? "تسجيل الدخول بواسطة Google" : "Sign in with Google"}
-                </span>
-              </button>
+              {/* GOOGLE SIGN IN BUTTON (OFFICIAL GOOGLE IDENTITY SERVICES) */}
+              {GOOGLE_CLIENT_ID ? (
+                <div className="w-full flex flex-col items-center justify-center min-h-[44px]">
+                  <div id="gis-button-slot" className="w-full flex justify-center" />
+                  {googleLoading && (
+                    <div className="flex items-center gap-2 mt-2 text-xs text-slate-500 font-bold">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                      <span>{lang === 'ar' ? "جاري التحقق من هوية Google..." : "Verifying Google Identity..."}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={googleLoading || loading}
+                  className="w-full py-3 px-4 bg-white dark:bg-slate-800/90 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-3 cursor-pointer shadow-xs disabled:opacity-60"
+                >
+                  {googleLoading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                  )}
+                  <span>
+                    {lang === 'ar' ? "تسجيل الدخول بواسطة Google" : "Sign in with Google"}
+                  </span>
+                </button>
+              )}
 
               {/* CREATE NEW ACCOUNT LINK */}
               <div className="pt-2 text-center">
@@ -1246,6 +1541,661 @@ export function AuthScreen({
                   <User className="w-4 h-4" />
                   <span>تسجيل الدخول الآن بحسابك</span>
                 </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 4. GOOGLE SIGN IN MODAL */}
+      {/* ======================================================== */}
+      {showGoogleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 text-right relative">
+            
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowGoogleModal(false);
+                setGoogleModalError(null);
+              }}
+              className="absolute left-4 top-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div className="space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-xs">
+                <svg className="w-6 h-6" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+              </div>
+              <h3 className="text-base font-black text-slate-900 dark:text-white">
+                {lang === 'ar' ? "تسجيل الدخول والتحقق بحساب Google" : "Sign in with Google Account"}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                {lang === 'ar' 
+                  ? "سيتم التحقق من بريدك الإلكتروني عبر خادم Google المعتمد ومطابقته مباشرة مع حسابك المسجل، أو بدء طلب تسجيل جديد."
+                  : "Verify your email via Google identity to access your registered account or register a new one."}
+              </p>
+            </div>
+
+            {/* Error Message */}
+            {googleModalError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span className="font-bold leading-relaxed">{googleModalError}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={(e) => { e.preventDefault(); submitGoogleSimulationAuth(googleEmailInput); }} className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {lang === 'ar' ? "البريد الإلكتروني لحساب Google:" : "Google Account Email:"}
+                  </label>
+                  {!GOOGLE_CLIENT_ID && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-900/50">
+                      وضع المعاينة والفحص
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={googleEmailInput}
+                    onChange={(e) => setGoogleEmailInput(e.target.value)}
+                    placeholder="example@gmail.com أو user@riadataleata.org.sa"
+                    className="w-full px-3.5 py-2.5 pl-10 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    dir="ltr"
+                    required
+                    autoFocus
+                  />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              {/* Quick Select Buttons for Testing/Evaluation (All Scenarios) */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-bold text-slate-400">
+                  {lang === 'ar' ? "أو اختر حساباً تجريبياً لفحص الحالات المطلوبة:" : "Or select a test case:"}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleEmailInput("admin@riadataleata.org.sa");
+                      submitGoogleSimulationAuth("admin@riadataleata.org.sa", "مجلس الجمعية والمدير التنفيذي");
+                    }}
+                    className="p-2 text-right bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                  >
+                    👑 إداري (مجلس الإدارة)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleEmailInput("saud.h@reyadat-alata.org.sa");
+                      submitGoogleSimulationAuth("saud.h@reyadat-alata.org.sa", "سعود الحربي (موظف)");
+                    }}
+                    className="p-2 text-right bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                  >
+                    💼 موظف معتمد
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleEmailInput("ahmed.ghamdi@example.com");
+                      submitGoogleSimulationAuth("ahmed.ghamdi@example.com", "أحمد الغامدي (متطوع)");
+                    }}
+                    className="p-2 text-right bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                  >
+                    🤝 متطوع مسجل
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleEmailInput("abumohammad@example.com");
+                      submitGoogleSimulationAuth("abumohammad@example.com", "أبو محمد (مستفيد)");
+                    }}
+                    className="p-2 text-right bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                  >
+                    🤲 مستفيد مسجل
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleEmailInput("inactive@example.com");
+                      submitGoogleSimulationAuth("inactive@example.com", "حساب غير مفعل");
+                    }}
+                    className="p-2 text-right bg-slate-50 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                  >
+                    ⏳ حساب غير نشط
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleEmailInput("suspended@example.com");
+                      submitGoogleSimulationAuth("suspended@example.com", "حساب موقوف");
+                    }}
+                    className="p-2 text-right bg-slate-50 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all cursor-pointer font-bold text-slate-700 dark:text-slate-200"
+                  >
+                    ⛔ حساب موقوف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newEmail = "user.new." + Date.now().toString(36) + "@gmail.com";
+                      setGoogleEmailInput(newEmail);
+                      submitGoogleSimulationAuth(newEmail, "مستخدم جديد عبر Google");
+                    }}
+                    className="col-span-2 p-2 text-center bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-300 dark:border-emerald-800 rounded-xl transition-all cursor-pointer font-black text-emerald-800 dark:text-emerald-300 text-xs"
+                  >
+                    ✨ بريد جديد غير مسجل (اختيار مستفيد / متطوع)
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={googleLoading || !googleEmailInput.trim()}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                >
+                  {googleLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                      <span>{lang === 'ar' ? "جاري التحقق عبر Google..." : "Verifying with Google..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>{lang === 'ar' ? "متابعة تسجيل الدخول عبر Google" : "Continue with Google"}</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGoogleModal(false);
+                    setGoogleModalError(null);
+                  }}
+                  className="px-4 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  {lang === 'ar' ? "إلغاء" : "Cancel"}
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 5. GOOGLE COMPLETE REGISTRATION MODAL (FOR NEW USERS) */}
+      {/* ======================================================== */}
+      {showGoogleCompleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-5 text-right relative my-8 max-h-[90vh] overflow-y-auto">
+            
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowGoogleCompleteModal(false);
+                setGoogleAccountType(null);
+                setGoogleRegSubmitted(false);
+                setGoogleRegError(null);
+              }}
+              className="absolute left-4 top-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* SCREEN 1: SUCCESS / PENDING APPROVAL SUBMITTED */}
+            {googleRegSubmitted ? (
+              <div className="space-y-5 text-center py-4">
+                <div className="w-16 h-16 rounded-3xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center shadow-md border border-amber-200 dark:border-amber-900/50">
+                  <Clock className="w-8 h-8 animate-pulse" />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                    {lang === 'ar' ? "تم استلام طلب التسجيل بنجاح! 🎉" : "Registration Request Submitted!"}
+                  </h3>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-xs font-black">
+                    <span>{lang === 'ar' ? "حالة الحساب: قيد المراجعة والاعتماد (غير نشط)" : "Status: Pending Review (Inactive)"}</span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 leading-relaxed text-right space-y-2">
+                  <p className="font-bold text-slate-800 dark:text-slate-100">
+                    {googleRegSuccessMsg}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    • البريد الموثق: <span className="font-mono text-emerald-600">{verifiedGoogleData?.email}</span><br />
+                    • نوع الحساب المطلوب: <span className="font-bold">{googleAccountType === 'volunteer' ? 'متطوع' : 'مستفيد'}</span><br />
+                    • لن يتم تفعيل الحساب أو منح حق الوصول إلى لوحة التحكم إلا بعد إتمام الفرز والمراجعة الرسمية من قبل إدارة الجمعية.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGoogleCompleteModal(false);
+                    setGoogleAccountType(null);
+                    setGoogleRegSubmitted(false);
+                    onBackToHome();
+                  }}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-md"
+                >
+                  {lang === 'ar' ? "العودة إلى الصفحة الرئيسية للجمعية" : "Return to Homepage"}
+                </button>
+              </div>
+            ) : !googleAccountType ? (
+              /* SCREEN 2: CHOOSE ACCOUNT TYPE (مستفيد أو متطوع فقط - لا توجد أي خيارات إدارية) */
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>تم التحقق من حساب Google: {verifiedGoogleData?.email}</span>
+                  </div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    {lang === 'ar' ? "اختر نوع الحساب لإكمال التسجيل" : "Select Account Type"}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    {lang === 'ar' 
+                      ? "هذا البريد غير مسجل مسبقاً في النظام. يرجى اختيار صفتك لإكمال نموذج التسجيل المطلوب:" 
+                      : "This email is not registered yet. Please select your account type to complete registration:"}
+                  </p>
+                </div>
+
+                {/* THE TWO EXCLUSIVE OPTIONS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  
+                  {/* OPTION 1: BENEFICIARY (مستفيد) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleAccountType('beneficiary');
+                      setGoogleRegError(null);
+                    }}
+                    className="p-5 text-right bg-white dark:bg-slate-800 hover:border-rose-500 dark:hover:border-rose-400 border-2 border-slate-200 dark:border-slate-700 rounded-2xl transition-all cursor-pointer group shadow-xs hover:shadow-md flex flex-col justify-between space-y-3"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+                      <Heart className="w-6 h-6 fill-rose-500/20" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-rose-600 dark:group-hover:text-rose-400">
+                        {lang === 'ar' ? "مستفيد" : "Beneficiary"}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                        {lang === 'ar' 
+                          ? "للمواطنين والمقيمين المستحقين لطلب المساعدات الإنسانية والبرامج الاجتماعية والتموينية." 
+                          : "For eligible families and individuals seeking aid and humanitarian services."}
+                      </p>
+                    </div>
+                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1 pt-1">
+                      <span>{lang === 'ar' ? "اختيار والبدء بتعبئة النموذج" : "Select & Fill Form"}</span>
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </div>
+                  </button>
+
+                  {/* OPTION 2: VOLUNTEER (متطوع) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleAccountType('volunteer');
+                      setGoogleRegError(null);
+                    }}
+                    className="p-5 text-right bg-white dark:bg-slate-800 hover:border-emerald-500 dark:hover:border-emerald-400 border-2 border-slate-200 dark:border-slate-700 rounded-2xl transition-all cursor-pointer group shadow-xs hover:shadow-md flex flex-col justify-between space-y-3"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                        {lang === 'ar' ? "متطوع" : "Volunteer"}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                        {lang === 'ar' 
+                          ? "للمبادرين الراغبين بالانضمام للفرق التطوعية والمشاركة في الفعاليات والمبادرات الإنسانية والميدانية." 
+                          : "For volunteers joining teams and participating in humanitarian field initiatives."}
+                      </p>
+                    </div>
+                    <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-1">
+                      <span>{lang === 'ar' ? "اختيار والبدء بتعبئة النموذج" : "Select & Fill Form"}</span>
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </div>
+                  </button>
+
+                </div>
+
+                {/* Security Restriction Note */}
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 rounded-xl text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>
+                    {lang === 'ar' 
+                      ? "إشعار أمني: الحسابات الإدارية والموظفين يتم تعيينها حصرياً بواسطة إدارة الجمعية ولا تتاح عبر التسجيل الذاتي." 
+                      : "Security note: Staff and admin accounts are strictly assigned by association management."}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* SCREEN 3: COMPLETE MANDATORY REGISTRATION FORM */
+              <div className="space-y-4">
+                
+                {/* Header with Back button */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                      {googleAccountType === 'volunteer' ? (
+                        <>
+                          <Users className="w-4 h-4 text-emerald-600" />
+                          <span>{lang === 'ar' ? "إكمال نموذج تسجيل متطوع جديد" : "Complete Volunteer Registration"}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Heart className="w-4 h-4 text-rose-600" />
+                          <span>{lang === 'ar' ? "إكمال نموذج تسجيل مستفيد جديد" : "Complete Beneficiary Registration"}</span>
+                        </>
+                      )}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {lang === 'ar' ? "جميع الحقول المشار إليها بعلامة (*) إلزامية لاستكمال الطلب." : "All marked (*) fields are required."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGoogleAccountType(null)}
+                    className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{lang === 'ar' ? "تغيير نوع الحساب" : "Change type"}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Verified Google Email Badge */}
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs flex items-center justify-between">
+                  <span className="text-slate-500 text-[11px] font-bold">البريد الإلكتروني الموثق عبر Google:</span>
+                  <span className="font-mono text-emerald-700 dark:text-emerald-400 font-black text-[11px] flex items-center gap-1" dir="ltr">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    {verifiedGoogleData?.email || googleEmailInput}
+                  </span>
+                </div>
+
+                {/* Error Banner */}
+                {googleRegError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                    <span className="font-bold leading-relaxed">{googleRegError}</span>
+                  </div>
+                )}
+
+                {/* Registration Form */}
+                <form onSubmit={handleCompleteGoogleRegistration} className="space-y-3.5 text-xs">
+                  
+                  {/* Full Name */}
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">
+                      الاسم الكامل (رباعي) <span className="text-rose-500">*</span>:
+                    </label>
+                    <input
+                      type="text"
+                      value={gRegFullName}
+                      onChange={(e) => setGRegFullName(e.target.value)}
+                      placeholder="مثال: محمد بن عبد الله المكي"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  {/* National ID & Phone */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="block font-bold text-slate-700 dark:text-slate-300">
+                        رقم الهوية الوطنية / الإقامة (10 أرقام) <span className="text-rose-500">*</span>:
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={10}
+                        value={gRegNationalId}
+                        onChange={(e) => setGRegNationalId(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="10xxxxxxxx"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        dir="ltr"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block font-bold text-slate-700 dark:text-slate-300">
+                        رقم الجوال <span className="text-rose-500">*</span>:
+                      </label>
+                      <input
+                        type="tel"
+                        value={gRegPhone}
+                        onChange={(e) => setGRegPhone(e.target.value)}
+                        placeholder="05xxxxxxxx"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        dir="ltr"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Gender & Birth Date */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="block font-bold text-slate-700 dark:text-slate-300">
+                        الجنس:
+                      </label>
+                      <select
+                        value={gRegGender}
+                        onChange={(e) => setGRegGender(e.target.value as any)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      >
+                        <option value="male">ذكر</option>
+                        <option value="female">أنثى</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block font-bold text-slate-700 dark:text-slate-300">
+                        تاريخ الميلاد:
+                      </label>
+                      <input
+                        type="date"
+                        value={gRegBirthDate}
+                        onChange={(e) => setGRegBirthDate(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Address */}
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">
+                      العنوان والحي السكني:
+                    </label>
+                    <input
+                      type="text"
+                      value={gRegAddress}
+                      onChange={(e) => setGRegAddress(e.target.value)}
+                      placeholder="مكة المكرمة - مخطط العسيلة"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* VOLUNTEER SPECIFIC FIELDS */}
+                  {googleAccountType === 'volunteer' && (
+                    <div className="space-y-3 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            الفريق التطوعي المفضل:
+                          </label>
+                          <select
+                            value={gRegTeamId}
+                            onChange={(e) => setGRegTeamId(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          >
+                            <option value="team-1">الفريق التطوعي العام</option>
+                            <option value="team-2">فريق ريادة العطاء الصحي</option>
+                            <option value="team-3">فريق الإغاثة والمساعدات الميدانية</option>
+                            <option value="team-4">فريق التوعية والمبادرات المجتمعية</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            فصيلة الدم:
+                          </label>
+                          <select
+                            value={gRegBloodType}
+                            onChange={(e) => setGRegBloodType(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          >
+                            <option value="O+">O+</option>
+                            <option value="O-">O-</option>
+                            <option value="A+">A+</option>
+                            <option value="A-">A-</option>
+                            <option value="B+">B+</option>
+                            <option value="B-">B-</option>
+                            <option value="AB+">AB+</option>
+                            <option value="AB-">AB-</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Experiences */}
+                      <div className="space-y-1">
+                        <label className="block font-bold text-slate-700 dark:text-slate-300">
+                          المهارات والخبرات السابقة:
+                        </label>
+                        <input
+                          type="text"
+                          value={gRegExperiences}
+                          onChange={(e) => setGRegExperiences(e.target.value)}
+                          placeholder="مثال: تنظيم الحشود، الإسعافات الأولية، التصوير والإعلام..."
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* BENEFICIARY SPECIFIC FIELDS */}
+                  {googleAccountType === 'beneficiary' && (
+                    <div className="space-y-3 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            عدد أفراد الأسرة <span className="text-rose-500">*</span>:
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={gRegFamilySize}
+                            onChange={(e) => setGRegFamilySize(Number(e.target.value))}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            فئة الاستحقاق:
+                          </label>
+                          <select
+                            value={gRegCategory}
+                            onChange={(e) => setGRegCategory(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          >
+                            <option value="أسر محتاجة">أسر محتاجة</option>
+                            <option value="أسر أيتام">أسر أيتام</option>
+                            <option value="كبار السن">كبار السن</option>
+                            <option value="ذوي الإعاقة">ذوو الإعاقة</option>
+                            <option value="أرامل ومطلقات">أرامل ومطلقات</option>
+                            <option value="عام">أخرى</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            نوع السكن:
+                          </label>
+                          <select
+                            value={gRegHousingType}
+                            onChange={(e) => setGRegHousingType(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          >
+                            <option value="إيجار">إيجار</option>
+                            <option value="ملك">ملك</option>
+                            <option value="شعبي">شعبي / خيري</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Charter and Terms Agreement (Mandatory) */}
+                  <div className="pt-2">
+                    <label className="flex items-start gap-2 cursor-pointer p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={gRegAgreedToTerms}
+                        onChange={(e) => setGRegAgreedToTerms(e.target.checked)}
+                        className="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        required
+                      />
+                      <span className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed font-bold">
+                        أتعهد بصحة واكتمال جميع البيانات المدخلة، وأوافق على شروط وميثاق جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة. <span className="text-rose-500">*</span>
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Submission Notice */}
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800/60 rounded-xl text-[11px] text-slate-500 leading-relaxed flex items-center gap-2">
+                    <Clock className="w-4 h-4 shrink-0 text-amber-500" />
+                    <span>
+                      سيتم تسجيل الحساب بحالة <strong>قيد المراجعة / غير نشط</strong>، وتخضع جميع الطلبات لتدقيق الباحث الاجتماعي ومسؤولي الجمعية قبل الاعتماد.
+                    </span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="submit"
+                      disabled={googleRegLoading}
+                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                    >
+                      {googleRegLoading ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                          <span>جاري تسجيل الطلب والتحقق...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>إرسال طلب التسجيل للمراجعة</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGoogleAccountType(null)}
+                      className="px-4 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      رجوع
+                    </button>
+                  </div>
+
+                </form>
+
               </div>
             )}
 
