@@ -122,7 +122,14 @@ export const getApiBaseUrl = (): string => {
     }
   }
 
-  // 3. Fallback to same-origin relative path (standard for production reverse proxies, custom domains & same-origin)
+  // 3. Normalize non-www apex domain to avoid Vercel 308 cross-origin redirects on POST requests
+  if (typeof window !== 'undefined' && window.location) {
+    if (window.location.hostname === 'riadataleata.com') {
+      return 'https://www.riadataleata.com';
+    }
+  }
+
+  // 4. Fallback to same-origin relative path (standard for production reverse proxies, custom domains & same-origin)
   return '';
 };
 

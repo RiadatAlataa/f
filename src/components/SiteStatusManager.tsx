@@ -9,7 +9,7 @@ export interface SiteStatusManagerProps {
   maintenanceMessage?: string;
   maintenanceUpdatedAt?: string;
   maintenanceUpdatedBy?: string;
-  onToggleMaintenance: (enabled: boolean, message?: string) => Promise<boolean>;
+  onToggleMaintenance: (enabled: boolean, message?: string) => Promise<boolean | { success: boolean; error?: string }>;
   logs?: any[];
   currentUser?: any;
   lang?: 'ar' | 'en';
@@ -48,8 +48,13 @@ export const SiteStatusManager: React.FC<SiteStatusManagerProps> = ({
     setFeedback(null);
     try {
       const willEnable = targetAction === 'enable';
-      const success = await onToggleMaintenance(willEnable, customMessage);
-      if (success) {
+      const res = await onToggleMaintenance(willEnable, customMessage);
+      const isSuccess = typeof res === 'boolean' ? res : Boolean((res as any)?.success);
+      const errorText = (typeof res === 'object' && (res as any)?.error)
+        ? (res as any).error
+        : "تعذر تغيير حالة وضع الصيانة، يرجى التحقق من صلاحياتك والاتصال بالخادم.";
+
+      if (isSuccess) {
         setFeedback({
           type: 'success',
           text: willEnable ? "تم تفعيل وضع الصيانة بنجاح وإغلاق الموقع العام." : "تم إعادة تشغيل الموقع بنجاح وإتاحته للزوار."
@@ -58,7 +63,7 @@ export const SiteStatusManager: React.FC<SiteStatusManagerProps> = ({
       } else {
         setFeedback({
           type: 'error',
-          text: "تعذر تغيير حالة وضع الصيانة، يرجى التحقق من صلاحياتك والاتصال بالخادم."
+          text: errorText
         });
       }
     } catch (err: any) {

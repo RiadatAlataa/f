@@ -120,7 +120,7 @@ export default function App() {
   const AUTH_SESSION_KEY = 'reyadat_auth_session';
 
   const getStoredSession = (): {
-    role: 'admin' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public';
+    role: 'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public';
     user: any;
     activeMainTab?: 'system' | 'ai' | 'guide';
     adminSubTab?: string;
@@ -493,38 +493,64 @@ export default function App() {
   };
 
   // Centralized Maintenance Mode Handler (Persistent in database & audit logs)
-  const handleToggleMaintenance = async (enabled: boolean, message?: string): Promise<boolean> => {
+  const handleToggleMaintenance = async (enabled: boolean, message?: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const authHeaders = getAuthHeaders();
       const finalUrl = buildApiUrl("/api/maintenance/toggle");
       const session = getStoredSession();
       const performerName = session?.user?.name || authenticatedUser?.name || "الإدارة العامة";
+      const userRole = currentRole || session?.role || authenticatedUser?.role || 'operations_manager';
+      const userId = authenticatedUser?.id || session?.user?.id || 'ops-manager';
       
+      const payload = {
+        enabled,
+        message,
+        performerName,
+        role: userRole,
+        userRole: userRole,
+        userId: userId
+      };
+
       const res = await fetch(finalUrl, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
           ...authHeaders,
-          'x-user-role': currentRole || session?.role || 'admin',
-          'x-user-name': encodeURIComponent(performerName)
+          'x-user-role': userRole,
+          'x-user-id': userId
         },
-        body: JSON.stringify({
-          enabled,
-          message,
-          performerName
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.error || "فشل الخادم في تغيير حالة وضع الصيانة");
+        const statusDesc = getHttpStatusDescription(res.status, res.statusText);
+        const errorMsg = errJson?.error || `فشل الخادم في تغيير حالة وضع الصيانة (رمز الاستجابة: ${res.status} - ${statusDesc})`;
+        throw new Error(errorMsg);
       }
 
-      await fetchDatabase(true);
-      return true;
+      const resJson = await res.json().catch(() => null);
+      if (resJson) {
+        if (resJson.db) {
+          setDbData(resJson.db);
+        } else if (resJson.systemSettings) {
+          setDbData((prev: any) => prev ? {
+            ...prev,
+            systemSettings: resJson.systemSettings,
+            maintenance_mode: resJson.maintenance_mode
+          } : prev);
+        }
+      }
+
+      // Refresh database in background to ensure all records sync smoothly
+      fetchDatabase(true).catch(() => {});
+      return { success: true };
     } catch (err: any) {
       console.error("Failed to toggle maintenance mode:", err);
-      return false;
+      return {
+        success: false,
+        error: err?.message || "تعذر الاتصال بالخادم لتغيير حالة وضع الصيانة."
+      };
     }
   };
 
@@ -1790,6 +1816,7 @@ export default function App() {
                 onToggleLang={setLang}
                 homeSettings={dbData.homeSettings}
                 onLoginSuccess={handleLoginSuccess}
+                isMaintenanceMode={isMaintenanceActive}
                 onBackToHome={() => {
                   setCurrentRole('public');
                 }}

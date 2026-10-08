@@ -212,7 +212,7 @@ interface AdminDashboardProps {
   onRefreshGlobalData?: () => void;
   onBackToHome?: () => void;
   authenticatedUser?: any;
-  onToggleMaintenance?: (enabled: boolean, message?: string) => Promise<boolean>;
+  onToggleMaintenance?: (enabled: boolean, message?: string) => Promise<boolean | { success: boolean; error?: string }>;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -327,8 +327,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const willEnable = maintenanceTargetAction === 'enable';
       if (onToggleMaintenance) {
-        const success = await onToggleMaintenance(willEnable, maintenanceMessageInput);
-        if (success) {
+        const res = await onToggleMaintenance(willEnable, maintenanceMessageInput);
+        const isSuccess = typeof res === 'boolean' ? res : Boolean((res as any)?.success);
+        const errorText = (typeof res === 'object' && (res as any)?.error)
+          ? (res as any).error
+          : "فشل تغيير حالة وضع الصيانة، يرجى مراجعة الصلاحيات والاتصال بالخادم.";
+
+        if (isSuccess) {
           setMaintenanceFeedback({
             type: 'success',
             text: willEnable 
@@ -342,7 +347,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         } else {
           setMaintenanceFeedback({
             type: 'error',
-            text: "فشل تغيير حالة وضع الصيانة، يرجى مراجعة الصلاحيات والاتصال بالخادم."
+            text: errorText
           });
         }
       }
