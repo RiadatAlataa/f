@@ -213,6 +213,7 @@ interface AdminDashboardProps {
   onBackToHome?: () => void;
   authenticatedUser?: any;
   onToggleMaintenance?: (enabled: boolean, message?: string) => Promise<boolean | { success: boolean; error?: string }>;
+  isMaintenanceMode?: boolean;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -221,6 +222,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onSubTabChange,
   onBackToHome,
   authenticatedUser,
+  isMaintenanceMode,
   onAddDepartment,
   onDeleteDepartment,
   onAddTeam,
@@ -302,11 +304,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   // Maintenance Mode States
-  const isMaintenanceActive = Boolean(
-    (data as any)?.systemSettings?.maintenanceMode === true ||
-    (data as any)?.systemSettings?.maintenance_mode === 1 ||
-    (data as any)?.maintenance_mode === 1
-  );
+  const isMaintenanceActive = typeof isMaintenanceMode === 'boolean'
+    ? isMaintenanceMode
+    : Boolean(
+        (data as any)?.systemSettings?.maintenanceMode === true ||
+        (data as any)?.systemSettings?.maintenance_mode === 1 ||
+        (data as any)?.maintenance_mode === 1
+      );
   const currentMaintenanceMessage = (data as any)?.systemSettings?.maintenance_message || (data as any)?.systemSettings?.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
   
   const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
@@ -1052,6 +1056,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
         </div>
+
+        {/* Prominent Sticky Warning Banner when Maintenance Mode is Active */}
+        {isMaintenanceActive && (
+          <div className="w-full bg-amber-500/15 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl p-3 sm:p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs animate-fadeIn">
+            <div className="flex items-center gap-2.5 text-xs font-black text-amber-900 dark:text-amber-200">
+              <Wrench className="w-4 h-4 text-amber-600 animate-bounce shrink-0" />
+              <span>⚠️ تنبيه إداري نشط: وضع الصيانة مفعل حالياً على الموقع العام — الموقع مغلق أمام الزوار والمتطوعين والمستفيدين</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+              {onBackToHome && (
+                <button
+                  type="button"
+                  onClick={onBackToHome}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 transition-all cursor-pointer shadow-2xs"
+                >
+                  👁️ معاينة صفحة الصيانة
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMaintenanceTargetAction('disable');
+                  setMaintenanceFeedback(null);
+                  setIsMaintenanceModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shadow-xs"
+              >
+                إلغاء وضع الصيانة وإتاحة الموقع للجميع
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Main Dynamic Panel Container */}
         <div 

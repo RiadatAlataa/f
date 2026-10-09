@@ -251,7 +251,10 @@
       "nationalId": "1087654321",
       "password": "123",
       "volunteerHours": 35,
-      "completedInitiativesCount": 61
+      "completedInitiativesCount": 61,
+      "fileNumber": "A-1339",
+      "file_number": "A-1339",
+      "gender": "male"
     },
     {
       "id": "vol-2",
@@ -273,7 +276,10 @@
       "nationalId": "1098765432",
       "password": "123",
       "volunteerHours": 47,
-      "completedInitiativesCount": 20
+      "completedInitiativesCount": 20,
+      "fileNumber": "B-9291",
+      "file_number": "B-9291",
+      "gender": "female"
     },
     {
       "id": "vol-3",
@@ -295,7 +301,10 @@
       "nationalId": "1076543210",
       "password": "123",
       "volunteerHours": 59,
-      "completedInitiativesCount": 31
+      "completedInitiativesCount": 31,
+      "fileNumber": "A-7534",
+      "file_number": "A-7534",
+      "gender": "male"
     },
     {
       "id": "vol-4",
@@ -317,7 +326,10 @@
       "nationalId": "1065432109",
       "password": "123",
       "volunteerHours": 71,
-      "completedInitiativesCount": 10
+      "completedInitiativesCount": 10,
+      "fileNumber": "B-3113",
+      "file_number": "B-3113",
+      "gender": "female"
     },
     {
       "id": "vol-5",
@@ -339,7 +351,10 @@
       "nationalId": "1054321098",
       "password": "123",
       "volunteerHours": 83,
-      "completedInitiativesCount": 1
+      "completedInitiativesCount": 1,
+      "fileNumber": "A-2758",
+      "file_number": "A-2758",
+      "gender": "male"
     },
     {
       "id": "vol-inactive-test",
@@ -379,7 +394,10 @@
       "status": "active",
       "phone": "0500000000",
       "volunteerHours": 119,
-      "completedInitiativesCount": 10
+      "completedInitiativesCount": 10,
+      "fileNumber": "A-6119",
+      "file_number": "A-6119",
+      "gender": "male"
     },
     {
       "id": "vol-google-1791414163233",
@@ -3564,6 +3582,24 @@
   ],
   "logs": [
     {
+      "id": "log-1791562030610",
+      "timestamp": "2026-10-09T16:07:10.610Z",
+      "user": "مدير العمليات",
+      "action": "إيقاف وضع الصيانة وإعادة تشغيل الموقع العام للزوار",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "result": "ناجح"
+    },
+    {
+      "id": "log-1791562019760",
+      "timestamp": "2026-10-09T16:06:59.760Z",
+      "user": "مدير العمليات",
+      "action": "تشغيل وضع الصيانة وإغلاق الموقع العام أمام الزوار",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "result": "ناجح"
+    },
+    {
       "id": "log-1791417956146",
       "timestamp": "2026-10-08T00:05:56.146Z",
       "user": "م. سلطان الزهراني (مدير العمليات)",
@@ -4396,7 +4432,7 @@
       "id": "app-103",
       "fullName": "فيصل بن سعد السلمي",
       "nationalId": "1076543210",
-      "fileNumber": "FILE-2026-003",
+      "fileNumber": "A-7534",
       "gender": "male",
       "nationality": "سعودي",
       "birthDate": "1995-02-10",
@@ -5095,7 +5131,7 @@
     "registrationNumber": "1000888600",
     "foundationYear": "1445هـ / 2024م",
     "maintenanceMode": false,
-    "maintenanceMessage": "الموقع تحت الصيانة والتطوير.",
+    "maintenanceMessage": "الموقع تحت الصيانة والتطوير. نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا.",
     "defaultLanguage": "ar",
     "timezone": "Asia/Riyadh (GMT+3)",
     "dateTimeFormat": "هجري / ميلادي - 12 ساعة",
@@ -5357,9 +5393,9 @@
       "femaleUnifiedCardPhoto": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80"
     },
     "maintenance_mode": 0,
-    "maintenance_message": "الموقع تحت الصيانة والتطوير.",
-    "maintenance_updated_at": "2026-10-08T00:05:56.146Z",
-    "maintenance_updated_by": "م. سلطان الزهراني (مدير العمليات)"
+    "maintenance_message": "الموقع تحت الصيانة والتطوير. نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا.",
+    "maintenance_updated_at": "2026-10-09T16:07:10.610Z",
+    "maintenance_updated_by": "مدير العمليات"
   },
   "storekeepers": [
     {
@@ -9060,7 +9096,7 @@
       "createdAt": "2026-10-04T18:43:31.774Z",
       "updatedAt": "2026-10-07T22:46:24.130Z",
       "updatedBy": "النظام المركزي",
-      "lastLogin": "2026-10-07T23:48:57.086Z",
+      "lastLogin": "2026-10-09T15:02:33.241Z",
       "resetToken": "rst-1791413184130-nzvdx82q",
       "resetTokenExpiresAt": "2026-10-08T22:46:24.130Z"
     },
@@ -9565,6 +9601,42 @@
     }
   ],
   "accessAuditLogs": [
+    {
+      "id": "audit-1791562030610",
+      "timestamp": "2026-10-09T16:07:10.610Z",
+      "userName": "مدير العمليات",
+      "action": "disable_maintenance",
+      "category": "system_control",
+      "details": "إيقاف وضع الصيانة وإعادة تشغيل الموقع العام للزوار",
+      "ip": "127.0.0.1",
+      "result": "success"
+    },
+    {
+      "id": "audit-1791562019760",
+      "timestamp": "2026-10-09T16:06:59.760Z",
+      "userName": "مدير العمليات",
+      "action": "enable_maintenance",
+      "category": "system_control",
+      "details": "تشغيل وضع الصيانة وإغلاق الموقع العام أمام الزوار",
+      "ip": "127.0.0.1",
+      "result": "success"
+    },
+    {
+      "id": "audit-login-1791558153247-2yzl",
+      "timestamp": "2026-10-09T15:02:33.247Z",
+      "userId": "mosa",
+      "userName": "موسى (مسؤول النظام Administrator)",
+      "userRole": "admin",
+      "userDepartmentId": "dep-1",
+      "targetDepartmentId": "dep-1",
+      "action": "login",
+      "resource": "بوابة الدخول الموحد",
+      "endpoint": "/api/db/auth/login",
+      "status": "allowed",
+      "ip": "5.82.44.220",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Sa",
+      "notes": "تسجيل دخول مسؤول النظام (mosa) بنجاح بصلاحية Administrator كاملة"
+    },
     {
       "id": "audit-1791417956147",
       "timestamp": "2026-10-08T00:05:56.146Z",
@@ -13512,70 +13584,6 @@
       "ip": "176.19.66.52",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
       "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224855741-ezge",
-      "timestamp": "2026-10-05T18:27:35.741Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224855381-9gt1",
-      "timestamp": "2026-10-05T18:27:35.381Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224855174-6vb7",
-      "timestamp": "2026-10-05T18:27:35.174Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224854986-3y3e",
-      "timestamp": "2026-10-05T18:27:34.986Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
     }
   ],
   "beneficiaryRatings": [
@@ -13607,6 +13615,54 @@
     }
   ],
   "developerErrorLogs": [
+    {
+      "id": "err_1791561016893_2ioll",
+      "pageName": "قسم: الإدارة المالية الشاملة",
+      "componentName": "FinancialAccountsManager",
+      "message": "Cannot read properties of undefined (reading 'toLocaleString')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'toLocaleString')\n    at https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialAccountsManager.tsx:325:34\n    at Array.map (<anonymous>)\n    at FinancialAccountsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialAccountsManager.tsx:245:123)\n    at Object.react_stack_bottom_frame (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:18509:20)\n    at renderWithHooks (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:5654:24)\n    at updateFunctionComponent (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:7475:21)\n    at beginWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:8525:20)\n    at runWithFiberInDEV (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:997:72)\n    at performUnitOfWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12561:98)\n    at workLoopSync (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12424:43)",
+      "componentStack": "\n    at FinancialAccountsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialAccountsManager.tsx:12:3)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at FinancialManagement (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialManagement.tsx:26:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at AdminDashboard (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/AdminDashboard.tsx:118:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at main (<anonymous>)\n    at div (<anonymous>)\n    at App (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/App.tsx:41:31)",
+      "timestamp": "2026-10-09T15:50:16.904Z",
+      "url": "https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/#initiatives",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "ip": "5.110.255.32"
+    },
+    {
+      "id": "err_1791560168328_0j0zc",
+      "pageName": "قسم: الإدارة المالية الشاملة",
+      "componentName": "FinancialDonorsManager",
+      "message": "Cannot read properties of undefined (reading 'toLocaleString')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'toLocaleString')\n    at https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:305:35\n    at Array.map (<anonymous>)\n    at FinancialDonorsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:219:129)\n    at Object.react_stack_bottom_frame (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:18509:20)\n    at renderWithHooks (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:5654:24)\n    at updateFunctionComponent (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:7475:21)\n    at beginWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:8525:20)\n    at runWithFiberInDEV (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:997:72)\n    at performUnitOfWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12561:98)\n    at workLoopSync (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12424:43)",
+      "componentStack": "\n    at FinancialDonorsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:13:3)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at FinancialManagement (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialManagement.tsx:26:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at AdminDashboard (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/AdminDashboard.tsx:118:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at main (<anonymous>)\n    at div (<anonymous>)\n    at App (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/App.tsx:41:31)",
+      "timestamp": "2026-10-09T15:36:08.333Z",
+      "url": "https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/#initiatives",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "ip": "5.110.255.32"
+    },
+    {
+      "id": "err_1791560159596_vrixu",
+      "pageName": "قسم: الإدارة المالية الشاملة",
+      "componentName": "FinancialDonorsManager",
+      "message": "Cannot read properties of undefined (reading 'toLocaleString')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'toLocaleString')\n    at https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:305:35\n    at Array.map (<anonymous>)\n    at FinancialDonorsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:219:129)\n    at Object.react_stack_bottom_frame (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:18509:20)\n    at renderWithHooks (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:5654:24)\n    at updateFunctionComponent (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:7475:21)\n    at beginWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:8525:20)\n    at runWithFiberInDEV (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:997:72)\n    at performUnitOfWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12561:98)\n    at workLoopSync (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12424:43)",
+      "componentStack": "\n    at FinancialDonorsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:13:3)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at FinancialManagement (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialManagement.tsx:26:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at AdminDashboard (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/AdminDashboard.tsx:118:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at main (<anonymous>)\n    at div (<anonymous>)\n    at App (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/App.tsx:41:31)",
+      "timestamp": "2026-10-09T15:35:59.605Z",
+      "url": "https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/#initiatives",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "ip": "5.110.255.32"
+    },
+    {
+      "id": "err_1791560146428_lvvsv",
+      "pageName": "قسم: الإدارة المالية الشاملة",
+      "componentName": "FinancialDonorsManager",
+      "message": "Cannot read properties of undefined (reading 'toLocaleString')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'toLocaleString')\n    at https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:305:35\n    at Array.map (<anonymous>)\n    at FinancialDonorsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:219:129)\n    at Object.react_stack_bottom_frame (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:18509:20)\n    at renderWithHooks (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:5654:24)\n    at updateFunctionComponent (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:7475:21)\n    at beginWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:8525:20)\n    at runWithFiberInDEV (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:997:72)\n    at performUnitOfWork (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12561:98)\n    at workLoopSync (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/node_modules/.vite/deps/react-dom_client.js?v=337d823e:12424:43)",
+      "componentStack": "\n    at FinancialDonorsManager (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialDonorsManager.tsx:13:3)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at FinancialManagement (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/financial/FinancialManagement.tsx:26:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at AdminDashboard (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/AdminDashboard.tsx:118:3)\n    at DashboardErrorBoundary (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/components/DashboardErrorBoundary.tsx:10:5)\n    at div (<anonymous>)\n    at main (<anonymous>)\n    at div (<anonymous>)\n    at App (https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/src/App.tsx:41:31)",
+      "timestamp": "2026-10-09T15:35:46.433Z",
+      "url": "https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app/#initiatives",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "ip": "5.110.255.32"
+    },
     {
       "id": "err_1791226070229_wdilc",
       "pageName": "قسم: إدارة الدعم الفني والتذاكر",
@@ -17317,6 +17373,57 @@
       "createdAt": 1791417274058,
       "lastActive": 1791417274058,
       "expiresAt": 1792022074058
+    },
+    {
+      "token": "sess_1791558153253_jr8wlnnkizkn80",
+      "userId": "mosa",
+      "role": "admin",
+      "user": {
+        "id": "mosa",
+        "userId": "mosa",
+        "username": "mosa",
+        "name": "موسى (مسؤول النظام Administrator)",
+        "email": "mosa@riadataleata.org.sa",
+        "phone": "0550000099",
+        "nationalId": "1000000099",
+        "role": "admin",
+        "jobTitle": "مسؤول النظام (Administrator)",
+        "primaryDepartmentId": "dep-1",
+        "primaryDepartmentName": "الإدارة التنفيذية",
+        "allowedDepartmentIds": [
+          "dep-1",
+          "dep-2",
+          "dep-3",
+          "dep-4",
+          "dep-5",
+          "dep-7",
+          "dep-8",
+          "dep-9"
+        ],
+        "permissions": [
+          "super_admin",
+          "view_department",
+          "create_data",
+          "edit_data",
+          "delete_data",
+          "export_pdf",
+          "export_excel",
+          "manage_staff",
+          "manage_tasks",
+          "view_reports",
+          "cross_department_access",
+          "all_permissions"
+        ],
+        "mustChangePassword": false,
+        "status": "active",
+        "lastLogin": "2026-10-09T15:02:33.241Z"
+      },
+      "departmentId": "dep-1",
+      "nationalId": "1000000099",
+      "teamId": "",
+      "createdAt": 1791558153253,
+      "lastActive": 1791558153253,
+      "expiresAt": 1792162953253
     }
   ],
   "passwordResetOtps": [

@@ -11,6 +11,7 @@ import {
 import { SystemSettings, OperationLog, SystemStats } from "../types";
 import { ImagePickerControl } from "./ImagePickerControl";
 import { useApplicationAudio } from "../utils/audioNotification";
+import { buildApiUrl, getAuthHeaders } from "../config/api";
 
 interface SystemSettingsPanelProps {
   logs?: OperationLog[];
@@ -63,7 +64,11 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
   // Fetch initial settings from server
   const fetchSettings = async () => {
     try {
-      const res = await fetch("/api/db/systemSettings");
+      const headers = getAuthHeaders();
+      const res = await fetch(buildApiUrl("/api/db/systemSettings"), {
+        headers,
+        cache: 'no-store'
+      });
       if (res.ok) {
         const data = await res.json();
         setSettings(data);
@@ -84,9 +89,13 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
     setSaveError(null);
 
     try {
-      const res = await fetch("/api/db/systemSettings", {
+      const headers = {
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
+      };
+      const res = await fetch(buildApiUrl("/api/db/systemSettings"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           ...settings,
           updatedSection: sectionTitle

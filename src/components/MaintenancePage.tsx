@@ -1,5 +1,5 @@
 import React from "react";
-import { Wrench, ShieldCheck, Lock, Sparkles, Phone, Mail, Clock, RefreshCw } from "lucide-react";
+import { Wrench, ShieldCheck, Lock, Sparkles, Phone, Mail, Clock, RefreshCw, LogOut, CheckCircle2 } from "lucide-react";
 
 export interface MaintenancePageProps {
   message?: string;
@@ -11,6 +11,9 @@ export interface MaintenancePageProps {
   isDark?: boolean;
   authenticatedUser?: any;
   onReturnToDashboard?: () => void;
+  isAuthorizedStaff?: boolean;
+  onDisableMaintenance?: () => void;
+  onLogout?: () => void;
 }
 
 export const MaintenancePage: React.FC<MaintenancePageProps> = ({
@@ -22,9 +25,13 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
   onRefresh,
   isDark = false,
   authenticatedUser,
-  onReturnToDashboard
+  onReturnToDashboard,
+  isAuthorizedStaff = false,
+  onDisableMaintenance,
+  onLogout
 }) => {
   const [isChecking, setIsChecking] = React.useState(false);
+  const [isDisabling, setIsDisabling] = React.useState(false);
 
   const handleManualCheck = () => {
     setIsChecking(true);
@@ -36,6 +43,16 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
     }, 800);
   };
 
+  const handleDisableClick = async () => {
+    if (!onDisableMaintenance) return;
+    setIsDisabling(true);
+    try {
+      await onDisableMaintenance();
+    } finally {
+      setIsDisabling(false);
+    }
+  };
+
   return (
     <div 
       dir="rtl" 
@@ -44,6 +61,38 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
       {/* Background Decorative Ambient Gradients */}
       <div className="absolute top-0 right-1/4 -mt-20 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-1/4 -mb-20 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Authorized Manager Top Sticky Banner */}
+      {isAuthorizedStaff && (
+        <div className="w-full max-w-5xl mx-auto mb-4 bg-amber-500/15 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 z-20 shadow-xs">
+          <div className="flex items-center gap-2.5 text-amber-900 dark:text-amber-200 text-xs font-black">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span>أنت تشاهد صفحة الصيانة بصفتك مدير العمليات / الإدارة العليا (الموقع العام مغلق حالياً أمام الزوار)</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+            {onReturnToDashboard && (
+              <button
+                type="button"
+                onClick={onReturnToDashboard}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 transition-all cursor-pointer shadow-2xs"
+              >
+                العودة للوحة الإدارة
+              </button>
+            )}
+            {onDisableMaintenance && (
+              <button
+                type="button"
+                onClick={handleDisableClick}
+                disabled={isDisabling}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{isDisabling ? "جاري الإلغاء..." : "إلغاء الصيانة وفتح الموقع للجميع"}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Top Header Bar */}
       <header className="w-full max-w-5xl mx-auto flex items-center justify-between z-10 py-2">
@@ -70,7 +119,7 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
         </div>
 
         {/* Administrative Staff Entrance Button */}
-        {(authenticatedUser && onReturnToDashboard) ? (
+        {(authenticatedUser && onReturnToDashboard && isAuthorizedStaff) ? (
           <button
             type="button"
             onClick={onReturnToDashboard}
@@ -79,6 +128,16 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
           >
             <ShieldCheck className="w-3.5 h-3.5 text-white" />
             <span>العودة للوحة الإدارة ({authenticatedUser.name?.split(" ")[0] || "المسؤول"})</span>
+          </button>
+        ) : (authenticatedUser && onLogout && !isAuthorizedStaff) ? (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900 shadow-xs hover:bg-rose-100 transition-all cursor-pointer"
+            title="تسجيل الخروج"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>خروج ({authenticatedUser.name?.split(" ")[0]})</span>
           </button>
         ) : onOpenLogin ? (
           <button
@@ -120,6 +179,13 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
             </h2>
           </div>
 
+          {/* Notice for logged-in non-admin users */}
+          {authenticatedUser && !isAuthorizedStaff && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-3.5 text-amber-900 dark:text-amber-200 text-xs font-bold leading-relaxed">
+              مرحباً بك ({authenticatedUser.name}) • تم تعليق بوابات المستخدمين والمتطوعين والمستفيدين مؤقتاً لحين استكمال أعمال الصيانة والتحديثات من قِبل إدارة العمليات.
+            </div>
+          )}
+
           {/* Explanatory Message */}
           <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border border-slate-200/60 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-sm sm:text-base leading-relaxed font-medium">
             {message}
@@ -150,7 +216,7 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
               <span>{isChecking ? 'جاري فحص حالة الموقع...' : 'التحقق من جاهزية الموقع'}</span>
             </button>
 
-            {(authenticatedUser && onReturnToDashboard) ? (
+            {(authenticatedUser && onReturnToDashboard && isAuthorizedStaff) ? (
               <button
                 type="button"
                 onClick={onReturnToDashboard}
@@ -158,6 +224,15 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>العودة للوحة التحكم الإدارية</span>
+              </button>
+            ) : (authenticatedUser && onLogout && !isAuthorizedStaff) ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>تسجيل الخروج</span>
               </button>
             ) : onOpenLogin ? (
               <button

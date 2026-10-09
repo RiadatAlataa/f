@@ -193,6 +193,8 @@ export interface Volunteer {
   phone: string;
   photo: string; // URL or base64 or placeholder
   membershipNumber: string;
+  fileNumber?: string;
+  file_number?: string;
   teamId: string;
   departmentId: string;
   titleAr: string;
@@ -1346,16 +1348,30 @@ export interface SupportTicket {
   requesterName: string;
   requesterEmail?: string;
   requesterPhone?: string;
-  requesterRole: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'public';
+  requesterRole: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'public' | string;
+  departmentId?: string;
+  departmentName?: string;
   subject: string;
-  status: 'new' | 'in_progress' | 'pending_user' | 'closed';
-  priority: 'low' | 'medium' | 'urgent';
+  description?: string;
+  status: 'new' | 'assigned' | 'in_progress' | 'pending_user' | 'resolved' | 'closed';
+  priority: 'low' | 'normal' | 'medium' | 'high' | 'urgent';
   assignedToAgentName?: string;
-  chatTranscript: SupportTicketMessage[];
+  assignedStaffId?: string;
+  assignedStaffName?: string;
+  assignmentNotes?: string;
+  assignedAt?: string;
+  assignedBy?: string;
+  chatTranscript?: SupportTicketMessage[] | TicketMessage[];
   createdAt: string;
   updatedAt: string;
-  escalatedFromAi: boolean;
+  escalatedFromAi?: boolean;
   escalationReason?: string;
+  internalNotes?: TicketInternalNote[];
+  replies?: TicketMessage[];
+  closedAt?: string;
+  closedBy?: string;
+  emailNotificationStatus?: 'sent' | 'failed' | 'retrying';
+  emailNotificationError?: string;
 }
 
 // -------------------------------------------------------------
@@ -1826,6 +1842,12 @@ export type DepartmentPermissionKey =
   | 'manage_tasks'            // إدارة المهام والتكليفات
   | 'view_reports'            // مشاهدة واستعراض التقارير
   | 'cross_department_access' // الوصول إلى بيانات إدارة أخرى
+  | 'view_media'              // استعراض محتوى إدارة الإعلام
+  | 'create_media'            // إضافة فيديوهات ومحتوى إعلامي جديد
+  | 'edit_media'              // تعديل المقاطع والمحتوى الإعلامي
+  | 'publish_media'           // نشر وإلغاء نشر الفيديوهات والمحتوى
+  | 'archive_media'           // أرشفة المقاطع والمحتوى الإعلامي
+  | 'delete_media'            // حذف المقاطع والمحتوى الإعلامي
   | 'super_admin';            // الإشراف العام للإدارة العليا
 
 export interface UserDepartmentAccess {
@@ -1879,3 +1901,44 @@ export interface AccessAuditLog {
   device?: string;
   notes?: string;
 }
+
+export interface TicketMessage {
+  id: string;
+  ticketId?: string;
+  senderType: 'user' | 'ai' | 'agent' | 'staff' | 'ops_manager';
+  senderName: string;
+  senderRole?: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface TicketInternalNote {
+  id: string;
+  authorName: string;
+  authorRole: string;
+  note: string;
+  timestamp: string;
+}
+
+export interface MediaVideoItem {
+  id: string;
+  type: 'video';
+  url: string;
+  thumbnailUrl?: string;
+  titleAr: string;
+  titleEn?: string;
+  descriptionAr?: string;
+  descriptionEn?: string;
+  date: string;
+  category: 'مبادرات' | 'مشاريع' | 'تغطيات' | 'فعاليات' | 'لقاءات' | 'إعلام' | string;
+  status: 'published' | 'draft' | 'scheduled' | 'archived';
+  scheduledDate?: string;
+  duration?: string;
+  isFeatured?: boolean;
+  authorName?: string;
+  viewsCount?: number;
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+

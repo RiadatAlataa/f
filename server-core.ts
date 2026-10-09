@@ -27,6 +27,14 @@ import type {
 import { setupFinancialRoutes } from "./server/financeRoutes";
 import { setupEmailRoutes } from "./server/emailRoutes";
 import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService";
+import { 
+  initPostgresTables, 
+  getPostgresMaintenanceStatus, 
+  setPostgresMaintenanceStatus,
+  savePostgresVolunteerFileNumber,
+  getPostgresVolunteerFileNumbers,
+  isPostgresConfigured 
+} from "./server/postgres";
 
 console.log("[SERVER CORE] loading");
 
@@ -494,6 +502,26 @@ const defaultDb = {
         "توثيق واحتساب الساعات التطوعية الميدانية.",
         "إصدار شهادات التطوع وبطاقات العضوية المعتمدة.",
         "متابعة مؤشرات وتقارير العمل التطوعي بالجمعية."
+      ]
+    },
+    { 
+      id: "dep-6", 
+      nameAr: "إدارة الإعلام والاتصال", 
+      nameEn: "Media & Communication Management", 
+      directorName: "أ. عبد العزيز الشمري",
+      nationalId: "1010000006",
+      password: "123",
+      email: "media@riadataleata.org.sa",
+      phone: "0551000006",
+      descriptionAr: "إدارة وتوثيق المقاطع المرئية والفيديوهات، التغطيات الإعلامية، النشر والأرشفة، وإدارة المحتوى المرئي للجمعية.", 
+      descriptionEn: "Managing media videos and clips, press coverage, publishing and archiving, and digital media content.",
+      tasks: [
+        "إدارة وتوثيق المقاطع المرئية والفيديوهات بالجمعية.",
+        "رفع ومعاينة وتحديث الفيديوهات على الموقع الرسمي.",
+        "جدولة ونشر وأرشفة المحتوى الإعلامي المرئي.",
+        "إعداد التغطيات المرئية وتوثيق الفعاليات والمبادرات.",
+        "التنسيق مع الفرق الإعلامية والتصوير.",
+        "متابعة مؤشرات وصول وتفاعل المشاهدين مع المحتوى."
       ]
     },
     { 
@@ -2130,6 +2158,108 @@ function seed120Initiatives(db: any): boolean {
 
 // Seed the in-memory defaultDb
 seed120Initiatives(defaultDb);
+
+// --------------------------------------------------------------------------
+// Volunteer File Number Helper & Generator Functions (Requirements 1, 2, 3, 5)
+// - Format for Male: A-XXXX (A-1000 to A-9999)
+// - Format for Female: B-XXXX (B-1000 to B-9999)
+// - Strictly generated on server, guaranteed unique, resilient to concurrency
+// --------------------------------------------------------------------------
+
+export function normalizeVolunteerGender(rawGender?: string): 'male' | 'female' | null {
+  if (!rawGender) return null;
+  const g = String(rawGender).trim().toLowerCase();
+  if (g === 'female' || g === 'أنثى' || g === 'f') return 'female';
+  if (g === 'male' || g === 'ذكر' || g === 'm') return 'male';
+  return null;
+}
+
+export function generateUniqueVolunteerFileNumber(db: any, rawGender?: string): string {
+  const normGender = normalizeVolunteerGender(rawGender);
+  if (!normGender) {
+    throw new Error("تعذر إنشاء رقم الملف: يجب تحديد جنس المتطوع (ذكر أو أنثى) في بيانات المتطوع أولاً لتوليد رقم الملف بصيغة معتمدة.");
+  }
+  const prefix = normGender === 'female' ? 'B' : 'A';
+
+  const existingNumbers = new Set<string>();
+  (db.volunteers || []).forEach((v: any) => {
+    if (v.fileNumber) existingNumbers.add(String(v.fileNumber).trim().toUpperCase());
+    if (v.file_number) existingNumbers.add(String(v.file_number).trim().toUpperCase());
+  });
+  (db.volunteerApplications || []).forEach((a: any) => {
+    if (a.fileNumber && (a.fileNumber.startsWith('A-') || a.fileNumber.startsWith('B-'))) {
+      existingNumbers.add(String(a.fileNumber).trim().toUpperCase());
+    }
+  });
+
+  const MAX_ATTEMPTS = 5000;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const digits = Math.floor(1000 + Math.random() * 9000).toString();
+    const candidate = `${prefix}-${digits}`;
+    if (!existingNumbers.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Deterministic fallback scan
+  for (let num = 1000; num <= 9999; num++) {
+    const candidate = `${prefix}-${num.toString().padStart(4, '0')}`;
+    if (!existingNumbers.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`تعذر توليد رقم ملف متاح للصيغة (${prefix}-XXXX) نظراً لاكتمال الأرقام.`);
+}
+
+export function migrateExistingApprovedVolunteersFileNumbers(db: any): boolean {
+  if (!Array.isArray(db.volunteers)) return false;
+  let modified = false;
+
+  db.volunteers.forEach((v: any) => {
+    // Only approved/active volunteers receive a file number! Pending/unapproved do not!
+    if (v.status === 'active' && !v.fileNumber && !v.file_number) {
+      let g = normalizeVolunteerGender(v.gender);
+      if (!g) {
+        const name = (v.name || '').toLowerCase();
+        if (name.includes('بنت') || name.includes('سارة') || name.includes('فاطمة') || name.includes('مريم') || name.includes('نورة') || name.includes('عائشة') || name.includes('هدى') || name.includes('منى') || name.includes('ريم')) {
+          g = 'female';
+        } else {
+          g = 'male';
+        }
+      }
+      try {
+        const fileNum = generateUniqueVolunteerFileNumber(db, g);
+        v.fileNumber = fileNum;
+        v.file_number = fileNum;
+        if (!v.gender) v.gender = g;
+        modified = true;
+        savePostgresVolunteerFileNumber(fileNum, v.id, v.nationalId, g).catch(() => {});
+      } catch (e) {
+        console.error("Migration error generating file number for volunteer:", v.id, e);
+      }
+    }
+  });
+
+  // Also sync accepted/approved applications
+  if (Array.isArray(db.volunteerApplications)) {
+    db.volunteerApplications.forEach((a: any) => {
+      if (a.status === 'accepted' || a.status === 'approved') {
+        const matchingVol = db.volunteers.find((v: any) => 
+          (a.nationalId && v.nationalId === a.nationalId) ||
+          (a.phone && v.phone === a.phone) ||
+          (a.email && v.email && v.email.toLowerCase() === a.email.toLowerCase())
+        );
+        if (matchingVol && matchingVol.fileNumber && a.fileNumber !== matchingVol.fileNumber) {
+          a.fileNumber = matchingVol.fileNumber;
+          modified = true;
+        }
+      }
+    });
+  }
+
+  return modified;
+}
 
 let memoryDbCache: any = null;
 
@@ -3794,6 +3924,12 @@ export function readDb() {
           modified = true;
         }
       }
+
+      // Safe migration for existing approved volunteers without file numbers
+      const vfnModified = migrateExistingApprovedVolunteersFileNumbers(db);
+      if (vfnModified) {
+        modified = true;
+      }
       
       if (modified) {
         try {
@@ -3849,6 +3985,35 @@ try {
 } catch (initErr) {
   console.error("[DATABASE] initial readDb safe-fallback caught error:", initErr);
 }
+
+// Ensure PostgreSQL tables are initialized and sync active maintenance mode immediately on startup
+initPostgresTables()
+  .then(async () => {
+    try {
+      const pgStatus = await getPostgresMaintenanceStatus();
+      if (pgStatus) {
+        const db = readDb();
+        if (!db.systemSettings) db.systemSettings = { ...defaultSystemSettings };
+        const isEnabled = Boolean(pgStatus.enabled || pgStatus.maintenance_mode === 1);
+        db.systemSettings.maintenanceMode = isEnabled;
+        db.systemSettings.maintenance_mode = isEnabled ? 1 : 0;
+        if (pgStatus.message) {
+          db.systemSettings.maintenance_message = pgStatus.message;
+          db.systemSettings.maintenanceMessage = pgStatus.message;
+        }
+        if (pgStatus.updated_at) db.systemSettings.maintenance_updated_at = pgStatus.updated_at;
+        if (pgStatus.updated_by) db.systemSettings.maintenance_updated_by = pgStatus.updated_by;
+        db.maintenance_mode = isEnabled ? 1 : 0;
+        writeDb(db);
+        console.log(`[PostgreSQL] Startup maintenance synchronization complete: mode is ${isEnabled ? 'ACTIVE (1)' : 'INACTIVE (0)'}`);
+      }
+    } catch (syncErr: any) {
+      console.warn("[PostgreSQL] Startup maintenance mode sync warning:", syncErr?.message || syncErr);
+    }
+  })
+  .catch((pgErr) => {
+    console.error("[PostgreSQL] Table auto-init caught error:", pgErr?.message || pgErr);
+  });
 
 // ==========================================
 // RBAC & Department Data Isolation Subsystem
@@ -4671,12 +4836,31 @@ app.get("/api/ping", (req, res) => {
 });
 
 // Get DB with Server-Side Department Data Isolation & RBAC Filtering
-app.get("/api/db", (req, res) => {
+app.get("/api/db", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   try {
     const db = readDb();
     if (!db) {
       return res.status(200).json(defaultDb);
     }
+
+    // Overlay live PostgreSQL maintenance status if available
+    try {
+      const pgStatus = await getPostgresMaintenanceStatus();
+      if (pgStatus) {
+        if (!db.systemSettings) db.systemSettings = { ...defaultSystemSettings };
+        db.systemSettings.maintenanceMode = pgStatus.enabled;
+        db.systemSettings.maintenance_mode = pgStatus.enabled ? 1 : 0;
+        db.systemSettings.maintenance_message = pgStatus.message;
+        db.systemSettings.maintenanceMessage = pgStatus.message;
+        if (pgStatus.updated_at) db.systemSettings.maintenance_updated_at = pgStatus.updated_at;
+        if (pgStatus.updated_by) db.systemSettings.maintenance_updated_by = pgStatus.updated_by;
+        db.maintenance_mode = pgStatus.enabled ? 1 : 0;
+      }
+    } catch (pgErr) {
+      console.warn("[PostgreSQL] /api/db live status overlay warning:", pgErr);
+    }
+
     const context = getUserAccessContext(req);
     const filtered = filterDatabaseForUser(db, context);
     return res.status(200).json(filtered);
@@ -4692,12 +4876,29 @@ app.get("/api/db", (req, res) => {
 });
 
 // Explicit Scoped DB endpoint
-app.get("/api/db/scoped", (req, res) => {
+app.get("/api/db/scoped", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   try {
     const db = readDb();
     if (!db) {
       return res.status(200).json(defaultDb);
     }
+
+    // Overlay live PostgreSQL maintenance status if available
+    try {
+      const pgStatus = await getPostgresMaintenanceStatus();
+      if (pgStatus) {
+        if (!db.systemSettings) db.systemSettings = { ...defaultSystemSettings };
+        db.systemSettings.maintenanceMode = pgStatus.enabled;
+        db.systemSettings.maintenance_mode = pgStatus.enabled ? 1 : 0;
+        db.systemSettings.maintenance_message = pgStatus.message;
+        db.systemSettings.maintenanceMessage = pgStatus.message;
+        if (pgStatus.updated_at) db.systemSettings.maintenance_updated_at = pgStatus.updated_at;
+        if (pgStatus.updated_by) db.systemSettings.maintenance_updated_by = pgStatus.updated_by;
+        db.maintenance_mode = pgStatus.enabled ? 1 : 0;
+      }
+    } catch {}
+
     const context = getUserAccessContext(req);
     const filtered = filterDatabaseForUser(db, context);
     return res.status(200).json(filtered);
@@ -6177,12 +6378,28 @@ app.post("/api/db/volunteers/add", (req, res) => {
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
     vol.expiryDate = vol.expiryDate || expiry.toISOString().split('T')[0];
+    
+    // Auto generate file number if approved/active
+    if (!vol.fileNumber && !vol.file_number && vol.status === 'active') {
+      const g = normalizeVolunteerGender(vol.gender) || 'male';
+      const fn = generateUniqueVolunteerFileNumber(db, g);
+      vol.fileNumber = fn;
+      vol.file_number = fn;
+    }
+
     db.volunteers.push(vol);
   } else {
     const index = db.volunteers.findIndex((v: any) => v.id === vol.id);
     if (index !== -1) {
       vol.points = vol.points !== undefined ? Number(vol.points) : db.volunteers[index].points;
-      db.volunteers[index] = { ...db.volunteers[index], ...vol };
+      // Requirement: Volunteer file number cannot be changed manually or overwritten
+      const existingFileNumber = db.volunteers[index].fileNumber || db.volunteers[index].file_number;
+      db.volunteers[index] = { 
+        ...db.volunteers[index], 
+        ...vol,
+        fileNumber: existingFileNumber || vol.fileNumber,
+        file_number: existingFileNumber || vol.fileNumber
+      };
     } else {
       db.volunteers.push(vol);
     }
@@ -10478,20 +10695,65 @@ app.post("/api/volunteers/:id/reissue-card", (req, res) => {
   res.json({ status: "success", volunteer: vol });
 });
 
-// Get Full System Settings
-app.get("/api/db/systemSettings", (req, res) => {
+// Get Full System Settings (with live PostgreSQL maintenance overlay)
+app.get("/api/db/systemSettings", async (req, res) => {
   const db = readDb();
-  res.json(db.systemSettings || defaultSystemSettings);
+  const sys = { ...(db.systemSettings || defaultSystemSettings) };
+  try {
+    const pgStatus = await getPostgresMaintenanceStatus();
+    if (pgStatus) {
+      const isEnabled = Boolean(pgStatus.enabled || pgStatus.maintenance_mode === 1);
+      sys.maintenance_mode = isEnabled ? 1 : 0;
+      sys.maintenanceMode = isEnabled;
+      if (pgStatus.message) {
+        sys.maintenance_message = pgStatus.message;
+        sys.maintenanceMessage = pgStatus.message;
+      }
+      if (pgStatus.updated_at) sys.maintenance_updated_at = pgStatus.updated_at;
+      if (pgStatus.updated_by) sys.maintenance_updated_by = pgStatus.updated_by;
+    }
+  } catch {}
+  res.json(sys);
 });
 
-// Update Full System Settings
-app.post("/api/db/systemSettings", (req, res) => {
+// Update Full System Settings (Never overwrites active maintenance mode unintentionally)
+app.post("/api/db/systemSettings", async (req, res) => {
   const db = readDb();
-  const updated = req.body;
+  const updated = req.body || {};
   const sectionName = updated.updatedSection || "إعدادات النظام العامة";
   delete updated.updatedSection;
 
+  // Preserve live persistent maintenance state from PostgreSQL
+  let activeMaintenanceMode = (db.systemSettings?.maintenance_mode === 1 || db.maintenance_mode === 1) ? 1 : 0;
+  let activeMaintenanceMessage = db.systemSettings?.maintenance_message || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+  let activeUpdatedAt = db.systemSettings?.maintenance_updated_at;
+  let activeUpdatedBy = db.systemSettings?.maintenance_updated_by;
+  try {
+    const pgStatus = await getPostgresMaintenanceStatus();
+    if (pgStatus) {
+      activeMaintenanceMode = Boolean(pgStatus.enabled || pgStatus.maintenance_mode === 1) ? 1 : 0;
+      if (pgStatus.message) activeMaintenanceMessage = pgStatus.message;
+      if (pgStatus.updated_at) activeUpdatedAt = pgStatus.updated_at;
+      if (pgStatus.updated_by) activeUpdatedBy = pgStatus.updated_by;
+    }
+  } catch {}
+
+  // If not explicitly requesting a maintenance change via maintenance API, preserve active status
+  if (sectionName !== "وضع الصيانة" && typeof updated.maintenance_mode === 'undefined' && typeof updated.maintenanceMode === 'undefined') {
+    updated.maintenance_mode = activeMaintenanceMode;
+    updated.maintenanceMode = activeMaintenanceMode === 1;
+    updated.maintenance_message = activeMaintenanceMessage;
+    updated.maintenanceMessage = activeMaintenanceMessage;
+  }
+
   db.systemSettings = { ...(db.systemSettings || defaultSystemSettings), ...updated };
+  db.systemSettings.maintenance_mode = activeMaintenanceMode;
+  db.systemSettings.maintenanceMode = activeMaintenanceMode === 1;
+  db.systemSettings.maintenance_message = activeMaintenanceMessage;
+  db.systemSettings.maintenanceMessage = activeMaintenanceMessage;
+  if (activeUpdatedAt) db.systemSettings.maintenance_updated_at = activeUpdatedAt;
+  if (activeUpdatedBy) db.systemSettings.maintenance_updated_by = activeUpdatedBy;
+  db.maintenance_mode = activeMaintenanceMode;
 
   // Sync basic branding to homeSettings for public views
   db.homeSettings = db.homeSettings || {};
@@ -10520,18 +10782,44 @@ app.post("/api/db/systemSettings", (req, res) => {
 // ============================================================================
 
 // 1. Get Maintenance Mode Status (Public & Administrative check)
-const getMaintenanceStatusHandler = (req: any, res: any) => {
+const getMaintenanceStatusHandler = async (req: any, res: any) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   try {
+    const pgStatus = await getPostgresMaintenanceStatus();
     const db = readDb();
     const sys = db.systemSettings || defaultSystemSettings;
-    const isMaintenance = (sys.maintenance_mode === 1 || sys.maintenanceMode === true || db.maintenance_mode === 1);
+
+    let isMaintenance = false;
+    let message = sys.maintenance_message || sys.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+    let updatedAt = sys.maintenance_updated_at || null;
+    let updatedBy = sys.maintenance_updated_by || null;
+
+    if (pgStatus) {
+      isMaintenance = pgStatus.enabled;
+      message = pgStatus.message || message;
+      updatedAt = pgStatus.updated_at || updatedAt;
+      updatedBy = pgStatus.updated_by || updatedBy;
+
+      // Keep in-memory cache synchronized with PostgreSQL
+      if (sys.maintenance_mode !== (isMaintenance ? 1 : 0) || db.maintenance_mode !== (isMaintenance ? 1 : 0)) {
+        sys.maintenance_mode = isMaintenance ? 1 : 0;
+        sys.maintenanceMode = isMaintenance;
+        sys.maintenance_message = message;
+        sys.maintenanceMessage = message;
+        db.maintenance_mode = isMaintenance ? 1 : 0;
+        writeDb(db);
+      }
+    } else {
+      isMaintenance = (sys.maintenance_mode === 1 || sys.maintenanceMode === true || db.maintenance_mode === 1);
+    }
+
     res.json({
       success: true,
       maintenance_mode: isMaintenance ? 1 : 0,
       maintenanceMode: isMaintenance,
-      maintenance_message: sys.maintenance_message || sys.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
-      updated_at: sys.maintenance_updated_at || null,
-      updated_by: sys.maintenance_updated_by || null,
+      maintenance_message: message,
+      updated_at: updatedAt,
+      updated_by: updatedBy,
       associationNameAr: db.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
       licenseNumber: db.homeSettings?.licenseNumber || "1000888600",
       logoUrl: db.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"
@@ -10545,7 +10833,7 @@ app.get("/api/maintenance/status", getMaintenanceStatusHandler);
 app.get("/api/db/maintenance/status", getMaintenanceStatusHandler);
 
 // 2. Toggle Maintenance Mode (Authorized Admin / Operations Manager only)
-const toggleMaintenanceHandler = (req: any, res: any) => {
+const toggleMaintenanceHandler = async (req: any, res: any) => {
   try {
     const db = readDb();
     const { enabled, message, performerName } = req.body || {};
@@ -10672,6 +10960,14 @@ const toggleMaintenanceHandler = (req: any, res: any) => {
 
     writeDb(db);
 
+    // Persist permanently to PostgreSQL if configured
+    try {
+      await setPostgresMaintenanceStatus(isEnabled, customMsg, updatedBy);
+    } catch (pgErr: any) {
+      console.error("[PostgreSQL Save Error in Toggle Handler]:", pgErr?.message || pgErr);
+    }
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     return res.json({
       success: true,
       maintenance_mode: isEnabled ? 1 : 0,

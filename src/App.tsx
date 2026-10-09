@@ -83,6 +83,21 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState<boolean>(false);
+  
+  // Dedicated persistent maintenance status fetched immediately from PostgreSQL / Backend
+  const [maintenanceStatus, setMaintenanceStatus] = useState<{
+    checked: boolean;
+    active: boolean;
+    message: string;
+    loading: boolean;
+    error: string | null;
+  }>({
+    checked: false,
+    active: false,
+    message: "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
+    loading: true,
+    error: null
+  });
   const [connectionDiagnostics, setConnectionDiagnostics] = useState<{
     status?: number;
     url?: string;
@@ -142,9 +157,13 @@ export default function App() {
   const initialAuthSession = getStoredSession();
 
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
-  const [currentRole, setCurrentRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(
-    initialAuthSession?.role || (typeof window !== 'undefined' && window.location.search.includes('resetToken') ? 'admin' : 'public')
-  );
+  const [currentRole, setCurrentRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(() => {
+    try {
+      const viewMode = localStorage.getItem('reyadat_view_mode');
+      if (viewMode === 'public') return 'public';
+    } catch {}
+    return initialAuthSession?.role || (typeof window !== 'undefined' && window.location.search.includes('resetToken') ? 'admin' : 'public');
+  });
   const [activeMainTab, setActiveMainTab] = useState<'system' | 'ai' | 'guide'>(
     initialAuthSession?.activeMainTab || 'system'
   );
@@ -174,10 +193,16 @@ export default function App() {
       setSavedUserRole(currentRole);
     }
     setCurrentRole('public');
+    try {
+      localStorage.setItem('reyadat_view_mode', 'public');
+    } catch {}
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleReturnToDashboard = () => {
+    try {
+      localStorage.removeItem('reyadat_view_mode');
+    } catch {}
     const stored = getStoredSession();
     const targetRole = savedUserRole || (stored?.role && stored.role !== 'public' ? stored.role : null) || authenticatedUser?.role || 'admin';
     setCurrentRole(targetRole as any);
@@ -262,6 +287,7 @@ export default function App() {
         }).catch(() => {});
       }
       localStorage.removeItem(AUTH_SESSION_KEY);
+      localStorage.removeItem('reyadat_view_mode');
     } catch {
       // Ignore
     }
@@ -322,6 +348,50 @@ export default function App() {
     if (session?.user?.nationalId) headers['x-national-id'] = session.user.nationalId;
     if (session?.user?.teamId) headers['x-team-id'] = session.user.teamId;
     return headers;
+  };
+
+  // Fetch Dedicated Maintenance Status directly from PostgreSQL / Backend (Instant & lightweight with safe retry)
+  const fetchMaintenanceStatus = async (retryCount = 0): Promise<boolean | null> => {
+    try {
+      setMaintenanceStatus(prev => ({ ...prev, loading: true, error: null }));
+      const cacheBuster = `t=${Date.now()}`;
+      const statusUrl = `${buildApiUrl("/api/maintenance/status")}?${cacheBuster}`;
+      const res = await fetch(statusUrl, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const isActive = Boolean(data.maintenance_mode === 1 || data.maintenanceMode === true);
+        const msg = data.maintenance_message || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+        setMaintenanceStatus({
+          checked: true,
+          active: isActive,
+          message: msg,
+          loading: false,
+          error: null
+        });
+        return isActive;
+      } else {
+        throw new Error(`HTTP Error: ${res.status}`);
+      }
+    } catch (err: any) {
+      console.warn(`[Maintenance Status Check Attempt ${retryCount + 1} Warning]:`, err);
+      if (retryCount < 2) {
+        await new Promise(r => setTimeout(r, 700));
+        return fetchMaintenanceStatus(retryCount + 1);
+      }
+      // Never silently force active: false upon connection failure!
+      setMaintenanceStatus(prev => ({
+        ...prev,
+        loading: false,
+        error: "تعذر التحقق من حالة وضع الصيانة بسبب خطأ في الاتصال بالخادم الرئيسي"
+      }));
+    }
+    return null;
   };
 
   // Fetch Database (Supports silent background fetch without unmounting active components)
@@ -386,6 +456,29 @@ export default function App() {
       setError(null);
       setConnectionDiagnostics(null);
       setHealthStatusBadge(null);
+
+      // Synchronize maintenance status from database payload
+      if (data?.systemSettings || typeof data?.maintenance_mode !== 'undefined') {
+        const isMActive = Boolean(
+          data?.systemSettings?.maintenanceMode === true ||
+          data?.systemSettings?.maintenance_mode === 1 ||
+          data?.maintenance_mode === 1
+        );
+        const msg = data?.systemSettings?.maintenance_message || data?.systemSettings?.maintenanceMessage;
+        setMaintenanceStatus(prev => {
+          // If already verified active via /api/maintenance/status, NEVER demote to inactive via background /api/db!
+          if (prev.checked && prev.active && !isMActive) {
+            return prev;
+          }
+          return {
+            checked: true,
+            active: isMActive,
+            message: msg || prev.message,
+            loading: false,
+            error: null
+          };
+        });
+      }
       
       // Auto-select simulation IDs only when not authenticated
       const currentStored = getStoredSession();
@@ -429,6 +522,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    fetchMaintenanceStatus();
     fetchDatabase();
   }, []);
 
@@ -494,23 +588,35 @@ export default function App() {
 
   // Centralized Maintenance Mode Handler (Persistent in database & audit logs)
   const handleToggleMaintenance = async (enabled: boolean, message?: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const authHeaders = getAuthHeaders();
-      const finalUrl = buildApiUrl("/api/maintenance/toggle");
-      const session = getStoredSession();
-      const performerName = session?.user?.name || authenticatedUser?.name || "الإدارة العامة";
-      const userRole = currentRole || session?.role || authenticatedUser?.role || 'operations_manager';
-      const userId = authenticatedUser?.id || session?.user?.id || 'ops-manager';
-      
-      const payload = {
-        enabled,
-        message,
-        performerName,
-        role: userRole,
-        userRole: userRole,
-        userId: userId
-      };
+    const authHeaders = getAuthHeaders();
+    const finalUrl = buildApiUrl("/api/maintenance/toggle");
+    const session = getStoredSession();
+    const performerName = session?.user?.name || authenticatedUser?.name || "الإدارة العامة";
+    const userRole = currentRole || session?.role || authenticatedUser?.role || 'operations_manager';
+    const userId = authenticatedUser?.id || session?.user?.id || 'ops-manager';
+    
+    const payload = {
+      enabled,
+      message,
+      performerName,
+      role: userRole,
+      userRole: userRole,
+      userId: userId
+    };
 
+    console.log(`[Maintenance Toggle Request]:`, {
+      requestUrl: finalUrl,
+      httpMethod: 'POST',
+      headers: { 
+        'Content-Type': 'application/json', 
+        ...authHeaders,
+        'x-user-role': userRole,
+        'x-user-id': userId
+      },
+      payload
+    });
+
+    try {
       const res = await fetch(finalUrl, {
         method: 'POST',
         headers: { 
@@ -522,15 +628,36 @@ export default function App() {
         body: JSON.stringify(payload)
       });
 
+      const resText = await res.text().catch(() => "");
+      let resJson: any = null;
+      try {
+        resJson = resText ? JSON.parse(resText) : null;
+      } catch {}
+
+      // Explicitly print Request URL, HTTP Method, HTTP Status, Response Body to console
+      console.log(`[Maintenance Toggle Response]:`, {
+        requestUrl: finalUrl,
+        httpMethod: 'POST',
+        httpStatus: res.status,
+        responseBody: resJson || resText
+      });
+
       if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
         const statusDesc = getHttpStatusDescription(res.status, res.statusText);
-        const errorMsg = errJson?.error || `فشل الخادم في تغيير حالة وضع الصيانة (رمز الاستجابة: ${res.status} - ${statusDesc})`;
+        const errorMsg = resJson?.error || `فشل الخادم في تغيير حالة وضع الصيانة (رمز الاستجابة: ${res.status} - ${statusDesc})`;
         throw new Error(errorMsg);
       }
 
-      const resJson = await res.json().catch(() => null);
       if (resJson) {
+        const isMActive = Boolean(resJson.maintenance_mode === 1 || resJson.maintenanceMode === true);
+        const msg = resJson.maintenance_message || message || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+        setMaintenanceStatus({
+          checked: true,
+          active: isMActive,
+          message: msg,
+          loading: false
+        });
+
         if (resJson.db) {
           setDbData(resJson.db);
         } else if (resJson.systemSettings) {
@@ -546,7 +673,11 @@ export default function App() {
       fetchDatabase(true).catch(() => {});
       return { success: true };
     } catch (err: any) {
-      console.error("Failed to toggle maintenance mode:", err);
+      console.error("[Maintenance Toggle Error]:", {
+        requestUrl: finalUrl,
+        httpMethod: 'POST',
+        error: err?.message || err
+      });
       return {
         success: false,
         error: err?.message || "تعذر الاتصال بالخادم لتغيير حالة وضع الصيانة."
@@ -1480,7 +1611,52 @@ export default function App() {
     }
   };
 
-  if (loading) {
+  // 1. Initial Checking Guard: Never display normal site before verifying backend maintenance status
+  if (maintenanceStatus.loading && !maintenanceStatus.checked) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center font-sans" dir="rtl">
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl max-w-sm w-full space-y-4">
+          <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin mx-auto" />
+          <h2 className="text-sm font-black text-slate-800 dark:text-slate-100">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h2>
+          <p className="text-xs text-slate-400">جاري التحقق من جاهزية الموقع والاتصال الآمن بالخادم...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Safe Connection Failure Guard: Never bypass maintenance on network error
+  if (maintenanceStatus.error && !maintenanceStatus.checked) {
+    return (
+      <div className="min-h-screen bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-sans" dir="rtl">
+        <div className="bg-white dark:bg-slate-950 p-6 sm:p-8 rounded-3xl border border-amber-200 dark:border-amber-900/50 shadow-2xl max-w-md w-full space-y-5 text-right">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-800">
+              <AlertCircle className="w-6 h-6 text-amber-600 dark:text-amber-400 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-slate-900 dark:text-white">تعذر الاتصال بخادم الجمعية</h2>
+              <p className="text-xs text-slate-400">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</p>
+            </div>
+          </div>
+          <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200 leading-relaxed text-center">
+            {maintenanceStatus.error}
+            <br />
+            لحماية أمن وسجلات الجمعية، يرجى إعادة المحاولة للتأكد من حالة الخادم.
+          </div>
+          <button 
+            onClick={() => fetchMaintenanceStatus(0)}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>إعادة فحص الاتصال بالخادم</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Database Initial Load (Only needed if maintenance is NOT active)
+  if (loading && !dbData && !maintenanceStatus.active) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center" dir="rtl">
         <div className="bg-white p-8 rounded-2xl border border-neutral-100 shadow-xl max-w-sm w-full space-y-4">
@@ -1492,7 +1668,7 @@ export default function App() {
     );
   }
 
-  if ((error && !dbData) || (!loading && !dbData)) {
+  if (((error && !dbData) || (!loading && !dbData)) && !maintenanceStatus.active) {
     return (
       <div className="min-h-screen bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-sans" dir="rtl">
         <div className="bg-white dark:bg-slate-950 p-6 sm:p-8 rounded-3xl border border-rose-200 dark:border-rose-900/50 shadow-2xl max-w-md w-full space-y-5 text-right">
@@ -1536,27 +1712,44 @@ export default function App() {
 
   // Active Volunteer Object
   const activeVolunteer = authenticatedUser?.role === 'volunteer'
-    ? (dbData.volunteers.find(v => v.id === authenticatedUser.id || v.email === authenticatedUser.email || v.nationalId === authenticatedUser.nationalId) || authenticatedUser)
-    : (currentRole === 'volunteer' && selectedVolunteerId ? (dbData.volunteers.find(v => v.id === selectedVolunteerId) || dbData.volunteers[0]) : null);
+    ? (dbData?.volunteers?.find(v => v.id === authenticatedUser.id || v.email === authenticatedUser.email || v.nationalId === authenticatedUser.nationalId) || authenticatedUser)
+    : (currentRole === 'volunteer' && selectedVolunteerId ? (dbData?.volunteers?.find(v => v.id === selectedVolunteerId) || dbData?.volunteers?.[0]) : null);
 
   // Active Beneficiary Object
   const activeBeneficiary = authenticatedUser?.role === 'beneficiary'
-    ? (dbData.beneficiaries?.find(b => b.id === authenticatedUser.id) || dbData.beneficiaries?.[0])
-    : (dbData.beneficiaries?.find(b => b.id === selectedBeneficiaryId) || dbData.beneficiaries?.[0]);
+    ? (dbData?.beneficiaries?.find(b => b.id === authenticatedUser.id) || dbData?.beneficiaries?.[0])
+    : (dbData?.beneficiaries?.find(b => b.id === selectedBeneficiaryId) || dbData?.beneficiaries?.[0]);
 
-  // Centralized Maintenance Mode Status Check
-  const isMaintenanceActive = Boolean(
-    dbData?.systemSettings?.maintenanceMode === true ||
-    dbData?.systemSettings?.maintenance_mode === 1 ||
-    (dbData as any)?.maintenance_mode === 1
+  // Centralized Maintenance Mode Status Check (Persistent from PostgreSQL / Backend)
+  const isMaintenanceActive = maintenanceStatus.checked
+    ? maintenanceStatus.active
+    : Boolean(
+        dbData?.systemSettings?.maintenanceMode === true ||
+        dbData?.systemSettings?.maintenance_mode === 1 ||
+        (dbData as any)?.maintenance_mode === 1
+      );
+  const maintenanceMessage = maintenanceStatus.message || 
+    dbData?.systemSettings?.maintenance_message || 
+    dbData?.systemSettings?.maintenanceMessage || 
+    "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
+
+  // Authorization Check: Operations Manager and Admin are exclusively authorized during maintenance mode
+  const isAuthorizedMaintenanceStaff = Boolean(
+    authenticatedUser && (
+      currentRole === 'admin' ||
+      currentRole === 'operations_manager' ||
+      authenticatedUser?.role === 'admin' ||
+      authenticatedUser?.role === 'operations_manager' ||
+      authenticatedUser?.permissions?.includes?.('super_admin') ||
+      authenticatedUser?.permissions?.includes?.('operations_manager')
+    )
   );
-  const maintenanceMessage = dbData?.systemSettings?.maintenance_message || dbData?.systemSettings?.maintenanceMessage || "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.";
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`} dir="rtl">
       
-      {/* INTERNAL PORTAL HEADER (Shown only when in management portal AND authenticated, not on login or public homepage) */}
-      {currentRole !== 'public' && authenticatedUser && (
+      {/* INTERNAL PORTAL HEADER (Shown only when in management portal AND authenticated, and never for blocked users during maintenance) */}
+      {currentRole !== 'public' && authenticatedUser && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
         <header 
           style={{
             paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
@@ -1814,7 +2007,7 @@ export default function App() {
               <AuthScreen
                 lang={lang}
                 onToggleLang={setLang}
-                homeSettings={dbData.homeSettings}
+                homeSettings={dbData?.homeSettings}
                 onLoginSuccess={handleLoginSuccess}
                 isMaintenanceMode={isMaintenanceActive}
                 onBackToHome={() => {
@@ -1823,6 +2016,25 @@ export default function App() {
                 onRegisterNewAccount={() => {
                   setCurrentRole('public');
                 }}
+              />
+            ) : isMaintenanceActive && !isAuthorizedMaintenanceStaff ? (
+              <MaintenancePage
+                message={maintenanceMessage}
+                associationName={dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
+                licenseNumber={dbData?.homeSettings?.licenseNumber || "1000888600"}
+                logoUrl={dbData?.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"}
+                onOpenLogin={() => {
+                  setCurrentRole('admin');
+                  setActiveMainTab('system');
+                }}
+                onRefresh={() => {
+                  fetchMaintenanceStatus(0);
+                  fetchDatabase(true);
+                }}
+                isDark={isDark}
+                authenticatedUser={authenticatedUser}
+                isAuthorizedStaff={false}
+                onLogout={handleLogout}
               />
             ) : (
               <>
@@ -1907,6 +2119,7 @@ export default function App() {
                       authenticatedUser={authenticatedUser}
                       onRefreshGlobalData={handleRefreshGlobalData}
                       onToggleMaintenance={handleToggleMaintenance}
+                      isMaintenanceMode={isMaintenanceActive}
                     />
                   </DashboardErrorBoundary>
                 )}
@@ -2026,24 +2239,28 @@ export default function App() {
               />
             )}
 
-            {/* 4. OFFICIAL PUBLIC HOME PAGE VIEW OR MAINTENANCE MODE */}
-            {currentRole === 'public' && (
+            {/* 4. OFFICIAL PUBLIC HOME PAGE VIEW OR MAINTENANCE MODE PREVIEW */}
+            {(currentRole === 'public' || (!authenticatedUser && currentRole !== 'admin')) && (
               isMaintenanceActive ? (
                 <MaintenancePage
                   message={maintenanceMessage}
-                  associationName={dbData.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
-                  licenseNumber={dbData.homeSettings?.licenseNumber || "1000888600"}
-                  logoUrl={dbData.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"}
+                  associationName={dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
+                  licenseNumber={dbData?.homeSettings?.licenseNumber || "1000888600"}
+                  logoUrl={dbData?.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"}
                   onOpenLogin={() => {
                     setCurrentRole('admin');
                     setActiveMainTab('system');
                   }}
                   onRefresh={() => {
+                    fetchMaintenanceStatus(0);
                     fetchDatabase(true);
                   }}
                   isDark={isDark}
                   authenticatedUser={authenticatedUser}
+                  isAuthorizedStaff={isAuthorizedMaintenanceStaff}
                   onReturnToDashboard={handleReturnToDashboard}
+                  onDisableMaintenance={() => handleToggleMaintenance(false)}
+                  onLogout={handleLogout}
                 />
               ) : (
                 <OfficialHomePage
@@ -2174,7 +2391,7 @@ export default function App() {
         )}
 
         {/* MAIN TAB 2: AI SMART CHAT ASSISTANT */}
-        {activeMainTab === 'ai' && (
+        {activeMainTab === 'ai' && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
           <div className="max-w-4xl mx-auto space-y-4">
             <div className="bg-white p-5 rounded-2xl border border-neutral-100 shadow-2xs text-right" dir="rtl">
               <h2 className="text-xs font-black text-neutral-800 uppercase tracking-wide flex items-center gap-1.5">
@@ -2191,7 +2408,7 @@ export default function App() {
         )}
 
         {/* MAIN TAB 3: SYSTEM GUIDE AND GLOSSARY */}
-        {activeMainTab === 'guide' && (
+        {activeMainTab === 'guide' && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
           <div className="bg-white p-6 rounded-2xl border border-neutral-100 shadow-2xs text-right space-y-6" dir="rtl">
             <div>
               <h2 className="text-md font-black text-neutral-800">دليل استخدام نظام ريادة العطاء التطوعي</h2>
@@ -2229,8 +2446,8 @@ export default function App() {
 
       </main>
 
-      {/* INTERNAL DASHBOARD FOOTER (Only shown for authenticated internal management views, NEVER on public website) */}
-      {currentRole !== 'public' && (
+      {/* INTERNAL DASHBOARD FOOTER (Only shown for authenticated internal management views, NEVER on public website or during maintenance) */}
+      {currentRole !== 'public' && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
         <footer className="border-t border-neutral-100 bg-white py-6 mt-12 text-center text-xs text-neutral-400 no-print">
           <p className="font-bold">© {new Date().getFullYear()} جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة.</p>
           <p className="text-[10px] text-neutral-400 mt-1">جميع الحقوق محفوظة للنظام التقني الموحد لإدارة التطوع • ترخيص وزارة الموارد البشرية والتنمية الاجتماعية: 100088868</p>
@@ -2238,7 +2455,7 @@ export default function App() {
       )}
 
       {/* FLOATING SUPPORT BUBBLE (TECHNICAL SUPPORT ABOVE BOTTOM NAV BAR) */}
-      {currentRole !== 'admin' && (
+      {currentRole !== 'admin' && !isMaintenanceActive && (
         <SupportBubbleWidget currentUser={authenticatedUser ? {
           id: authenticatedUser.id,
           name: authenticatedUser.name,
