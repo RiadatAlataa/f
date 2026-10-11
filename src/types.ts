@@ -147,6 +147,7 @@ export interface VolunteerTeam {
   nameAr: string;
   nameEn: string;
   departmentId: string;
+  leaderId?: string;
   leaderName: string;
   descriptionAr?: string;
   descriptionEn?: string;
@@ -186,6 +187,18 @@ export interface VolunteerTeam {
   pointsHistory?: TeamPointsRecord[];
 }
 
+export interface VolunteerTeamHistoryRecord {
+  fromTeamId: string;
+  fromTeamName: string;
+  toTeamId: string;
+  toTeamName: string;
+  transferredAt: string;
+  transferredBy: string;
+  reason?: string;
+  notes?: string;
+  requestId?: string;
+}
+
 export interface Volunteer {
   id: string;
   name: string;
@@ -208,6 +221,8 @@ export interface Volunteer {
   role?: 'admin' | 'leader' | 'supervisor' | 'volunteer' | 'executive' | 'board' | string;
   permissions?: string[];
   password?: string;
+  passwordResetToken?: string;
+  passwordResetExpiresAt?: number;
   nationalId?: string;
   gender?: 'male' | 'female';
   nationality?: string;
@@ -217,6 +232,7 @@ export interface Volunteer {
   completedInitiativesCount?: number;
   issuedCardId?: string;
   issuedCard?: IssuedVolunteerCard;
+  teamHistory?: VolunteerTeamHistoryRecord[];
 }
 
 // -------------------------------------------------------------
@@ -229,6 +245,7 @@ export type CardElementType =
   | 'photo' 
   | 'nationalId' 
   | 'membershipNumber' 
+  | 'fileNumber'
   | 'employeeNumber' 
   | 'leaderNumber' 
   | 'leadershipTitle' 
@@ -1341,6 +1358,8 @@ export interface SupportTicketMessage {
   attachments?: string[];
 }
 
+export type SupportMessage = SupportTicketMessage;
+
 export interface SupportTicket {
   id: string;
   ticketNumber: string;
@@ -1372,6 +1391,66 @@ export interface SupportTicket {
   closedBy?: string;
   emailNotificationStatus?: 'sent' | 'failed' | 'retrying';
   emailNotificationError?: string;
+  category?: 'general' | 'team_volunteer' | string;
+  teamId?: string;
+  teamName?: string;
+  volunteerId?: string;
+  volunteerFileNumber?: string;
+  issueType?: 'account_team' | 'registration_join' | 'initiatives' | 'attendance_hours_points' | 'general' | string;
+  isCreatedByLeader?: boolean;
+  onBehalfOfVolunteerId?: string;
+  attachments?: string[];
+}
+
+// -------------------------------------------------------------
+// Volunteer Transfer & Password Reset Request Interfaces
+// -------------------------------------------------------------
+export interface VolunteerTransferRequest {
+  id: string;
+  volunteerId: string;
+  volunteerName: string;
+  volunteerFileNumber?: string;
+  volunteerPhone?: string;
+  currentTeamId: string;
+  currentTeamName: string;
+  requestType: 'transfer' | 'terminate_affiliation';
+  reason: string;
+  suggestedTeamId?: string;
+  suggestedTeamName?: string;
+  additionalNotes?: string;
+  leaderId: string;
+  leaderName: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewerNotes?: string;
+  targetTeamId?: string;
+  targetTeamName?: string;
+}
+
+export interface PasswordResetRequest {
+  id: string;
+  volunteerId: string;
+  volunteerName: string;
+  volunteerFileNumber?: string;
+  volunteerPhone?: string;
+  volunteerEmail?: string;
+  teamId: string;
+  teamName: string;
+  leaderId: string;
+  leaderName: string;
+  reason: string;
+  additionalNotes?: string;
+  status: 'new' | 'under_review' | 'approved' | 'rejected' | 'reset_link_sent' | 'completed';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewerNotes?: string;
+  resetLinkSentAt?: string;
+  resetToken?: string;
+  resetTokenExpiresAt?: number;
+  completedAt?: string;
 }
 
 // -------------------------------------------------------------

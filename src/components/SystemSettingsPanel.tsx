@@ -1455,9 +1455,46 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
                 <Download className="w-4 h-4 text-emerald-700" />
                 <span>تنزيل نسخة احتياطية يدوية الآن:</span>
               </h3>
-              <p className="text-[11px] text-emerald-700">تنزيل ملف JSON كامل يحتوي كافة بيانات المتطوعين والمبادرات والتذاكر.</p>
+              <p className="text-[11px] text-emerald-700">تنزيل ملف JSON كامل يحتوي كافة بيانات المتطوعين والمبادرات والتذاكر عبر اتصال آمن وموثق.</p>
               <button
-                onClick={() => window.open("/api/db/backup", "_blank")}
+                onClick={async () => {
+                  try {
+                    const stored = localStorage.getItem("reyadat_alata_auth_session");
+                    const parsed = stored ? JSON.parse(stored) : null;
+                    const token = parsed?.sessionToken || "";
+                    
+                    const headers: Record<string, string> = {};
+                    if (token) {
+                      headers["x-session-token"] = token;
+                      headers["Authorization"] = `Bearer ${token}`;
+                    }
+
+                    const res = await fetch("/api/db/backup", {
+                      method: "GET",
+                      headers,
+                      credentials: "same-origin"
+                    });
+
+                    if (!res.ok) {
+                      const errJson = await res.json().catch(() => null);
+                      alert(errJson?.error || "فشل تنزيل النسخة الاحتياطية (صلاحيات غير كافية أو جلسة منتهية).");
+                      return;
+                    }
+
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `backup_reyadat_alata_${new Date().toISOString().slice(0, 10)}.json`;
+                    document.body.appendChild(link);
+                    link.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(link);
+                  } catch (err) {
+                    console.error("Backup download error:", err);
+                    alert("تعذر تنزيل النسخة الاحتياطية.");
+                  }
+                }}
                 className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 cursor-pointer shadow-xs"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -1470,7 +1507,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
                 <Upload className="w-4 h-4 text-amber-700" />
                 <span>استعادة قاعدة البيانات من ملف JSON:</span>
               </h3>
-              <p className="text-[11px] text-amber-700">يرجى رفع ملف نسخة احتياطية صالح لاستعادة البيانات السابقة.</p>
+              <p className="text-[11px] text-amber-700">يرجى رفع ملف نسخة احتياطية صالح لاستعادة البيانات السابقة بعد التحقق والتأكيد.</p>
               <label className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-lg text-xs inline-flex items-center gap-2 cursor-pointer shadow-xs">
                 <Upload className="w-3.5 h-3.5" />
                 <span>اختر ملف JSON للاستعادة</span>
@@ -1481,18 +1518,30 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
                   onChange={e => {
                     const file = e.target.files?.[0];
                     if (file) {
+                      const confirmed = window.confirm(
+                        `تحذير أمني هام:\nهل أنت متأكد من رغبتك في استعادة قاعدة البيانات من الملف "${file.name}"؟\nسيتم التحقق من سلامة البيانات واستبدال قاعدة البيانات بعد التأكيد الإداري الصريح.`
+                      );
+                      if (!confirmed) {
+                        e.target.value = "";
+                        return;
+                      }
+
                       const reader = new FileReader();
                       reader.onload = ev => {
                         try {
                           const json = JSON.parse(ev.target?.result as string);
+                          if (!json || typeof json !== "object" || !Array.isArray(json.departments) || !Array.isArray(json.volunteers)) {
+                            alert("الملف غير صالح: لا يحتوي على الهيكل الأساسي لقاعدة البيانات (الأقسام، المتطوعين).");
+                            return;
+                          }
                           onRestoreDb(json);
-                          alert("تم استعادة قاعدة البيانات بنجاح ✓");
                         } catch (err) {
                           alert("فشل قراءة الملف! يرجى رفع ملف JSON صالح.");
                         }
                       };
                       reader.readAsText(file);
                     }
+                    e.target.value = "";
                   }}
                 />
               </label>

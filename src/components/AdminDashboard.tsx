@@ -32,7 +32,7 @@ import { TeamJoinApplicationsPanel } from "./TeamJoinApplicationsPanel";
 import { VolunteerCardTemplatesPanel } from "./VolunteerCardTemplatesPanel";
 import { ModernAppSidebar, NavGroup, NavItem } from "./ModernAppSidebar";
 import { StoreProject, StoreDonation, FinancialTransaction, TeamApplication, OfficialLetter } from "../types";
-import { MessageSquare, Headphones, ShoppingBag, Boxes, Package, UsersRound, CreditCard, Pin, PinOff, HeartHandshake, Mail, Wallet, Star, Sparkles } from "lucide-react";
+import { MessageSquare, Headphones, ShoppingBag, Boxes, Package, UsersRound, CreditCard, Pin, PinOff, HeartHandshake, Mail, Wallet, Star, Sparkles, ArrowRightLeft, KeyRound, HelpCircle } from "lucide-react";
 import { BeneficiariesManager } from "./BeneficiariesManager";
 import { DistributionsManager } from "./DistributionsManager";
 import { BeneficiaryRatingsManager } from "./BeneficiaryRatingsManager";
@@ -41,6 +41,9 @@ import { VolunteerMonthlyReportModal } from "./VolunteerMonthlyReportModal";
 import { AdminStaffManager } from "./AdminStaffManager";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { VolunteerManagementDashboard } from "./VolunteerManagementDashboard";
+import { VolunteerTeamTransferManager } from "./VolunteerTeamTransferManager";
+import { PasswordResetRequestsManager } from "./PasswordResetRequestsManager";
+import { TeamSupportManager } from "./TeamSupportManager";
 import { HRDashboard } from "./HRDashboard";
 import { VolunteerKnightsModal } from "./VolunteerKnights";
 import { AidDistribution, DistributionHandoverRecord, Employee, EmployeeRequest, TeamStaffAssignment } from "../types";
@@ -295,7 +298,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRefreshGlobalData,
   onToggleMaintenance
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -416,6 +419,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'teams', label: 'الفرق التطوعية وقادتها', icon: UsersRound, badge: data.teams?.length || 0 },
         { id: 'joinrequests', label: 'طلبات انضمام الأفراد', icon: FileText, badge: (data.volunteerApplications || []).filter(a => a.status === 'pending').length || undefined },
         { id: 'team_join_requests', label: 'طلبات انضمام الفرق', icon: UsersRound, badge: (data.teamApplications || []).filter(a => a.status === 'pending').length || undefined },
+        { id: 'volunteer_transfers', label: 'طلبات نقل المتطوعين وإنهاء الارتباط', icon: ArrowRightLeft, badge: 'جديد' },
         { id: 'cards', label: 'قوالب بطاقات المتطوعين', icon: CreditCard, badge: 'نظام متكامل' }
       ]
     },
@@ -456,6 +460,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: (data.letters || []).filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
         { id: 'users_mgmt', label: 'إدارة المستخدمين الإداريين', icon: Users, badge: 'جديد' },
+        { id: 'password_resets', label: 'طلبات تغيير كلمات المرور (مدير العمليات)', icon: KeyRound, badge: 'العمليات' },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
         { id: 'chat', label: 'الدردشة الداخلية', icon: MessageSquare },
         { id: 'notifications', label: 'الإشعارات والتعاميم', icon: Send }
@@ -468,7 +473,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       description: "مركز خدمة المستفيدين والتذاكر الفنية",
       badge: 'مباشر',
       items: [
-        { id: 'support', label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: 'مباشر' }
+        { id: 'support', label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: 'مباشر' },
+        { id: 'team_support', label: 'الدعم الفني للفرق والمتطوعين', icon: HelpCircle, badge: 'متكامل' }
       ]
     },
     {
@@ -713,25 +719,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleTriggerBackupDownload = () => {
-    window.open("/api/db/backup", "_blank");
+  const handleTriggerBackupDownload = async () => {
+    try {
+      const stored = localStorage.getItem("reyadat_alata_auth_session");
+      const parsed = stored ? JSON.parse(stored) : null;
+      const token = parsed?.sessionToken || authenticatedUser?.sessionToken || "";
+
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["x-session-token"] = token;
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch("/api/db/backup", {
+        method: "GET",
+        headers,
+        credentials: "same-origin"
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        alert(errJson?.error || (lang === 'ar' ? "فشل تنزيل النسخة الاحتياطية (صلاحيات غير كافية أو جلسة منتهية)." : "Backup download failed (unauthorized)."));
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `backup_reyadat_alata_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Backup download error:", err);
+      alert(lang === 'ar' ? "تعذر تنزيل النسخة الاحتياطية." : "Unable to download backup.");
+    }
   };
 
   const handleTriggerRestoreUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const confirmMsg = lang === 'ar' 
+        ? `تحذير أمني هام:\nهل أنت متأكد من رغبتك في استعادة قاعدة البيانات من الملف "${file.name}"؟\nسيؤدي هذا إلى استبدال البيانات الحالية بالنسخة المحددة بعد التحقق التام من سلامة المحتوى.`
+        : `Security Warning:\nAre you sure you want to restore the database from "${file.name}"?\nThis will replace the current database with the verified backup content.`;
+      if (!window.confirm(confirmMsg)) {
+        e.target.value = "";
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
           const json = JSON.parse(event.target?.result as string);
+          if (!json || typeof json !== 'object' || !Array.isArray(json.departments) || !Array.isArray(json.volunteers)) {
+            alert(lang === 'ar' ? "الملف غير صالح: لا يحتوي على الهيكل الأساسي لقاعدة البيانات (الأقسام، المتطوعين)." : "Invalid file: missing critical collections.");
+            return;
+          }
           onRestoreDb(json);
-          alert(lang === 'ar' ? "تم استيراد قاعدة البيانات بنجاح ✓" : "Database restored successfully ✓");
         } catch (err) {
           alert(lang === 'ar' ? "فشل قراءة الملف! يرجى تحميل ملف JSON صالح." : "Failed to parse file. Please upload a valid JSON backup.");
         }
       };
       reader.readAsText(file);
     }
+    e.target.value = "";
   };
 
   // Filter lists
@@ -1222,6 +1275,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }}
               onEvaluateTeamPoints={onEvaluateTeamPoints}
             />
+          )}
+
+          {/* TAB: VOLUNTEER TRANSFERS & TERMINATION REQUESTS */}
+          {activeSubTab === 'volunteer_transfers' && (
+            <div className="space-y-6">
+              <VolunteerTeamTransferManager
+                teams={data.teams || []}
+                volunteers={data.volunteers || []}
+                currentUser={{ id: 'admin', name: 'إدارة التطوع والنظام' }}
+                userRole="admin"
+                onRefreshData={onRefreshGlobalData}
+              />
+            </div>
+          )}
+
+          {/* TAB: PASSWORD RESET REQUESTS (OPERATIONS MANAGEMENT) */}
+          {activeSubTab === 'password_resets' && (
+            <div className="space-y-6">
+              <PasswordResetRequestsManager
+                currentUser={{ id: 'ops-admin', name: 'م. سلطان الزهراني (مدير العمليات)' }}
+                userRole="admin"
+                onRefreshData={onRefreshGlobalData}
+              />
+            </div>
+          )}
+
+          {/* TAB: DEDICATED TEAM & VOLUNTEER TECHNICAL SUPPORT */}
+          {activeSubTab === 'team_support' && (
+            <div className="space-y-6">
+              <TeamSupportManager
+                currentUser={{ id: 'admin', name: 'مهندس الدعم الفني والعمليات' }}
+                userRole="admin"
+                teams={data.teams || []}
+                teamVolunteers={data.volunteers || []}
+                onRefreshData={onRefreshGlobalData}
+              />
+            </div>
           )}
           
           {/* TAB: OPPORTUNITY REQUESTS REVIEW BY ADMIN */}

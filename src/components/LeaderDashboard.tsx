@@ -3,11 +3,13 @@ import {
   Users, Calendar, CheckSquare, Star, MessageSquare, Send, BarChart2, 
   Check, X, RefreshCw, Award, Smile, Info, Compass, ShieldAlert,
   Clock, LogOut, Shield, Search, Filter, FileSpreadsheet, Edit3, User, CheckCircle2, ChevronDown, Plus, FileText, Globe, ExternalLink, Printer, Sparkles, Image as ImageIcon,
-  Mail, AlertCircle, CreditCard, Download, Eye, Layers, Home, ArrowRight
+  Mail, AlertCircle, CreditCard, Download, Eye, Layers, Home, ArrowRight,
+  ArrowRightLeft, UserMinus, KeyRound, HelpCircle
 } from "lucide-react";
 import { 
   Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, VolunteerTeam, Department, OpportunityRequest,
-  OfficialLetter, Employee, TeamStaffAssignment, VolunteerCardTemplate
+  OfficialLetter, Employee, TeamStaffAssignment, VolunteerCardTemplate,
+  VolunteerTransferRequest, PasswordResetRequest
 } from "../types";
 import { AttendanceScanner } from "./AttendanceScanner";
 import { SendLetterModal } from "./SendLetterModal";
@@ -16,6 +18,7 @@ import { TeamStaffManager } from "./TeamStaffManager";
 import { CardTemplateEditor } from "./CardTemplateEditor";
 import { CardRenderer } from "./CardRenderer";
 import { VolunteerProfileCardSection } from "./VolunteerProfileCardSection";
+import { TeamSupportManager } from "./TeamSupportManager";
 
 interface LeaderDashboardProps {
   currentTeam: VolunteerTeam;
@@ -84,8 +87,66 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   onBackToHome
 }: LeaderDashboardProps) => {
   // Tabs for Leader
-  const [activeTab, setActiveTab] = useState<'home' | 'team' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'team' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards' | 'transfers' | 'support'>('home');
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
+
+  // Formal Volunteer Transfer / Termination Request state for Leader
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [targetVolForTransfer, setTargetVolForTransfer] = useState<Volunteer | null>(null);
+  const [transferRequestType, setTransferRequestType] = useState<'transfer' | 'terminate_affiliation'>('transfer');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferSuggestedTeamId, setTransferSuggestedTeamId] = useState('');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+  const [transferFeedback, setTransferFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Volunteer Password Reset Request state for Leader
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [targetVolForPasswordReset, setTargetVolForPasswordReset] = useState<Volunteer | null>(null);
+  const [passwordResetReason, setPasswordResetReason] = useState('');
+  const [passwordResetNotes, setPasswordResetNotes] = useState('');
+  const [isSubmittingPasswordReset, setIsSubmittingPasswordReset] = useState(false);
+  const [passwordResetFeedback, setPasswordResetFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Status view modal for specific volunteer
+  const [statusVolModal, setStatusVolModal] = useState<Volunteer | null>(null);
+
+  // Transfer and Password requests list for Leader
+  const [leaderTransferRequests, setLeaderTransferRequests] = useState<VolunteerTransferRequest[]>([]);
+  const [leaderPasswordRequests, setLeaderPasswordRequests] = useState<PasswordResetRequest[]>([]);
+  const [isLoadingLeaderRequests, setIsLoadingLeaderRequests] = useState(false);
+
+  const fetchLeaderRequests = async () => {
+    setIsLoadingLeaderRequests(true);
+    try {
+      const [tRes, pRes] = await Promise.all([
+        fetch(`/api/db/volunteerTransfers?teamId=${currentTeam.id}&userRole=leader`, {
+          headers: { 'x-user-role': 'leader' }
+        }),
+        fetch(`/api/db/passwordResetRequests?teamId=${currentTeam.id}&userRole=leader`, {
+          headers: { 'x-user-role': 'leader' }
+        })
+      ]);
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        setLeaderTransferRequests(Array.isArray(tData) ? tData : []);
+      }
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        setLeaderPasswordRequests(Array.isArray(pData) ? pData : []);
+      }
+    } catch (e) {
+      console.error("Error fetching leader requests:", e);
+    } finally {
+      setIsLoadingLeaderRequests(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'transfers' || activeTab === 'team') {
+      fetchLeaderRequests();
+    }
+  }, [activeTab, currentTeam.id]);
 
   // Team Cards Management States for Leader
   const [teamTemplate, setTeamTemplate] = useState<VolunteerCardTemplate | null>(null);
@@ -296,12 +357,121 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
     setTimeout(() => setBroadcastSuccess(false), 4000);
   };
 
-  const handleTransferSubmit = (e: React.FormEvent) => {
+  const handleOpenTransferModal = (vol: Volunteer, type: 'transfer' | 'terminate_affiliation') => {
+    setTargetVolForTransfer(vol);
+    setTransferRequestType(type);
+    setTransferReason('');
+    setTransferNotes('');
+    setTransferFeedback(null);
+    setTransferSuggestedTeamId(teams.filter(t => t.id !== currentTeam.id)[0]?.id || '');
+    setShowTransferModal(true);
+  };
+
+  const handleSubmitFormalTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedReqForTransfer && transferTeamId) {
-      onActionRequest(selectedReqForTransfer.id, 'transfer', transferTeamId);
-      setSelectedReqForTransfer(null);
-      setTransferTeamId("");
+    if (!targetVolForTransfer || !transferReason.trim()) {
+      setTransferFeedback({ type: 'error', text: 'يرجى كتابة سبب طلب النقل أو إنهاء الارتباط بشكل واضح.' });
+      return;
+    }
+
+    setIsSubmittingTransfer(true);
+    setTransferFeedback(null);
+
+    try {
+      const res = await fetch('/api/db/volunteerTransfers/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': 'leader'
+        },
+        body: JSON.stringify({
+          volunteerId: targetVolForTransfer.id,
+          requestType: transferRequestType,
+          reason: transferReason.trim(),
+          suggestedTeamId: transferRequestType === 'transfer' ? transferSuggestedTeamId : '',
+          additionalNotes: transferNotes.trim(),
+          leaderId: currentTeam.leaderId || 'leader',
+          leaderName: currentTeam.leaderName || 'قائد الفريق'
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setTransferFeedback({
+          type: 'success',
+          text: 'تم رفع الطلب الرسمي بنجاح وإحالته إلى إدارة التطوع للاعتماد! لن يتغير الفريق حتى مراجعة واعتماد الإدارة.'
+        });
+        await fetchLeaderRequests();
+        setTimeout(() => {
+          setShowTransferModal(false);
+          setTargetVolForTransfer(null);
+          setTransferFeedback(null);
+        }, 2200);
+      } else {
+        setTransferFeedback({ type: 'error', text: data.error || 'حدث خطأ أثناء رفع الطلب.' });
+      }
+    } catch (err) {
+      console.error('Error submitting transfer:', err);
+      setTransferFeedback({ type: 'error', text: 'تعذر الاتصال بالخادم. يرجى المحاولة لاحقاً.' });
+    } finally {
+      setIsSubmittingTransfer(false);
+    }
+  };
+
+  const handleOpenPasswordResetModal = (vol: Volunteer) => {
+    setTargetVolForPasswordReset(vol);
+    setPasswordResetReason('');
+    setPasswordResetNotes('');
+    setPasswordResetFeedback(null);
+    setShowPasswordResetModal(true);
+  };
+
+  const handleSubmitFormalPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetVolForPasswordReset || !passwordResetReason.trim()) {
+      setPasswordResetFeedback({ type: 'error', text: 'يرجى توضيح سبب طلب إعادة تعيين كلمة المرور.' });
+      return;
+    }
+
+    setIsSubmittingPasswordReset(true);
+    setPasswordResetFeedback(null);
+
+    try {
+      const res = await fetch('/api/db/passwordResetRequests/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': 'leader'
+        },
+        body: JSON.stringify({
+          volunteerId: targetVolForPasswordReset.id,
+          reason: passwordResetReason.trim(),
+          additionalNotes: passwordResetNotes.trim(),
+          leaderId: currentTeam.leaderId || 'leader',
+          leaderName: currentTeam.leaderName || 'قائد الفريق'
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setPasswordResetFeedback({
+          type: 'success',
+          text: 'تم رفع طلب إعادة تعيين كلمة المرور رسمياً إلى إدارة العمليات بنجاح! سيتم التحقق الأمني وإرسال التعليمات للمتطوع مباشرة.'
+        });
+        await fetchLeaderRequests();
+        setTimeout(() => {
+          setShowPasswordResetModal(false);
+          setTargetVolForPasswordReset(null);
+          setPasswordResetFeedback(null);
+        }, 2200);
+      } else {
+        setPasswordResetFeedback({ type: 'error', text: data.error || 'حدث خطأ أثناء رفع الطلب.' });
+      }
+    } catch (err) {
+      console.error('Error submitting password reset request:', err);
+      setPasswordResetFeedback({ type: 'error', text: 'تعذر الاتصال بالخادم. يرجى المحاولة لاحقاً.' });
+    } finally {
+      setIsSubmittingPasswordReset(false);
     }
   };
 
@@ -568,6 +738,25 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
         >
           <MessageSquare className="w-4 h-4" />
           <span>الإشعارات والتعاميم</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('transfers')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold transition-all cursor-pointer border-b-2 ${activeTab === 'transfers' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+        >
+          <ArrowRightLeft className="w-4 h-4 text-emerald-600" />
+          <span>طلبات نقل المتطوعين</span>
+          {leaderTransferRequests.filter(r => r.status === 'pending').length > 0 && (
+            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+              {leaderTransferRequests.filter(r => r.status === 'pending').length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('support')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold transition-all cursor-pointer border-b-2 ${activeTab === 'support' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+        >
+          <HelpCircle className="w-4 h-4 text-teal-600" />
+          <span>دعم الفريق</span>
         </button>
         <button
           onClick={() => setActiveTab('profile')}
@@ -916,27 +1105,98 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                 <p className="text-[10.5px] text-neutral-400">إحصاء كلي للمتطوعين المنتسبين للفريق ونقاط التميز المسجلة</p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {teamMembers.map(v => {
                   const evals = evaluations.filter(e => e.volunteerId === v.id);
                   const averageRating = evals.length > 0 
                     ? (evals.reduce((acc, c) => acc + c.commitment, 0) / evals.length).toFixed(1)
                     : "5.0";
+                  const pendingTransfer = leaderTransferRequests.find(r => r.volunteerId === v.id && r.status === 'pending');
+                  const pendingPassword = leaderPasswordRequests.find(r => r.volunteerId === v.id && (r.status === 'new' || r.status === 'under_review'));
+
                   return (
-                    <div key={v.id} className="border border-neutral-100 p-4 rounded-xl flex items-center justify-between bg-neutral-50/10 hover:border-emerald-500 transition-all">
-                      <div className="flex items-center gap-3">
-                        <img src={v.photo} alt={v.name} className="w-10 h-10 rounded-lg object-cover" referrerPolicy="no-referrer" />
-                        <div>
-                          <strong className="text-xs text-neutral-800 block">{v.name}</strong>
-                          <span className="text-[9.5px] text-neutral-400 block font-mono mt-0.5">الهوية: {v.nationalId || "1033481230"}</span>
+                    <div key={v.id} className="border border-neutral-150 p-4 rounded-2xl bg-neutral-50/20 hover:border-emerald-500 hover:bg-white transition-all space-y-3 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img src={v.photo} alt={v.name} className="w-12 h-12 rounded-xl object-cover border border-neutral-200" referrerPolicy="no-referrer" />
+                          <div>
+                            <strong className="text-xs text-neutral-900 block font-bold">{v.name}</strong>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className="text-[10px] text-neutral-500 font-mono">الهوية: {v.nationalId || "—"}</span>
+                              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-mono font-bold">
+                                رقم الملف: {v.fileNumber || v.file_number || "غير مسجل"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-left font-mono space-y-1">
+                          <span className="text-[10.5px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full block text-center font-bold">
+                            {v.points} نقطة
+                          </span>
+                          <span className="text-[9.5px] text-emerald-700 block text-center font-bold">★ {averageRating}</span>
                         </div>
                       </div>
 
-                      <div className="text-left font-mono space-y-1">
-                        <span className="text-[10.5px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full block text-center font-bold">
-                          {v.points} نقطة
-                        </span>
-                        <span className="text-[9.5px] text-emerald-700 block text-center font-bold">★ {averageRating}</span>
+                      {/* Status Badges if requests pending */}
+                      {(pendingTransfer || pendingPassword) && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {pendingTransfer && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md">
+                              <Clock className="w-2.5 h-2.5 animate-spin" />
+                              <span>{pendingTransfer.requestType === 'transfer' ? 'طلب نقل قيد مراجعة إدارة التطوع' : 'طلب إنهاء ارتباط قيد مراجعة إدارة التطوع'}</span>
+                            </span>
+                          )}
+                          {pendingPassword && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-md">
+                              <KeyRound className="w-2.5 h-2.5" />
+                              <span>طلب كلمة المرور قيد إجراءات العمليات</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Required Action Buttons for Each Volunteer */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-neutral-100">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTransferModal(v, 'transfer')}
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                          title="رفع طلب رسمي لإدارة التطوع لنقل المتطوع لفريق آخر"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-emerald-600" />
+                          <span>طلب نقل إلى فريق آخر</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTransferModal(v, 'terminate_affiliation')}
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                          title="رفع طلب رسمي لإدارة التطوع لإنهاء ارتباط المتطوع بالفريق"
+                        >
+                          <UserMinus className="w-3 h-3 text-rose-600" />
+                          <span>طلب إنهاء الارتباط بالفريق</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPasswordResetModal(v)}
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                          title="رفع طلب لإدارة العمليات لإرسال رابط آمن لإعادة تعيين كلمة مرور المتطوع"
+                        >
+                          <KeyRound className="w-3 h-3 text-indigo-600" />
+                          <span>طلب تغيير كلمة المرور</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setStatusVolModal(v)}
+                          className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                          title="عرض حالة الطلبات والسجل التاريخي"
+                        >
+                          <Eye className="w-3 h-3 text-neutral-500" />
+                          <span>عرض حالة الطلبات</span>
+                        </button>
                       </div>
                     </div>
                   );
@@ -948,7 +1208,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             <div className="border-t border-neutral-150 pt-6 space-y-4">
               <div>
                 <h4 className="text-xs font-black text-neutral-800">طلبات الانضمام وتراخيص المشاركة الميدانية</h4>
-                <p className="text-[10.5px] text-neutral-400">اتخاذ إجراء القبول أو نقل العضو إلى فريق آخر</p>
+                <p className="text-[10.5px] text-neutral-400">اتخاذ إجراء القبول أو الرفض أو إحالة طلب نقل رسمي لإدارة التطوع</p>
               </div>
 
               {teamRequests.length > 0 ? (
@@ -975,12 +1235,18 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                         </button>
                         <button
                           onClick={() => {
-                            setSelectedReqForTransfer(req);
-                            setTransferTeamId(teams.filter(t => t.id !== currentTeam.id)[0]?.id || "");
+                            const vol = volunteers.find(v => v.id === req.volunteerId) || {
+                              id: req.volunteerId,
+                              name: req.volunteerName,
+                              teamId: currentTeam.id
+                            } as any;
+                            handleOpenTransferModal(vol, 'transfer');
                           }}
-                          className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                          className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                          title="رفع طلب رسمي لإدارة التطوع لنقل المتطوع"
                         >
-                          نقل لفريق آخر
+                          <ArrowRightLeft className="w-3 h-3 text-neutral-500" />
+                          <span>إحالة طلب نقل لإدارة التطوع</span>
                         </button>
                       </div>
                     </div>
@@ -1521,6 +1787,240 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             )}
           </div>
         )}
+        {/* 8. VOLUNTEER TRANSFERS & TERMINATION REQUESTS TAB */}
+        {activeTab === 'transfers' && (
+          <div className="space-y-6 animate-fade-in" dir="rtl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-emerald-50/40 p-5 rounded-3xl border border-emerald-100">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <ArrowRightLeft className="w-5 h-5 text-emerald-600" />
+                  <h3 className="text-base font-black text-neutral-900">
+                    قسم: طلبات نقل المتطوعين وإنهاء ارتباطهم بالفريق
+                  </h3>
+                </div>
+                <p className="text-xs text-neutral-600 leading-relaxed max-w-2xl">
+                  لا يملك قائد الفريق صلاحية نقل المتطوعين مباشرة. لطلب نقل متطوع أو إنهاء ارتباطه بالفريق، يتوجب رفع طلب رسمي مع توضيح الأسباب للإحالة إلى إدارة التطوع للاعتماد والبت النهائي.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (teamMembers.length > 0) {
+                      handleOpenTransferModal(teamMembers[0], 'transfer');
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>رفع طلب نقل جديد</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={fetchLeaderRequests}
+                  className="bg-white border border-neutral-200 text-neutral-700 font-bold text-xs p-2.5 rounded-xl hover:bg-neutral-50 transition-all cursor-pointer"
+                  title="تحديث"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* List of Submitted Transfer / Termination Requests */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black text-neutral-800">سجل طلبات النقل وإنهاء الارتباط المرفوعة لإدارة التطوع:</h4>
+              {isLoadingLeaderRequests ? (
+                <div className="p-8 text-center text-xs text-neutral-400">جاري تحميل سجلات الطلبات...</div>
+              ) : leaderTransferRequests.length === 0 ? (
+                <div className="p-10 text-center bg-neutral-50 rounded-2xl border border-dashed border-neutral-200 space-y-2">
+                  <ArrowRightLeft className="w-8 h-8 text-neutral-300 mx-auto" />
+                  <p className="text-xs text-neutral-500 font-bold">لم تقم برفع أي طلبات نقل أو إنهاء ارتباط بعد.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-neutral-200">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-neutral-50 text-neutral-500 font-bold border-b border-neutral-200">
+                      <tr>
+                        <th className="p-3">#</th>
+                        <th className="p-3">المتطوع ورقم الملف</th>
+                        <th className="p-3">نوع الطلب</th>
+                        <th className="p-3">الفريق المقترح</th>
+                        <th className="p-3">سبب الطلب</th>
+                        <th className="p-3">تاريخ الرفع</th>
+                        <th className="p-3">الحالة والقرار</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {leaderTransferRequests.map((req, rIdx) => (
+                        <tr key={req.id} className="hover:bg-neutral-50/50">
+                          <td className="p-3 font-mono text-neutral-400 font-bold">{rIdx + 1}</td>
+                          <td className="p-3">
+                            <strong className="text-neutral-900 block font-bold">{req.volunteerName}</strong>
+                            <span className="text-[10px] text-emerald-700 font-mono font-bold">ملف: {req.volunteerFileNumber || '—'}</span>
+                          </td>
+                          <td className="p-3">
+                            {req.requestType === 'transfer' ? (
+                              <span className="bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-full text-[10.5px] font-bold inline-block">
+                                نقل إلى فريق آخر
+                              </span>
+                            ) : (
+                              <span className="bg-rose-50 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full text-[10.5px] font-bold inline-block">
+                                إنهاء الارتباط بالفريق
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <span className="font-bold text-neutral-700">
+                              {req.targetTeamName || req.suggestedTeamName || (req.requestType === 'terminate_affiliation' ? 'متطوع مستقل' : 'حسب تقدير الإدارة')}
+                            </span>
+                          </td>
+                          <td className="p-3 max-w-xs">
+                            <p className="text-neutral-700 line-clamp-2" title={req.reason}>{req.reason}</p>
+                            {req.additionalNotes && (
+                              <span className="text-[10px] text-neutral-400 block mt-0.5">ملاحظات: {req.additionalNotes}</span>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono text-[10.5px] text-neutral-500">
+                            {new Date(req.createdAt).toLocaleDateString('ar-SA')}
+                          </td>
+                          <td className="p-3">
+                            {req.status === 'pending' && (
+                              <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3 animate-spin" />
+                                <span>قيد مراجعة إدارة التطوع</span>
+                              </span>
+                            )}
+                            {req.status === 'approved' && (
+                              <div className="space-y-0.5">
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>تم الاعتماد</span>
+                                </span>
+                                {req.reviewerNotes && (
+                                  <span className="text-[10px] text-emerald-700 block mt-0.5">ملاحظة: {req.reviewerNotes}</span>
+                                )}
+                              </div>
+                            )}
+                            {req.status === 'rejected' && (
+                              <div className="space-y-0.5">
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1">
+                                  <X className="w-3 h-3" />
+                                  <span>مرفوض من الإدارة</span>
+                                </span>
+                                {req.reviewerNotes && (
+                                  <span className="text-[10px] text-rose-600 block mt-0.5 font-medium">السبب: {req.reviewerNotes}</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* List of Submitted Password Reset Requests */}
+            <div className="border-t border-neutral-150 pt-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black text-neutral-800">طلبات تغيير كلمات المرور المرفوعة لإدارة العمليات:</h4>
+                  <p className="text-[10.5px] text-neutral-400">متابعة حالة معالجة الطلبات بدون إظهار أي كلمات مرور حفاظاً على السرية</p>
+                </div>
+              </div>
+
+              {leaderPasswordRequests.length === 0 ? (
+                <div className="p-8 text-center bg-neutral-50 rounded-2xl border border-dashed border-neutral-200 text-xs text-neutral-400">
+                  لم تقم برفع أي طلب لتغيير كلمة مرور متطوع حتى الآن.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-neutral-200">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-neutral-50 text-neutral-500 font-bold border-b border-neutral-200">
+                      <tr>
+                        <th className="p-3">#</th>
+                        <th className="p-3">المتطوع ورقم الملف</th>
+                        <th className="p-3">سبب الطلب</th>
+                        <th className="p-3">تاريخ الرفع</th>
+                        <th className="p-3">الحالة من مدير العمليات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {leaderPasswordRequests.map((pReq, pIdx) => (
+                        <tr key={pReq.id} className="hover:bg-neutral-50/50">
+                          <td className="p-3 font-mono text-neutral-400 font-bold">{pIdx + 1}</td>
+                          <td className="p-3">
+                            <strong className="text-neutral-900 block font-bold">{pReq.volunteerName}</strong>
+                            <span className="text-[10px] text-emerald-700 font-mono font-bold">ملف: {pReq.volunteerFileNumber || '—'}</span>
+                          </td>
+                          <td className="p-3 max-w-xs">
+                            <p className="text-neutral-700 line-clamp-2">{pReq.reason}</p>
+                          </td>
+                          <td className="p-3 font-mono text-[10.5px] text-neutral-500">
+                            {new Date(pReq.createdAt).toLocaleDateString('ar-SA')}
+                          </td>
+                          <td className="p-3">
+                            {pReq.status === 'new' && (
+                              <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold">
+                                جديد بانتظار المراجعة
+                              </span>
+                            )}
+                            {pReq.status === 'under_review' && (
+                              <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3 animate-spin" />
+                                <span>قيد التحقق الأمني</span>
+                              </span>
+                            )}
+                            {(pReq.status === 'reset_link_sent' || pReq.status === 'approved') && (
+                              <div className="space-y-0.5">
+                                <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1">
+                                  <Send className="w-3 h-3" />
+                                  <span>تم إرسال رابط التعيين للمتطوع</span>
+                                </span>
+                                <span className="text-[9.5px] text-neutral-400 block">وصلت التعليمات لهاتف/بريد المتطوع مباشرة</span>
+                              </div>
+                            )}
+                            {pReq.status === 'completed' && (
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>اكتمل التعيين بنجاح</span>
+                              </span>
+                            )}
+                            {pReq.status === 'rejected' && (
+                              <div className="space-y-0.5">
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold">
+                                  مرفوض من العمليات
+                                </span>
+                                {pReq.reviewerNotes && (
+                                  <span className="text-[9.5px] text-rose-600 block">السبب: {pReq.reviewerNotes}</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 9. TEAM DEDICATED SUPPORT TAB */}
+        {activeTab === 'support' && (
+          <div className="space-y-6 animate-fade-in" dir="rtl">
+            <TeamSupportManager
+              currentUser={{ id: currentTeam.leaderId || 'leader', name: currentTeam.leaderName || 'قائد الفريق' }}
+              userRole="leader"
+              team={currentTeam}
+              teamVolunteers={teamMembers}
+              teams={teams}
+            />
+          </div>
+        )}
 
       </div>
 
@@ -1643,53 +2143,361 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
         </div>
       )}
 
-      {/* TRANSFER TEAM MODAL */}
-      {selectedReqForTransfer && (
+      {/* FORMAL VOLUNTEER TRANSFER / TERMINATION REQUEST MODAL */}
+      {showTransferModal && targetVolForTransfer && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in no-print">
           <form 
-            onSubmit={handleTransferSubmit}
-            className="bg-white rounded-2xl max-w-md w-full p-6 text-right border border-neutral-100 shadow-xl space-y-4 animate-scale-up" 
+            onSubmit={handleSubmitFormalTransfer}
+            className="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 text-right border border-neutral-100 dark:border-slate-700 shadow-2xl space-y-4 animate-scale-up" 
             dir="rtl"
           >
-            <div className="flex items-center gap-2 text-emerald-600">
-              <ShieldAlert className="w-6 h-6" />
-              <h3 className="text-md font-black text-neutral-800">نقل المتطوع لفريق تطوعي آخر</h3>
-            </div>
-            
-            <p className="text-xs text-neutral-500 leading-relaxed">
-              تقوم الآن بنقل المتطوع <strong className="text-neutral-800">{selectedReqForTransfer.volunteerName}</strong> إلى فريق تطوعي مختلف وتأكيد قبوله الفوري للمشاركة بالمبادرة.
-            </p>
+            <div className="flex items-center justify-between border-b border-neutral-150 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-6 h-6 text-emerald-600" />
+                <div>
+                  <h3 className="text-base font-black text-neutral-800 dark:text-white">
+                    {transferRequestType === 'transfer' ? 'طلب نقل متطوع إلى فريق آخر' : 'طلب إنهاء ارتباط متطوع بالفريق'}
+                  </h3>
+                  <span className="text-[11px] text-neutral-400">إحالة الطلب رسمياً إلى إدارة التطوع</span>
+                </div>
+              </div>
 
-            <div className="space-y-1 text-xs">
-              <label className="text-neutral-400 font-bold">الفريق المستهدف لنقله إليه:</label>
-              <select
-                required
-                value={transferTeamId}
-                onChange={(e) => setTransferTeamId(e.target.value)}
-                className="w-full border border-neutral-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-emerald-500/20"
+              <button
+                type="button"
+                onClick={() => setShowTransferModal(false)}
+                className="text-neutral-400 hover:text-neutral-600 text-sm font-bold cursor-pointer"
               >
-                {teams.filter(t => t.id !== currentTeam.id).map(t => (
-                  <option key={t.id} value={t.id}>{t.nameAr}</option>
-                ))}
+                ✕
+              </button>
+            </div>
+
+            {/* Volunteer Details Snapshot */}
+            <div className="bg-neutral-50 dark:bg-slate-700/50 p-4 rounded-2xl border border-neutral-150 dark:border-slate-600 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">اسم المتطوع:</span>
+                <strong className="text-neutral-900 dark:text-white">{targetVolForTransfer.name}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">رقم الملف:</span>
+                <strong className="text-emerald-700 dark:text-emerald-400 font-mono">
+                  {targetVolForTransfer.fileNumber || targetVolForTransfer.file_number || "غير مسجل"}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">الفريق الحالي:</span>
+                <span className="text-neutral-800 dark:text-slate-200 font-bold">{currentTeam.nameAr}</span>
+              </div>
+            </div>
+
+            {/* Request Type Selector */}
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                نوع الإجراء المطلوب: <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={transferRequestType}
+                onChange={(e) => setTransferRequestType(e.target.value as any)}
+                className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-bold"
+              >
+                <option value="transfer">طلب نقل إلى فريق تطوعي آخر</option>
+                <option value="terminate_affiliation">طلب إنهاء الارتباط بالفريق الحالي (تفريغ العضو)</option>
               </select>
             </div>
 
-            <div className="flex gap-2 pt-3">
+            {/* Suggested Team (if transfer) */}
+            {transferRequestType === 'transfer' && (
+              <div className="space-y-1.5 text-xs">
+                <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                  الفريق المقترح للنقل إليه (إن وُجد):
+                </label>
+                <select
+                  value={transferSuggestedTeamId}
+                  onChange={(e) => setTransferSuggestedTeamId(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-medium"
+                >
+                  <option value="">-- اختياري: متروك لتقدير إدارة التطوع --</option>
+                  {teams.filter(t => t.id !== currentTeam.id).map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.nameAr} ({t.leaderName ? `القائد: ${t.leaderName}` : 'فريق معتمد'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Reason */}
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                سبب النقل أو إنهاء الارتباط: <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                required
+                rows={3}
+                value={transferReason}
+                onChange={(e) => setTransferReason(e.target.value)}
+                placeholder="وضح مبررات النقل أو رغبة المتطوع أو أسباب إنهاء الارتباط بالفريق بالتفصيل..."
+                className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-medium focus:ring-2 focus:ring-emerald-500/20"
+              />
+            </div>
+
+            {/* Additional Notes */}
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                ملاحظات إضافية لإدارة التطوع (اختياري):
+              </label>
+              <input
+                type="text"
+                value={transferNotes}
+                onChange={(e) => setTransferNotes(e.target.value)}
+                placeholder="أي توصيات أو تفاصيل تنظيمية مساندة..."
+                className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2 text-xs"
+              />
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200/50 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+              <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              <p>
+                <strong>حوكمة الانتقال:</strong> لا يتم تغيير الفريق تلقائياً. ستقوم إدارة التطوع بمراجعة الطلب واعتماد النقل وتحديث قوائم الفريقين وتوثيق العملية في السجل التاريخي.
+              </p>
+            </div>
+
+            {transferFeedback && (
+              <div className={`p-3 rounded-xl text-xs font-bold ${
+                transferFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                {transferFeedback.text}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2 border-t border-neutral-150 dark:border-slate-700">
               <button
                 type="submit"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-lg cursor-pointer"
+                disabled={isSubmittingTransfer}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5"
               >
-                تأكيد النقل والقبول
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSubmittingTransfer ? 'جاري رفع الطلب...' : 'إرسال الطلب لإدارة التطوع'}</span>
               </button>
               <button
                 type="button"
-                onClick={() => setSelectedReqForTransfer(null)}
-                className="flex-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2.5 rounded-lg cursor-pointer"
+                onClick={() => setShowTransferModal(false)}
+                className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
               >
                 إلغاء
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* FORMAL PASSWORD RESET REQUEST MODAL */}
+      {showPasswordResetModal && targetVolForPasswordReset && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in no-print">
+          <form 
+            onSubmit={handleSubmitFormalPasswordReset}
+            className="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 text-right border border-neutral-100 dark:border-slate-700 shadow-2xl space-y-4 animate-scale-up" 
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-150 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-6 h-6 text-indigo-600" />
+                <div>
+                  <h3 className="text-base font-black text-neutral-800 dark:text-white">
+                    طلب تغيير كلمة مرور المتطوع
+                  </h3>
+                  <span className="text-[11px] text-neutral-400">إحالة الطلب رسمياً إلى إدارة العمليات</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPasswordResetModal(false)}
+                className="text-neutral-400 hover:text-neutral-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Volunteer Snapshot */}
+            <div className="bg-neutral-50 dark:bg-slate-700/50 p-4 rounded-2xl border border-neutral-150 dark:border-slate-600 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">اسم المتطوع:</span>
+                <strong className="text-neutral-900 dark:text-white">{targetVolForPasswordReset.name}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">رقم الملف:</span>
+                <strong className="text-emerald-700 dark:text-emerald-400 font-mono">
+                  {targetVolForPasswordReset.fileNumber || targetVolForPasswordReset.file_number || "غير مسجل"}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">رقم الجوال المسجل:</span>
+                <span className="text-neutral-800 dark:text-slate-200 font-mono">{targetVolForPasswordReset.phone}</span>
+              </div>
+            </div>
+
+            {/* Security Warning Notice */}
+            <div className="bg-indigo-50/70 dark:bg-indigo-950/40 p-3.5 rounded-2xl border border-indigo-200/50 text-[11px] text-indigo-900 dark:text-indigo-200 flex items-start gap-2.5">
+              <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5 text-indigo-600" />
+              <div className="space-y-1">
+                <strong>تنبيه أمني هام:</strong>
+                <p className="leading-relaxed">
+                  لا يجوز لقائد الفريق الاطلاع على كلمة المرور الحالية أو تعيين كلمة مرور جديدة مباشرة. سيقوم مدير العمليات بالتحقق من هوية المتطوع وإرسال رابط/كود مؤقت آمن إلى وسيلة التواصل الموثقة للمتطوع لتعيين كلمته بنفسه.
+                </p>
+              </div>
+            </div>
+
+            {/* Reason */}
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                سبب طلب إعادة تعيين كلمة المرور: <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                required
+                rows={3}
+                value={passwordResetReason}
+                onChange={(e) => setPasswordResetReason(e.target.value)}
+                placeholder="مثال: فقدان المتطوع لكلمة المرور وعدم تمكنه من تسجيل الدخول لحسابه أو حضور المبادرات..."
+                className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </div>
+
+            {/* Additional Notes */}
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                ملاحظات إضافية لمدير العمليات (اختياري):
+              </label>
+              <input
+                type="text"
+                value={passwordResetNotes}
+                onChange={(e) => setPasswordResetNotes(e.target.value)}
+                placeholder="أي معلومات تأكيدية عن هوية المتطوع..."
+                className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2 text-xs"
+              />
+            </div>
+
+            {passwordResetFeedback && (
+              <div className={`p-3 rounded-xl text-xs font-bold ${
+                passwordResetFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                {passwordResetFeedback.text}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2 border-t border-neutral-150 dark:border-slate-700">
+              <button
+                type="submit"
+                disabled={isSubmittingPasswordReset}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSubmittingPasswordReset ? 'جاري الإرسال...' : 'إرسال الطلب لإدارة العمليات'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPasswordResetModal(false)}
+                className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* VOLUNTEER STATUS & HISTORY MODAL FOR LEADER */}
+      {statusVolModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in no-print">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 text-right border border-neutral-100 dark:border-slate-700 shadow-2xl space-y-4 animate-scale-up" dir="rtl">
+            <div className="flex items-center justify-between border-b border-neutral-150 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <h3 className="text-base font-black text-neutral-800 dark:text-white">
+                    حالة وسجل طلبات المتطوع
+                  </h3>
+                  <p className="text-[11px] text-neutral-400">
+                    {statusVolModal.name} (ملف: {statusVolModal.fileNumber || statusVolModal.file_number || '—'})
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setStatusVolModal(null)}
+                className="text-neutral-400 hover:text-neutral-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Active Requests Status */}
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+              <h4 className="text-xs font-black text-neutral-800 dark:text-white">طلبات النقل وإنهاء الارتباط:</h4>
+              {leaderTransferRequests.filter(r => r.volunteerId === statusVolModal.id).length > 0 ? (
+                leaderTransferRequests.filter(r => r.volunteerId === statusVolModal.id).map(r => (
+                  <div key={r.id} className="p-3 rounded-xl bg-neutral-50 dark:bg-slate-700/50 border border-neutral-200 dark:border-slate-600 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="font-bold">{r.requestType === 'transfer' ? 'طلب نقل' : 'طلب إنهاء ارتباط'}</span>
+                      <span className="font-mono text-[10px] text-neutral-400">{new Date(r.createdAt).toLocaleDateString('ar-SA')}</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-600 dark:text-slate-300">السبب: {r.reason}</p>
+                    <div className="text-[10px] pt-1">
+                      الحالة: <strong className={r.status === 'approved' ? 'text-emerald-600' : r.status === 'rejected' ? 'text-rose-600' : 'text-amber-600'}>
+                        {r.status === 'approved' ? 'معتمد' : r.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                      </strong>
+                      {r.reviewerNotes && <span className="block text-neutral-400">ملاحظات الإدارة: {r.reviewerNotes}</span>}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[11px] text-neutral-400">لا توجد طلبات نقل مسجلة لهذا المتطوع.</p>
+              )}
+
+              <h4 className="text-xs font-black text-neutral-800 dark:text-white pt-2 border-t border-neutral-100 dark:border-slate-700">طلبات تغيير كلمة المرور:</h4>
+              {leaderPasswordRequests.filter(r => r.volunteerId === statusVolModal.id).length > 0 ? (
+                leaderPasswordRequests.filter(r => r.volunteerId === statusVolModal.id).map(pr => (
+                  <div key={pr.id} className="p-3 rounded-xl bg-neutral-50 dark:bg-slate-700/50 border border-neutral-200 dark:border-slate-600 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="font-bold">طلب إعادة تعيين كلمة المرور</span>
+                      <span className="font-mono text-[10px] text-neutral-400">{new Date(pr.createdAt).toLocaleDateString('ar-SA')}</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-600 dark:text-slate-300">السبب: {pr.reason}</p>
+                    <div className="text-[10px] pt-1">
+                      الحالة: <strong className="text-indigo-600">
+                        {pr.status === 'reset_link_sent' ? 'تم إرسال رابط التعيين للمتطوع' : pr.status === 'completed' ? 'مكتمل' : pr.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                      </strong>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[11px] text-neutral-400">لا توجد طلبات كلمة مرور مسجلة لهذا المتطوع.</p>
+              )}
+
+              {/* Team History */}
+              {statusVolModal.teamHistory && statusVolModal.teamHistory.length > 0 && (
+                <div className="pt-2 border-t border-neutral-100 dark:border-slate-700">
+                  <h4 className="text-xs font-black text-neutral-800 dark:text-white mb-2">السجل التاريخي للانتقالات السابقة:</h4>
+                  {statusVolModal.teamHistory.map((th, thIdx) => (
+                    <div key={thIdx} className="text-[11px] p-2 bg-emerald-50/50 rounded-lg border border-emerald-100 mb-1">
+                      <span>من: <strong>{th.fromTeamName}</strong> ➔ إلى: <strong>{th.toTeamName}</strong></span>
+                      <span className="block text-[10px] text-neutral-400 font-mono mt-0.5">تاريخ النقل: {new Date(th.transferredAt).toLocaleDateString('ar-SA')} بواسطة ({th.transferredBy})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-neutral-150 dark:border-slate-700 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setStatusVolModal(null)}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-neutral-100 hover:bg-neutral-200 text-neutral-800 cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

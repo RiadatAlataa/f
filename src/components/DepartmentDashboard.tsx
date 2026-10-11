@@ -44,7 +44,9 @@ import {
   Edit3,
   Star,
   Upload,
-  CheckCircle
+  CheckCircle,
+  ArrowRightLeft,
+  KeyRound
 } from 'lucide-react';
 import { 
   Department, 
@@ -66,6 +68,9 @@ import { InventoryManager } from './InventoryManager';
 import { BeneficiariesMasterDashboard } from './BeneficiariesMasterDashboard';
 import { SendLetterModal } from './SendLetterModal';
 import { DepartmentStaffManager } from './DepartmentStaffManager';
+import { VolunteerTeamTransferManager } from './VolunteerTeamTransferManager';
+import { PasswordResetRequestsManager } from './PasswordResetRequestsManager';
+import { TeamSupportManager } from './TeamSupportManager';
 import { DashboardErrorBoundary } from './DashboardErrorBoundary';
 import { AccessDeniedCard } from './AccessDeniedCard';
 
@@ -276,8 +281,15 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   const allDepartmentTabs = useMemo(() => {
     const tabs: { id: string; label: string }[] = [];
     if (isWarehouseDept) tabs.push({ id: 'inventory', label: 'إدارة المخزون والمستودعات' });
-    if (isVolunteerDept) tabs.push({ id: 'volunteer_ops', label: 'الفرص والمبادرات التطوعية' });
-    if (isVolunteerDept) tabs.push({ id: 'requests', label: 'طلبات الانضمام والتطوع' });
+    if (isVolunteerDept) {
+      tabs.push({ id: 'volunteer_ops', label: 'الفرص والمبادرات التطوعية' });
+      tabs.push({ id: 'volunteer_transfers', label: 'طلبات نقل وإنهاء ارتباط المتطوعين' });
+      tabs.push({ id: 'requests', label: 'طلبات الانضمام والتطوع' });
+      tabs.push({ id: 'team_support', label: 'الدعم الفني للفرق والمتطوعين' });
+    }
+    if (isExecutiveDept) {
+      tabs.push({ id: 'password_resets', label: 'طلبات تغيير كلمات المرور (العمليات)' });
+    }
     if (isBeneficiaryDept) tabs.push({ id: 'beneficiaries', label: 'إدارة المستفيدين والتوزيعات' });
     if (isHRDept) tabs.push({ id: 'hr_staff', label: 'سجل الكوادر والموظفين' });
     if (isFinanceDept) tabs.push({ id: 'finance_ledger', label: 'المعاملات وسندات الصرف والقبض' });
@@ -292,7 +304,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     tabs.push({ id: 'letters', label: 'الخطابات والمراسلات' });
     tabs.push({ id: 'credentials', label: 'بيانات الاعتماد' });
     return tabs;
-  }, [isWarehouseDept, isVolunteerDept, isBeneficiaryDept, isHRDept, isFinanceDept, isProjectsDept, isMediaDept]);
+  }, [isWarehouseDept, isVolunteerDept, isBeneficiaryDept, isHRDept, isFinanceDept, isProjectsDept, isMediaDept, isExecutiveDept]);
 
   const allowedDepartmentTabs = useMemo(() => {
     return allDepartmentTabs.filter(t => isPageAllowed(t.id));
@@ -804,6 +816,36 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
             </button>
           )}
 
+          {isVolunteerDept && isPageAllowed('volunteer_transfers') && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('volunteer_transfers')}
+              className={`px-5 py-3 rounded-t-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'volunteer_transfers'
+                  ? 'bg-emerald-600 text-white shadow-lg border-b-2 border-emerald-400'
+                  : 'bg-slate-900/80 text-emerald-300 hover:bg-slate-800 border-t border-x border-slate-800'
+              }`}
+            >
+              <ArrowRightLeft className="w-4 h-4 text-emerald-300" />
+              <span>طلبات نقل وإنهاء ارتباط المتطوعين</span>
+            </button>
+          )}
+
+          {isExecutiveDept && isPageAllowed('password_resets') && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('password_resets')}
+              className={`px-5 py-3 rounded-t-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'password_resets'
+                  ? 'bg-emerald-600 text-white shadow-lg border-b-2 border-emerald-400'
+                  : 'bg-slate-900/80 text-emerald-300 hover:bg-slate-800 border-t border-x border-slate-800'
+              }`}
+            >
+              <KeyRound className="w-4 h-4 text-emerald-300" />
+              <span>طلبات تغيير كلمات المرور</span>
+            </button>
+          )}
+
           {isVolunteerDept && isPageAllowed('requests') && (
             <button
               type="button"
@@ -1140,6 +1182,40 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 2.1 VOLUNTEER TRANSFERS & TERMINATION TAB FOR VOLUNTEER DEPT */}
+        {activeTab === 'volunteer_transfers' && (
+          <div className="space-y-6">
+            <VolunteerTeamTransferManager
+              teams={teams}
+              volunteers={volunteers}
+              currentUser={currentUser}
+              userRole={effectiveRole}
+            />
+          </div>
+        )}
+
+        {/* 2.2 PASSWORD RESET REQUESTS TAB FOR EXECUTIVE/OPERATIONS DEPT */}
+        {activeTab === 'password_resets' && (
+          <div className="space-y-6">
+            <PasswordResetRequestsManager
+              currentUser={currentUser}
+              userRole={effectiveRole}
+            />
+          </div>
+        )}
+
+        {/* 2.3 TEAM & VOLUNTEER TECHNICAL SUPPORT TAB */}
+        {activeTab === 'team_support' && (
+          <div className="space-y-6">
+            <TeamSupportManager
+              currentUser={currentUser}
+              userRole={effectiveRole}
+              teams={teams}
+              teamVolunteers={volunteers}
+            />
           </div>
         )}
 

@@ -238,8 +238,8 @@
       "phone": "0551234567",
       "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
       "membershipNumber": "V-2026-0001",
-      "teamId": "team-1",
-      "departmentId": "dep-3",
+      "teamId": "team-2",
+      "departmentId": "dep-2",
       "titleAr": "متطوع تنظيمي",
       "titleEn": "Organizing Volunteer",
       "status": "active",
@@ -254,7 +254,22 @@
       "completedInitiativesCount": 61,
       "fileNumber": "A-1339",
       "file_number": "A-1339",
-      "gender": "male"
+      "gender": "male",
+      "teamHistory": [
+        {
+          "fromTeamId": "team-1",
+          "fromTeamName": "فريق التنظيم",
+          "toTeamId": "team-2",
+          "toTeamName": "فريق الإعلام",
+          "transferredAt": "2026-10-11T17:26:40.750Z",
+          "transferredBy": "إدارة التطوع",
+          "reason": "رغبة المتطوع في التخصص الميداني مع الفريق الآخر",
+          "notes": "تمت الموافقة من إدارة التطوع بعد التحقق من شواغر الفريق",
+          "requestId": "vtr-1791739600707"
+        }
+      ],
+      "passwordResetToken": "RST-3QD6QC-MV43HW3B",
+      "passwordResetExpiresAt": 1791826000823
     },
     {
       "id": "vol-2",
@@ -3582,6 +3597,62 @@
   ],
   "logs": [
     {
+      "id": "log-1791739638705",
+      "timestamp": "2026-10-11T17:27:18.705Z",
+      "user": "أحمد المتطوع",
+      "action": "فتح تذكرة دعم فني للفرق (#TCK-VOL-2026-0005) - الموضوع: استفسار عن توثيق ساعات مبادرة العسيلة",
+      "ip": "127.0.0.1",
+      "device": "Team Support Portal"
+    },
+    {
+      "id": "log-1791739629464",
+      "timestamp": "2026-10-11T17:27:09.464Z",
+      "user": "أحمد المتطوع",
+      "action": "فتح تذكرة دعم فني للفرق (#TCK-VOL-2026-0004) - الموضوع: استفسار عن توثيق ساعات مبادرة العسيلة",
+      "ip": "127.0.0.1",
+      "device": "Team Support Portal"
+    },
+    {
+      "id": "log-1791739600859",
+      "timestamp": "2026-10-11T17:26:40.859Z",
+      "user": "أحمد المتطوع",
+      "action": "فتح تذكرة دعم فني للفرق (#TCK-VOL-2026-0003) - الموضوع: استفسار عن توثيق ساعات مبادرة العسيلة",
+      "ip": "127.0.0.1",
+      "device": "Team Support Portal"
+    },
+    {
+      "id": "log-1791739600823",
+      "timestamp": "2026-10-11T17:26:40.823Z",
+      "user": "مدير العمليات",
+      "action": "اعتماد طلب إعادة تعيين كلمة المرور للمتطوع (أحمد بن علي الغامدي) وإرسال رابط مؤمن وصالح 24 ساعة بواسطة (مدير العمليات)",
+      "ip": "127.0.0.1",
+      "device": "Operations Dashboard"
+    },
+    {
+      "id": "log-1791739600789",
+      "timestamp": "2026-10-11T17:26:40.789Z",
+      "user": "قائد الفريق: عبد العزيز الشمري",
+      "action": "رفع طلب إعادة تعيين كلمة مرور للمتطوع (أحمد بن علي الغامدي - ملف: A-1339) إلى مدير العمليات",
+      "ip": "127.0.0.1",
+      "device": "Leader Portal"
+    },
+    {
+      "id": "log-1791739600750",
+      "timestamp": "2026-10-11T17:26:40.750Z",
+      "user": "إدارة التطوع",
+      "action": "اعتماد نقل المتطوع (أحمد بن علي الغامدي) إلى فريق (فريق الإعلام) وحفظ السجل التاريخي",
+      "ip": "127.0.0.1",
+      "device": "Admin Volunteer Mgmt"
+    },
+    {
+      "id": "log-1791739600707",
+      "timestamp": "2026-10-11T17:26:40.707Z",
+      "user": "قائد الفريق: سعود الحربي",
+      "action": "رفع طلب نقل للمتطوع (أحمد بن علي الغامدي - ملف: A-1339) من فريق (فريق التنظيم) إلى إدارة التطوع",
+      "ip": "127.0.0.1",
+      "device": "Leader Portal"
+    },
+    {
       "id": "log-1791562030610",
       "timestamp": "2026-10-09T16:07:10.610Z",
       "user": "مدير العمليات",
@@ -3815,6 +3886,103 @@
     }
   ],
   "notifications": [
+    {
+      "id": "not-1791739638756",
+      "userId": "vol-1",
+      "titleAr": "رد جديد على تذكرة الدعم (#TCK-VOL-2026-0005)",
+      "titleEn": "New Reply on Support Ticket",
+      "bodyAr": "أضاف موظف الدعم (مهندس الدعم الفني) رداً على تذكرتك: \"وعليكم السلام، تم مراجعة سجل الحضور وتوثيق 4 ساعات بنجاح في ملفكم التط...\"",
+      "date": "2026-10-11",
+      "read": false
+    },
+    {
+      "id": "not-1791739638705",
+      "userId": "support",
+      "titleAr": "تذكرة دعم فني جديدة للفرق (#TCK-VOL-2026-0005)",
+      "titleEn": "New Team Support Ticket",
+      "bodyAr": "تم فتح تذكرة جديدة من (أحمد المتطوع) بخصوص (استفسار عن توثيق ساعات مبادرة العسيلة). نوع المشكلة: attendance_points_hours.",
+      "date": "2026-10-11",
+      "read": false,
+      "type": "team_support_ticket"
+    },
+    {
+      "id": "not-1791739629464",
+      "userId": "support",
+      "titleAr": "تذكرة دعم فني جديدة للفرق (#TCK-VOL-2026-0004)",
+      "titleEn": "New Team Support Ticket",
+      "bodyAr": "تم فتح تذكرة جديدة من (أحمد المتطوع) بخصوص (استفسار عن توثيق ساعات مبادرة العسيلة). نوع المشكلة: attendance_points_hours.",
+      "date": "2026-10-11",
+      "read": false,
+      "type": "team_support_ticket"
+    },
+    {
+      "id": "not-1791739600859",
+      "userId": "support",
+      "titleAr": "تذكرة دعم فني جديدة للفرق (#TCK-VOL-2026-0003)",
+      "titleEn": "New Team Support Ticket",
+      "bodyAr": "تم فتح تذكرة جديدة من (أحمد المتطوع) بخصوص (استفسار عن توثيق ساعات مبادرة العسيلة). نوع المشكلة: attendance_points_hours.",
+      "date": "2026-10-11",
+      "read": false,
+      "type": "team_support_ticket"
+    },
+    {
+      "id": "not-1791739600824",
+      "userId": "leader",
+      "titleAr": "تم اعتماد طلب إعادة تعيين كلمة المرور للمتطوع (أحمد بن علي الغامدي)",
+      "titleEn": "Password Reset Approved",
+      "bodyAr": "اعتمد مدير العمليات طلبكم، وتم إرسال رابط وتعليمات إعادة التعيين الآمنة إلى المتطوع (أحمد بن علي الغامدي) مباشرة. حفاظاً على سرية البيانات لا تظهر كلمات المرور لقادة الفرق.",
+      "date": "2026-10-11",
+      "read": false
+    },
+    {
+      "id": "not-1791739600823",
+      "userId": "vol-1",
+      "titleAr": "رابط آمن لإعادة تعيين كلمة المرور 🔐",
+      "titleEn": "Secure Password Reset Link",
+      "bodyAr": "إدارة العمليات: تم اعتماد طلب إعادة تعيين كلمة مرور حسابك بطلب من قائد الفريق. كود التحقق الآمن المؤقت هو: (RST-3QD6QC-MV43HW3B) صالح لمدة 24 ساعة. يمكنك استخدامه لإدخال كلمة مرورك الجديدة بأمان.",
+      "date": "2026-10-11",
+      "read": false,
+      "type": "password_reset_token",
+      "token": "RST-3QD6QC-MV43HW3B"
+    },
+    {
+      "id": "not-1791739600789",
+      "userId": "operations_manager",
+      "titleAr": "طلب تغيير كلمة مرور متطوع مرفوع من قائد (فريق الإعلام)",
+      "titleEn": "Volunteer Password Reset Request",
+      "bodyAr": "رفع القائد (عبد العزيز الشمري) طلباً لإعادة تعيين كلمة المرور للمتطوع (أحمد بن علي الغامدي - ملف: A-1339). السبب: فقدان المتطوع للوصول لحسابه وطلب المساعدة. بانتظار التحقق واعتماد مدير العمليات.",
+      "date": "2026-10-11",
+      "read": false,
+      "type": "password_reset_request"
+    },
+    {
+      "id": "not-1791739600751",
+      "userId": "leader",
+      "titleAr": "تمت الموافقة على طلب (نقل) المتطوع (أحمد بن علي الغامدي)",
+      "titleEn": "Volunteer Transfer Request Approved",
+      "bodyAr": "اعتمدت إدارة التطوع طلبكم بشأن المتطوع (أحمد بن علي الغامدي - ملف: A-1339). تم نقله إلى فريق (فريق الإعلام). ملاحظات الإدارة: تمت الموافقة من إدارة التطوع بعد التحقق من شواغر الفريق",
+      "date": "2026-10-11",
+      "read": false
+    },
+    {
+      "id": "not-1791739600750",
+      "userId": "vol-1",
+      "titleAr": "تم اعتماد نقلك إلى فريق (فريق الإعلام) 🎉",
+      "titleEn": "Volunteer Affiliation Updated",
+      "bodyAr": "وافقت إدارة التطوع على نقلك رسمياً إلى فريق (فريق الإعلام). تم تحديث ملفك وبطاقتك التطوعية.",
+      "date": "2026-10-11",
+      "read": false
+    },
+    {
+      "id": "not-1791739600707",
+      "userId": "admin",
+      "titleAr": "طلب نقل متطوع جديد من قائد (فريق التنظيم)",
+      "titleEn": "Volunteer Transfer/Termination Request",
+      "bodyAr": "رفع القائد (سعود الحربي) طلباً رسمياً لـ(نقل) المتطوع (أحمد بن علي الغامدي - ملف: A-1339). السبب: رغبة المتطوع في التخصص الميداني مع الفريق الآخر. يتطلب مراجعة واعتماد إدارة التطوع.",
+      "date": "2026-10-11",
+      "read": false,
+      "type": "volunteer_transfer_request"
+    },
     {
       "id": "not-1",
       "userId": "vol-1",
@@ -4730,6 +4898,121 @@
     }
   ],
   "supportTickets": [
+    {
+      "id": "ticket-vol-1791739638705",
+      "ticketNumber": "TCK-VOL-2026-0005",
+      "category": "team_volunteer",
+      "requesterId": "vol-1",
+      "requesterName": "أحمد المتطوع",
+      "requesterEmail": "",
+      "requesterPhone": "",
+      "requesterRole": "volunteer",
+      "volunteerId": "vol-1",
+      "volunteerName": "أحمد المتطوع",
+      "volunteerFileNumber": "A-1001",
+      "teamId": "team-2",
+      "teamName": "فريق غيث العطاء",
+      "issueType": "attendance_points_hours",
+      "subject": "استفسار عن توثيق ساعات مبادرة العسيلة",
+      "description": "السلام عليكم، أود التأكد من توثيق ساعات حضور المبادرة الأخيرة ولكم الشكر.",
+      "status": "in_progress",
+      "priority": "normal",
+      "isCreatedByLeader": false,
+      "attachments": [],
+      "chatTranscript": [
+        {
+          "id": "tm-1791739638705",
+          "ticketId": "",
+          "senderType": "user",
+          "senderName": "أحمد المتطوع",
+          "content": "السلام عليكم، أود التأكد من توثيق ساعات حضور المبادرة الأخيرة ولكم الشكر.",
+          "timestamp": "2026-10-11T17:27:18.705Z",
+          "attachments": []
+        },
+        {
+          "id": "tm-1791739638756",
+          "ticketId": "ticket-vol-1791739638705",
+          "senderType": "agent",
+          "senderName": "مهندس الدعم الفني",
+          "content": "وعليكم السلام، تم مراجعة سجل الحضور وتوثيق 4 ساعات بنجاح في ملفكم التطوعي.",
+          "timestamp": "2026-10-11T17:27:18.756Z",
+          "attachments": []
+        }
+      ],
+      "createdAt": "2026-10-11T17:27:18.705Z",
+      "updatedAt": "2026-10-11T17:27:18.756Z",
+      "assignedToAgentName": "مهندس الدعم الفني"
+    },
+    {
+      "id": "ticket-vol-1791739629464",
+      "ticketNumber": "TCK-VOL-2026-0004",
+      "category": "team_volunteer",
+      "requesterId": "vol-1",
+      "requesterName": "أحمد المتطوع",
+      "requesterEmail": "",
+      "requesterPhone": "",
+      "requesterRole": "volunteer",
+      "volunteerId": "vol-1",
+      "volunteerName": "أحمد المتطوع",
+      "volunteerFileNumber": "A-1001",
+      "teamId": "team-2",
+      "teamName": "فريق غيث العطاء",
+      "issueType": "attendance_points_hours",
+      "subject": "استفسار عن توثيق ساعات مبادرة العسيلة",
+      "description": "السلام عليكم، أود التأكد من توثيق ساعات حضور المبادرة الأخيرة ولكم الشكر.",
+      "status": "new",
+      "priority": "normal",
+      "isCreatedByLeader": false,
+      "attachments": [],
+      "chatTranscript": [
+        {
+          "id": "tm-1791739629464",
+          "ticketId": "",
+          "senderType": "user",
+          "senderName": "أحمد المتطوع",
+          "content": "السلام عليكم، أود التأكد من توثيق ساعات حضور المبادرة الأخيرة ولكم الشكر.",
+          "timestamp": "2026-10-11T17:27:09.464Z",
+          "attachments": []
+        }
+      ],
+      "createdAt": "2026-10-11T17:27:09.464Z",
+      "updatedAt": "2026-10-11T17:27:09.464Z"
+    },
+    {
+      "id": "ticket-vol-1791739600859",
+      "ticketNumber": "TCK-VOL-2026-0003",
+      "category": "team_volunteer",
+      "requesterId": "vol-1",
+      "requesterName": "أحمد المتطوع",
+      "requesterEmail": "",
+      "requesterPhone": "",
+      "requesterRole": "volunteer",
+      "volunteerId": "vol-1",
+      "volunteerName": "أحمد المتطوع",
+      "volunteerFileNumber": "A-1001",
+      "teamId": "team-2",
+      "teamName": "فريق غيث العطاء",
+      "issueType": "attendance_points_hours",
+      "subject": "استفسار عن توثيق ساعات مبادرة العسيلة",
+      "description": "السلام عليكم، أود التأكد من توثيق ساعات حضور المبادرة الأخيرة ولكم الشكر.",
+      "status": "new",
+      "priority": "normal",
+      "isCreatedByLeader": false,
+      "attachments": [],
+      "chatTranscript": [
+        {
+          "id": "tm-1791739600859",
+          "ticketId": "",
+          "senderType": "user",
+          "senderName": "أحمد المتطوع",
+          "content": "السلام عليكم، أود التأكد من توثيق ساعات حضور المبادرة الأخيرة ولكم الشكر.",
+          "timestamp": "2026-10-11T17:26:40.859Z",
+          "attachments": []
+        }
+      ],
+      "createdAt": "2026-10-11T17:26:40.859Z",
+      "updatedAt": "2026-10-11T17:26:40.859Z"
+    },
     {
       "id": "ticket-101",
       "ticketNumber": "TICK-2026-001",
@@ -17483,5 +17766,54 @@
       "createdAt": "2026-10-07T23:32:45.755Z"
     }
   ],
-  "maintenance_mode": 0
+  "maintenance_mode": 0,
+  "volunteerTransferRequests": [
+    {
+      "id": "vtr-1791739600707",
+      "volunteerId": "vol-1",
+      "volunteerName": "أحمد بن علي الغامدي",
+      "volunteerFileNumber": "A-1339",
+      "volunteerPhone": "0551234567",
+      "currentTeamId": "team-1",
+      "currentTeamName": "فريق التنظيم",
+      "requestType": "transfer",
+      "reason": "رغبة المتطوع في التخصص الميداني مع الفريق الآخر",
+      "suggestedTeamId": "team-2",
+      "suggestedTeamName": "فريق الإعلام",
+      "additionalNotes": "",
+      "leaderId": "leader",
+      "leaderName": "سعود الحربي",
+      "status": "approved",
+      "createdAt": "2026-10-11T17:26:40.707Z",
+      "targetTeamId": "team-2",
+      "targetTeamName": "فريق الإعلام",
+      "reviewedAt": "2026-10-11T17:26:40.750Z",
+      "reviewedBy": "إدارة التطوع",
+      "reviewerNotes": "تمت الموافقة من إدارة التطوع بعد التحقق من شواغر الفريق"
+    }
+  ],
+  "passwordResetRequests": [
+    {
+      "id": "prr-1791739600789",
+      "volunteerId": "vol-1",
+      "volunteerName": "أحمد بن علي الغامدي",
+      "volunteerFileNumber": "A-1339",
+      "volunteerPhone": "0551234567",
+      "volunteerEmail": "ahmed.ghamdi@example.com",
+      "teamId": "team-2",
+      "teamName": "فريق الإعلام",
+      "leaderId": "leader",
+      "leaderName": "عبد العزيز الشمري",
+      "reason": "فقدان المتطوع للوصول لحسابه وطلب المساعدة",
+      "additionalNotes": "",
+      "status": "reset_link_sent",
+      "createdAt": "2026-10-11T17:26:40.789Z",
+      "reviewedAt": "2026-10-11T17:26:40.823Z",
+      "reviewedBy": "مدير العمليات",
+      "resetLinkSentAt": "2026-10-11T17:26:40.823Z",
+      "resetToken": "RST-3QD6QC-MV43HW3B",
+      "resetTokenExpiresAt": 1791826000823,
+      "reviewerNotes": "تم التحقق من هوية المتطوع وإرسال رمز التحقق الآمن المؤقت"
+    }
+  ]
 }

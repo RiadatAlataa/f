@@ -11,6 +11,7 @@ import { VolunteerLeaderboard } from "./VolunteerLeaderboard";
 import { InitiativeRatingModal } from "./InitiativeRatingModal";
 import { VolunteerMonthlyReportModal } from "./VolunteerMonthlyReportModal";
 import { VolunteerKnightsModal } from "./VolunteerKnights";
+import { TeamSupportManager } from "./TeamSupportManager";
 import { Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, Department, VolunteerTeam, IssuedCertificate, CertificateTemplate, InitiativeRating } from "../types";
 
 interface VolunteerDashboardProps {
@@ -50,13 +51,19 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   onSubmitRating,
   onBackToHome
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'certificates' | 'leaderboard' | 'initiatives' | 'notifications' | 'assistant' | 'profile'>(() => {
+  const [activeTab, setActiveTab] = useState<'home' | 'certificates' | 'leaderboard' | 'initiatives' | 'notifications' | 'assistant' | 'profile' | 'support'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_volunteer_tab');
       if (saved) return saved as any;
     } catch {}
     return 'home';
   });
+
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [resetTokenInput, setResetTokenInput] = useState(currentVolunteer.passwordResetToken || '');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetFeedback, setResetFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   React.useEffect(() => {
     try {
@@ -150,7 +157,9 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             <div className="space-y-1">
               <span className="bg-white/15 text-[9.5px] px-2.5 py-0.5 rounded-full font-bold inline-block border border-white/5">المتطوع الفاعل</span>
               <h2 className="text-md font-black">{currentVolunteer.name}</h2>
-              <p className="text-xs text-emerald-100">رقم العضوية: <b>{currentVolunteer.membershipNumber}</b> • {myTeam ? myTeam.nameAr : "بانتظار التعيين"}</p>
+              <p className="text-xs text-emerald-100">
+                رقم العضوية: <b>{currentVolunteer.membershipNumber}</b> • رقم الملف: <b className="font-mono text-white bg-white/20 px-2 py-0.5 rounded-md">{currentVolunteer.fileNumber || currentVolunteer.file_number || "غير مسجل"}</b> • {myTeam ? myTeam.nameAr : "بانتظار التعيين"}
+              </p>
             </div>
           </div>
 
@@ -259,6 +268,13 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         >
           <User className="w-4 h-4" />
           <span>حسابي</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('support')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'support' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+        >
+          <HelpCircle className="w-4 h-4 text-emerald-600" />
+          <span>الدعم الفني لفريقي</span>
         </button>
       </div>
 
@@ -778,9 +794,29 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                     <strong className="text-neutral-900">{currentVolunteer.titleAr}</strong>
                   </div>
                   <div className="flex justify-between">
+                    <span>رقم الملف الرسمي:</span>
+                    <strong className="text-emerald-700 font-mono bg-emerald-50 px-2 py-0.5 rounded-md font-bold">{currentVolunteer.fileNumber || currentVolunteer.file_number || "غير مسجل"}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>رقم العضوية:</span>
+                    <strong className="text-neutral-900 font-mono">{currentVolunteer.membershipNumber}</strong>
+                  </div>
+                  <div className="flex justify-between">
                     <span>الإدارية التابعة:</span>
                     <strong className="text-emerald-700">{myDept ? myDept.nameAr : "غير معينة"}</strong>
                   </div>
+                  {currentVolunteer.passwordResetToken && (
+                    <div className="pt-2 border-t border-neutral-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowPasswordResetModal(true)}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>تعيين كلمة المرور الجديدة (طلب معتمد)</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -817,7 +853,133 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           </div>
         )}
 
+        {/* SUPPORT TAB */}
+        {activeTab === 'support' && (
+          <TeamSupportManager
+            currentUser={currentVolunteer}
+            userRole="volunteer"
+            volunteer={currentVolunteer}
+            team={myTeam}
+          />
+        )}
+
       </div>
+
+      {/* Password Reset Modal for Volunteer */}
+      {showPasswordResetModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in no-print">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!resetTokenInput || !newPasswordInput) return;
+              setIsResettingPassword(true);
+              setResetFeedback(null);
+              try {
+                const res = await fetch('/api/auth/reset-password-with-token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    token: resetTokenInput.trim(),
+                    newPassword: newPasswordInput.trim()
+                  })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === 'success') {
+                  setResetFeedback({ type: 'success', text: 'تم تحديث كلمة المرور الخاصة بك بنجاح! يمكنك استخدامها لتسجيل الدخول.' });
+                  setTimeout(() => {
+                    setShowPasswordResetModal(false);
+                    setResetFeedback(null);
+                    setNewPasswordInput('');
+                  }, 2000);
+                } else {
+                  setResetFeedback({ type: 'error', text: data.error || 'حدث خطأ أثناء تحديث كلمة المرور.' });
+                }
+              } catch (err) {
+                setResetFeedback({ type: 'error', text: 'تعذر الاتصال بالخادم.' });
+              } finally {
+                setIsResettingPassword(false);
+              }
+            }}
+            className="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right animate-scale-up"
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between border-b border-neutral-150 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Lock className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-black text-neutral-800 dark:text-white">
+                  تعيين كلمة مرور جديدة لحسابك
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPasswordResetModal(false)}
+                className="text-neutral-400 hover:text-neutral-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-500 leading-relaxed">
+              تم اعتماد طلب إعادة تعيين كلمة المرور لحسابك من قِبل إدارة العمليات. أدخل كود التحقق الآمن المؤقت وكلمة المرور الجديدة.
+            </p>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                كود التحقق الآمن المؤقت:
+              </label>
+              <input
+                type="text"
+                required
+                value={resetTokenInput}
+                onChange={e => setResetTokenInput(e.target.value)}
+                placeholder="RST-XXXXXX-XXXX"
+                className="w-full bg-neutral-50 dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 font-mono text-center text-xs tracking-wider"
+                dir="ltr"
+              />
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-neutral-700 dark:text-slate-300 block">
+                كلمة المرور الجديدة:
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={newPasswordInput}
+                onChange={e => setNewPasswordInput(e.target.value)}
+                placeholder="أدخل كلمة مرور قوية (6 خانات على الأقل)..."
+                className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-mono"
+              />
+            </div>
+
+            {resetFeedback && (
+              <div className={`p-3 rounded-xl text-xs font-bold ${
+                resetFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                {resetFeedback.text}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2 border-t border-neutral-150 dark:border-slate-700">
+              <button
+                type="submit"
+                disabled={isResettingPassword}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer transition-all"
+              >
+                {isResettingPassword ? 'جاري الحفظ...' : 'تأكيد وحفظ كلمة المرور'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPasswordResetModal(false)}
+                className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Viewing Certificate Modal */}
       {viewingCertificate && (

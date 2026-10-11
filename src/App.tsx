@@ -749,11 +749,15 @@ export default function App() {
   };
 
   const handleResetDb = async () => {
-    await syncWithServer("/api/db/reset", {}, "إعادة ضبط قاعدة البيانات");
+    if (!window.confirm("تحذير أمني: هل أنت متأكد من رغبتك في إعادة ضبط قاعدة البيانات؟")) return;
+    await syncWithServer("/api/db/reset", { confirmReset: true }, "إعادة ضبط قاعدة البيانات");
   };
 
   const handleRestoreDb = async (fullJson: any) => {
-    await syncWithServer("/api/db/restore", { db: fullJson }, "استرجاع قاعدة البيانات");
+    const success = await syncWithServer("/api/db/restore", { db: fullJson, database: fullJson, confirmRestore: true }, "استرجاع قاعدة البيانات");
+    if (success) {
+      alert(lang === 'ar' ? "تم التحقق واستعادة قاعدة البيانات بنجاح ✓" : "Database verified and restored successfully ✓");
+    }
   };
 
   const handleReissueCard = async (volunteerId: string) => {

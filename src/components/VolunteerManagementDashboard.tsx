@@ -30,10 +30,12 @@ import {
   Phone,
   Mail,
   User,
-  AlertCircle
+  AlertCircle,
+  ArrowRightLeft
 } from 'lucide-react';
 import { Initiative, OpportunityRequest, Volunteer, VolunteerTeam, VolunteerApplication } from '../types';
 import { InitiativeTeamEvaluationModal } from './InitiativeTeamEvaluationModal';
+import { VolunteerTeamTransferManager } from './VolunteerTeamTransferManager';
 
 interface VolunteerManagementDashboardProps {
   initiatives: Initiative[];
@@ -64,6 +66,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
   onReviewOpportunity,
   onEvaluateTeamPoints
 }) => {
+  const [dashboardView, setDashboardView] = useState<'opportunities' | 'transfers'>('opportunities');
   const [activeFilter, setActiveFilter] = useState<'all' | 'public' | 'private' | 'open' | 'full'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -171,7 +174,42 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Top Tab Switcher */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-2 pb-1" dir="rtl">
+        <button
+          onClick={() => setDashboardView('opportunities')}
+          className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black transition-all cursor-pointer rounded-xl border ${
+            dashboardView === 'opportunities'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>الفرص والمبادرات التطوعية</span>
+        </button>
+
+        <button
+          onClick={() => setDashboardView('transfers')}
+          className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black transition-all cursor-pointer rounded-xl border ${
+            dashboardView === 'transfers'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <ArrowRightLeft className="w-4 h-4" />
+          <span>طلبات نقل وإنهاء ارتباط المتطوعين</span>
+        </button>
+      </div>
+
+      {dashboardView === 'transfers' ? (
+        <VolunteerTeamTransferManager
+          teams={teams}
+          volunteers={volunteers}
+          userRole="department_admin"
+        />
+      ) : (
+        <>
+          {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
@@ -697,7 +735,14 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
                                       {vol.name}
                                     </td>
                                     <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
-                                      {vol.membershipNumber || vol.nationalId || 'VOL-MEMBER'}
+                                      <div>
+                                        <span>{vol.membershipNumber || vol.nationalId || 'VOL-MEMBER'}</span>
+                                        {(vol.fileNumber || vol.file_number) && (
+                                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                            ملف: {vol.fileNumber || vol.file_number}
+                                          </span>
+                                        )}
+                                      </div>
                                     </td>
                                     <td className="p-3 text-slate-600 dark:text-slate-300">
                                       {team ? team.nameAr : 'متطوع مستقل'}
@@ -846,6 +891,8 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

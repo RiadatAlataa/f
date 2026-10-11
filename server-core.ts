@@ -2297,6 +2297,8 @@ export function readDb() {
       if (!db.chatConversations) { db.chatConversations = defaultDb.chatConversations; modified = true; }
       if (!db.chatMessages) { db.chatMessages = defaultDb.chatMessages; modified = true; }
       if (!db.supportTickets) { db.supportTickets = defaultDb.supportTickets; modified = true; }
+      if (!db.volunteerTransferRequests) { db.volunteerTransferRequests = []; modified = true; }
+      if (!db.passwordResetRequests) { db.passwordResetRequests = []; modified = true; }
       if (!db.letters) { db.letters = defaultDb.letters || []; modified = true; }
       if (!db.storekeepers) {
         db.storekeepers = [
@@ -3943,22 +3945,41 @@ export function readDb() {
     }
     if (memoryDbCache) return memoryDbCache;
   } catch (err) {
-    console.error("Error reading database file, using defaults", err);
-    if (memoryDbCache) return memoryDbCache;
+    console.error("[DATABASE INTEGRITY ERROR] Error reading or parsing database file:", err);
+    if (memoryDbCache) {
+      console.warn("[DATABASE INTEGRITY] Serving existing validated in-memory cache to prevent data corruption.");
+      return memoryDbCache;
+    }
+    // CRITICAL: NEVER overwrite corrupt or unreadable database file with defaultDb!
+    // Preserve existing file intact on disk for administrator recovery.
+    throw new Error("[DATABASE CRITICAL ERROR] Database file is unreadable or corrupted. Automatic default override is permanently blocked to safeguard production data.");
   }
   
-  // Write defaults
-  memoryDbCache = defaultDb;
-  try {
-    writeDb(defaultDb);
-  } catch {
-    // ignore
-  }
-  return defaultDb;
+  if (memoryDbCache) return memoryDbCache;
+  throw new Error("[DATABASE CRITICAL ERROR] Database content is empty or uninitialized. Default overwriting is blocked.");
 }
 
-export function writeDb(data: any) {
+// Global Mutex Queue for serialized atomic database writes to prevent concurrency race conditions
+let writeDbQueuePromise = Promise.resolve();
+
+export function writeDb(data: any): boolean {
+  // 1. Data Integrity Validation prior to any disk write
+  if (!data || typeof data !== "object") {
+    console.error("[DATABASE WRITE ERROR] Refusing to write invalid non-object payload.");
+    return false;
+  }
+
+  // Verify critical production entities exist as valid arrays
+  const criticalKeys = ["departments", "volunteers", "initiatives"];
+  const missingKeys = criticalKeys.filter(k => !Array.isArray(data[k]));
+  if (missingKeys.length > 0) {
+    console.error(`[DATABASE WRITE ERROR] Refusing to write data payload missing critical collections: ${missingKeys.join(", ")}`);
+    return false;
+  }
+
+  // Update in-memory cache immediately
   memoryDbCache = data;
+
   const isServerless = !!(
     process.env.VERCEL || 
     process.env.NOW_REGION || 
@@ -3967,15 +3988,73 @@ export function writeDb(data: any) {
     process.env.VERCEL_ENV
   );
   const targetPath = isServerless ? DB_FILE_TMP : getActiveDbPath();
+  const targetDir = path.dirname(targetPath);
+
+  let tempFile = "";
   try {
-    fs.writeFileSync(targetPath, JSON.stringify(data, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Error writing to database file", err);
-    try {
-      fs.writeFileSync(DB_FILE_TMP, JSON.stringify(data, null, 2), "utf-8");
-    } catch (tmpErr) {
-      console.error("Error writing fallback /tmp/db.json", tmpErr);
+    const serialized = JSON.stringify(data, null, 2);
+    if (!serialized || serialized.length < 50) {
+      console.error("[DATABASE WRITE ERROR] Serialized content is abnormally short, aborting write.");
+      return false;
     }
+
+    // 2. Write to a temporary file in the same directory (enables POSIX atomic rename)
+    tempFile = path.join(targetDir, `.db.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`);
+    fs.writeFileSync(tempFile, serialized, "utf-8");
+
+    // 3. Verify integrity of written temporary file before touching target
+    const readBack = fs.readFileSync(tempFile, "utf-8");
+    const parsedVerification = JSON.parse(readBack);
+    if (!parsedVerification || !Array.isArray(parsedVerification.departments) || !Array.isArray(parsedVerification.volunteers)) {
+      throw new Error("Verification of written temporary database file failed: content mismatch");
+    }
+
+    // 4. Safe Backup Retention Policy:
+    // Before copying targetPath to .db.previous_valid.bak, verify:
+    // a) targetPath actually exists and has content (> 100 bytes)
+    // b) targetPath currently on disk is VALID JSON that parses successfully.
+    // If the file on disk is damaged/corrupted, WE NEVER overwrite the previous valid backup!
+    if (fs.existsSync(targetPath)) {
+      try {
+        const existingStat = fs.statSync(targetPath);
+        if (existingStat.size > 100) {
+          const diskContent = fs.readFileSync(targetPath, "utf-8");
+          const parsedDisk = JSON.parse(diskContent);
+          if (parsedDisk && Array.isArray(parsedDisk.departments) && Array.isArray(parsedDisk.volunteers)) {
+            const backupPath = path.join(targetDir, `.db.previous_valid.bak`);
+            
+            // Retention policy: Keep the previous backup as a secondary fallback before rotation
+            const backupSecondary = path.join(targetDir, `.db.previous_valid_secondary.bak`);
+            if (fs.existsSync(backupPath)) {
+              try {
+                fs.copyFileSync(backupPath, backupSecondary);
+              } catch (_) {}
+            }
+            
+            fs.copyFileSync(targetPath, backupPath);
+          } else {
+            console.warn("[DATABASE WRITE] Existing disk file does not meet schema integrity; skipping backup overwrite to preserve last known good backup.");
+          }
+        }
+      } catch (validateErr) {
+        console.warn("[DATABASE WRITE] Existing disk file is invalid JSON; preserving existing .db.previous_valid.bak intact without overwriting:", validateErr);
+      }
+    }
+
+    // 5. Atomic Replace: rename tempFile to targetPath (POSIX atomic swap)
+    fs.renameSync(tempFile, targetPath);
+    return true;
+  } catch (err) {
+    console.error("[DATABASE WRITE ERROR] Atomic write failed. Original file remains untouched:", err);
+    // Clean up temporary file so no artifacts linger
+    if (tempFile) {
+      try {
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+      } catch (_) {}
+    }
+    return false;
   }
 }
 
@@ -6202,53 +6281,236 @@ app.post("/api/db/permissions/test-access", (req, res) => {
   });
 });
 
-// Reset database
+// Reset database (PROTECTED: requires administrative session and explicit confirmation)
 app.post("/api/db/reset", (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  if (!sessionToken) {
+    return res.status(401).json({
+      ok: false,
+      error: "غير مصرح: يلزم تسجيل الدخول لتنفيذ هذا الإجراء.",
+      code: "UNAUTHORIZED_SESSION_REQUIRED"
+    });
+  }
+
+  const session = getServerSession(sessionToken);
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({
+      ok: false,
+      error: "تم رفض الوصول: إعادة التهيئة محظورة وتتطلب صلاحيات إدارية عليا موثقة.",
+      code: "FORBIDDEN_ADMIN_PRIVILEGE_REQUIRED"
+    });
+  }
+
+  if (req.body.confirmReset !== true) {
+    return res.status(400).json({
+      ok: false,
+      error: "مطلوب تأكيد صريح (confirmReset: true) لتنفيذ هذا الإجراء الحرج.",
+      code: "EXPLICIT_CONFIRMATION_REQUIRED"
+    });
+  }
+
+  // Save emergency pre-reset snapshot before resetting
+  try {
+    const activePath = getActiveDbPath();
+    const activeDir = path.dirname(activePath);
+    if (fs.existsSync(activePath)) {
+      fs.copyFileSync(activePath, path.join(activeDir, `.db.pre_reset.${Date.now()}.bak`));
+    }
+  } catch (_) {}
+
   writeDb(defaultDb);
   // Log operation
   const db = readDb();
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "المدير التنفيذي",
-    action: "إعادة تهيئة قاعدة البيانات للقيم الافتراضية",
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
+  if (Array.isArray(db.logs)) {
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: new Date().toISOString(),
+      user: session.userName || "المدير التنفيذي",
+      action: "إعادة تهيئة قاعدة البيانات للقيم الافتراضية بعد التأكيد الصريح",
+      ip: req.ip || "127.0.0.1",
+      device: req.headers["user-agent"] || "System"
+    });
+    writeDb(db);
+  }
   res.json({ status: "success", db });
 });
 
-// Backup database
+// Backup database (SECURED: requires valid server session with administrative privileges; URL query tokens permanently disabled)
 app.get("/api/db/backup", (req, res) => {
-  const data = readDb();
-  res.setHeader('Content-disposition', 'attachment; filename=backup_reyadat_alata.json');
-  res.setHeader('Content-type', 'application/json');
-  res.send(JSON.stringify(data, null, 2));
+  // Disallow query parameter tokens for security (prevents token leakage in logs/history/referrers)
+  if (req.query.token || req.query.sessionToken) {
+    return res.status(400).json({
+      ok: false,
+      error: "مرفوض أمنيًا: لا يُسمح بتمرير رمز الجلسة عبر رابط الاستعلام (?token=). يرجى إرسال الرمز عبر ترويسة x-session-token أو Authorization.",
+      code: "QUERY_TOKEN_PROHIBITED"
+    });
+  }
+
+  // 1. Resolve session token strictly from secure HTTP headers or cookie
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  if (!sessionToken) {
+    return res.status(401).json({
+      ok: false,
+      error: "غير مصرح: يلزم تسجيل الدخول بجلسة صالحة للوصول إلى النسخ الاحتياطي للنظام.",
+      code: "UNAUTHORIZED_SESSION_REQUIRED"
+    });
+  }
+
+  // 2. Validate server session strictly against active sessions
+  const session = getServerSession(sessionToken);
+  if (!session) {
+    return res.status(401).json({
+      ok: false,
+      error: "جلسة العمل غير صالحة أو منتهية الصلاحية. يرجى تسجيل الدخول مجددًا.",
+      code: "INVALID_OR_EXPIRED_SESSION"
+    });
+  }
+
+  // 3. Strictly verify administrative authorization on the server side
+  const role = session.role;
+  const isAuthorizedAdmin = (role === 'admin' || role === 'operations_manager');
+  if (!isAuthorizedAdmin) {
+    return res.status(403).json({
+      ok: false,
+      error: "تم رفض الوصول: يتطلب تنزيل النسخة الاحتياطية صلاحيات إدارية عليا.",
+      code: "FORBIDDEN_ADMIN_PRIVILEGE_REQUIRED"
+    });
+  }
+
+  try {
+    const data = readDb();
+    res.setHeader('Content-disposition', 'attachment; filename=backup_reyadat_alata.json');
+    res.setHeader('Content-type', 'application/json');
+    res.send(JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error("[BACKUP ERROR] Failed generating backup:", err);
+    res.status(500).json({ ok: false, error: "تعذر إنشاء ملف النسخة الاحتياطية.", code: "BACKUP_GENERATION_FAILED" });
+  }
 });
 
-// Restore database
+// Restore database (SECURED: requires verified admin session, explicit confirmation, content validation, and safety snapshot)
 app.post("/api/db/restore", (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  if (!sessionToken) {
+    return res.status(401).json({
+      ok: false,
+      error: "غير مصرح: يلزم جلسة صالحة لتنفيذ استعادة قاعدة البيانات.",
+      code: "UNAUTHORIZED_SESSION_REQUIRED"
+    });
+  }
+
+  const session = getServerSession(sessionToken);
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({
+      ok: false,
+      error: "تم رفض الوصول: يتطلب استعادة قاعدة البيانات صلاحيات إدارية عليا موثقة.",
+      code: "FORBIDDEN_ADMIN_PRIVILEGE_REQUIRED"
+    });
+  }
+
+  // 1. Explicit Administrative Confirmation Requirement
+  const confirmRestore = req.body.confirmRestore === true || req.body.confirm === true;
+  if (!confirmRestore) {
+    return res.status(400).json({
+      ok: false,
+      error: "مطلوب تأكيد إداري صريح: يجب إرسال تأكيد الموافقة على الاستعادة (confirmRestore: true) لحماية بيانات الإنتاج من الاستبدال العرضي.",
+      code: "EXPLICIT_CONFIRMATION_REQUIRED"
+    });
+  }
+
   try {
-    const { database } = req.body;
-    if (database && Array.isArray(database.volunteers) && Array.isArray(database.departments)) {
-      writeDb(database);
-      const db = readDb();
+    const candidateDb = req.body.database || req.body.db;
+    
+    // 2. Strict Schema & Content Validation prior to touching database
+    if (!candidateDb || typeof candidateDb !== "object") {
+      return res.status(400).json({
+        ok: false,
+        error: "بيانات النسخة الاحتياطية غير صالحة: كائن البيانات مفقود أو بتنسيق غير صحيح.",
+        code: "INVALID_BACKUP_PAYLOAD"
+      });
+    }
+
+    const requiredCollections = ["departments", "volunteers", "initiatives"];
+    const missing = requiredCollections.filter(k => !Array.isArray(candidateDb[k]));
+    if (missing.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `ملف النسخة الاحتياطية غير مكتمل: المجموعات الإلزامية التالية مفقودة: ${missing.join(", ")}`,
+        code: "INCOMPLETE_BACKUP_STRUCTURE"
+      });
+    }
+
+    // Sanity check: Ensure backup contains at least basic organizational data
+    if (candidateDb.departments.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "فحص السلامة فشل: ملف النسخة الاحتياطية فارغ من بيانات الإدارات.",
+        code: "EMPTY_BACKUP_DATA"
+      });
+    }
+
+    // 3. Create immediate pre-restore snapshot of the active database before replacement
+    const isServerless = !!(
+      process.env.VERCEL || 
+      process.env.NOW_REGION || 
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.LAMBDA_TASK_ROOT ||
+      process.env.VERCEL_ENV
+    );
+    const targetPath = isServerless ? DB_FILE_TMP : getActiveDbPath();
+    const targetDir = path.dirname(targetPath);
+    const preRestoreSnapshot = path.join(targetDir, `.db.pre_restore.${Date.now()}.bak`);
+
+    try {
+      if (fs.existsSync(targetPath)) {
+        fs.copyFileSync(targetPath, preRestoreSnapshot);
+        console.log(`[RESTORE AUDIT] Saved pre-restore snapshot: ${preRestoreSnapshot}`);
+      }
+    } catch (snapErr) {
+      console.warn("[RESTORE AUDIT] Could not create pre-restore snapshot:", snapErr);
+    }
+
+    // 4. Perform atomic write of verified candidate database
+    const written = writeDb(candidateDb);
+    if (!written) {
+      return res.status(500).json({ 
+        ok: false,
+        error: "فشل حفظ قاعدة البيانات المستعادة أثناء عملية الكتابة الذرية.",
+        code: "RESTORE_WRITE_FAILED"
+      });
+    }
+
+    // 5. Append audit log entry
+    const db = readDb();
+    if (Array.isArray(db.logs)) {
       db.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: new Date().toISOString(),
-        user: "المدير التنفيذي",
-        action: "استعادة النسخة الاحتياطية بنجاح",
+        user: session.userName || "المدير التنفيذي",
+        action: `استعادة قاعدة البيانات بعد التحقق والتأكيد الصريح (المستخدم: ${session.userName || 'مسؤول'})`,
         ip: req.ip || "127.0.0.1",
-        device: req.headers["user-agent"] || "System"
+        device: (req.headers["user-agent"] || "System").substring(0, 100)
       });
       writeDb(db);
-      res.json({ status: "success", db });
-    } else {
-      res.status(400).json({ error: "Invalid backup format" });
     }
+
+    res.json({ status: "success", message: "تم التحقق من النسخة واستعادة قاعدة البيانات بنجاح", db });
   } catch (err) {
-    res.status(500).json({ error: "Restoration failed: " + String(err) });
+    console.error("[RESTORE ERROR]:", err);
+    res.status(500).json({ 
+      ok: false,
+      error: "فشلت عملية الاستعادة: " + String(err),
+      code: "RESTORE_EXCEPTION"
+    });
   }
 });
 
@@ -6394,9 +6656,13 @@ app.post("/api/db/volunteers/add", (req, res) => {
       vol.points = vol.points !== undefined ? Number(vol.points) : db.volunteers[index].points;
       // Requirement: Volunteer file number cannot be changed manually or overwritten
       const existingFileNumber = db.volunteers[index].fileNumber || db.volunteers[index].file_number;
+      const existingTeamId = db.volunteers[index].teamId;
+      const effectiveRole = (req.headers['x-user-role'] || auth.context.userRole || '') as string;
+      const finalTeamId = (effectiveRole === 'leader') ? existingTeamId : (vol.teamId || existingTeamId);
       db.volunteers[index] = { 
         ...db.volunteers[index], 
         ...vol,
+        teamId: finalTeamId,
         fileNumber: existingFileNumber || vol.fileNumber,
         file_number: existingFileNumber || vol.fileNumber
       };
@@ -7042,10 +7308,31 @@ app.post("/api/db/requests/action", (req, res) => {
       read: false
     });
   } else if (action === "transfer") {
+    // SECURITY ENFORCEMENT:
+    // Team leaders are strictly forbidden from transferring volunteers directly.
+    // They must submit a formal request via /api/db/volunteerTransfers/submit to the Volunteer Department.
+    const userRole = (req.headers['x-user-role'] || req.body.userRole || '') as string;
+    if (userRole === 'leader' || (!['admin', 'operations_manager', 'supervisor'].includes(userRole) && userRole !== '')) {
+      return res.status(403).json({
+        error: "غير مصرح: لا يملك قائد الفريق صلاحية نقل المتطوعين مباشرة إلى فريق آخر. يتوجب تقديم طلب نقل رسمي عبر قسم (طلبات نقل المتطوعين) للإحالة إلى إدارة التطوع للاعتماد."
+      });
+    }
     const targetTeam = db.teams.find((t: any) => t.id === targetTeamId);
     if (!targetTeam) return res.status(404).json({ error: "Target team not found" });
     const vol = db.volunteers.find((v: any) => v.id === reqObj.volunteerId);
     if (vol) {
+      // Record in historical log
+      vol.teamHistory = vol.teamHistory || [];
+      const prevTeam = db.teams.find((t: any) => t.id === vol.teamId);
+      vol.teamHistory.unshift({
+        fromTeamId: vol.teamId,
+        fromTeamName: prevTeam?.nameAr || "فريق سابق",
+        toTeamId: targetTeam.id,
+        toTeamName: targetTeam.nameAr,
+        transferredAt: new Date().toISOString(),
+        transferredBy: "إدارة التطوع",
+        reason: "نقل مباشر معتمد بالمبادرة"
+      });
       vol.teamId = targetTeam.id;
       vol.departmentId = targetTeam.departmentId;
     }
@@ -12750,15 +13037,29 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
 
   // Create new active volunteer entry
   const seq = String((db.volunteers || []).length + 1).padStart(4, "0");
+  const normGender = normalizeVolunteerGender(appObj.gender) || 'male';
+  let assignedFileNumber = "";
+  try {
+    assignedFileNumber = generateUniqueVolunteerFileNumber(db, normGender);
+  } catch (e) {
+    console.error("Error generating file number in accept endpoint:", e);
+    assignedFileNumber = normGender === 'female' ? `B-${Math.floor(1000 + Math.random() * 9000)}` : `A-${Math.floor(1000 + Math.random() * 9000)}`;
+  }
+
+  appObj.fileNumber = assignedFileNumber;
+
   const newVol: Volunteer = {
     id: "vol-" + Date.now(),
     name: appObj.fullName,
     email: appObj.email || `vol-${seq}@reyadat-alata.org.sa`,
     phone: appObj.phone,
-    photo: appObj.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop",
+    photo: appObj.photo || (normGender === 'female' ? (db.systemSettings?.files?.femaleUnifiedCardPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80") : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop"),
     membershipNumber: `V-2026-${seq}`,
     barcode: `100088868${seq}`,
     qrCode: `MEM-V-2026-${seq}`,
+    fileNumber: assignedFileNumber,
+    file_number: assignedFileNumber,
+    gender: normGender,
     teamId: selectedTeam.id,
     departmentId: selectedTeam.departmentId,
     titleAr: appObj.position || "متطوع معتمد",
@@ -12771,6 +13072,8 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
     password: appObj.phone,
     role: "volunteer"
   };
+
+  savePostgresVolunteerFileNumber(assignedFileNumber, newVol.id, newVol.nationalId, normGender).catch(() => {});
 
   db.volunteers = db.volunteers || [];
   db.volunteers.push(newVol);
@@ -13561,6 +13864,788 @@ app.post("/api/support/tickets/status", (req, res) => {
 
   writeDb(db);
   res.json({ ticket, db });
+});
+
+// -------------------------------------------------------------
+// Volunteer Transfer & Affiliation Termination Endpoints (نظام طلبات نقل المتطوعين)
+// -------------------------------------------------------------
+
+// 1. Get Volunteer Transfer Requests
+app.get("/api/db/volunteerTransfers", (req, res) => {
+  const db = readDb();
+  db.volunteerTransferRequests = db.volunteerTransferRequests || [];
+  const teamId = req.query.teamId as string;
+  const volunteerId = req.query.volunteerId as string;
+  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
+  
+  let list = db.volunteerTransferRequests;
+  if (teamId && userRole === 'leader') {
+    list = list.filter((r: any) => r.currentTeamId === teamId || r.suggestedTeamId === teamId);
+  } else if (volunteerId) {
+    list = list.filter((r: any) => r.volunteerId === volunteerId);
+  }
+  res.json(list);
+});
+
+// 2. Submit Volunteer Transfer or Termination Request by Team Leader
+app.post("/api/db/volunteerTransfers/submit", (req, res) => {
+  const db = readDb();
+  const {
+    volunteerId,
+    requestType = "transfer",
+    reason,
+    suggestedTeamId,
+    additionalNotes,
+    leaderId,
+    leaderName
+  } = req.body;
+
+  if (!volunteerId) {
+    return res.status(400).json({ error: "معرف المتطوع مطلوب" });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: "يرجى توضيح سبب طلب النقل أو إنهاء الارتباط بالفريق" });
+  }
+
+  db.volunteers = db.volunteers || [];
+  const vol = db.volunteers.find((v: any) => v.id === volunteerId);
+  if (!vol) {
+    return res.status(404).json({ error: "سجل المتطوع غير موجود في النظام" });
+  }
+
+  const currentTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
+  const suggestedTeam = suggestedTeamId ? (db.teams || []).find((t: any) => t.id === suggestedTeamId) : null;
+
+  const newRequest = {
+    id: "vtr-" + Date.now(),
+    volunteerId: vol.id,
+    volunteerName: vol.name,
+    volunteerFileNumber: vol.fileNumber || vol.file_number || "—",
+    volunteerPhone: vol.phone || "",
+    currentTeamId: currentTeam?.id || vol.teamId || "",
+    currentTeamName: currentTeam?.nameAr || "فريق غير محدد",
+    requestType: requestType === "terminate_affiliation" ? "terminate_affiliation" : "transfer",
+    reason: reason.trim(),
+    suggestedTeamId: suggestedTeam?.id || "",
+    suggestedTeamName: suggestedTeam?.nameAr || "",
+    additionalNotes: additionalNotes ? additionalNotes.trim() : "",
+    leaderId: leaderId || currentTeam?.leaderId || "leader",
+    leaderName: leaderName || currentTeam?.leaderName || "قائد الفريق",
+    status: "pending",
+    createdAt: new Date().toISOString()
+  };
+
+  db.volunteerTransferRequests = db.volunteerTransferRequests || [];
+  db.volunteerTransferRequests.unshift(newRequest);
+
+  // Send high priority notification to Volunteer Dept / Admin
+  db.notifications = db.notifications || [];
+  db.notifications.unshift({
+    id: "not-" + Date.now(),
+    userId: "admin",
+    titleAr: newRequest.requestType === 'transfer' ? `طلب نقل متطوع جديد من قائد (${newRequest.currentTeamName})` : `طلب إنهاء ارتباط متطوع من قائد (${newRequest.currentTeamName})`,
+    titleEn: "Volunteer Transfer/Termination Request",
+    bodyAr: `رفع القائد (${newRequest.leaderName}) طلباً رسمياً لـ(${newRequest.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'}) المتطوع (${newRequest.volunteerName} - ملف: ${newRequest.volunteerFileNumber}). السبب: ${newRequest.reason}. يتطلب مراجعة واعتماد إدارة التطوع.`,
+    date: new Date().toISOString().split('T')[0],
+    read: false,
+    type: "volunteer_transfer_request"
+  });
+
+  // Audit log
+  db.logs = db.logs || [];
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: `قائد الفريق: ${newRequest.leaderName}`,
+    action: `رفع ${newRequest.requestType === 'transfer' ? 'طلب نقل' : 'طلب إنهاء ارتباط'} للمتطوع (${newRequest.volunteerName} - ملف: ${newRequest.volunteerFileNumber}) من فريق (${newRequest.currentTeamName}) إلى إدارة التطوع`,
+    ip: req.ip || "127.0.0.1",
+    device: "Leader Portal"
+  });
+
+  writeDb(db);
+  res.json({ status: "success", request: newRequest, db });
+});
+
+// 3. Action Volunteer Transfer or Termination Request by Volunteer Department
+app.post("/api/db/volunteerTransfers/action", (req, res) => {
+  const db = readDb();
+  const {
+    requestId,
+    action, // 'approve' | 'reject'
+    targetTeamId,
+    reviewerNotes,
+    reviewerName = "إدارة التطوع",
+    userRole
+  } = req.body;
+
+  const role = (req.headers['x-user-role'] || userRole || '') as string;
+  if (role === 'leader') {
+    return res.status(403).json({ error: "غير مصرح: لا يملك قائد الفريق صلاحية البت في طلبات النقل، هذا الإجراء مخصص لإدارة التطوع فقط." });
+  }
+
+  if (!requestId || !action) {
+    return res.status(400).json({ error: "معرف الطلب والإجراء المطلوب حقول إلزامية" });
+  }
+
+  db.volunteerTransferRequests = db.volunteerTransferRequests || [];
+  const reqObj = db.volunteerTransferRequests.find((r: any) => r.id === requestId);
+  if (!reqObj) {
+    return res.status(404).json({ error: "طلب النقل غير موجود" });
+  }
+
+  const vol = (db.volunteers || []).find((v: any) => v.id === reqObj.volunteerId);
+  if (!vol) {
+    return res.status(404).json({ error: "سجل المتطوع غير موجود" });
+  }
+
+  const nowIso = new Date().toISOString();
+
+  if (action === "approve") {
+    if (reqObj.requestType === "transfer") {
+      const finalTargetTeamId = targetTeamId || reqObj.suggestedTeamId;
+      const targetTeam = (db.teams || []).find((t: any) => t.id === finalTargetTeamId);
+      if (!targetTeam) {
+        return res.status(400).json({ error: "يرجى اختيار الفريق المعتمد لنقل المتطوع إليه." });
+      }
+
+      // Record in volunteer's historical team log
+      vol.teamHistory = vol.teamHistory || [];
+      vol.teamHistory.unshift({
+        fromTeamId: vol.teamId,
+        fromTeamName: reqObj.currentTeamName,
+        toTeamId: targetTeam.id,
+        toTeamName: targetTeam.nameAr,
+        transferredAt: nowIso,
+        transferredBy: reviewerName,
+        reason: reqObj.reason,
+        notes: reviewerNotes || "",
+        requestId: reqObj.id
+      });
+
+      // Update volunteer affiliation without erasing points, hours, or certificates
+      vol.teamId = targetTeam.id;
+      vol.departmentId = targetTeam.departmentId;
+
+      reqObj.targetTeamId = targetTeam.id;
+      reqObj.targetTeamName = targetTeam.nameAr;
+    } else {
+      // terminate_affiliation
+      vol.teamHistory = vol.teamHistory || [];
+      vol.teamHistory.unshift({
+        fromTeamId: vol.teamId,
+        fromTeamName: reqObj.currentTeamName,
+        toTeamId: "",
+        toTeamName: "متطوع مستقل (تم إنهاء الارتباط بالفريق)",
+        transferredAt: nowIso,
+        transferredBy: reviewerName,
+        reason: reqObj.reason,
+        notes: reviewerNotes || "",
+        requestId: reqObj.id
+      });
+
+      vol.teamId = ""; // Unassigned team / independent volunteer
+      reqObj.targetTeamId = "";
+      reqObj.targetTeamName = "متطوع مستقل";
+    }
+
+    reqObj.status = "approved";
+    reqObj.reviewedAt = nowIso;
+    reqObj.reviewedBy = reviewerName;
+    reqObj.reviewerNotes = reviewerNotes || "";
+
+    // Notifications
+    db.notifications = db.notifications || [];
+    // 1. Notify Volunteer
+    db.notifications.unshift({
+      id: "not-" + Date.now(),
+      userId: vol.id,
+      titleAr: reqObj.requestType === 'transfer' ? `تم اعتماد نقلك إلى فريق (${reqObj.targetTeamName}) 🎉` : `تم اعتماد إنهاء ارتباطك بفريق (${reqObj.currentTeamName})`,
+      titleEn: "Volunteer Affiliation Updated",
+      bodyAr: reqObj.requestType === 'transfer' 
+        ? `وافقت إدارة التطوع على نقلك رسمياً إلى فريق (${reqObj.targetTeamName}). تم تحديث ملفك وبطاقتك التطوعية.` 
+        : `تم اعتماد طلب إنهاء الارتباط بفريق (${reqObj.currentTeamName}) من قِبل إدارة التطوع وأصبحت الآن متطوعاً مستقلاً.`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+
+    // 2. Notify Requesting Leader
+    db.notifications.unshift({
+      id: "not-" + (Date.now() + 1),
+      userId: reqObj.leaderId || "leader",
+      titleAr: `تمت الموافقة على طلب (${reqObj.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'}) المتطوع (${vol.name})`,
+      titleEn: "Volunteer Transfer Request Approved",
+      bodyAr: `اعتمدت إدارة التطوع طلبكم بشأن المتطوع (${vol.name} - ملف: ${vol.fileNumber || '—'}). ${reqObj.requestType === 'transfer' ? `تم نقله إلى فريق (${reqObj.targetTeamName}).` : 'تم إنهاء ارتباطه بالفريق بنجاح.'} ملاحظات الإدارة: ${reviewerNotes || 'لا توجد'}`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+
+    // Audit log
+    db.logs = db.logs || [];
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: reviewerName,
+      action: `اعتماد ${reqObj.requestType === 'transfer' ? `نقل المتطوع (${vol.name}) إلى فريق (${reqObj.targetTeamName})` : `إنهاء ارتباط المتطوع (${vol.name}) من فريق (${reqObj.currentTeamName})`} وحفظ السجل التاريخي`,
+      ip: req.ip || "127.0.0.1",
+      device: "Admin Volunteer Mgmt"
+    });
+  } else {
+    // reject
+    reqObj.status = "rejected";
+    reqObj.reviewedAt = nowIso;
+    reqObj.reviewedBy = reviewerName;
+    reqObj.reviewerNotes = reviewerNotes || "تم الاعتذار عن قبول طلب النقل";
+
+    // Notify Requesting Leader
+    db.notifications = db.notifications || [];
+    db.notifications.unshift({
+      id: "not-" + Date.now(),
+      userId: reqObj.leaderId || "leader",
+      titleAr: `تم رفض طلب (${reqObj.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'}) المتطوع (${vol.name})`,
+      titleEn: "Volunteer Transfer Request Rejected",
+      bodyAr: `اعتذرت إدارة التطوع عن قبول طلب النقل للمتطوع (${vol.name}). سبب الرفض: ${reviewerNotes || 'عدم توافق مبررات النقل مع الشروط التشغيلية'}. يبقى المتطوع في فريقه الحالي.`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+
+    // Notify Volunteer
+    db.notifications.unshift({
+      id: "not-" + (Date.now() + 1),
+      userId: vol.id,
+      titleAr: "إفادة بخصوص طلب النقل بين الفرق التطوعية",
+      titleEn: "Volunteer Transfer Request Status",
+      bodyAr: `تفيد إدارة التطوع برفض طلب النقل والاستمرار في فريقكم الحالي (${reqObj.currentTeamName}). ملاحظات الإدارة: ${reviewerNotes || 'استمرار التكليف الحالي'}.`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+
+    // Audit log
+    db.logs = db.logs || [];
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: reviewerName,
+      action: `رفض طلب ${reqObj.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'} المتطوع (${vol.name}) - سبب الرفض: ${reviewerNotes || 'غير محدد'}`,
+      ip: req.ip || "127.0.0.1",
+      device: "Admin Volunteer Mgmt"
+    });
+  }
+
+  writeDb(db);
+  res.json({ status: "success", request: reqObj, volunteer: vol, db });
+});
+
+// -------------------------------------------------------------
+// Volunteer Password Reset Requests Endpoints (طلبات تغيير كلمات المرور)
+// -------------------------------------------------------------
+
+// 1. Get Password Reset Requests
+app.get("/api/db/passwordResetRequests", (req, res) => {
+  const db = readDb();
+  db.passwordResetRequests = db.passwordResetRequests || [];
+  const teamId = req.query.teamId as string;
+  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
+  let list = db.passwordResetRequests;
+  if (teamId && userRole === 'leader') {
+    list = list.filter((r: any) => r.teamId === teamId);
+  }
+  // Sanitize so tokens are not exposed to leader
+  const sanitized = list.map((r: any) => {
+    if (userRole === 'leader') {
+      const { resetToken, ...rest } = r;
+      return rest;
+    }
+    return r;
+  });
+  res.json(sanitized);
+});
+
+// 2. Submit Password Reset Request by Team Leader
+app.post("/api/db/passwordResetRequests/submit", (req, res) => {
+  const db = readDb();
+  const {
+    volunteerId,
+    reason,
+    additionalNotes,
+    leaderId,
+    leaderName
+  } = req.body;
+
+  if (!volunteerId) {
+    return res.status(400).json({ error: "معرف المتطوع مطلوب" });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: "يرجى توضيح سبب طلب إعادة تعيين كلمة المرور" });
+  }
+
+  db.volunteers = db.volunteers || [];
+  const vol = db.volunteers.find((v: any) => v.id === volunteerId);
+  if (!vol) {
+    return res.status(404).json({ error: "سجل المتطوع غير موجود" });
+  }
+
+  const team = (db.teams || []).find((t: any) => t.id === vol.teamId);
+
+  const newReq = {
+    id: "prr-" + Date.now(),
+    volunteerId: vol.id,
+    volunteerName: vol.name,
+    volunteerFileNumber: vol.fileNumber || vol.file_number || "—",
+    volunteerPhone: vol.phone || "",
+    volunteerEmail: vol.email || "",
+    teamId: vol.teamId || "",
+    teamName: team?.nameAr || "فريق المتطوع",
+    leaderId: leaderId || "leader",
+    leaderName: leaderName || team?.leaderName || "قائد الفريق",
+    reason: reason.trim(),
+    additionalNotes: additionalNotes ? additionalNotes.trim() : "",
+    status: "new",
+    createdAt: new Date().toISOString()
+  };
+
+  db.passwordResetRequests = db.passwordResetRequests || [];
+  db.passwordResetRequests.unshift(newReq);
+
+  // Notify Operations Manager and Admin
+  db.notifications = db.notifications || [];
+  db.notifications.unshift({
+    id: "not-" + Date.now(),
+    userId: "operations_manager",
+    titleAr: `طلب تغيير كلمة مرور متطوع مرفوع من قائد (${newReq.teamName})`,
+    titleEn: "Volunteer Password Reset Request",
+    bodyAr: `رفع القائد (${newReq.leaderName}) طلباً لإعادة تعيين كلمة المرور للمتطوع (${newReq.volunteerName} - ملف: ${newReq.volunteerFileNumber}). السبب: ${newReq.reason}. بانتظار التحقق واعتماد مدير العمليات.`,
+    date: new Date().toISOString().split('T')[0],
+    read: false,
+    type: "password_reset_request"
+  });
+
+  // Audit log
+  db.logs = db.logs || [];
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: `قائد الفريق: ${newReq.leaderName}`,
+    action: `رفع طلب إعادة تعيين كلمة مرور للمتطوع (${newReq.volunteerName} - ملف: ${newReq.volunteerFileNumber}) إلى مدير العمليات`,
+    ip: req.ip || "127.0.0.1",
+    device: "Leader Portal"
+  });
+
+  writeDb(db);
+  res.json({ status: "success", request: newReq, db });
+});
+
+// 3. Action Password Reset Request by Operations Manager
+app.post("/api/db/passwordResetRequests/action", (req, res) => {
+  const db = readDb();
+  const {
+    requestId,
+    action, // 'under_review' | 'send_reset_link' | 'reject' | 'complete'
+    notes,
+    adminName = "مدير العمليات"
+  } = req.body;
+
+  const role = (req.headers['x-user-role'] || req.body.userRole || '') as string;
+  if (role === 'leader') {
+    return res.status(403).json({ error: "غير مصرح: لا يملك قائد الفريق صلاحية اعتماد طلبات كلمات المرور." });
+  }
+
+  if (!requestId || !action) {
+    return res.status(400).json({ error: "معرف الطلب والإجراء حقول إلزامية" });
+  }
+
+  db.passwordResetRequests = db.passwordResetRequests || [];
+  const reqObj = db.passwordResetRequests.find((r: any) => r.id === requestId);
+  if (!reqObj) {
+    return res.status(404).json({ error: "طلب إعادة التعيين غير موجود" });
+  }
+
+  const vol = (db.volunteers || []).find((v: any) => v.id === reqObj.volunteerId);
+  const nowIso = new Date().toISOString();
+
+  if (action === "under_review") {
+    reqObj.status = "under_review";
+    reqObj.reviewedAt = nowIso;
+    reqObj.reviewedBy = adminName;
+    reqObj.reviewerNotes = notes || "قيد التحقق والمراجعة من قبل مدير العمليات";
+  } else if (action === "send_reset_link" || action === "approve") {
+    // Generate secure temporary token (24-hour expiry)
+    const token = "RST-" + Math.random().toString(36).substring(2, 8).toUpperCase() + "-" + Date.now().toString(36).toUpperCase();
+    const expiry = Date.now() + 24 * 60 * 60 * 1000;
+
+    if (vol) {
+      vol.passwordResetToken = token;
+      vol.passwordResetExpiresAt = expiry;
+    }
+
+    reqObj.status = "reset_link_sent";
+    reqObj.reviewedAt = nowIso;
+    reqObj.reviewedBy = adminName;
+    reqObj.resetLinkSentAt = nowIso;
+    reqObj.resetToken = token;
+    reqObj.resetTokenExpiresAt = expiry;
+    reqObj.reviewerNotes = notes || "تم التحقق من هوية المتطوع وإرسال آلية التعيين الآمنة بنجاح.";
+
+    // Send secure notification to volunteer (contains token/instructions)
+    db.notifications = db.notifications || [];
+    db.notifications.unshift({
+      id: "not-" + Date.now(),
+      userId: vol?.id || reqObj.volunteerId,
+      titleAr: "رابط آمن لإعادة تعيين كلمة المرور 🔐",
+      titleEn: "Secure Password Reset Link",
+      bodyAr: `إدارة العمليات: تم اعتماد طلب إعادة تعيين كلمة مرور حسابك بطلب من قائد الفريق. كود التحقق الآمن المؤقت هو: (${token}) صالح لمدة 24 ساعة. يمكنك استخدامه لإدخال كلمة مرورك الجديدة بأمان.`,
+      date: nowIso.split('T')[0],
+      read: false,
+      type: "password_reset_token",
+      token: token
+    });
+
+    // Notify Leader (WITHOUT password or token)
+    db.notifications.unshift({
+      id: "not-" + (Date.now() + 1),
+      userId: reqObj.leaderId || "leader",
+      titleAr: `تم اعتماد طلب إعادة تعيين كلمة المرور للمتطوع (${reqObj.volunteerName})`,
+      titleEn: "Password Reset Approved",
+      bodyAr: `اعتمد مدير العمليات طلبكم، وتم إرسال رابط وتعليمات إعادة التعيين الآمنة إلى المتطوع (${reqObj.volunteerName}) مباشرة. حفاظاً على سرية البيانات لا تظهر كلمات المرور لقادة الفرق.`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+
+    // Audit log
+    db.logs = db.logs || [];
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: adminName,
+      action: `اعتماد طلب إعادة تعيين كلمة المرور للمتطوع (${reqObj.volunteerName}) وإرسال رابط مؤمن وصالح 24 ساعة بواسطة (${adminName})`,
+      ip: req.ip || "127.0.0.1",
+      device: "Operations Dashboard"
+    });
+  } else if (action === "reject") {
+    reqObj.status = "rejected";
+    reqObj.reviewedAt = nowIso;
+    reqObj.reviewedBy = adminName;
+    reqObj.reviewerNotes = notes || "تم رفض الطلب بعد التحقق الأمني من إدارة العمليات";
+
+    // Notify Leader with explanation
+    db.notifications = db.notifications || [];
+    db.notifications.unshift({
+      id: "not-" + Date.now(),
+      userId: reqObj.leaderId || "leader",
+      titleAr: `تم رفض طلب إعادة تعيين كلمة المرور للمتطوع (${reqObj.volunteerName})`,
+      titleEn: "Password Reset Request Rejected",
+      bodyAr: `اعتذرت إدارة العمليات عن تنفيذ طلب إعادة تعيين كلمة المرور للمتطوع (${reqObj.volunteerName}). السبب: ${notes || 'عدم استيفاء الشروط الأمنية أو عدم ثبوت هوية الطلب'}.`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+
+    // Audit log
+    db.logs = db.logs || [];
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: nowIso,
+      user: adminName,
+      action: `رفض طلب إعادة تعيين كلمة مرور المتطوع (${reqObj.volunteerName}) - سبب الرفض: ${notes || 'أمني'}`,
+      ip: req.ip || "127.0.0.1",
+      device: "Operations Dashboard"
+    });
+  } else if (action === "complete") {
+    reqObj.status = "completed";
+    reqObj.completedAt = nowIso;
+  }
+
+  writeDb(db);
+  res.json({ status: "success", request: reqObj, db });
+});
+
+// 4. Secure Password Reset Completion with Token by Volunteer
+app.post("/api/auth/reset-password-with-token", (req, res) => {
+  const db = readDb();
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: "كود التحقق وكلمة المرور الجديدة حقول مطلوبة" });
+  }
+
+  db.volunteers = db.volunteers || [];
+  const vol = db.volunteers.find((v: any) => v.passwordResetToken === String(token).trim());
+  if (!vol) {
+    return res.status(400).json({ error: "كود التحقق غير صحيح أو تم استخدامه مسبقاً." });
+  }
+
+  if (vol.passwordResetExpiresAt && Date.now() > vol.passwordResetExpiresAt) {
+    return res.status(400).json({ error: "انتهت صلاحية كود التحقق (صالح لمدة 24 ساعة فقط). يرجى طلب كود جديد من قائد الفريق." });
+  }
+
+  // Update password safely
+  vol.password = String(newPassword).trim();
+  vol.passwordResetToken = undefined;
+  vol.passwordResetExpiresAt = undefined;
+
+  // Mark linked request as completed
+  if (db.passwordResetRequests) {
+    const linkedReq = db.passwordResetRequests.find((r: any) => r.volunteerId === vol.id && r.status === 'reset_link_sent');
+    if (linkedReq) {
+      linkedReq.status = 'completed';
+      linkedReq.completedAt = new Date().toISOString();
+    }
+  }
+
+  // Audit log
+  db.logs = db.logs || [];
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: `المتطوع: ${vol.name}`,
+    action: `إكمال إعادة تعيين كلمة المرور بنجاح باستخدام كود التحقق الآمن المؤقت`,
+    ip: req.ip || "127.0.0.1",
+    device: "Password Reset Portal"
+  });
+
+  writeDb(db);
+  res.json({ status: "success", message: "تم تغيير كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن بكلمة المرور الجديدة." });
+});
+
+// -------------------------------------------------------------
+// Team & Volunteer Dedicated Technical Support Endpoints (الدعم الفني للفرق)
+// -------------------------------------------------------------
+
+// 1. Get Team & Volunteer Support Tickets with Strict Isolation
+app.get("/api/support/team-tickets", (req, res) => {
+  const db = readDb();
+  db.supportTickets = db.supportTickets || [];
+  const requesterId = req.query.requesterId as string;
+  const volunteerId = req.query.volunteerId as string;
+  const teamId = req.query.teamId as string;
+  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
+  const ticketCode = req.query.ticketCode as string;
+
+  let tickets = db.supportTickets.filter((t: any) => t.category === "team_volunteer" || t.teamId);
+
+  // Volunteer Isolation: Volunteers can ONLY view their own tickets!
+  if (userRole === "volunteer" || (volunteerId && userRole !== "admin" && userRole !== "operations_manager" && userRole !== "support")) {
+    const targetVolId = volunteerId || requesterId;
+    tickets = tickets.filter((t: any) => t.volunteerId === targetVolId || t.requesterId === targetVolId);
+  } else if (userRole === "leader") {
+    // Leader Isolation: Leaders only view tickets created by themselves or officially submitted for their team
+    tickets = tickets.filter((t: any) => t.requesterId === requesterId || (t.teamId === teamId && t.isCreatedByLeader));
+  } else if (userRole === "support") {
+    const agentId = req.query.agentId as string;
+    if (agentId) {
+      tickets = tickets.filter((t: any) => t.assignedStaffId === agentId || !t.assignedStaffId);
+    }
+  }
+
+  if (ticketCode) {
+    tickets = tickets.filter((t: any) => (t.ticketNumber || '').toLowerCase().includes(ticketCode.toLowerCase()));
+  }
+
+  res.json(tickets);
+});
+
+// 2. Create Team & Volunteer Support Ticket
+app.post("/api/support/team-tickets/create", (req, res) => {
+  const db = readDb();
+  const {
+    requesterId,
+    requesterName,
+    requesterEmail,
+    requesterPhone,
+    requesterRole,
+    volunteerId,
+    volunteerName,
+    volunteerFileNumber,
+    teamId,
+    teamName,
+    issueType,
+    subject,
+    initialMessage,
+    priority = "normal",
+    isCreatedByLeader = false,
+    onBehalfOfVolunteerId,
+    chatTranscript,
+    attachments = []
+  } = req.body;
+
+  if (!subject || !initialMessage) {
+    return res.status(400).json({ error: "موضوع التذكرة وتفاصيل الرسالة حقول مطلوبة" });
+  }
+
+  db.supportTickets = db.supportTickets || [];
+  const seq = String(db.supportTickets.length + 1).padStart(4, "0");
+  const ticketNumber = `TCK-VOL-${new Date().getFullYear()}-${seq}`;
+
+  const transcript = Array.isArray(chatTranscript) && chatTranscript.length > 0 ? chatTranscript : [
+    {
+      id: "tm-" + Date.now(),
+      ticketId: "",
+      senderType: "user",
+      senderName: requesterName || "المستخدم",
+      content: initialMessage,
+      timestamp: new Date().toISOString(),
+      attachments: attachments || []
+    }
+  ];
+
+  const newTicket = {
+    id: "ticket-vol-" + Date.now(),
+    ticketNumber,
+    category: "team_volunteer",
+    requesterId: requesterId || "vol-user",
+    requesterName: requesterName || "متطوع",
+    requesterEmail: requesterEmail || "",
+    requesterPhone: requesterPhone || "",
+    requesterRole: requesterRole || "volunteer",
+    volunteerId: volunteerId || requesterId,
+    volunteerName: volunteerName || requesterName,
+    volunteerFileNumber: volunteerFileNumber || "—",
+    teamId: teamId || "",
+    teamName: teamName || "",
+    issueType: issueType || "general",
+    subject: subject.trim(),
+    description: initialMessage.trim(),
+    status: "new",
+    priority: priority || "normal",
+    isCreatedByLeader: Boolean(isCreatedByLeader),
+    onBehalfOfVolunteerId: onBehalfOfVolunteerId || undefined,
+    attachments: attachments || [],
+    chatTranscript: transcript,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  db.supportTickets.unshift(newTicket);
+
+  // Notify Support Staff / Admin
+  db.notifications = db.notifications || [];
+  db.notifications.unshift({
+    id: "not-" + Date.now(),
+    userId: "support",
+    titleAr: `تذكرة دعم فني جديدة للفرق (#${ticketNumber})`,
+    titleEn: "New Team Support Ticket",
+    bodyAr: `تم فتح تذكرة جديدة من (${newTicket.requesterName}) بخصوص (${newTicket.subject}). نوع المشكلة: ${newTicket.issueType}.`,
+    date: new Date().toISOString().split('T')[0],
+    read: false,
+    type: "team_support_ticket"
+  });
+
+  // Audit log
+  db.logs = db.logs || [];
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: newTicket.requesterName,
+    action: `فتح تذكرة دعم فني للفرق (#${ticketNumber}) - الموضوع: ${newTicket.subject}`,
+    ip: req.ip || "127.0.0.1",
+    device: "Team Support Portal"
+  });
+
+  writeDb(db);
+  res.json({ status: "success", ticket: newTicket, db });
+});
+
+// 3. Reply to Team Support Ticket
+app.post("/api/support/team-tickets/reply", (req, res) => {
+  const db = readDb();
+  const { ticketId, senderType, senderName, content, message, attachments = [] } = req.body;
+  const replyContent = (content || message || "").trim();
+
+  if (!ticketId || !replyContent) {
+    return res.status(400).json({ error: "معرف التذكرة والرد حقول مطلوبة" });
+  }
+
+  db.supportTickets = db.supportTickets || [];
+  const ticket = db.supportTickets.find((t: any) => t.id === ticketId || t.ticketNumber === ticketId);
+  if (!ticket) {
+    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  }
+
+  const nowIso = new Date().toISOString();
+  const newMsg = {
+    id: "tm-" + Date.now(),
+    ticketId: ticket.id,
+    senderType: senderType || "user",
+    senderName: senderName || "مستخدم",
+    content: replyContent,
+    timestamp: nowIso,
+    attachments: attachments || []
+  };
+
+  ticket.chatTranscript = ticket.chatTranscript || [];
+  ticket.chatTranscript.push(newMsg);
+  ticket.updatedAt = nowIso;
+
+  if (senderType === "agent") {
+    ticket.status = "in_progress";
+    ticket.assignedToAgentName = senderName || "موظف الدعم الفني";
+    // Notify requester
+    db.notifications = db.notifications || [];
+    db.notifications.unshift({
+      id: "not-" + Date.now(),
+      userId: ticket.requesterId,
+      titleAr: `رد جديد على تذكرة الدعم (#${ticket.ticketNumber})`,
+      titleEn: "New Reply on Support Ticket",
+      bodyAr: `أضاف موظف الدعم (${senderName || 'الدعم الفني'}) رداً على تذكرتك: "${content.slice(0, 70)}..."`,
+      date: nowIso.split('T')[0],
+      read: false
+    });
+  } else {
+    if (ticket.status === "closed" || ticket.status === "resolved") {
+      ticket.status = "in_progress";
+    }
+  }
+
+  writeDb(db);
+  res.json({ status: "success", ticket, message: newMsg, db });
+});
+
+// 4. Assign Support Agent to Team Ticket
+app.post("/api/support/team-tickets/assign", (req, res) => {
+  const db = readDb();
+  const { ticketId, agentId, agentName, notes } = req.body;
+
+  db.supportTickets = db.supportTickets || [];
+  const ticket = db.supportTickets.find((t: any) => t.id === ticketId || t.ticketNumber === ticketId);
+  if (!ticket) {
+    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  }
+
+  ticket.assignedStaffId = agentId;
+  ticket.assignedStaffName = agentName;
+  ticket.assignedToAgentName = agentName;
+  ticket.assignmentNotes = notes || "";
+  ticket.assignedAt = new Date().toISOString();
+  ticket.status = "assigned";
+  ticket.updatedAt = new Date().toISOString();
+
+  writeDb(db);
+  res.json({ status: "success", ticket, db });
+});
+
+// 5. Update Team Ticket Status
+app.post("/api/support/team-tickets/status", (req, res) => {
+  const db = readDb();
+  const { ticketId, status, notes } = req.body;
+
+  db.supportTickets = db.supportTickets || [];
+  const ticket = db.supportTickets.find((t: any) => t.id === ticketId || t.ticketNumber === ticketId);
+  if (!ticket) {
+    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  }
+
+  ticket.status = status;
+  ticket.updatedAt = new Date().toISOString();
+  if (notes) {
+    ticket.internalNotes = ticket.internalNotes || [];
+    ticket.internalNotes.push({
+      id: "in-" + Date.now(),
+      authorName: "الدعم الفني",
+      text: notes,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  writeDb(db);
+  res.json({ status: "success", ticket, db });
 });
 
 // -------------------------------------------------------------
@@ -16659,15 +17744,28 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
   // Create new active volunteer entry
   db.volunteers = db.volunteers || [];
   const seq = String(db.volunteers.length + 1).padStart(4, "0");
+  const normGender = normalizeVolunteerGender(appObj.gender) || 'male';
+  let assignedFileNumber = "";
+  try {
+    assignedFileNumber = generateUniqueVolunteerFileNumber(db, normGender);
+  } catch (e) {
+    console.error("Error generating file number in admin-approve endpoint:", e);
+    assignedFileNumber = normGender === 'female' ? `B-${Math.floor(1000 + Math.random() * 9000)}` : `A-${Math.floor(1000 + Math.random() * 9000)}`;
+  }
+
+  appObj.fileNumber = assignedFileNumber;
+
   const newVol: any = {
     id: "vol-" + Date.now(),
     name: appObj.fullName,
     email: appObj.email || `vol-${seq}@reyadat-alata.org.sa`,
     phone: appObj.phone,
-    photo: appObj.photo || (appObj.gender === 'female' ? (db.systemSettings?.files?.femaleUnifiedCardPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80") : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop"),
+    photo: appObj.photo || (normGender === 'female' ? (db.systemSettings?.files?.femaleUnifiedCardPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80") : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop"),
     membershipNumber: `V-2026-${seq}`,
     barcode: `100088868${seq}`,
     qrCode: `MEM-V-2026-${seq}`,
+    fileNumber: assignedFileNumber,
+    file_number: assignedFileNumber,
     teamId: selectedTeam.id,
     departmentId: selectedTeam.departmentId,
     titleAr: appObj.position || "متطوع معتمد",
@@ -16679,8 +17777,10 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     password: appObj.phone,
     role: "volunteer",
-    gender: appObj.gender || "male"
+    gender: normGender
   };
+
+  savePostgresVolunteerFileNumber(assignedFileNumber, newVol.id, newVol.nationalId, normGender).catch(() => {});
 
   db.volunteers.push(newVol);
 

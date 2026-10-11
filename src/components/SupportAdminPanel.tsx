@@ -3,9 +3,10 @@ import {
   Headphones, AlertCircle, CheckCircle, Clock, Search, Filter, MessageSquare, 
   UserCheck, ShieldAlert, Send, RefreshCw, FileText, ChevronLeft, ArrowRight, Tag, Lock,
   Plus, Users, CheckSquare, ListTodo, UserPlus, ArrowUpRight, RotateCcw, AlertTriangle,
-  X, Check, Sparkles, Phone, Mail, Shield, User
+  X, Check, Sparkles, Phone, Mail, Shield, User, HelpCircle
 } from "lucide-react";
 import { SupportTicket, SupportTicketMessage, SupportAgent, SupportTask } from "../types";
+import { TeamSupportManager } from "./TeamSupportManager";
 
 interface SupportAdminPanelProps {
   currentUserRole?: "admin" | "supervisor" | "support";
@@ -16,7 +17,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
   currentUserRole = "admin",
   currentAgentName = "مهندس الدعم التقني - عبد الرحمن"
 }) => {
-  const [activeTab, setActiveTab] = useState<"tickets" | "tasks" | "agents">("tickets");
+  const [activeTab, setActiveTab] = useState<"tickets" | "team_tickets" | "tasks" | "agents">("tickets");
 
   // Tickets State
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -429,6 +430,18 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab("team_tickets")}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === "team_tickets"
+              ? "bg-emerald-700 text-white shadow-sm"
+              : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+          }`}
+        >
+          <HelpCircle className="w-4 h-4" />
+          <span>الدعم الفني للفرق والمتطوعين</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("tasks")}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
             activeTab === "tasks"
@@ -712,6 +725,18 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB: TEAM & VOLUNTEER TECHNICAL SUPPORT                         */}
+      {/* ============================================================== */}
+      {activeTab === "team_tickets" && (
+        <div className="space-y-6">
+          <TeamSupportManager
+            currentUser={{ id: "admin", name: currentAgentName }}
+            userRole="admin"
+          />
         </div>
       )}
 
