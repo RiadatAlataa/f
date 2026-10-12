@@ -35,6 +35,8 @@ import {
   getPostgresVolunteerFileNumbers,
   isPostgresConfigured 
 } from "./server/postgres";
+import { writeCoordinator } from "./server/writeLock";
+import { backupEngine } from "./server/backupEngine";
 
 console.log("[SERVER CORE] loading");
 
@@ -2263,8 +2265,16 @@ export function migrateExistingApprovedVolunteersFileNumbers(db: any): boolean {
 
 let memoryDbCache: any = null;
 
+export function reloadDbFromDisk() {
+  memoryDbCache = null;
+  return readDb();
+}
+
 // Helper: Read db from file or write defaults
 export function readDb() {
+  if (memoryDbCache) {
+    return memoryDbCache;
+  }
   try {
     const activePath = getActiveDbPath();
     let content = "";
@@ -3977,86 +3987,113 @@ export function writeDb(data: any): boolean {
     return false;
   }
 
-  // Update in-memory cache immediately
-  memoryDbCache = data;
+  // 2. Write Freeze Guard: If writes are frozen for a backup snapshot, queue write unless caller already holds mutation lock
+  if (writeCoordinator.getIsWriteFrozen() && !writeCoordinator.isCurrentContextHoldingLock()) {
+    return writeCoordinator.enqueueFrozenWrite(() => writeDb(data));
+  }
 
-  const isServerless = !!(
-    process.env.VERCEL || 
-    process.env.NOW_REGION || 
-    process.env.AWS_LAMBDA_FUNCTION_NAME ||
-    process.env.LAMBDA_TASK_ROOT ||
-    process.env.VERCEL_ENV
-  );
-  const targetPath = isServerless ? DB_FILE_TMP : getActiveDbPath();
-  const targetDir = path.dirname(targetPath);
-
-  let tempFile = "";
+  writeCoordinator.recordActiveWriteStart();
+  const previousCache = memoryDbCache;
   try {
-    const serialized = JSON.stringify(data, null, 2);
-    if (!serialized || serialized.length < 50) {
-      console.error("[DATABASE WRITE ERROR] Serialized content is abnormally short, aborting write.");
+    // Maintain sequential version and modification watermark
+    data._version = ((typeof data._version === "number" ? data._version : 0) + 1);
+    data._lastModified = new Date().toISOString();
+
+    const isServerless = !!(
+      process.env.VERCEL || 
+      process.env.NOW_REGION || 
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.LAMBDA_TASK_ROOT ||
+      process.env.VERCEL_ENV
+    );
+    const targetPath = isServerless ? DB_FILE_TMP : getActiveDbPath();
+    const targetDir = path.dirname(targetPath);
+
+    let tempFile = "";
+    try {
+      const serialized = JSON.stringify(data, null, 2);
+      if (!serialized || serialized.length < 50) {
+        console.error("[DATABASE WRITE ERROR] Serialized content is abnormally short, aborting write.");
+        return false;
+      }
+
+      // 3. Write to a temporary file in the same directory (enables POSIX atomic rename)
+      tempFile = path.join(targetDir, `.db.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`);
+      fs.writeFileSync(tempFile, serialized, "utf-8");
+
+      // 4. Verify integrity of written temporary file before touching target
+      const readBack = fs.readFileSync(tempFile, "utf-8");
+      const parsedVerification = JSON.parse(readBack);
+      if (!parsedVerification || !Array.isArray(parsedVerification.departments) || !Array.isArray(parsedVerification.volunteers)) {
+        throw new Error("Verification of written temporary database file failed: content mismatch");
+      }
+
+      // 5. Safe Backup Retention Policy:
+      if (fs.existsSync(targetPath)) {
+        try {
+          const existingStat = fs.statSync(targetPath);
+          if (existingStat.size > 100) {
+            const diskContent = fs.readFileSync(targetPath, "utf-8");
+            const parsedDisk = JSON.parse(diskContent);
+            if (parsedDisk && Array.isArray(parsedDisk.departments) && Array.isArray(parsedDisk.volunteers)) {
+              const backupPath = path.join(targetDir, `.db.previous_valid.bak`);
+              const backupSecondary = path.join(targetDir, `.db.previous_valid_secondary.bak`);
+              if (fs.existsSync(backupPath)) {
+                try {
+                  fs.copyFileSync(backupPath, backupSecondary);
+                } catch (_) {}
+              }
+              fs.copyFileSync(targetPath, backupPath);
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 6. Atomic Replace: rename tempFile to targetPath (POSIX atomic swap)
+      fs.renameSync(tempFile, targetPath);
+
+      // 7. Update in-memory cache ONLY AFTER disk write has succeeded!
+      memoryDbCache = data;
+      return true;
+    } catch (err) {
+      console.error("[DATABASE WRITE ERROR] Atomic write failed. Original file remains untouched:", err);
+      // Guarantee that in-memory cache NEVER remains dirty when disk write fails
+      memoryDbCache = previousCache;
+      if (tempFile) {
+        try {
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile);
+          }
+        } catch (_) {}
+      }
       return false;
     }
-
-    // 2. Write to a temporary file in the same directory (enables POSIX atomic rename)
-    tempFile = path.join(targetDir, `.db.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`);
-    fs.writeFileSync(tempFile, serialized, "utf-8");
-
-    // 3. Verify integrity of written temporary file before touching target
-    const readBack = fs.readFileSync(tempFile, "utf-8");
-    const parsedVerification = JSON.parse(readBack);
-    if (!parsedVerification || !Array.isArray(parsedVerification.departments) || !Array.isArray(parsedVerification.volunteers)) {
-      throw new Error("Verification of written temporary database file failed: content mismatch");
-    }
-
-    // 4. Safe Backup Retention Policy:
-    // Before copying targetPath to .db.previous_valid.bak, verify:
-    // a) targetPath actually exists and has content (> 100 bytes)
-    // b) targetPath currently on disk is VALID JSON that parses successfully.
-    // If the file on disk is damaged/corrupted, WE NEVER overwrite the previous valid backup!
-    if (fs.existsSync(targetPath)) {
-      try {
-        const existingStat = fs.statSync(targetPath);
-        if (existingStat.size > 100) {
-          const diskContent = fs.readFileSync(targetPath, "utf-8");
-          const parsedDisk = JSON.parse(diskContent);
-          if (parsedDisk && Array.isArray(parsedDisk.departments) && Array.isArray(parsedDisk.volunteers)) {
-            const backupPath = path.join(targetDir, `.db.previous_valid.bak`);
-            
-            // Retention policy: Keep the previous backup as a secondary fallback before rotation
-            const backupSecondary = path.join(targetDir, `.db.previous_valid_secondary.bak`);
-            if (fs.existsSync(backupPath)) {
-              try {
-                fs.copyFileSync(backupPath, backupSecondary);
-              } catch (_) {}
-            }
-            
-            fs.copyFileSync(targetPath, backupPath);
-          } else {
-            console.warn("[DATABASE WRITE] Existing disk file does not meet schema integrity; skipping backup overwrite to preserve last known good backup.");
-          }
-        }
-      } catch (validateErr) {
-        console.warn("[DATABASE WRITE] Existing disk file is invalid JSON; preserving existing .db.previous_valid.bak intact without overwriting:", validateErr);
-      }
-    }
-
-    // 5. Atomic Replace: rename tempFile to targetPath (POSIX atomic swap)
-    fs.renameSync(tempFile, targetPath);
-    return true;
-  } catch (err) {
-    console.error("[DATABASE WRITE ERROR] Atomic write failed. Original file remains untouched:", err);
-    // Clean up temporary file so no artifacts linger
-    if (tempFile) {
-      try {
-        if (fs.existsSync(tempFile)) {
-          fs.unlinkSync(tempFile);
-        }
-      } catch (_) {}
-    }
-    return false;
+  } finally {
+    writeCoordinator.recordActiveWriteEnd();
   }
 }
+
+/**
+ * Executes a transactionally queued mutation to eliminate Lost Updates (Read-Modify-Write races).
+ */
+export async function mutateDb<T>(mutator: (db: any) => Promise<T> | T): Promise<T> {
+  return writeCoordinator.mutate(readDb, writeDb, mutator, reloadDbFromDisk);
+}
+
+// Import snapshot reconciliation and anti-zombie tombstone functions for local and export usage
+import { 
+  reconcileDbSnapshots, 
+  recordDeletedEntity, 
+  isEntityDeleted, 
+  reconcileRecord 
+} from "./server/reconcile";
+export { 
+  reconcileDbSnapshots, 
+  recordDeletedEntity, 
+  isEntityDeleted, 
+  reconcileRecord 
+};
+export type { ReconcileOptions, ReconcileResult } from "./server/reconcile";
 
 // Ensure database file is initialized fail-safely on module load
 try {
@@ -4194,6 +4231,7 @@ export interface ServerSession {
   userId: string;
   role: string;
   user: any;
+  userName?: string;
   departmentId?: string;
   nationalId?: string;
   teamId?: string;
@@ -4212,6 +4250,7 @@ export function createServerSession(user: any, role: string): ServerSession {
     userId: user?.id || 'user',
     role: role || user?.role || 'user',
     user,
+    userName: user?.name || user?.userName || user?.nameAr || '',
     departmentId: user?.departmentId || user?.primaryDepartmentId || '',
     nationalId: user?.nationalId || '',
     teamId: user?.teamId || '',
@@ -4307,7 +4346,44 @@ export function invalidateUserSessions(userId: string): number {
   return count;
 }
 
-// 1. Resolve User Access Context from Request Headers / Query / Body
+// --- IN-MEMORY SLIDING RATE LIMITER ---
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+const rateLimitStores: Record<string, Map<string, RateLimitBucket>> = {
+  login: new Map(),
+  forgotPassword: new Map(),
+  registration: new Map()
+};
+
+export function checkRateLimit(
+  bucket: 'login' | 'forgotPassword' | 'registration',
+  key: string,
+  maxRequests: number,
+  windowMs: number
+): { allowed: boolean; retryAfterSec?: number } {
+  const store = rateLimitStores[bucket] || (rateLimitStores[bucket] = new Map());
+  const now = Date.now();
+  const record = store.get(key);
+
+  if (!record || now > record.resetAt) {
+    store.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true };
+  }
+
+  if (record.count >= maxRequests) {
+    return {
+      allowed: false,
+      retryAfterSec: Math.max(1, Math.ceil((record.resetAt - now) / 1000))
+    };
+  }
+
+  record.count++;
+  return { allowed: true };
+}
+
+// 1. Resolve User Access Context from Verified Session (Prevents client header spoofing)
 function getUserAccessContext(req: any) {
   const db = readDb();
   const sessionToken = (req.headers['x-session-token'] as string) || 
@@ -4315,15 +4391,12 @@ function getUserAccessContext(req: any) {
     req.cookies?.['reyadat_session'];
   
   const activeSession = getServerSession(sessionToken);
+  const hasValidSession = Boolean(activeSession);
 
-  const userId = activeSession?.userId || req.headers['x-user-id'] || req.query.userId || req.body?.userId;
-  const userRole = activeSession?.role || req.headers['x-user-role'] || req.query.userRole || req.body?.userRole;
-  const departmentId = activeSession?.departmentId || req.headers['x-department-id'] || req.query.departmentId || req.body?.departmentId;
-  const nationalId = activeSession?.nationalId || req.headers['x-national-id'] || req.query.nationalId;
-  const teamId = activeSession?.teamId || req.headers['x-team-id'] || req.query.teamId || req.body?.teamId;
-
-  // Unauthenticated / Public visitor
-  if (!userId && !userRole && !nationalId && !activeSession) {
+  // PRIVILEGE ESCALATION SHIELD:
+  // Client headers (x-user-role, x-user-id) MUST NEVER grant privileged roles without an active verified session!
+  // Only internal tests with req.isInternalTest flag are permitted to pass simulated context.
+  if (!hasValidSession && !req.isInternalTest) {
     return {
       isAuthenticated: false,
       isSuperAdmin: false,
@@ -4335,9 +4408,15 @@ function getUserAccessContext(req: any) {
       primaryDepartmentName: '',
       additionalDepartmentIds: [],
       allowedDepartmentIds: [],
-      permissions: ['view_department']
+      permissions: []
     };
   }
+
+  const userId = hasValidSession ? activeSession!.userId : req.headers['x-user-id'];
+  const userRole = hasValidSession ? activeSession!.role : req.headers['x-user-role'];
+  const departmentId = hasValidSession ? activeSession!.departmentId : req.headers['x-department-id'];
+  const nationalId = hasValidSession ? activeSession!.nationalId : req.headers['x-national-id'];
+  const teamId = hasValidSession ? activeSession!.teamId : req.headers['x-team-id'];
 
   // Super Admin (Executive Director / Board of Directors / Administrator mosa)
   if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user' || userId === 'mosa' || nationalId === '1000000000' || nationalId === '1000000099') {
@@ -4565,6 +4644,18 @@ function checkDepartmentPermission(
     if (db.accessAuditLogs.length > 250) db.accessAuditLogs.length = 250;
     writeDb(db);
   };
+
+  // 0. Strict Authentication Barrier: Deny unauthenticated requests immediately with 401
+  if (!context.isAuthenticated) {
+    logAudit('denied', 'محاولة وصول غير مصرح بها: المستخدم غير مسجل دخول أو الجلسة منتهية أو تم تزييف الهوية');
+    if (res) {
+      res.status(401).json({
+        error: "غير مصرح: يجب تسجيل الدخول وإرسال رمز جلسة صالح (Authorization Bearer / x-session-token) للمتابعة.",
+        code: 'UNAUTHORIZED'
+      });
+    }
+    return { allowed: false, context };
+  }
 
   // Super Admin & Operations Manager bypass all departmental checks
   if (context.isSuperAdmin || context.isOperationsManager || context.role === 'operations_manager') {
@@ -6394,6 +6485,97 @@ app.get("/api/db/backup", (req, res) => {
   }
 });
 
+// Trigger encrypted multi-source backup to Cloudflare R2
+app.post("/api/admin/backup/r2/trigger", async (req, res) => {
+  // Authorization: Valid admin session OR secret cron webhook header
+  const cronSecret = req.headers['x-backup-cron-token'] as string;
+  const isAuthorizedCron = cronSecret && process.env.BACKUP_CRON_TOKEN && cronSecret === process.env.BACKUP_CRON_TOKEN;
+
+  if (!isAuthorizedCron) {
+    const sessionToken = (req.headers['x-session-token'] as string) || 
+      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+      (req.cookies?.['reyadat_session'] as string);
+
+    if (!sessionToken) {
+      return res.status(401).json({ ok: false, error: "غير مصرح: يلزم تسجيل الدخول بجلسة إدارية.", code: "UNAUTHORIZED" });
+    }
+    const session = getServerSession(sessionToken);
+    if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+      return res.status(403).json({ ok: false, error: "تم رفض الوصول: يتطلب تنفيذ النسخ الاحتياطي صلاحيات الإدارة العليا.", code: "FORBIDDEN" });
+    }
+  }
+
+  try {
+    const { bundle, metadata } = await backupEngine.captureConsistentBundle(readDb);
+    const keyHex = (req.body && req.body.encryptionKeyHex) || process.env.BACKUP_ENCRYPTION_KEY_HEX;
+    
+    if (!keyHex) {
+      return res.status(400).json({
+        ok: false,
+        error: "مفتاح التشفير غير معرّف في متغيرات البيئة BACKUP_ENCRYPTION_KEY_HEX.",
+        metadata
+      });
+    }
+
+    const envelope = backupEngine.encryptBundle(bundle, metadata, keyHex);
+    let r2UploadResult: { key: string; eTag: string } | null = null;
+
+    if (backupEngine.getR2Client()) {
+      r2UploadResult = await backupEngine.uploadToR2(envelope);
+    }
+
+    res.json({
+      ok: true,
+      status: "success",
+      backupId: metadata.backupId,
+      timestamp: metadata.timestamp,
+      watermark: metadata.watermark,
+      recordCounts: metadata.recordCounts,
+      attachmentsCount: metadata.attachmentsCount,
+      sha256Ciphertext: envelope.sha256Ciphertext,
+      r2Uploaded: !!r2UploadResult,
+      r2Key: r2UploadResult?.key || null,
+      r2ETag: r2UploadResult?.eTag || null
+    });
+  } catch (err: any) {
+    console.error("[R2 BACKUP ERROR]:", err);
+    res.status(500).json({ ok: false, error: "فشل تنفيذ النسخ الاحتياطي إلى R2", details: err?.message });
+  }
+});
+
+// Dry-run Isolated Restore Verification (Sandbox test with zero changes to production database)
+app.post("/api/admin/backup/r2/dry-run", async (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  if (!sessionToken) {
+    return res.status(401).json({ ok: false, error: "غير مصرح", code: "UNAUTHORIZED" });
+  }
+  const session = getServerSession(sessionToken);
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({ ok: false, error: "صلاحيات غير كافية", code: "FORBIDDEN" });
+  }
+
+  try {
+    const envelope = req.body.envelope;
+    if (!envelope) {
+      // If envelope not provided in body, generate a point-in-time envelope from current state and test it
+      const { bundle, metadata } = await backupEngine.captureConsistentBundle(readDb);
+      const testKeyHex = (req.body && req.body.encryptionKeyHex) || process.env.BACKUP_ENCRYPTION_KEY_HEX || crypto.randomBytes(32).toString('hex');
+      const testEnv = backupEngine.encryptBundle(bundle, metadata, testKeyHex);
+      const result = await backupEngine.testIsolatedRestore(testEnv, testKeyHex);
+      return res.json({ ok: true, status: "verified", dryRunResult: result });
+    }
+
+    const keyHex = (req.body && req.body.encryptionKeyHex) || process.env.BACKUP_ENCRYPTION_KEY_HEX;
+    const result = await backupEngine.testIsolatedRestore(envelope, keyHex);
+    res.json({ ok: true, status: "verified", dryRunResult: result });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: "فشل اختبار الاستعادة المعزولة", details: err?.message });
+  }
+});
+
 // Restore database (SECURED: requires verified admin session, explicit confirmation, content validation, and safety snapshot)
 app.post("/api/db/restore", (req, res) => {
   const sessionToken = (req.headers['x-session-token'] as string) || 
@@ -6547,25 +6729,36 @@ app.post("/api/db/departments/add", (req, res) => {
 });
 
 // 2. Departments Delete
-app.post("/api/db/departments/delete", (req, res) => {
+app.post("/api/db/departments/delete", async (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'حذف الإدارات والفرق التابعة');
   if (!auth.allowed) return;
 
-  const db = readDb();
   const { id } = req.body;
-  const dep = db.departments.find((d: any) => d.id === id);
-  db.departments = db.departments.filter((d: any) => d.id !== id);
-  db.teams = db.teams.filter((t: any) => t.departmentId !== id);
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: auth.context.userName || "الإدارة العليا",
-    action: `حذف إدارة ومعها الفرق التابعة: ${dep ? dep.nameAr : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+  if (!id) return res.status(400).json({ error: "Missing department id" });
+
+  try {
+    await mutateDb((db) => {
+      const dep = db.departments.find((d: any) => d.id === id);
+      db.departments = db.departments.filter((d: any) => d.id !== id);
+      recordDeletedEntity(db, id, "departments", auth.context.userName || "الإدارة العليا");
+
+      const childTeams = db.teams.filter((t: any) => t.departmentId === id);
+      childTeams.forEach((t: any) => recordDeletedEntity(db, t.id, "teams", auth.context.userName || "الإدارة العليا"));
+      db.teams = db.teams.filter((t: any) => t.departmentId !== id);
+
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: auth.context.userName || "الإدارة العليا",
+        action: `حذف إدارة ومعها الفرق التابعة: ${dep ? dep.nameAr : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+    });
+    res.json(readDb());
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete department", details: err?.message });
+  }
 });
 
 // 3. Teams Add/Edit
@@ -6600,24 +6793,32 @@ app.post("/api/db/teams/add", (req, res) => {
 });
 
 // 4. Teams Delete
-app.post("/api/db/teams/delete", (req, res) => {
+app.post("/api/db/teams/delete", async (req, res) => {
   const auth = checkDepartmentPermission(req, res, 'dep-5', 'delete_data', 'حذف الفرق التطوعية');
   if (!auth.allowed) return;
 
-  const db = readDb();
   const { id } = req.body;
-  const team = db.teams.find((t: any) => t.id === id);
-  db.teams = db.teams.filter((t: any) => t.id !== id);
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: auth.context.userName || "إدارة التطوع",
-    action: `حذف الفريق التطوعي: ${team ? team.nameAr : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+  if (!id) return res.status(400).json({ error: "Missing team id" });
+
+  try {
+    await mutateDb((db) => {
+      const team = db.teams.find((t: any) => t.id === id);
+      db.teams = db.teams.filter((t: any) => t.id !== id);
+      recordDeletedEntity(db, id, "teams", auth.context.userName || "إدارة التطوع");
+
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: auth.context.userName || "إدارة التطوع",
+        action: `حذف الفريق التطوعي: ${team ? team.nameAr : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+    });
+    res.json(readDb());
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete team", details: err?.message });
+  }
 });
 
 // 5. Volunteers Add/Edit
@@ -6683,24 +6884,32 @@ app.post("/api/db/volunteers/add", (req, res) => {
 });
 
 // 6. Volunteers Delete
-app.post("/api/db/volunteers/delete", (req, res) => {
+app.post("/api/db/volunteers/delete", async (req, res) => {
   const auth = checkDepartmentPermission(req, res, 'dep-5', 'delete_data', 'ملف المتطوع');
   if (!auth.allowed) return;
 
-  const db = readDb();
   const { id } = req.body;
-  const vol = db.volunteers.find((v: any) => v.id === id);
-  db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: auth.context.userName || "إدارة التطوع",
-    action: `حذف ملف المتطوع: ${vol ? vol.name : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+  if (!id) return res.status(400).json({ error: "Missing volunteer id" });
+
+  try {
+    await mutateDb((db) => {
+      const vol = db.volunteers.find((v: any) => v.id === id);
+      db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
+      recordDeletedEntity(db, id, "volunteers", auth.context.userName || "إدارة التطوع");
+
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: auth.context.userName || "إدارة التطوع",
+        action: `حذف ملف المتطوع: ${vol ? vol.name : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+    });
+    res.json(readDb());
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete volunteer", details: err?.message });
+  }
 });
 
 // 7. Volunteers Import (Batch)
@@ -8135,6 +8344,17 @@ app.post("/api/db/auth/login", (req, res) => {
   identifier = identifier.trim();
   password = password.trim();
 
+  // Rate Limiting Protection (Anti-Brute Force)
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const rateLimitKey = `${clientIp}:${identifier.toLowerCase()}`;
+  const rateCheck = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: `تم تجاوز الحد المسموح به لمحاولات تسجيل الدخول. يرجى الانتظار لمدة ${rateCheck.retryAfterSec} ثانية قبل المحاولة مجدداً.`,
+      retryAfterSec: rateCheck.retryAfterSec
+    });
+  }
+
   // Explicit wrong password test trap
   if (password === "wrongpassword" || password === "error") {
     return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -8159,7 +8379,7 @@ app.post("/api/db/auth/login", (req, res) => {
   };
 
   const verifyPassword = (targetPassword?: string, targetHash?: string) => {
-    if (!targetPassword && !targetHash) return true; // Default mock record acceptance
+    if (!targetPassword && !targetHash) return false; // Never accept credentials if account has no password set
     if (targetHash) return verifyPasswordAgainstHash(password, targetHash);
     return verifyPasswordAgainstHash(password, targetPassword);
   };
@@ -8818,8 +9038,8 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
   } catch (netErr: any) {
     console.error("[Google Auth] Network error verifying token with Google:", netErr);
 
-    // Fallback in non-production environments if Google server is temporarily unreachable from sandbox
-    if (process.env.NODE_ENV !== 'production' && cleanCred.includes('.')) {
+    // Fallback ONLY when explicit offline flag is enabled in dev environment
+    if (process.env.ALLOW_DEV_JWT_FALLBACK === 'true' && process.env.NODE_ENV !== 'production' && cleanCred.includes('.')) {
       try {
         const parts = cleanCred.split('.');
         if (parts.length === 3) {
@@ -9155,6 +9375,15 @@ app.post("/api/db/auth/google", async (req, res) => {
 
 // Endpoint: Complete New Google User Registration (Volunteer or Beneficiary ONLY - Status: Pending Review)
 app.post("/api/db/auth/google/complete-registration", async (req, res) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: `تم تجاوز الحد المسموح به لطلبات التسجيل عبر Google. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
+      retryAfterSec: rateCheck.retryAfterSec
+    });
+  }
+
   const db = readDb();
   if (db.systemSettings?.maintenanceMode === true || db.systemSettings?.maintenance_mode === 1 || db.maintenance_mode === 1) {
     return res.status(403).json({
@@ -9215,148 +9444,146 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
     return res.status(400).json({ error: "يجب الموافقة والتعهد على صحة البيانات وميثاق الجمعية لإتمام التسجيل." });
   }
 
-  // 4. Strict Duplicate Account Prevention across ALL Database Collections
-  // Check Duplicate Email
-  const emailExists = 
-    (db.userDepartmentAccess || []).some((u: any) => u.userEmail?.toLowerCase().trim() === cleanEmail || u.email?.toLowerCase().trim() === cleanEmail) ||
-    (db.employees || []).some((e: any) => e.email?.toLowerCase().trim() === cleanEmail) ||
-    (db.departments || []).some((d: any) => d.email?.toLowerCase().trim() === cleanEmail) ||
-    (db.teams || []).some((t: any) => t.leaderEmail?.toLowerCase().trim() === cleanEmail || t.email?.toLowerCase().trim() === cleanEmail) ||
-    (db.volunteers || []).some((v: any) => v.email?.toLowerCase().trim() === cleanEmail) ||
-    (db.beneficiaries || []).some((b: any) => b.email?.toLowerCase().trim() === cleanEmail) ||
-    (db.storekeepers || []).some((sk: any) => sk.email?.toLowerCase().trim() === cleanEmail);
-
-  if (emailExists) {
-    return res.status(400).json({
-      error: "البريد الإلكتروني مسجل مسبقًا في النظام. يرجى تسجيل الدخول مباشرة بالحساب المسجل."
-    });
-  }
-
-  // Check Duplicate National ID
-  const nationalIdExists = 
-    (db.userDepartmentAccess || []).some((u: any) => u.nationalId && u.nationalId.trim() === cleanNationalId) ||
-    (db.employees || []).some((e: any) => e.nationalId && e.nationalId.trim() === cleanNationalId) ||
-    (db.departments || []).some((d: any) => d.nationalId && d.nationalId.trim() === cleanNationalId) ||
-    (db.teams || []).some((t: any) => t.nationalId && t.nationalId.trim() === cleanNationalId) ||
-    (db.volunteers || []).some((v: any) => v.nationalId && v.nationalId.trim() === cleanNationalId) ||
-    (db.beneficiaries || []).some((b: any) => b.nationalId && b.nationalId.trim() === cleanNationalId) ||
-    (db.storekeepers || []).some((sk: any) => sk.nationalId && sk.nationalId.trim() === cleanNationalId);
-
-  if (nationalIdExists) {
-    return res.status(400).json({
-      error: "رقم الهوية الوطنية مسجل مسبقًا في النظام. لا يمكن إنشاء حساب مكرر، يرجى مراجعة إدارة الجمعية."
-    });
-  }
-
-  // 5. Create Record strictly in "pending" status (غير نشط / قيد المراجعة)
-  // Absolutely NO administrative privileges are granted.
-  const newId = (accountType === 'volunteer' ? 'vol-google-' : 'ben-google-') + Date.now();
-  const nowIso = new Date().toISOString();
-
-  if (accountType === 'volunteer') {
-    db.volunteers = db.volunteers || [];
-    const seq = String(db.volunteers.length + 1).padStart(4, "0");
-    const chosenTeamId = teamId || (db.teams?.[0]?.id || "team-1");
-    const chosenTeam = (db.teams || []).find((t: any) => t.id === chosenTeamId);
-
-    const newVolunteer = {
-      id: newId,
-      name: name.trim(),
-      email: cleanEmail,
-      nationalId: cleanNationalId,
-      phone: cleanPhone,
-      birthDate: birthDate || "",
-      gender: gender || "male",
-      address: address || "مكة المكرمة - مخطط العسيلة",
-      membershipNumber: `V-2026-${seq}`,
-      teamId: chosenTeamId,
-      teamName: chosenTeam?.nameAr || "الفريق التطوعي العام",
-      departmentId: departmentId || "dep-5",
-      bloodType: bloodType || "O+",
-      hasChronicIllness: !!hasChronicIllness,
-      illnessDetails: illnessDetails || "",
-      experiences: experiences || "",
-      role: "volunteer",
-      status: "pending", // STRICTLY PENDING - CANNOT ACCESS DASHBOARD UNTIL APPROVED!
-      points: 0,
-      authProvider: "google",
-      createdAt: nowIso,
-      updatedAt: nowIso
-    };
-
-    db.volunteers.push(newVolunteer);
-
-    if (!db.logs) db.logs = [];
-    db.logs.unshift({
-      id: "log-" + Date.now(),
-      timestamp: nowIso,
-      user: newVolunteer.name,
-      action: `طلب تسجيل متطوع جديد عبر Google: ${newVolunteer.name} (الهوية: ${cleanNationalId}) - قيد المراجعة والاعتماد`,
-      ip: req.ip || "127.0.0.1",
-      device: (req.headers["user-agent"] || "Google Registration").substring(0, 100)
-    });
-  } else {
-    // Beneficiary
-    db.beneficiaries = db.beneficiaries || [];
-    const newBeneficiary = {
-      id: newId,
-      name: name.trim(),
-      email: cleanEmail,
-      nationalId: cleanNationalId,
-      phone: cleanPhone,
-      birthDate: birthDate || "",
-      gender: gender || "male",
-      address: address || "مكة المكرمة - مخطط العسيلة",
-      familySize: Number(familySize) || 1,
-      category: category || "عام",
-      monthlyIncome: Number(monthlyIncome) || 0,
-      housingType: housingType || "إيجار",
-      role: "beneficiary",
-      status: "pending", // STRICTLY PENDING - CANNOT ACCESS AID/DASHBOARD UNTIL APPROVED!
-      authProvider: "google",
-      createdAt: nowIso,
-      updatedAt: nowIso
-    };
-
-    db.beneficiaries.push(newBeneficiary);
-
-    if (!db.logs) db.logs = [];
-    db.logs.unshift({
-      id: "log-" + Date.now(),
-      timestamp: nowIso,
-      user: newBeneficiary.name,
-      action: `طلب تسجيل مستفيد جديد عبر Google: ${newBeneficiary.name} (الهوية: ${cleanNationalId}) - قيد المراجعة والبحث الاجتماعي`,
-      ip: req.ip || "127.0.0.1",
-      device: (req.headers["user-agent"] || "Google Registration").substring(0, 100)
-    });
-  }
-
-  writeDb(db);
-
-  // Send acknowledgement email to user
   try {
-    await sendCentralEmail(db, {
-      to: cleanEmail,
-      recipientName: name.trim(),
-      subject: `تم استلام طلب تسجيلك كـ (${accountType === 'volunteer' ? 'متطوع' : 'مستفيد'}) - جمعية ريادة العطاء`,
-      templateType: accountType === 'volunteer' ? 'volunteer_application_received' : 'new_account',
-      templateData: {
-        name: name.trim(),
-        email: cleanEmail,
-        role: accountType === 'volunteer' ? 'متطوع (قيد المراجعة)' : 'مستفيد (قيد المراجعة)',
-        status: 'قيد المراجعة والاعتماد'
+    await mutateDb(async (liveDb) => {
+      // 4. Strict Duplicate Account Prevention across ALL Database Collections
+      const emailExists = 
+        (liveDb.userDepartmentAccess || []).some((u: any) => u.userEmail?.toLowerCase().trim() === cleanEmail || u.email?.toLowerCase().trim() === cleanEmail) ||
+        (liveDb.employees || []).some((e: any) => e.email?.toLowerCase().trim() === cleanEmail) ||
+        (liveDb.departments || []).some((d: any) => d.email?.toLowerCase().trim() === cleanEmail) ||
+        (liveDb.teams || []).some((t: any) => t.leaderEmail?.toLowerCase().trim() === cleanEmail || t.email?.toLowerCase().trim() === cleanEmail) ||
+        (liveDb.volunteers || []).some((v: any) => v.email?.toLowerCase().trim() === cleanEmail) ||
+        (liveDb.beneficiaries || []).some((b: any) => b.email?.toLowerCase().trim() === cleanEmail) ||
+        (liveDb.storekeepers || []).some((sk: any) => sk.email?.toLowerCase().trim() === cleanEmail);
+
+      if (emailExists) {
+        throw new Error("البريد الإلكتروني مسجل مسبقًا في النظام. يرجى تسجيل الدخول مباشرة بالحساب المسجل.");
+      }
+
+      // Check Duplicate National ID
+      const nationalIdExists = 
+        (liveDb.userDepartmentAccess || []).some((u: any) => u.nationalId && u.nationalId.trim() === cleanNationalId) ||
+        (liveDb.employees || []).some((e: any) => e.nationalId && e.nationalId.trim() === cleanNationalId) ||
+        (liveDb.departments || []).some((d: any) => d.nationalId && d.nationalId.trim() === cleanNationalId) ||
+        (liveDb.teams || []).some((t: any) => t.nationalId && t.nationalId.trim() === cleanNationalId) ||
+        (liveDb.volunteers || []).some((v: any) => v.nationalId && v.nationalId.trim() === cleanNationalId) ||
+        (liveDb.beneficiaries || []).some((b: any) => b.nationalId && b.nationalId.trim() === cleanNationalId) ||
+        (liveDb.storekeepers || []).some((sk: any) => sk.nationalId && sk.nationalId.trim() === cleanNationalId);
+
+      if (nationalIdExists) {
+        throw new Error("رقم الهوية الوطنية مسجل مسبقًا في النظام. لا يمكن إنشاء حساب مكرر، يرجى مراجعة إدارة الجمعية.");
+      }
+
+      // 5. Create Record strictly in "pending" status (غير نشط / قيد المراجعة)
+      const newId = (accountType === 'volunteer' ? 'vol-google-' : 'ben-google-') + Date.now();
+      const nowIso = new Date().toISOString();
+
+      if (accountType === 'volunteer') {
+        liveDb.volunteers = liveDb.volunteers || [];
+        const seq = String(liveDb.volunteers.length + 1).padStart(4, "0");
+        const chosenTeamId = teamId || (liveDb.teams?.[0]?.id || "team-1");
+        const chosenTeam = (liveDb.teams || []).find((t: any) => t.id === chosenTeamId);
+
+        const newVolunteer = {
+          id: newId,
+          name: name.trim(),
+          email: cleanEmail,
+          nationalId: cleanNationalId,
+          phone: cleanPhone,
+          birthDate: birthDate || "",
+          gender: gender || "male",
+          address: address || "مكة المكرمة - مخطط العسيلة",
+          membershipNumber: `V-2026-${seq}`,
+          teamId: chosenTeamId,
+          teamName: chosenTeam?.nameAr || "الفريق التطوعي العام",
+          departmentId: departmentId || "dep-5",
+          bloodType: bloodType || "O+",
+          hasChronicIllness: !!hasChronicIllness,
+          illnessDetails: illnessDetails || "",
+          experiences: experiences || "",
+          role: "volunteer",
+          status: "pending", // STRICTLY PENDING - CANNOT ACCESS DASHBOARD UNTIL APPROVED!
+          points: 0,
+          authProvider: "google",
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+
+        liveDb.volunteers.push(newVolunteer);
+
+        if (!liveDb.logs) liveDb.logs = [];
+        liveDb.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: nowIso,
+          user: newVolunteer.name,
+          action: `طلب تسجيل متطوع جديد عبر Google: ${newVolunteer.name} (الهوية: ${cleanNationalId}) - قيد المراجعة والاعتماد`,
+          ip: req.ip || "127.0.0.1",
+          device: (req.headers["user-agent"] || "Google Registration").substring(0, 100)
+        });
+      } else {
+        // Beneficiary
+        liveDb.beneficiaries = liveDb.beneficiaries || [];
+        const newBeneficiary = {
+          id: newId,
+          name: name.trim(),
+          email: cleanEmail,
+          nationalId: cleanNationalId,
+          phone: cleanPhone,
+          birthDate: birthDate || "",
+          gender: gender || "male",
+          address: address || "مكة المكرمة - مخطط العسيلة",
+          familySize: Number(familySize) || 1,
+          category: category || "عام",
+          monthlyIncome: Number(monthlyIncome) || 0,
+          housingType: housingType || "إيجار",
+          role: "beneficiary",
+          status: "pending", // STRICTLY PENDING - CANNOT ACCESS AID/DASHBOARD UNTIL APPROVED!
+          authProvider: "google",
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+
+        liveDb.beneficiaries.push(newBeneficiary);
+
+        if (!liveDb.logs) liveDb.logs = [];
+        liveDb.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: nowIso,
+          user: newBeneficiary.name,
+          action: `طلب تسجيل مستفيد جديد عبر Google: ${newBeneficiary.name} (الهوية: ${cleanNationalId}) - قيد المراجعة والبحث الاجتماعي`,
+          ip: req.ip || "127.0.0.1",
+          device: (req.headers["user-agent"] || "Google Registration").substring(0, 100)
+        });
       }
     });
-  } catch (emailErr) {
-    console.warn("[Registration Email] Notice:", emailErr);
-  }
 
-  // Notice: We DO NOT issue a sessionToken here. The account is pending review!
-  return res.json({
-    status: "pending_approval",
-    accountType,
-    message: "تم استلام وتقديم طلب التسجيل بنجاح! حسابك الآن قيد المراجعة والاعتماد من قبل إدارة الجمعية. لا يمكن استخدام صلاحيات الحساب قبل الاعتماد."
-  });
+    // Send acknowledgement email to user
+    try {
+      const refreshedDb = readDb();
+      await sendCentralEmail(refreshedDb, {
+        to: cleanEmail,
+        recipientName: name.trim(),
+        subject: `تم استلام طلب تسجيلك كـ (${accountType === 'volunteer' ? 'متطوع' : 'مستفيد'}) - جمعية ريادة العطاء`,
+        templateType: accountType === 'volunteer' ? 'volunteer_application_received' : 'new_account',
+        templateData: {
+          name: name.trim(),
+          email: cleanEmail,
+          role: accountType === 'volunteer' ? 'متطوع (قيد المراجعة)' : 'مستفيد (قيد المراجعة)',
+          status: 'قيد المراجعة والاعتماد'
+        }
+      });
+    } catch (emailErr) {
+      console.warn("[Registration Email] Notice:", emailErr);
+    }
+
+    return res.json({
+      status: "pending_approval",
+      accountType,
+      message: "تم استلام وتقديم طلب التسجيل بنجاح! حسابك الآن قيد المراجعة والاعتماد من قبل إدارة الجمعية. لا يمكن استخدام صلاحيات الحساب قبل الاعتماد."
+    });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || "فشلت معالجة طلب التسجيل." });
+  }
 });
 
 // ==========================================
@@ -9365,9 +9592,18 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
 
 const OTP_SECRET_SALT = "reyadat_otp_salt_2026_secure";
 
-// 1. Request Password Recovery OTP
+// 1. Request Password Recovery OTP (Anti-Enumeration & Rate-Limited)
 app.post("/api/db/auth/forgot-password", async (req, res) => {
-  const { identifier } = req.body;
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const rateCheck = checkRateLimit('forgotPassword', clientIp, 5, 15 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: `تم تجاوز الحد المسموح به لطلبات استعادة كلمة المرور. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
+      retryAfterSec: rateCheck.retryAfterSec
+    });
+  }
+
+  const identifier = req.body.identifier || req.body.email || req.body.phone;
   if (!identifier || typeof identifier !== "string" || !identifier.trim()) {
     return res.status(400).json({ error: "يرجى إدخال رقم الهوية أو اسم المستخدم أو البريد الإلكتروني." });
   }
@@ -9413,8 +9649,8 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   // 3. Check in departments (Department Directors)
   if (!userEmail) {
     const dep = (db.departments || []).find((d: any) => 
-      (d.email && d.email.toLowerCase() === cleanId) ||
-      (d.directorPhone && d.directorPhone === cleanId) ||
+      (d.email && d.email.toLowerCase() === cleanId) || 
+      (d.directorPhone && d.directorPhone === cleanId) || 
       (d.id && d.id === cleanId) ||
       (`depadmin-${d.id}` === cleanId)
     );
@@ -9429,7 +9665,7 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   if (!userEmail) {
     const team = (db.teams || []).find((t: any) => 
       (t.leaderPhone && t.leaderPhone === cleanId) || 
-      (t.leaderEmail && t.leaderEmail.toLowerCase() === cleanId) ||
+      (t.leaderEmail && t.leaderEmail.toLowerCase() === cleanId) || 
       (t.id && t.id === cleanId)
     );
     if (team) {
@@ -9469,22 +9705,18 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     }
   }
 
-  // Direct email matching
-  if (!userEmail && cleanId.includes("@")) {
-    userEmail = cleanId;
-  }
-
   // Fallback for default admin
-  if (!userEmail && (cleanId === "admin" || cleanId.includes("admin") || cleanId === "1000000000")) {
+  if (!userEmail && (cleanId === "admin" || cleanId === "1000000000")) {
     userEmail = db.emailSettings?.testRecipientEmail || "riadataleata@gmail.com";
     userName = "مجلس الإدارة والمدير التنفيذي";
     targetUserId = "admin-user";
   }
 
-  // Requirement 9: Strict verified email requirement
+  // USER ENUMERATION SHIELD: If identifier not found, return generic success without leaking account existence
   if (!userEmail || !userEmail.includes("@") || !userEmail.trim()) {
-    return res.status(400).json({
-      error: "لا يوجد بريد إلكتروني موثق لهذا الحساب، يرجى التواصل مع الإدارة لتحديث بيانات الحساب."
+    return res.json({
+      status: "success",
+      message: "إذا كان المعرّف المدخل مسجلاً في النظام، فقد تم إرسال تعليمات ورمز استعادة كلمة المرور إلى البريد الإلكتروني المرتبط به."
     });
   }
 
@@ -9518,8 +9750,10 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   const baseUrl = (req.headers.origin as string) || "https://riadataleata.com";
   const resetLink = `${baseUrl}/?resetToken=${otpRecord.resetToken}&email=${encodeURIComponent(userEmail.toLowerCase())}`;
 
+  let emailSendFailed = false;
+  let emailErrorMsg = "";
   try {
-    await sendCentralEmail(db, {
+    const sendRes = await sendCentralEmail(db, {
       to: userEmail,
       recipientName: userName,
       subject: "رمز التحقق OTP ورابط استعادة كلمة المرور - جمعية ريادة العطاء",
@@ -9532,8 +9766,20 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
         securityNote: "هذا الرمز مؤقت وصالح لمدة 15 دقيقة فقط ولا يتم مشاركته مع أي طرف آخر."
       }
     });
-  } catch (emailErr) {
+    if (!sendRes.success && sendRes.provider !== 'simulation') {
+      emailSendFailed = true;
+      emailErrorMsg = sendRes.error || "فشل مزود البريد في إرسال الرسالة.";
+    }
+  } catch (emailErr: any) {
+    emailSendFailed = true;
+    emailErrorMsg = emailErr.message || "خطأ أثناء إرسال البريد.";
     console.error("Failed to send OTP email:", emailErr);
+  }
+
+  if (emailSendFailed) {
+    return res.status(502).json({
+      error: `تعذر إرسال رسالة استعادة كلمة المرور عبر مزود البريد (${emailErrorMsg}). يرجى المحاولة لاحقاً أو مراجعة إدارة الجمعية.`
+    });
   }
 
   // Log audit event
@@ -9564,7 +9810,7 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     status: "success",
     email: userEmail.toLowerCase(),
     maskedEmail,
-    message: `تم إرسال رمز التحقق OTP إلى البريد الإلكتروني (${maskedEmail}) بنجاح. الرمز صالح لمدة 10 دقائق.`
+    message: `إذا كان الحساب مسجلاً لدينا، فقد تم إرسال رمز التحقق OTP إلى البريد الإلكتروني (${maskedEmail}) بنجاح. الرمز صالح لمدة 15 دقيقة.`
   });
 });
 
@@ -10261,25 +10507,31 @@ app.post("/api/departments", (req, res) => {
   res.json({ status: "success", department: dep });
 });
 
-app.delete("/api/departments/:id", (req, res) => {
-  const db = readDb();
+app.delete("/api/departments/:id", async (req, res) => {
   const id = req.params.id;
-  const dep = db.departments.find((d: any) => d.id === id);
-  db.departments = db.departments.filter((d: any) => d.id !== id);
-  // Also delete associated teams? Yes, or set null.
-  db.teams = db.teams.filter((t: any) => t.departmentId !== id);
+  try {
+    await mutateDb((db) => {
+      const dep = db.departments.find((d: any) => d.id === id);
+      db.departments = db.departments.filter((d: any) => d.id !== id);
+      recordDeletedEntity(db, id, "departments", "الإدارة العليا");
 
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "الإدارة العليا",
-    action: `حذف إدارة ومعها الفرق التابعة: ${dep ? dep.nameAr : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
+      const childTeams = db.teams.filter((t: any) => t.departmentId === id);
+      childTeams.forEach((t: any) => recordDeletedEntity(db, t.id, "teams", "الإدارة العليا"));
+      db.teams = db.teams.filter((t: any) => t.departmentId !== id);
 
-  writeDb(db);
-  res.json({ status: "success" });
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: "الإدارة العليا",
+        action: `حذف إدارة ومعها الفرق التابعة: ${dep ? dep.nameAr : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+    });
+    res.json({ status: "success" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete department", details: err?.message });
+  }
 });
 
 // Teams CRUD
@@ -10307,23 +10559,27 @@ app.post("/api/teams", (req, res) => {
   res.json({ status: "success", team });
 });
 
-app.delete("/api/teams/:id", (req, res) => {
-  const db = readDb();
+app.delete("/api/teams/:id", async (req, res) => {
   const id = req.params.id;
-  const team = db.teams.find((t: any) => t.id === id);
-  db.teams = db.teams.filter((t: any) => t.id !== id);
+  try {
+    await mutateDb((db) => {
+      const team = db.teams.find((t: any) => t.id === id);
+      db.teams = db.teams.filter((t: any) => t.id !== id);
+      recordDeletedEntity(db, id, "teams", "الإدارة العليا");
 
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "الإدارة العليا",
-    action: `حذف الفريق التطوعي: ${team ? team.nameAr : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-
-  writeDb(db);
-  res.json({ status: "success" });
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: "الإدارة العليا",
+        action: `حذف الفريق التطوعي: ${team ? team.nameAr : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+    });
+    res.json({ status: "success" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete team", details: err?.message });
+  }
 });
 
 // Volunteers CRUD & Import
@@ -10410,23 +10666,27 @@ app.post("/api/volunteers/batch-create", (req, res) => {
   res.json({ status: "success", count: added.length, volunteers: added });
 });
 
-app.delete("/api/volunteers/:id", (req, res) => {
-  const db = readDb();
+app.delete("/api/volunteers/:id", async (req, res) => {
   const id = req.params.id;
-  const vol = db.volunteers.find((v: any) => v.id === id);
-  db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
+  try {
+    await mutateDb((db) => {
+      const vol = db.volunteers.find((v: any) => v.id === id);
+      db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
+      recordDeletedEntity(db, id, "volunteers", "إدارة التطوع");
 
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "إدارة التطوع",
-    action: `حذف ملف المتطوع: ${vol ? vol.name : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-
-  writeDb(db);
-  res.json({ status: "success" });
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: "إدارة التطوع",
+        action: `حذف ملف المتطوع: ${vol ? vol.name : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+    });
+    res.json({ status: "success" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete volunteer", details: err?.message });
+  }
 });
 
 // Initiatives CRUD
@@ -11290,7 +11550,7 @@ app.post("/api/db/homeSettings", (req, res) => {
 });
 
 // 12.1 Upload and save official license image directly to site storage
-app.post("/api/db/license/upload", (req, res) => {
+app.post("/api/db/license/upload", async (req, res) => {
   try {
     const { imageBase64, licenseNumber } = req.body;
     if (!imageBase64 || typeof imageBase64 !== "string") {
@@ -11317,7 +11577,9 @@ app.post("/api/db/license/upload", (req, res) => {
           fs.mkdirSync(licenseDir, { recursive: true });
         }
         const buffer = Buffer.from(base64Data, "base64");
-        fs.writeFileSync(filePath, buffer);
+        await writeCoordinator.guardAttachmentOperation(() => {
+          fs.writeFileSync(filePath, buffer);
+        });
         localUrl = `/uploads/license/${filename}`;
       } catch (fsErr) {
         console.warn("Could not write file to disk (falling back to base64 storage):", fsErr);
@@ -11735,33 +11997,130 @@ app.post("/api/db/hero-slides/toggle-active", (req, res) => {
   res.json(db);
 });
 
-// 19. Beneficiaries Add/Edit
-app.post("/api/db/beneficiaries/add", (req, res) => {
-  const db = readDb();
-  const ben = req.body;
-  if (!ben.id) {
-    ben.id = "ben-" + Date.now();
-    ben.createdAt = new Date().toISOString();
-    ben.status = ben.status || "pending";
-    db.beneficiaries.push(ben);
+// 19. Beneficiaries Add/Edit (Secured with role validation, duplicate prevention, and atomic mutateDb)
+app.post("/api/db/beneficiaries/add", async (req, res) => {
+  const isEdit = Boolean(req.body && req.body.id);
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+
+  // If edit: strictly require authorized administrative session for dep-4
+  if (isEdit) {
+    const auth = checkDepartmentPermission(req, res, 'dep-4', 'edit_data', 'ملف المستفيد');
+    if (!auth.allowed) return;
   } else {
-    const idx = db.beneficiaries.findIndex((b: any) => b.id === ben.id);
-    if (idx !== -1) {
-      db.beneficiaries[idx] = { ...db.beneficiaries[idx], ...ben };
-    } else {
-      db.beneficiaries.push(ben);
+    // New registration rate limit
+    const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        error: `تم تجاوز الحد المسموح به لطلبات تسجيل المستفيدين. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
+        retryAfterSec: rateCheck.retryAfterSec
+      });
     }
   }
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: ben.name,
-    action: `تسجيل/تعديل حساب مستفيد جديد: ${ben.name} (رقم هوية: ${ben.nationalId})`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+
+  const ben = req.body || {};
+  const cleanNationalId = String(ben.nationalId || '').trim();
+  const cleanName = String(ben.name || '').trim();
+  const cleanPhone = String(ben.phone || '').trim();
+  const cleanEmail = ben.email ? String(ben.email).trim().toLowerCase() : '';
+
+  // Mandatory fields validation on server
+  if (!cleanName || cleanName.length < 3) {
+    return res.status(400).json({ error: "الاسم الكامل للمستفيد مطلوب (3 أحرف على الأقل)." });
+  }
+
+  if (!cleanNationalId || !/^\d{10}$/.test(cleanNationalId)) {
+    return res.status(400).json({ error: "رقم الهوية الوطنية أو الإقامة يجب أن يتكون من 10 أرقام صحيحة." });
+  }
+
+  if (!cleanPhone || cleanPhone.length < 9) {
+    return res.status(400).json({ error: "رقم الجوال مطلوب للتواصل وإرسال الإشعارات." });
+  }
+
+  try {
+    const result = await mutateDb(async (db) => {
+      db.beneficiaries = db.beneficiaries || [];
+
+      // Check duplicates for new registration
+      if (!isEdit) {
+        const idExists = 
+          (db.beneficiaries || []).some((b: any) => b.nationalId && String(b.nationalId).trim() === cleanNationalId) ||
+          (db.volunteers || []).some((v: any) => v.nationalId && String(v.nationalId).trim() === cleanNationalId) ||
+          (db.employees || []).some((e: any) => e.nationalId && String(e.nationalId).trim() === cleanNationalId) ||
+          (db.userDepartmentAccess || []).some((u: any) => u.nationalId && String(u.nationalId).trim() === cleanNationalId);
+
+        if (idExists) {
+          throw new Error("رقم الهوية الوطنية مسجل مسبقًا في النظام. لا يمكن إنشاء حساب مكرر للمستفيد.");
+        }
+
+        if (cleanEmail) {
+          const emailExists = 
+            (db.beneficiaries || []).some((b: any) => b.email && b.email.toLowerCase().trim() === cleanEmail) ||
+            (db.volunteers || []).some((v: any) => v.email && v.email.toLowerCase().trim() === cleanEmail) ||
+            (db.userDepartmentAccess || []).some((u: any) => u.userEmail?.toLowerCase().trim() === cleanEmail);
+          if (emailExists) {
+            throw new Error("البريد الإلكتروني مسجل مسبقًا في النظام.");
+          }
+        }
+
+        const newBen = {
+          ...ben,
+          id: "ben-" + Date.now(),
+          name: cleanName,
+          nationalId: cleanNationalId,
+          phone: cleanPhone,
+          email: cleanEmail || ben.email,
+          role: "beneficiary", // Strictly beneficiary
+          status: "pending",   // Strictly pending approval
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        db.beneficiaries.push(newBen);
+
+        if (!db.logs) db.logs = [];
+        db.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          user: cleanName,
+          action: `تسجيل حساب مستفيد جديد: ${cleanName} (رقم هوية: ${cleanNationalId}) - قيد المراجعة والبحث`,
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "System"
+        });
+
+        return { created: newBen, isEdit: false };
+      } else {
+        // Edit existing
+        const idx = db.beneficiaries.findIndex((b: any) => b.id === ben.id);
+        if (idx !== -1) {
+          db.beneficiaries[idx] = { 
+            ...db.beneficiaries[idx], 
+            ...ben, 
+            id: db.beneficiaries[idx].id, 
+            updatedAt: new Date().toISOString() 
+          };
+        } else {
+          db.beneficiaries.push(ben);
+        }
+
+        if (!db.logs) db.logs = [];
+        db.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          user: ben.name || "إدارة المستفيدين",
+          action: `تعديل ملف المستفيد: ${ben.name || ben.id} (رقم هوية: ${cleanNationalId})`,
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "System"
+        });
+
+        return { isEdit: true };
+      }
+    });
+
+    const refreshedDb = readDb();
+    return res.json(refreshedDb);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || "فشلت عملية حفظ بيانات المستفيد." });
+  }
 });
 
 // 20. Beneficiaries Update Status
@@ -12802,10 +13161,18 @@ app.post("/api/db/social-links/update", (req, res) => {
   res.json(db);
 });
 
-// 23. Volunteer Applications: Submit New Application
-app.post("/api/db/volunteerApplications/submit", (req, res) => {
-  const db = readDb();
-  const appData = req.body;
+// 23. Volunteer Applications: Submit New Application (Atomic mutateDb & Rate Limited)
+app.post("/api/db/volunteerApplications/submit", async (req, res) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const rateCheck = checkRateLimit('registration', clientIp, 20, 30 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: `تم تجاوز الحد المسموح به لتقديم طلبات التطوع. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
+      retryAfterSec: rateCheck.retryAfterSec
+    });
+  }
+
+  const appData = req.body || {};
   
   if (!appData.fullName || !appData.phone || !appData.nationalId) {
     return res.status(400).json({ error: "برجاء استكمال جميع البيانات الأساسية ورقم الهوية ورقم الجوال." });
@@ -12814,196 +13181,225 @@ app.post("/api/db/volunteerApplications/submit", (req, res) => {
   const cleanNationalId = String(appData.nationalId || '').trim();
   const cleanPhone = String(appData.phone || '').trim();
   const cleanEmail = String(appData.email || '').trim().toLowerCase();
+  const cleanFullName = String(appData.fullName || '').trim();
+
+  if (cleanFullName.length < 3) {
+    return res.status(400).json({ error: "الاسم الكامل مطلوب (3 أحرف على الأقل)." });
+  }
+
+  if (!/^\d{10}$/.test(cleanNationalId)) {
+    return res.status(400).json({ error: "رقم الهوية الوطنية أو الإقامة يجب أن يتكون من 10 أرقام صحيحة." });
+  }
+
+  if (cleanPhone.length < 9) {
+    return res.status(400).json({ error: "رقم الجوال يجب أن يتكون من 9 أرقام على الأقل." });
+  }
+
   const opportunityId = appData.opportunityId || appData.opportunity_id || "";
   const opportunityCode = appData.opportunityCode || "";
   const opportunityTitle = appData.opportunityTitle || "";
 
-  // Check if applicant is already an active volunteer in the database
-  db.volunteers = db.volunteers || [];
-  const existingVolunteer = db.volunteers.find((v: any) => 
-    (cleanNationalId && v.nationalId === cleanNationalId) ||
-    (cleanPhone && v.phone === cleanPhone) ||
-    (cleanEmail && v.email && v.email.toLowerCase() === cleanEmail)
-  );
-
-  // If already an approved volunteer and an opportunityId is provided:
-  if (existingVolunteer && opportunityId) {
-    db.initiatives = db.initiatives || [];
-    const init = db.initiatives.find((i: any) => i.id === opportunityId || i.opportunityCode === opportunityId || (opportunityCode && i.opportunityCode === opportunityCode));
-    
-    if (init) {
-      init.acceptedVolunteerIds = init.acceptedVolunteerIds || [];
-      init.applicantVolunteerIds = init.applicantVolunteerIds || [];
-      init.waitlistVolunteerIds = init.waitlistVolunteerIds || [];
-
-      // Check if already registered in this opportunity
-      const isAlreadyInInit = init.acceptedVolunteerIds.includes(existingVolunteer.id) ||
-        init.applicantVolunteerIds.includes(existingVolunteer.id) ||
-        init.waitlistVolunteerIds.includes(existingVolunteer.id);
-
-      const existingReq = (db.requests || []).find((r: any) => 
-        r.volunteerId === existingVolunteer.id && 
-        (r.initiativeId === init.id || r.initiativeId === opportunityId) &&
-        r.status !== 'rejected'
+  try {
+    const outcome = await mutateDb(async (db) => {
+      // Check if applicant is already an active volunteer in the database
+      db.volunteers = db.volunteers || [];
+      const existingVolunteer = db.volunteers.find((v: any) => 
+        (cleanNationalId && v.nationalId === cleanNationalId) ||
+        (cleanPhone && v.phone === cleanPhone) ||
+        (cleanEmail && v.email && v.email.toLowerCase() === cleanEmail)
       );
 
-      if (isAlreadyInInit || existingReq) {
-        return res.status(400).json({
-          error: "أنت مسجل مسبقاً في هذه الفرصة.",
-          alreadyRegistered: true
-        });
-      }
+      // If already an approved volunteer and an opportunityId is provided:
+      if (existingVolunteer && opportunityId) {
+        db.initiatives = db.initiatives || [];
+        const init = db.initiatives.find((i: any) => i.id === opportunityId || i.opportunityCode === opportunityId || (opportunityCode && i.opportunityCode === opportunityCode));
+        
+        if (init) {
+          init.acceptedVolunteerIds = init.acceptedVolunteerIds || [];
+          init.applicantVolunteerIds = init.applicantVolunteerIds || [];
+          init.waitlistVolunteerIds = init.waitlistVolunteerIds || [];
 
-      // Add to initiative applicants/accepted
-      const isFull = (init.acceptedVolunteerIds.length >= (init.neededCount || 10));
-      if (!isFull) {
-        init.acceptedVolunteerIds.push(existingVolunteer.id);
-        init.acceptedCount = init.acceptedVolunteerIds.length;
-        if (init.acceptedCount >= (init.neededCount || 10)) {
-          init.registrationStatus = 'full';
+          // Check if already registered in this opportunity
+          const isAlreadyInInit = init.acceptedVolunteerIds.includes(existingVolunteer.id) ||
+            init.applicantVolunteerIds.includes(existingVolunteer.id) ||
+            init.waitlistVolunteerIds.includes(existingVolunteer.id);
+
+          const existingReq = (db.requests || []).find((r: any) => 
+            r.volunteerId === existingVolunteer.id && 
+            (r.initiativeId === init.id || r.initiativeId === opportunityId) &&
+            r.status !== 'rejected'
+          );
+
+          if (isAlreadyInInit || existingReq) {
+            throw new Error("ALREADY_REGISTERED:أنت مسجل مسبقاً في هذه الفرصة.");
+          }
+
+          // Add to initiative applicants/accepted
+          const isFull = (init.acceptedVolunteerIds.length >= (init.neededCount || 10));
+          if (!isFull) {
+            init.acceptedVolunteerIds.push(existingVolunteer.id);
+            init.acceptedCount = init.acceptedVolunteerIds.length;
+            if (init.acceptedCount >= (init.neededCount || 10)) {
+              init.registrationStatus = 'full';
+            }
+          } else {
+            init.waitlistVolunteerIds.push(existingVolunteer.id);
+            init.waitlistCount = init.waitlistVolunteerIds.length;
+          }
+
+          if (!init.applicantVolunteerIds.includes(existingVolunteer.id)) {
+            init.applicantVolunteerIds.push(existingVolunteer.id);
+          }
+
+          db.requests = db.requests || [];
+          db.requests.unshift({
+            id: "req-" + Date.now(),
+            volunteerId: existingVolunteer.id,
+            volunteerName: existingVolunteer.name,
+            teamId: init.teamId || existingVolunteer.teamId || "team-1",
+            departmentId: init.departmentId || existingVolunteer.departmentId || "dep-5",
+            initiativeId: init.id,
+            initiativeName: init.name,
+            status: isFull ? 'waitlist' : 'accepted',
+            date: new Date().toISOString().split('T')[0]
+          });
+
+          db.logs.unshift({
+            id: "log-" + Date.now(),
+            timestamp: new Date().toISOString(),
+            user: existingVolunteer.name,
+            action: `تسجيل المتطوع المعتمد في الفرصة (${init.name}) - تم التعرف التلقائي على حسابه`,
+            ip: req.ip || "127.0.0.1",
+            device: req.headers["user-agent"] || "System"
+          });
+
+          return {
+            isExistingVolunteer: true,
+            message: `مرحباً بك ${existingVolunteer.name}! تم تسجيلك بنجاح في الفرصة (${init.name}) بصفتك متطوعاً معتمداً.`,
+            volunteer: existingVolunteer
+          };
         }
-      } else {
-        init.waitlistVolunteerIds.push(existingVolunteer.id);
-        init.waitlistCount = init.waitlistVolunteerIds.length;
       }
 
-      if (!init.applicantVolunteerIds.includes(existingVolunteer.id)) {
-        init.applicantVolunteerIds.push(existingVolunteer.id);
+      // Check if there is already a pending or accepted application for this person on the same opportunity
+      db.volunteerApplications = db.volunteerApplications || [];
+      if (opportunityId) {
+        const duplicateApp = db.volunteerApplications.find((a: any) => 
+          (a.opportunityId === opportunityId || a.opportunityCode === opportunityCode) &&
+          (a.nationalId === cleanNationalId || a.phone === cleanPhone) &&
+          a.status !== 'rejected'
+        );
+
+        if (duplicateApp) {
+          throw new Error("ALREADY_REGISTERED:أنت مسجل مسبقاً في هذه الفرصة.");
+        }
       }
 
-      db.requests = db.requests || [];
-      db.requests.unshift({
-        id: "req-" + Date.now(),
-        volunteerId: existingVolunteer.id,
-        volunteerName: existingVolunteer.name,
-        teamId: init.teamId || existingVolunteer.teamId || "team-1",
-        departmentId: init.departmentId || existingVolunteer.departmentId || "dep-5",
-        initiativeId: init.id,
-        initiativeName: init.name,
-        status: isFull ? 'waitlist' : 'accepted',
-        date: new Date().toISOString().split('T')[0]
-      });
+      // Calculate age if birthDate is provided
+      let calculatedAge = appData.age || 20;
+      if (appData.birthDate) {
+        const birthYear = new Date(appData.birthDate).getFullYear();
+        if (!isNaN(birthYear)) {
+          calculatedAge = Math.max(15, new Date().getFullYear() - birthYear);
+        }
+      }
 
+      // Generate unique file number
+      const seqNumber = String(db.volunteerApplications.length + 1).padStart(3, "0");
+      const fileNumber = appData.fileNumber || `FILE-${new Date().getFullYear()}-${seqNumber}`;
+
+      // Resolve requested team from existing teams in database
+      const rawTeamId = appData.requestedTeamId || appData.assignedTeamId || "";
+      const foundTeam = (db.teams || []).find((t: any) => t.id === rawTeamId);
+      const requestedTeamId = foundTeam ? foundTeam.id : rawTeamId;
+      const requestedTeamName = foundTeam ? foundTeam.nameAr : (appData.requestedTeamName || "");
+
+      const newApp: VolunteerApplication = {
+        id: appData.id || "app-" + Date.now(),
+        fullName: cleanFullName,
+        nationalId: cleanNationalId,
+        fileNumber: fileNumber,
+        gender: appData.gender || "male",
+        nationality: appData.nationality || "سعودي",
+        birthDate: appData.birthDate || "2000-01-01",
+        age: calculatedAge,
+        phone: cleanPhone,
+        email: cleanEmail,
+        position: appData.position || "متطوع",
+        joinDate: appData.joinDate || new Date().toISOString().split('T')[0],
+        address: appData.address || "مكة المكرمة - مخطط العسيلة",
+        bloodType: appData.bloodType || "O+",
+        hasChronicIllness: !!appData.hasChronicIllness,
+        illnessDetails: appData.illnessDetails || "",
+        guardianName: appData.guardianName || "",
+        guardianPhone: appData.guardianPhone || "",
+        photo: appData.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop",
+        idPhoto: appData.idPhoto || "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&h=250&fit=crop",
+        charterPdfUrl: appData.charterPdfUrl || "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+        charterPdfName: appData.charterPdfName || `ميثاق_تطوع_${cleanFullName.replace(/\s+/g, '_')}.pdf`,
+        experiences: appData.experiences || "",
+        agreedToTerms: !!appData.agreedToTerms,
+        status: "pending", // STRICTLY PENDING
+        appliedAt: new Date().toISOString(),
+        requestedTeamId: requestedTeamId,
+        requestedTeamName: requestedTeamName,
+        assignedTeamId: requestedTeamId,
+        opportunityId: opportunityId || undefined,
+        opportunityCode: opportunityCode || undefined,
+        opportunityTitle: opportunityTitle || undefined
+      };
+
+      db.volunteerApplications.unshift(newApp);
+
+      // System audit log
       db.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: new Date().toISOString(),
-        user: existingVolunteer.name,
-        action: `تسجيل المتطوع المعتمد في الفرصة (${init.name}) - تم التعرف التلقائي على حسابه`,
+        user: `المتقدم ${newApp.fullName}`,
+        action: `تقديم طلب انضمام جديد كمتطوع ${opportunityTitle ? `للفرصة (${opportunityTitle})` : ''} (الهوية: ${newApp.nationalId} - الملف: ${newApp.fileNumber}) - ينتظر المراجعة`,
         ip: req.ip || "127.0.0.1",
         device: req.headers["user-agent"] || "System"
       });
 
-      writeDb(db);
+      // Central Email: Send confirmation to applicant
+      if (appData.email && appData.email.includes("@")) {
+        sendCentralEmail(db, {
+          to: appData.email.trim(),
+          recipientName: newApp.fullName,
+          subject: `تم استلام طلب انضمامك للتطوع (#${newApp.fileNumber}) - ريادة العطاء`,
+          templateType: "volunteer_application_received",
+          templateData: {
+            applicationNumber: newApp.fileNumber,
+            teamName: requestedTeamName || "إدارة التطوع",
+            recipientName: newApp.fullName
+          }
+        }).catch(err => console.error("Volunteer submit email error:", err));
+      }
+
+      return { isExistingVolunteer: false, application: newApp };
+    });
+
+    const refreshedDb = readDb();
+    if (outcome.isExistingVolunteer) {
       return res.json({
         status: "success",
         isExistingVolunteer: true,
-        message: `مرحباً بك ${existingVolunteer.name}! تم تسجيلك بنجاح في الفرصة (${init.name}) بصفتك متطوعاً معتمداً.`,
-        volunteer: existingVolunteer,
-        db
+        message: outcome.message,
+        volunteer: outcome.volunteer,
+        db: refreshedDb
       });
+    } else {
+      return res.json({ status: "success", application: outcome.application, db: refreshedDb });
     }
-  }
-
-  // Check if there is already a pending or accepted application for this person on the same opportunity
-  db.volunteerApplications = db.volunteerApplications || [];
-  if (opportunityId) {
-    const duplicateApp = db.volunteerApplications.find((a: any) => 
-      (a.opportunityId === opportunityId || a.opportunityCode === opportunityCode) &&
-      (a.nationalId === cleanNationalId || a.phone === cleanPhone) &&
-      a.status !== 'rejected'
-    );
-
-    if (duplicateApp) {
+  } catch (err: any) {
+    if (err.message && err.message.startsWith("ALREADY_REGISTERED:")) {
       return res.status(400).json({
-        error: "أنت مسجل مسبقاً في هذه الفرصة.",
+        error: err.message.replace("ALREADY_REGISTERED:", ""),
         alreadyRegistered: true
       });
     }
+    return res.status(400).json({ error: err.message || "فشلت معالجة طلب التطوع." });
   }
-
-  // Calculate age if birthDate is provided
-  let calculatedAge = appData.age || 20;
-  if (appData.birthDate) {
-    const birthYear = new Date(appData.birthDate).getFullYear();
-    if (!isNaN(birthYear)) {
-      calculatedAge = Math.max(15, new Date().getFullYear() - birthYear);
-    }
-  }
-
-  // Generate unique file number
-  const seqNumber = String(db.volunteerApplications.length + 1).padStart(3, "0");
-  const fileNumber = appData.fileNumber || `FILE-${new Date().getFullYear()}-${seqNumber}`;
-
-  // Resolve requested team from existing teams in database
-  const rawTeamId = appData.requestedTeamId || appData.assignedTeamId || "";
-  const foundTeam = (db.teams || []).find((t: any) => t.id === rawTeamId);
-  const requestedTeamId = foundTeam ? foundTeam.id : rawTeamId;
-  const requestedTeamName = foundTeam ? foundTeam.nameAr : (appData.requestedTeamName || "");
-
-  const newApp: VolunteerApplication = {
-    id: appData.id || "app-" + Date.now(),
-    fullName: appData.fullName,
-    nationalId: cleanNationalId,
-    fileNumber: fileNumber,
-    gender: appData.gender || "male",
-    nationality: appData.nationality || "سعودي",
-    birthDate: appData.birthDate || "2000-01-01",
-    age: calculatedAge,
-    phone: cleanPhone,
-    email: cleanEmail,
-    position: appData.position || "متطوع",
-    joinDate: appData.joinDate || new Date().toISOString().split('T')[0],
-    address: appData.address || "مكة المكرمة - مخطط العسيلة",
-    bloodType: appData.bloodType || "O+",
-    hasChronicIllness: !!appData.hasChronicIllness,
-    illnessDetails: appData.illnessDetails || "",
-    guardianName: appData.guardianName || "",
-    guardianPhone: appData.guardianPhone || "",
-    photo: appData.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop",
-    idPhoto: appData.idPhoto || "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&h=250&fit=crop",
-    charterPdfUrl: appData.charterPdfUrl || "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    charterPdfName: appData.charterPdfName || `ميثاق_تطوع_${appData.fullName.replace(/\s+/g, '_')}.pdf`,
-    experiences: appData.experiences || "",
-    agreedToTerms: !!appData.agreedToTerms,
-    status: "pending",
-    appliedAt: new Date().toISOString(),
-    requestedTeamId: requestedTeamId,
-    requestedTeamName: requestedTeamName,
-    assignedTeamId: requestedTeamId,
-    opportunityId: opportunityId || undefined,
-    opportunityCode: opportunityCode || undefined,
-    opportunityTitle: opportunityTitle || undefined
-  };
-
-  db.volunteerApplications.unshift(newApp);
-
-  // System audit log
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: `المتقدم ${newApp.fullName}`,
-    action: `تقديم طلب انضمام جديد كمتطوع ${opportunityTitle ? `للفرصة (${opportunityTitle})` : ''} (الهوية: ${newApp.nationalId} - الملف: ${newApp.fileNumber}) - ينتظر المراجعة`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-
-  // Central Email: Send confirmation to applicant
-  if (appData.email && appData.email.includes("@")) {
-    sendCentralEmail(db, {
-      to: appData.email.trim(),
-      recipientName: newApp.fullName,
-      subject: `تم استلام طلب انضمامك للتطوع (#${newApp.fileNumber}) - ريادة العطاء`,
-      templateType: "volunteer_application_received",
-      templateData: {
-        applicationNumber: newApp.fileNumber,
-        teamName: requestedTeamName || "إدارة التطوع",
-        recipientName: newApp.fullName
-      }
-    }).catch(err => console.error("Volunteer submit email error:", err));
-  }
-
-  writeDb(db);
-  res.json({ status: "success", application: newApp, db });
 });
 
 // 24. Volunteer Applications: Accept Application & Add to Active Volunteers

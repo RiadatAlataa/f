@@ -1,6 +1,6 @@
 import path from "path";
 import express from "express";
-import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath } from "./server-core";
+import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb } from "./server-core";
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
@@ -57,4 +57,4 @@ if (!isServerlessEnv) {
 }
 
 export default app;
-export { app, readDb, writeDb, findSourceDbJson, getActiveDbPath };
+export { app, readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb };

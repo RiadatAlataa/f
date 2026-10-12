@@ -228,6 +228,36 @@
       "pastVolunteerHours": 140,
       "initiativesCount": 5,
       "points": 850
+    },
+    {
+      "id": "team-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "name": "فريق دورة الحياة",
+      "status": "active"
+    },
+    {
+      "id": "team-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "name": "فريق دورة الحياة",
+      "status": "active"
+    },
+    {
+      "id": "team-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "name": "فريق دورة الحياة",
+      "status": "active"
+    },
+    {
+      "id": "team-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "name": "فريق دورة الحياة",
+      "status": "active"
+    },
+    {
+      "id": "team-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "name": "فريق دورة الحياة",
+      "status": "active"
     }
   ],
   "volunteers": [
@@ -533,6 +563,34 @@
       "authProvider": "google",
       "createdAt": "2026-10-07T23:32:45.557Z",
       "updatedAt": "2026-10-07T23:32:45.557Z"
+    },
+    {
+      "id": "vol-conc-1791822444292-2jyn",
+      "nationalId": "1055555555",
+      "name": "متطوع تنافسي تجريبي",
+      "email": "conc_reg1@synth.org.sa",
+      "status": "pending"
+    },
+    {
+      "id": "vol-conc-1791822665551-gbg6",
+      "nationalId": "1066552915",
+      "name": "متطوع تنافسي تجريبي",
+      "email": "conc_reg1@synth.org.sa",
+      "status": "pending"
+    },
+    {
+      "id": "vol-conc-1791823177945-4rfb",
+      "nationalId": "1017792352",
+      "name": "متطوع تنافسي تجريبي",
+      "email": "conc_reg1@synth.org.sa",
+      "status": "pending"
+    },
+    {
+      "id": "vol-conc-1791823589008-z4du",
+      "nationalId": "1058898857",
+      "name": "متطوع تنافسي تجريبي",
+      "email": "conc_reg1@synth.org.sa",
+      "status": "pending"
     }
   ],
   "initiatives": [
@@ -3487,6 +3545,41 @@
         "vol-1",
         "vol-5"
       ]
+    },
+    {
+      "id": "init-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "teamId": "team-test-lifecycle",
+      "title": "مبادرة دورة الحياة",
+      "status": "completed"
+    },
+    {
+      "id": "init-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "teamId": "team-test-lifecycle",
+      "title": "مبادرة دورة الحياة",
+      "status": "planned"
+    },
+    {
+      "id": "init-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "teamId": "team-test-lifecycle",
+      "title": "مبادرة دورة الحياة",
+      "status": "planned"
+    },
+    {
+      "id": "init-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "teamId": "team-test-lifecycle",
+      "title": "مبادرة دورة الحياة",
+      "status": "planned"
+    },
+    {
+      "id": "init-test-lifecycle",
+      "departmentId": "dep-test-lifecycle",
+      "teamId": "team-test-lifecycle",
+      "title": "مبادرة دورة الحياة",
+      "status": "planned"
     }
   ],
   "requests": [
@@ -3596,6 +3689,62 @@
     }
   ],
   "logs": [
+    {
+      "id": "log-1791823164410",
+      "timestamp": "2026-10-12T16:39:24.410Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1791822673855",
+      "timestamp": "2026-10-12T16:31:13.855Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1791822139918",
+      "timestamp": "2026-10-12T16:22:19.918Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1791821755914",
+      "timestamp": "2026-10-12T16:15:55.914Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1791821732448",
+      "timestamp": "2026-10-12T16:15:32.448Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1791820772911",
+      "timestamp": "2026-10-12T15:59:32.911Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1791820509906",
+      "timestamp": "2026-10-12T15:55:09.906Z",
+      "user": "الإدارة العليا",
+      "action": "حذف إدارة ومعها الفرق التابعة: إدارة تجريبية للحذف الواقعي",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
     {
       "id": "log-1791739638705",
       "timestamp": "2026-10-11T17:27:18.705Z",
@@ -9154,6 +9303,108 @@
   },
   "emailLogs": [
     {
+      "id": "eml-1791823164647-u84q",
+      "timestamp": "2026-10-12T16:39:24.629Z",
+      "recipient": "conc_reg_test_unique@synth.org.sa",
+      "recipientName": "متطوع متزامن تجريبي",
+      "subject": "تم استلام طلب انضمامك للتطوع (#FILE-2026-004) - ريادة العطاء",
+      "templateType": "volunteer_application_received",
+      "status": "failed",
+      "provider": "simulation",
+      "errorMessage": "لم يتم تكوين مفتاح Resend API أو بيانات خادم SMTP في إعدادات البريد بعد.",
+      "messageId": null,
+      "durationMs": 18,
+      "metadata": {
+        "lang": "ar",
+        "hasCustomHtml": false
+      }
+    },
+    {
+      "id": "eml-1791822674067-l9mh",
+      "timestamp": "2026-10-12T16:31:14.050Z",
+      "recipient": "conc_reg_test_unique@synth.org.sa",
+      "recipientName": "متطوع متزامن تجريبي",
+      "subject": "تم استلام طلب انضمامك للتطوع (#FILE-2026-004) - ريادة العطاء",
+      "templateType": "volunteer_application_received",
+      "status": "failed",
+      "provider": "simulation",
+      "errorMessage": "لم يتم تكوين مفتاح Resend API أو بيانات خادم SMTP في إعدادات البريد بعد.",
+      "messageId": null,
+      "durationMs": 17,
+      "metadata": {
+        "lang": "ar",
+        "hasCustomHtml": false
+      }
+    },
+    {
+      "id": "eml-1791822140203-1qbn",
+      "timestamp": "2026-10-12T16:22:20.172Z",
+      "recipient": "conc_reg_test_unique@synth.org.sa",
+      "recipientName": "متطوع متزامن تجريبي",
+      "subject": "تم استلام طلب انضمامك للتطوع (#FILE-2026-004) - ريادة العطاء",
+      "templateType": "volunteer_application_received",
+      "status": "failed",
+      "provider": "simulation",
+      "errorMessage": "لم يتم تكوين مفتاح Resend API أو بيانات خادم SMTP في إعدادات البريد بعد.",
+      "messageId": null,
+      "durationMs": 31,
+      "metadata": {
+        "lang": "ar",
+        "hasCustomHtml": false
+      }
+    },
+    {
+      "id": "eml-1791821756141-55uv",
+      "timestamp": "2026-10-12T16:15:56.116Z",
+      "recipient": "conc_reg_test_unique@synth.org.sa",
+      "recipientName": "متطوع متزامن تجريبي",
+      "subject": "تم استلام طلب انضمامك للتطوع (#FILE-2026-004) - ريادة العطاء",
+      "templateType": "volunteer_application_received",
+      "status": "failed",
+      "provider": "simulation",
+      "errorMessage": "لم يتم تكوين مفتاح Resend API أو بيانات خادم SMTP في إعدادات البريد بعد.",
+      "messageId": null,
+      "durationMs": 24,
+      "metadata": {
+        "lang": "ar",
+        "hasCustomHtml": false
+      }
+    },
+    {
+      "id": "eml-1791821732740-qplm",
+      "timestamp": "2026-10-12T16:15:32.740Z",
+      "recipient": "non_existent_ghost_99999@synth.org.sa",
+      "recipientName": "المستخدم الكريم",
+      "subject": "رمز التحقق OTP ورابط استعادة كلمة المرور - جمعية ريادة العطاء",
+      "templateType": "password_reset",
+      "status": "failed",
+      "provider": "simulation",
+      "errorMessage": "لم يتم تكوين مفتاح Resend API أو بيانات خادم SMTP في إعدادات البريد بعد.",
+      "messageId": null,
+      "durationMs": 0,
+      "metadata": {
+        "lang": "ar",
+        "hasCustomHtml": false
+      }
+    },
+    {
+      "id": "eml-1791821732691-rj03",
+      "timestamp": "2026-10-12T16:15:32.655Z",
+      "recipient": "conc_reg_test_unique@synth.org.sa",
+      "recipientName": "متطوع متزامن تجريبي",
+      "subject": "تم استلام طلب انضمامك للتطوع (#FILE-2026-004) - ريادة العطاء",
+      "templateType": "volunteer_application_received",
+      "status": "failed",
+      "provider": "simulation",
+      "errorMessage": "لم يتم تكوين مفتاح Resend API أو بيانات خادم SMTP في إعدادات البريد بعد.",
+      "messageId": null,
+      "durationMs": 36,
+      "metadata": {
+        "lang": "ar",
+        "hasCustomHtml": false
+      }
+    },
+    {
       "id": "eml-1791415965756-0u6i",
       "timestamp": "2026-10-07T23:32:45.756Z",
       "recipient": "mosa@riadataleata.org.sa",
@@ -9854,6 +10105,78 @@
       "updatedAt": "2026-10-06T17:29:57.547Z",
       "updatedBy": "المدير التنفيذي",
       "lastLogin": "2026-10-06T17:40:30.149Z"
+    },
+    {
+      "id": "usr-test-dal-1",
+      "userId": "usr-test-dal-1",
+      "userName": "أحمد بن عبد الله (اختبار DAL)",
+      "username": "ahmed_test_dal",
+      "userEmail": "ahmed_dal@synth.org.sa",
+      "phone": "0501112233",
+      "nationalId": "1099887766",
+      "role": "volunteer",
+      "allowedDepartmentIds": [
+        null
+      ],
+      "permissions": [],
+      "passwordHash": "$2b$10$0WoOsf0n8OptgIVH/pr1/OTmIkY6y.UJJ0tIJBTB9bXga4hIjj4c6",
+      "status": "active",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-12T16:27:24.244Z"
+    },
+    {
+      "id": "usr-test-dal-665391357",
+      "userId": "usr-test-dal-665391357",
+      "userName": "أحمد بن عبد الله (اختبار DAL)",
+      "username": "ahmed_dal_665391357",
+      "userEmail": "ahmed_dal_665391357@synth.org.sa",
+      "phone": "0506653913",
+      "nationalId": "1066539135",
+      "role": "volunteer",
+      "allowedDepartmentIds": [
+        null
+      ],
+      "permissions": [],
+      "passwordHash": "$2b$10$JgFVwkOc4R6shOqSkz.vju9MnKi5kypBENAlCAAmou64IMgGMf4Zi",
+      "status": "active",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-12T16:31:05.504Z"
+    },
+    {
+      "id": "usr-test-dal-177784972",
+      "userId": "usr-test-dal-177784972",
+      "userName": "أحمد بن عبد الله (اختبار DAL)",
+      "username": "ahmed_dal_177784972",
+      "userEmail": "ahmed_dal_177784972@synth.org.sa",
+      "phone": "0501777849",
+      "nationalId": "1017778497",
+      "role": "volunteer",
+      "allowedDepartmentIds": [
+        null
+      ],
+      "permissions": [],
+      "passwordHash": "$2b$10$yS7YMfDEJFbVfagPpX9if.gAuSVO8kIbQDpQ16dYX6ZuwL6ekB7E6",
+      "status": "active",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-12T16:39:37.897Z"
+    },
+    {
+      "id": "usr-test-dal-58885231",
+      "userId": "usr-test-dal-58885231",
+      "userName": "أحمد بن عبد الله (اختبار DAL)",
+      "username": "ahmed_dal_58885231",
+      "userEmail": "ahmed_dal_58885231@synth.org.sa",
+      "phone": "0505888523",
+      "nationalId": "1058885231",
+      "role": "volunteer",
+      "allowedDepartmentIds": [
+        null
+      ],
+      "permissions": [],
+      "passwordHash": "$2b$10$zvPZERQ9D4ekd4XtP8ZxM.sQyzdXqzz61taeJ8SqY11.P0ILb08Su",
+      "status": "active",
+      "mustChangePassword": false,
+      "createdAt": "2026-10-12T16:46:28.965Z"
     }
   ],
   "permissionChangeLogs": [
@@ -9884,6 +10207,102 @@
     }
   ],
   "accessAuditLogs": [
+    {
+      "id": "audit-1791823164519-4go3",
+      "timestamp": "2026-10-12T16:39:24.519Z",
+      "userId": "public",
+      "userName": "زائر",
+      "userRole": "public",
+      "userDepartmentId": "",
+      "targetDepartmentId": "dep-5",
+      "action": "create_data",
+      "resource": "ملف المتطوع",
+      "endpoint": "/api/db/volunteers/add",
+      "status": "denied",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "notes": "محاولة وصول غير مصرح بها: المستخدم غير مسجل دخول أو الجلسة منتهية أو تم تزييف الهوية"
+    },
+    {
+      "id": "audit-1791822673959-gxi9",
+      "timestamp": "2026-10-12T16:31:13.959Z",
+      "userId": "public",
+      "userName": "زائر",
+      "userRole": "public",
+      "userDepartmentId": "",
+      "targetDepartmentId": "dep-5",
+      "action": "create_data",
+      "resource": "ملف المتطوع",
+      "endpoint": "/api/db/volunteers/add",
+      "status": "denied",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "notes": "محاولة وصول غير مصرح بها: المستخدم غير مسجل دخول أو الجلسة منتهية أو تم تزييف الهوية"
+    },
+    {
+      "id": "audit-1791822140068-gdoa",
+      "timestamp": "2026-10-12T16:22:20.068Z",
+      "userId": "public",
+      "userName": "زائر",
+      "userRole": "public",
+      "userDepartmentId": "",
+      "targetDepartmentId": "dep-5",
+      "action": "create_data",
+      "resource": "ملف المتطوع",
+      "endpoint": "/api/db/volunteers/add",
+      "status": "denied",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "notes": "محاولة وصول غير مصرح بها: المستخدم غير مسجل دخول أو الجلسة منتهية أو تم تزييف الهوية"
+    },
+    {
+      "id": "audit-1791821756017-py92",
+      "timestamp": "2026-10-12T16:15:56.017Z",
+      "userId": "public",
+      "userName": "زائر",
+      "userRole": "public",
+      "userDepartmentId": "",
+      "targetDepartmentId": "dep-5",
+      "action": "create_data",
+      "resource": "ملف المتطوع",
+      "endpoint": "/api/db/volunteers/add",
+      "status": "denied",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "notes": "محاولة وصول غير مصرح بها: المستخدم غير مسجل دخول أو الجلسة منتهية أو تم تزييف الهوية"
+    },
+    {
+      "id": "audit-otp-req-1791821732740",
+      "timestamp": "2026-10-12T16:15:32.740Z",
+      "userId": "non_existent_ghost_99999@synth.org.sa",
+      "userName": "المستخدم الكريم",
+      "userRole": "user",
+      "userDepartmentId": "auth",
+      "targetDepartmentId": "auth",
+      "action": "request_otp_reset",
+      "resource": "أمان الحسابات",
+      "endpoint": "/api/db/auth/forgot-password",
+      "status": "allowed",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "notes": "طلب إرسال رمز تحقق OTP مشفر إلى البريد (no•••@synth.org.sa)"
+    },
+    {
+      "id": "audit-1791821732571-e06u",
+      "timestamp": "2026-10-12T16:15:32.571Z",
+      "userId": "public",
+      "userName": "زائر",
+      "userRole": "public",
+      "userDepartmentId": "",
+      "targetDepartmentId": "dep-5",
+      "action": "create_data",
+      "resource": "ملف المتطوع",
+      "endpoint": "/api/db/volunteers/add",
+      "status": "denied",
+      "ip": "127.0.0.1",
+      "device": "node",
+      "notes": "محاولة وصول غير مصرح بها: المستخدم غير مسجل دخول أو الجلسة منتهية أو تم تزييف الهوية"
+    },
     {
       "id": "audit-1791562030610",
       "timestamp": "2026-10-09T16:07:10.610Z",
@@ -13727,134 +14146,6 @@
     {
       "id": "audit-1791224857502-im6r",
       "timestamp": "2026-10-05T18:27:37.502Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224857307-3bc1",
-      "timestamp": "2026-10-05T18:27:37.307Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224857105-vunl",
-      "timestamp": "2026-10-05T18:27:37.105Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224856905-7o3l",
-      "timestamp": "2026-10-05T18:27:36.905Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224856704-1lta",
-      "timestamp": "2026-10-05T18:27:36.704Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224856518-q4rf",
-      "timestamp": "2026-10-05T18:27:36.518Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224856326-qvte",
-      "timestamp": "2026-10-05T18:27:36.326Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224856144-c92u",
-      "timestamp": "2026-10-05T18:27:36.144Z",
-      "userId": "public",
-      "userName": "زائر",
-      "userRole": "public",
-      "userDepartmentId": "",
-      "targetDepartmentId": "all",
-      "action": "manage_staff",
-      "resource": "إدارة وعرض المستخدمين",
-      "endpoint": "/api/db/users",
-      "status": "denied",
-      "ip": "176.19.66.52",
-      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Sa",
-      "notes": "المستخدم (زائر) لا يملك صلاحية (manage_staff) لإجراء هذه العملية على إدارة وعرض المستخدمين"
-    },
-    {
-      "id": "audit-1791224855939-1lde",
-      "timestamp": "2026-10-05T18:27:35.939Z",
       "userId": "public",
       "userName": "زائر",
       "userRole": "public",
@@ -17764,6 +18055,20 @@
       "used": false,
       "verified": false,
       "createdAt": "2026-10-07T23:32:45.755Z"
+    },
+    {
+      "id": "otp-1791821732740-eujzh",
+      "email": "non_existent_ghost_99999@synth.org.sa",
+      "userId": "non_existent_ghost_99999@synth.org.sa",
+      "userName": "المستخدم الكريم",
+      "codeHash": "1a3c02bdec34db60c92bd725fb95b023f14ff70d2a5bed6f3a28e859ed53c759",
+      "resetToken": "rtok_3f7bced9aa928cbab7a7c58f67b960626b48681728f822c3",
+      "expiresAt": 1791822632740,
+      "attempts": 0,
+      "maxAttempts": 5,
+      "used": false,
+      "verified": false,
+      "createdAt": "2026-10-12T16:15:32.740Z"
     }
   ],
   "maintenance_mode": 0,
@@ -17815,5 +18120,9 @@
       "resetTokenExpiresAt": 1791826000823,
       "reviewerNotes": "تم التحقق من هوية المتطوع وإرسال رمز التحقق الآمن المؤقت"
     }
-  ]
+  ],
+  "_version": 648,
+  "_lastModified": "2026-10-12T16:46:29.086Z",
+  "_deletedRecordIds": [],
+  "_deletedTombstones": {}
 }
