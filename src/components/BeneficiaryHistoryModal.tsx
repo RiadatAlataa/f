@@ -78,7 +78,7 @@ export const BeneficiaryHistoryModal: React.FC<BeneficiaryHistoryModalProps> = (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-neutral-100 dark:border-neutral-800 shrink-0 gap-3">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 flex items-center justify-center font-black text-xl shrink-0">
-              {beneficiary.name.charAt(0)}
+              {(beneficiary.name || 'م').charAt(0)}
             </div>
             <div>
               <div className="flex items-center gap-2">

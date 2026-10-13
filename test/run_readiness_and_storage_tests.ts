@@ -29,7 +29,9 @@ import app, {
   readDb, 
   mutateDb, 
   createServerSession, 
-  checkRateLimit 
+  checkRateLimit,
+  getActiveDbPath,
+  reloadDbFromDisk
 } from "../server-core";
 import { JsonDataAccessLayer, PostgresDataAccessLayer, SystemUserEntity } from "../server/dal";
 import { AttachmentStorageService } from "../server/storage/attachmentStorage";
@@ -54,6 +56,21 @@ export async function runReadinessTestSuite() {
   const results: TestResult[] = [];
   const testSandboxDir = path.join(process.cwd(), "test-storage-sandbox");
   if (!fs.existsSync(testSandboxDir)) fs.mkdirSync(testSandboxDir, { recursive: true });
+
+  // 100% Isolated Database Setup
+  const isolatedTestDbPath = path.join(testSandboxDir, "isolated-test-db.json");
+  const rootDbJson = fs.readFileSync(path.join(process.cwd(), "db.json"), "utf8");
+  fs.writeFileSync(isolatedTestDbPath, rootDbJson, "utf8");
+
+  process.env.APP_DB_PATH = isolatedTestDbPath;
+  reloadDbFromDisk();
+
+  // Strict Isolation Assertion Guard: Fails immediately if storage points to application db.json
+  const activeDb = getActiveDbPath();
+  const rootDbPath = path.resolve(process.cwd(), "db.json");
+  if (path.resolve(activeDb) === rootDbPath || !activeDb.includes("test-storage-sandbox")) {
+    throw new Error(`CRITICAL_SECURITY_ABORT: Test is NOT isolated! Target path is ${activeDb}, which matches application db.json.`);
+  }
 
   const testAttachmentStorage = new AttachmentStorageService(path.join(testSandboxDir, "uploads"));
 
@@ -235,31 +252,53 @@ export async function runReadinessTestSuite() {
   try {
     let lifecyclePassed = false;
     await mutateDb((db) => {
-      // 1. Create Department
       const deptId = "dep-test-lifecycle";
-      db.departments = db.departments || [];
-      db.departments.push({ id: deptId, nameAr: "إدارة تجريبية لدورة الحياة", status: "active" });
-
-      // 2. Create Team linked to Dept
       const teamId = "team-test-lifecycle";
-      db.teams = db.teams || [];
-      db.teams.push({ id: teamId, departmentId: deptId, name: "فريق دورة الحياة", status: "active" });
-
-      // 3. Create Initiative linked to Dept & Team
       const initId = "init-test-lifecycle";
-      db.initiatives = db.initiatives || [];
-      db.initiatives.push({ id: initId, departmentId: deptId, teamId, title: "مبادرة دورة الحياة", status: "planned" });
 
-      // 4. Update Initiative
-      const init = db.initiatives.find((i: any) => i.id === initId);
-      if (init) init.status = "completed";
+      // Pre-clean in case of previous run interruption
+      db.initiatives = (db.initiatives || []).filter((i: any) => i.id !== initId);
+      db.teams = (db.teams || []).filter((t: any) => t.id !== teamId);
+      db.departments = (db.departments || []).filter((d: any) => d.id !== deptId);
 
-      // Verify relationships
-      const foundInit = db.initiatives.find((i: any) => i.id === initId);
-      const foundTeam = db.teams.find((t: any) => t.id === foundInit?.teamId);
-      const foundDept = db.departments.find((d: any) => d.id === foundTeam?.departmentId);
+      try {
+        // 1. Create Department
+        db.departments = db.departments || [];
+        db.departments.push({ id: deptId, nameAr: "إدارة تجريبية لدورة الحياة", status: "active" });
 
-      lifecyclePassed = !!(foundInit && foundInit.status === "completed" && foundTeam && foundDept);
+        // 2. Create Team linked to Dept
+        db.teams = db.teams || [];
+        db.teams.push({ id: teamId, departmentId: deptId, name: "فريق دورة الحياة", status: "active" });
+
+        // 3. Create Initiative linked to Dept & Team
+        db.initiatives = db.initiatives || [];
+        db.initiatives.push({ 
+          id: initId, 
+          departmentId: deptId, 
+          teamId, 
+          name: "مبادرة دورة الحياة", 
+          title: "مبادرة دورة الحياة", 
+          status: "planned",
+          acceptedVolunteerIds: [],
+          applicantVolunteerIds: []
+        });
+
+        // 4. Update Initiative
+        const init = db.initiatives.find((i: any) => i.id === initId);
+        if (init) init.status = "completed";
+
+        // Verify relationships
+        const foundInit = db.initiatives.find((i: any) => i.id === initId);
+        const foundTeam = db.teams.find((t: any) => t.id === foundInit?.teamId);
+        const foundDept = db.departments.find((d: any) => d.id === foundTeam?.departmentId);
+
+        lifecyclePassed = !!(foundInit && foundInit.status === "completed" && foundTeam && foundDept);
+      } finally {
+        // Clean up test lifecycle entities so db.json remains pristine
+        db.initiatives = (db.initiatives || []).filter((i: any) => i.id !== initId);
+        db.teams = (db.teams || []).filter((t: any) => t.id !== teamId);
+        db.departments = (db.departments || []).filter((d: any) => d.id !== deptId);
+      }
     });
 
     results.push({
@@ -268,7 +307,7 @@ export async function runReadinessTestSuite() {
       passed: lifecyclePassed,
       codeType: "كود حقيقي 100%",
       details: lifecyclePassed
-        ? "تم التحقق من صحة شجرة العلاقات الكاملة (مبادرة -> فريق -> إدارة) وتحديث الحالة بدقة"
+        ? "تم التحقق من صحة شجرة العلاقات الكاملة (مبادرة -> فريق -> إدارة) وتحديث الحالة وحذف سجلات الاختبار بدقة"
         : "فشل التحقق من العلاقات الترابطية بين الكيانات"
     });
   } catch (err: any) {
@@ -669,8 +708,10 @@ export async function runReadinessTestSuite() {
     });
   }
 
-  // Clean up sandbox
+  // Clean up sandbox & restore application database path
   try {
+    delete process.env.APP_DB_PATH;
+    reloadDbFromDisk();
     if (fs.existsSync(testSandboxDir)) {
       fs.rmSync(testSandboxDir, { recursive: true, force: true });
     }

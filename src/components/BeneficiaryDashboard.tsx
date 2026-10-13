@@ -252,7 +252,7 @@ export function BeneficiaryDashboard({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center border-2 border-white/20 text-white font-bold text-2xl uppercase shadow-md">
-              {beneficiary.name.charAt(0)}
+              {(beneficiary.name || 'م').charAt(0)}
             </div>
             <div>
               <div className="flex items-center gap-2">

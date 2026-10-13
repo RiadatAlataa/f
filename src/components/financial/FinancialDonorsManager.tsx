@@ -153,7 +153,7 @@ export const FinancialDonorsManager: React.FC<FinancialDonorsManagerProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredDonors.map(donor => {
           const donorIncome = getDonorContributions(donor.name);
-          const computedTotal = donorIncome.reduce((acc, i) => acc + Number(i.amount || 0), 0) || donor.totalDonations;
+          const computedTotal = donorIncome.reduce((acc, i) => acc + Number(i.amount || 0), 0) || Number(donor.totalDonations || 0);
 
           return (
             <div
@@ -196,7 +196,7 @@ export const FinancialDonorsManager: React.FC<FinancialDonorsManagerProps> = ({
                     <div>
                       <span className="text-[11px] text-neutral-400">إجمالي التبرعات:</span>
                       <div className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
-                        {computedTotal.toLocaleString()} ريال
+                        {(Number(computedTotal) || 0).toLocaleString()} ريال
                       </div>
                     </div>
                     <div className="text-left text-[11px] text-neutral-500">
@@ -370,7 +370,7 @@ export const FinancialDonorsManager: React.FC<FinancialDonorsManagerProps> = ({
                       <tr key={c.id}>
                         <td className="p-2 font-mono font-bold text-emerald-600">{c.operationNumber}</td>
                         <td className="p-2 font-mono">{c.date}</td>
-                        <td className="p-2 font-mono font-bold">{c.amount.toLocaleString()} ريال</td>
+                        <td className="p-2 font-mono font-bold">{(Number(c.amount) || 0).toLocaleString()} ريال</td>
                         <td className="p-2">{c.accountName}</td>
                         <td className="p-2">{c.isRestricted ? c.restrictionPurpose : 'عام'}</td>
                       </tr>

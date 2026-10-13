@@ -37,6 +37,7 @@ import {
 } from "./server/postgres";
 import { writeCoordinator } from "./server/writeLock";
 import { backupEngine } from "./server/backupEngine";
+import { attachmentStorage } from "./server/storage/attachmentStorage";
 
 console.log("[SERVER CORE] loading");
 
@@ -118,9 +119,162 @@ try {
 if (fs.existsSync(cardTemplatesDir)) {
   app.use("/card_templates", express.static(cardTemplatesDir));
 }
-if (fs.existsSync(uploadsDir)) {
-  app.use("/uploads", express.static(uploadsDir));
-}
+// ---------------------------------------------------------------------------
+// Secure Uploads Access Controller & Static Protection
+// Enforces:
+// 1. Path Traversal & Escape Prevention (Anti-ZipSlip / traversal)
+// 2. Safe Public Asset Serving (/uploads/license/*, /uploads/public/*, etc.)
+// 3. Strict Authentication & Role Authorization for Private Attachments (/uploads/volunteers/*, /uploads/beneficiaries/*, etc.)
+// ---------------------------------------------------------------------------
+app.use("/uploads", (req, res, next) => {
+  const rawPath = req.path;
+  if (!rawPath || typeof rawPath !== 'string') {
+    return res.status(400).json({ error: "مسار ملف غير صالح." });
+  }
+
+  let decodedPath = '';
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+  } catch {
+    return res.status(400).json({ error: "ترميز مسار غير صالح." });
+  }
+
+  // Anti-Path Traversal Check
+  if (decodedPath.includes('..') || decodedPath.includes('\0') || decodedPath.includes('\\')) {
+    return res.status(403).json({ error: "مرفوض أمنيًا: محاولة اجتياز مسار غير مشروعة (Path Traversal Prohibited)." });
+  }
+
+  const normalizedRel = path.normalize(decodedPath).replace(/^[/\\]+/, '');
+  const resolvedTarget = path.resolve(uploadsDir, normalizedRel);
+  const resolvedUploadsDir = path.resolve(uploadsDir);
+
+  if (!resolvedTarget.startsWith(resolvedUploadsDir + path.sep) && resolvedTarget !== resolvedUploadsDir) {
+    return res.status(403).json({ error: "مرفوض أمنيًا: مسار غير مسموح." });
+  }
+
+  // Check Public vs Private Categories
+  const topSegment = normalizedRel.split(/[/\\]/)[0]?.toLowerCase();
+  const isPublicCategory = (
+    topSegment === 'license' || 
+    topSegment === 'licenses' || 
+    topSegment === 'public' || 
+    topSegment === 'cards' ||
+    normalizedRel.startsWith('license_official')
+  );
+
+  // If public category, serve publicly
+  if (isPublicCategory) {
+    if (fs.existsSync(resolvedTarget) && fs.statSync(resolvedTarget).isFile()) {
+      return res.sendFile(resolvedTarget);
+    }
+    return res.status(404).json({ error: "الملف العام المطلوب غير موجود." });
+  }
+
+  // Private Attachment Access: Authentication Required
+  const authContext = getUserAccessContext(req);
+  if (!authContext || !authContext.isAuthenticated) {
+    return res.status(401).json({
+      ok: false,
+      error: "غير مصرح: المرفق خاص وحساس ويتطلب تسجيل الدخول والصلاحيات المناسبة للاطلاع عليه.",
+      code: "UNAUTHORIZED_PRIVATE_ATTACHMENT"
+    });
+  }
+
+  // Role Authorization Check
+  const isPrivileged = authContext.isSuperAdmin || authContext.role === 'admin' || authContext.role === 'operations_manager';
+  let isAuthorized = isPrivileged;
+
+  if (!isAuthorized) {
+    const parts = normalizedRel.split(/[/\\]/);
+    const entityType = parts[0];
+    if (entityType === 'volunteers' && authContext.role === 'volunteer') {
+      if (authContext.userId && normalizedRel.includes(authContext.userId)) {
+        isAuthorized = true;
+      }
+    } else if (entityType === 'beneficiaries' && authContext.role === 'beneficiary') {
+      if (authContext.userId && normalizedRel.includes(authContext.userId)) {
+        isAuthorized = true;
+      }
+    }
+  }
+
+  if (!isAuthorized) {
+    return res.status(403).json({
+      ok: false,
+      error: "مرفوض: ليس لديك صلاحية كافية لتنزيل أو استعراض هذا المرفق الخاص.",
+      code: "FORBIDDEN_PRIVATE_ATTACHMENT"
+    });
+  }
+
+  if (!fs.existsSync(resolvedTarget) || !fs.statSync(resolvedTarget).isFile()) {
+    return res.status(404).json({ error: "المرفق الخاص المطلوب غير موجود." });
+  }
+
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+  return res.sendFile(resolvedTarget);
+});
+
+// Dedicated Secure Attachment Download Endpoint
+app.get("/api/attachments/download/*", async (req, res) => {
+  try {
+    const rawKey = req.params[0] || (req.query.key as string) || '';
+    if (!rawKey) {
+      return res.status(400).json({ error: "معرّف المرفق مطلوب (fileKey missing)." });
+    }
+
+    let fileKey = '';
+    try {
+      fileKey = decodeURIComponent(rawKey);
+    } catch {
+      return res.status(400).json({ error: "ترميز معرّف المرفق غير صالح." });
+    }
+
+    if (fileKey.includes('..') || fileKey.includes('\0') || fileKey.includes('\\')) {
+      return res.status(403).json({ error: "مرفوض أمنيًا: محاولة اجتياز مسار غير مشروعة (Path Traversal Prohibited)." });
+    }
+
+    const cleanKey = path.normalize(fileKey).replace(/^[/\\]+/, '');
+    const authContext = getUserAccessContext(req);
+
+    // If attachment is private and user is not authenticated, return 401
+    const isPrivate = attachmentStorage.isPrivateKey(cleanKey);
+    if (isPrivate && !authContext.isAuthenticated) {
+      return res.status(401).json({
+        ok: false,
+        error: "غير مصرح: المرفق خاص وحساس ويتطلب تسجيل الدخول للاطلاع عليه.",
+        code: "UNAUTHORIZED"
+      });
+    }
+
+    const attachment = await attachmentStorage.getAttachmentBuffer(cleanKey, {
+      role: authContext.role,
+      id: authContext.userId
+    });
+
+    const safeFilename = attachment.record?.originalName
+      ? encodeURIComponent(attachment.record.originalName)
+      : path.basename(cleanKey);
+
+    res.setHeader("Content-Type", attachment.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+
+    return res.send(attachment.buffer);
+  } catch (err: any) {
+    if (err.message && err.message.includes("غير مصرح")) {
+      return res.status(403).json({ ok: false, error: err.message });
+    }
+    if (err.message && err.message.includes("غير موجود")) {
+      return res.status(404).json({ ok: false, error: err.message });
+    }
+    if (err.message && err.message.includes("اجتياز مسار")) {
+      return res.status(403).json({ ok: false, error: err.message });
+    }
+    return res.status(500).json({ ok: false, error: "فشل استرجاع المرفق", details: err?.message });
+  }
+});
 
 const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
 const DB_FILE_TMP = path.join("/tmp", "db.json");
@@ -186,6 +340,11 @@ function getPersistentDiskDir(): string | null {
 }
 
 export function getActiveDbPath(): string {
+  // 0. Isolated Test Sandbox Path Override
+  if (process.env.APP_DB_PATH) {
+    return process.env.APP_DB_PATH;
+  }
+
   // 1. Check for Render or Docker Persistent Disk
   const persistentDir = getPersistentDiskDir();
   if (persistentDir) {
@@ -3943,6 +4102,13 @@ export function readDb() {
         modified = true;
       }
       
+      if (Array.isArray(db.initiatives)) {
+        db.initiatives.forEach((i: any) => {
+          if (!Array.isArray(i.acceptedVolunteerIds)) i.acceptedVolunteerIds = [];
+          if (!Array.isArray(i.applicantVolunteerIds)) i.applicantVolunteerIds = [];
+        });
+      }
+
       if (modified) {
         try {
           writeDb(db);
@@ -4006,7 +4172,7 @@ export function writeDb(data: any): boolean {
       process.env.LAMBDA_TASK_ROOT ||
       process.env.VERCEL_ENV
     );
-    const targetPath = isServerless ? DB_FILE_TMP : getActiveDbPath();
+    const targetPath = process.env.APP_DB_PATH || (isServerless ? DB_FILE_TMP : getActiveDbPath());
     const targetDir = path.dirname(targetPath);
 
     let tempFile = "";
@@ -5098,11 +5264,63 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
   const db = readDb();
   
   const userMap = new Map<string, any>();
+  const nationalIdToKey = new Map<string, string>();
+  const emailToKey = new Map<string, string>();
+
+  function registerOrLinkUser(key: string, record: any, collectionSource: string) {
+    const natId = (record.nationalId || "").toString().trim();
+    const email = (record.email || "").toString().trim().toLowerCase();
+    
+    let existingKey = userMap.has(key) ? key : null;
+    if (!existingKey && natId && natId.length >= 8 && nationalIdToKey.has(natId)) {
+      existingKey = nationalIdToKey.get(natId) || null;
+    }
+    if (!existingKey && email && email.includes("@") && emailToKey.has(email)) {
+      existingKey = emailToKey.get(email) || null;
+    }
+
+    if (existingKey) {
+      const existing = userMap.get(existingKey);
+      existing.linkedProfiles = existing.linkedProfiles || [];
+      existing.linkedProfiles.push({
+        source: collectionSource,
+        id: record.id || record.userId,
+        role: record.role,
+        status: record.status,
+        data: record
+      });
+      // Merge missing operational fields without overwriting primary identity
+      if (!existing.phone && record.phone) existing.phone = record.phone;
+      if (!existing.nationalId && record.nationalId) existing.nationalId = record.nationalId;
+      if (!existing.email && record.email) existing.email = record.email;
+      if (!existing.teamId && record.teamId) existing.teamId = record.teamId;
+      if (!existing.teamName && record.teamName) existing.teamName = record.teamName;
+      if (!existing.beneficiaryNumber && record.beneficiaryNumber) existing.beneficiaryNumber = record.beneficiaryNumber;
+      if (!existing.membershipNumber && record.membershipNumber) existing.membershipNumber = record.membershipNumber;
+      if (record.hours !== undefined && existing.hours === undefined) existing.hours = record.hours;
+      if (record.familySize !== undefined && existing.familySize === undefined) existing.familySize = record.familySize;
+      if (record.category && !existing.category) existing.category = record.category;
+      return existingKey;
+    } else {
+      record.primarySource = collectionSource;
+      record.linkedProfiles = [{
+        source: collectionSource,
+        id: record.id || record.userId,
+        role: record.role,
+        status: record.status,
+        data: record
+      }];
+      userMap.set(key, record);
+      if (natId && natId.length >= 8) nationalIdToKey.set(natId, key);
+      if (email && email.includes("@")) emailToKey.set(email, key);
+      return key;
+    }
+  }
 
   // 1. Registered access entries in userDepartmentAccess
   (db.userDepartmentAccess || []).forEach((u: any) => {
     const key = u.userId || u.id;
-    userMap.set(key, {
+    registerOrLinkUser(key, {
       id: key,
       userId: key,
       username: u.username || key,
@@ -5111,7 +5329,7 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       phone: u.phone || "",
       nationalId: u.nationalId || "",
       role: u.role || "employee",
-      jobTitle: u.jobTitle || "موظف",
+      jobTitle: u.jobTitle || (u.role === 'admin' ? "إدارة عليا" : u.role === 'operations_manager' ? "مدير العمليات" : "موظف إدارة"),
       departmentId: u.primaryDepartmentId || "dep-1",
       departmentName: u.primaryDepartmentName || "إدارة عامة",
       permissions: u.permissions || [],
@@ -5125,225 +5343,299 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       emailVerified: true,
       identityVerified: !!u.nationalId,
       notes: u.notes || ""
-    });
+    }, "userDepartmentAccess");
   });
 
-  // 2. Department Directors (مدراء الإدارات)
+  // 2. Department Directors (مدراء الإدارات الثمانية)
   (db.departments || []).forEach((d: any) => {
     const key = `depadmin-${d.id}`;
-    if (!userMap.has(key)) {
-      userMap.set(key, {
-        id: key,
-        userId: key,
-        username: `director_${d.id}`,
-        name: d.directorName || `مدير ${d.nameAr}`,
-        email: d.email || "",
-        phone: d.phone || "",
-        nationalId: d.nationalId || "",
-        role: "department_admin",
-        jobTitle: `مدير ${d.nameAr}`,
-        departmentId: d.id,
-        departmentName: d.nameAr,
-        permissions: ["view_department", "create_data", "edit_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-        allowedDepartmentIds: [d.id],
-        allowedPages: ["dashboard", d.id],
-        status: d.status || "active",
-        mustChangePassword: false,
-        lastLogin: null,
-        lastActivity: "2026-01-01T00:00:00Z",
-        createdAt: "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: !!d.nationalId,
-        notes: `حساب مدير الإدارة التنفيذي - ${d.nameAr}`
-      });
-    }
+    registerOrLinkUser(key, {
+      id: key,
+      userId: key,
+      username: `director_${d.id}`,
+      name: d.directorName || `مدير ${d.nameAr}`,
+      email: d.email || "",
+      phone: d.phone || "",
+      nationalId: d.nationalId || "",
+      role: "department_admin",
+      jobTitle: `مدير ${d.nameAr}`,
+      departmentId: d.id,
+      departmentName: d.nameAr,
+      permissions: ["view_department", "create_data", "edit_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
+      allowedDepartmentIds: [d.id],
+      allowedPages: ["dashboard", d.id],
+      status: d.status || "active",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: !!d.nationalId,
+      notes: `حساب مدير الإدارة التنفيذي - ${d.nameAr}`
+    }, "departments");
   });
 
-  // 3. Employees (الموظفين)
+  // 3. Employees (الموظفون: المالية، الموارد البشرية، الإعلام، الرعاية الاجتماعية)
   (db.employees || []).forEach((e: any) => {
-    if (!userMap.has(e.id)) {
-      userMap.set(e.id, {
-        id: e.id,
-        userId: e.id,
-        username: e.employeeNumber || e.id,
-        name: e.name,
-        email: e.email || "",
-        phone: e.phone || "",
-        nationalId: e.nationalId || "",
-        role: "employee",
-        jobTitle: e.jobTitle || "موظف إدارة",
-        departmentId: e.departmentId || "dep-1",
-        departmentName: e.departmentName || "إدارة عامة",
-        permissions: ["view_department", "create_data", "edit_data", "export_pdf", "manage_tasks"],
-        allowedDepartmentIds: [e.departmentId || "dep-1"],
-        allowedPages: [],
-        status: e.status || "active",
-        mustChangePassword: false,
-        lastLogin: null,
-        lastActivity: e.updatedAt || e.hireDate || "2026-01-01T00:00:00Z",
-        createdAt: e.hireDate || "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: !!e.nationalId,
-        notes: `موظف مسجل بالرقم الوظيفي: ${e.employeeNumber || e.id}`
-      });
-    }
+    registerOrLinkUser(e.id, {
+      id: e.id,
+      userId: e.id,
+      username: e.employeeNumber || e.id,
+      name: e.name,
+      email: e.email || "",
+      phone: e.phone || "",
+      nationalId: e.nationalId || "",
+      role: "employee",
+      jobTitle: e.jobTitle || "موظف إدارة",
+      departmentId: e.departmentId || "dep-1",
+      departmentName: e.departmentName || "إدارة عامة",
+      permissions: ["view_department", "create_data", "edit_data", "export_pdf", "manage_tasks"],
+      allowedDepartmentIds: [e.departmentId || "dep-1"],
+      allowedPages: [],
+      status: e.status || "active",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: e.updatedAt || e.hireDate || "2026-01-01T00:00:00Z",
+      createdAt: e.hireDate || "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: !!e.nationalId,
+      notes: `موظف مسجل بالرقم الوظيفي: ${e.employeeNumber || e.id}`
+    }, "employees");
   });
 
-  // 4. Storekeepers (أمناء المستودعات)
+  // 4. Storekeepers (أمناء المستودعات وإدارة المخزون)
   (db.storekeepers || []).forEach((sk: any) => {
-    if (!userMap.has(sk.id)) {
-      userMap.set(sk.id, {
-        id: sk.id,
-        userId: sk.id,
-        username: `storekeeper_${sk.id}`,
-        name: sk.name,
-        email: sk.email || "",
-        phone: sk.phone || "",
-        nationalId: sk.nationalId || "",
-        role: "storekeeper",
-        jobTitle: "أمين مستودع",
-        departmentId: "dep-8",
-        departmentName: "إدارة الخدمات المساندة والمستودعات",
-        permissions: ["view_department", "create_data", "edit_data", "disburse_data", "receive_data", "print_data", "export_excel", "view_reports", "manage_tasks"],
-        allowedDepartmentIds: ["dep-8"],
-        allowedPages: ["inventory", "tasks"],
-        status: sk.status || "active",
-        mustChangePassword: false,
-        lastLogin: null,
-        lastActivity: "2026-01-01T00:00:00Z",
-        createdAt: "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: !!sk.nationalId,
-        notes: `أمين مستودع: ${sk.assignedWarehouseName || 'المستودع الرئيسي'}`
-      });
-    }
+    registerOrLinkUser(sk.id, {
+      id: sk.id,
+      userId: sk.id,
+      username: `storekeeper_${sk.id}`,
+      name: sk.name,
+      email: sk.email || "",
+      phone: sk.phone || "",
+      nationalId: sk.nationalId || "",
+      role: "storekeeper",
+      jobTitle: "أمين مستودع",
+      departmentId: "dep-8",
+      departmentName: "إدارة الخدمات المساندة والمستودعات",
+      permissions: ["view_department", "create_data", "edit_data", "disburse_data", "receive_data", "print_data", "export_excel", "view_reports", "manage_tasks"],
+      allowedDepartmentIds: ["dep-8"],
+      allowedPages: ["inventory", "tasks"],
+      status: sk.status || "active",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: !!sk.nationalId,
+      notes: `أمين مستودع: ${sk.assignedWarehouseName || 'المستودع الرئيسي'}`
+    }, "storekeepers");
   });
 
-  // 5. Team Leaders (قادة الفرق التطوعية)
+  // 5. Team Leaders & Deputies (قادة الفرق التطوعية ونوابهم)
   (db.teams || []).forEach((t: any) => {
     const leaderKey = `leader-${t.id}`;
-    if (!userMap.has(leaderKey) && !userMap.has(t.id)) {
-      userMap.set(leaderKey, {
-        id: leaderKey,
-        userId: leaderKey,
-        username: `leader_${t.id}`,
-        name: t.leaderName ? `${t.leaderName} (قائد ${t.name})` : `قائد ${t.name}`,
-        email: t.email || "leader@riadataleata.org.sa",
-        phone: t.phone || t.leaderPhone || "0551112233",
-        nationalId: t.leaderNationalId || "1030000001",
-        role: "leader",
-        jobTitle: `قائد فريق ${t.name}`,
-        departmentId: t.departmentId || "dep-5",
-        departmentName: "إدارة التطوع والموارد البشرية",
-        permissions: ["view_department", "create_data", "edit_data", "export_pdf"],
-        allowedDepartmentIds: ["dep-5"],
-        allowedPages: ["volunteers", "initiatives"],
-        status: t.status || "active",
-        mustChangePassword: false,
-        lastLogin: null,
-        lastActivity: "2026-01-01T00:00:00Z",
-        createdAt: t.createdAt || "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: true,
-        notes: `فريق تطوعي: ${t.name} (عدد الأعضاء: ${t.membersCount || 0})`
-      });
-    }
+    registerOrLinkUser(leaderKey, {
+      id: leaderKey,
+      userId: leaderKey,
+      username: `leader_${t.id}`,
+      name: t.leaderName ? `${t.leaderName} (قائد ${t.name})` : `قائد ${t.name}`,
+      email: t.email || "leader@riadataleata.org.sa",
+      phone: t.phone || t.leaderPhone || "0551112233",
+      nationalId: t.leaderNationalId || "",
+      role: "leader",
+      jobTitle: `قائد فريق ${t.name}`,
+      teamId: t.id,
+      teamName: t.name,
+      departmentId: t.departmentId || "dep-5",
+      departmentName: "إدارة التطوع والموارد البشرية",
+      permissions: ["view_department", "create_data", "edit_data", "export_pdf"],
+      allowedDepartmentIds: ["dep-5"],
+      allowedPages: ["volunteers", "initiatives"],
+      status: t.status || "active",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: "2026-01-01T00:00:00Z",
+      createdAt: t.createdAt || "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: true,
+      notes: `فريق تطوعي: ${t.name} (عدد الأعضاء: ${t.membersCount || 0})`
+    }, "teams");
   });
 
-  // 6. Volunteers (المتطوعين)
+  // 6. Volunteers (المتطوعون بجميع الحالات: نشط، معلق، موقوف، غير نشط)
   (db.volunteers || []).forEach((v: any) => {
-    if (!userMap.has(v.id)) {
-      userMap.set(v.id, {
-        id: v.id,
-        userId: v.id,
-        username: v.membershipNumber || v.id,
-        name: v.name,
-        email: v.email || "",
-        phone: v.phone || "",
-        nationalId: v.nationalId || "",
-        role: "volunteer",
-        jobTitle: v.titleAr || "فارس تطوعي",
-        departmentId: "dep-5",
-        departmentName: "إدارة التطوع والموارد البشرية",
-        permissions: ["view_volunteer_portal", "join_initiatives", "print_card", "view_certificates"],
-        allowedDepartmentIds: ["dep-5"],
-        allowedPages: ["volunteer_portal"],
-        status: v.status || "active",
-        mustChangePassword: false,
-        lastLogin: v.lastLogin || null,
-        lastActivity: v.lastAttendance || v.joinDate || "2026-01-01T00:00:00Z",
-        createdAt: v.joinDate || "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: !!v.nationalId,
-        notes: `عضوية تطوعية رقم: ${v.membershipNumber || v.id} (${v.hours || 0} ساعة)`
-      });
-    }
+    registerOrLinkUser(v.id, {
+      id: v.id,
+      userId: v.id,
+      username: v.membershipNumber || v.id,
+      name: v.name,
+      email: v.email || "",
+      phone: v.phone || "",
+      nationalId: v.nationalId || "",
+      role: "volunteer",
+      jobTitle: v.titleAr || "فارس تطوعي",
+      teamId: v.teamId,
+      departmentId: "dep-5",
+      departmentName: "إدارة التطوع والموارد البشرية",
+      permissions: ["view_volunteer_portal", "join_initiatives", "print_card", "view_certificates"],
+      allowedDepartmentIds: ["dep-5"],
+      allowedPages: ["volunteer_portal"],
+      status: v.status || "pending",
+      hours: v.hours || 0,
+      membershipNumber: v.membershipNumber || v.id,
+      mustChangePassword: false,
+      lastLogin: v.lastLogin || null,
+      lastActivity: v.lastAttendance || v.joinDate || "2026-01-01T00:00:00Z",
+      createdAt: v.joinDate || "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: !!v.nationalId,
+      notes: `عضوية تطوعية: ${v.membershipNumber || v.id} (${v.hours || 0} ساعة تطوعية)`
+    }, "volunteers");
   });
 
-  // 7. Support Agents & Managers
+  // 7. Beneficiaries (المستفيدون بجميع الفئات والحالات: معتمد/نشط، معلق، مرفوض)
+  (db.beneficiaries || []).forEach((b: any) => {
+    const benStatus = b.status === "approved" ? "active" : b.status === "rejected" ? "rejected" : "pending";
+    registerOrLinkUser(b.id, {
+      id: b.id,
+      userId: b.id,
+      username: b.beneficiaryNumber || b.id,
+      name: b.name,
+      email: b.email || "",
+      phone: b.phone || "",
+      nationalId: b.nationalId || "",
+      role: "beneficiary",
+      jobTitle: `مستفيد رعاية (${b.category || "عام"})`,
+      departmentId: "dep-4",
+      departmentName: "إدارة شؤون المستفيدين والرعاية الاجتماعية",
+      permissions: ["view_benefit_requests", "request_aid", "view_profile"],
+      allowedDepartmentIds: ["dep-4"],
+      allowedPages: ["beneficiary_portal"],
+      status: benStatus,
+      beneficiaryNumber: b.beneficiaryNumber || b.id,
+      category: b.category || "عام",
+      familySize: b.familySize || 1,
+      monthlyIncome: b.monthlyIncome || b.income || 0,
+      housingType: b.housingType || "",
+      address: b.address || "",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: b.updatedAt || b.createdAt || "2026-01-01T00:00:00Z",
+      createdAt: b.createdAt || "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: !!b.nationalId,
+      notes: `ملف مستفيد مسجل برقم: ${b.beneficiaryNumber || b.id} (الفئة: ${b.category || 'عام'})`
+    }, "beneficiaries");
+  });
+
+  // 8. Support Managers & Agents (الدعم الفني والخدمات)
   (db.supportManagers || []).forEach((sm: any) => {
-    if (!userMap.has(sm.id)) {
-      userMap.set(sm.id, {
-        id: sm.id,
-        userId: sm.id,
-        username: sm.username || sm.id,
-        name: sm.name,
-        email: sm.email || "",
-        phone: sm.phone || "",
-        nationalId: sm.nationalId || "",
-        role: "support_manager",
-        jobTitle: "مدير الدعم الفني وخدمة العملاء",
-        departmentId: "dep-1",
-        departmentName: "الإدارة التنفيذية",
-        permissions: ["view_department", "manage_tickets", "assign_tickets", "close_tickets"],
-        allowedDepartmentIds: ["dep-1"],
-        allowedPages: ["support"],
-        status: sm.status || "active",
-        mustChangePassword: false,
-        lastLogin: null,
-        lastActivity: "2026-01-01T00:00:00Z",
-        createdAt: "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: true,
-        notes: "مدير الدعم الفني"
-      });
-    }
+    registerOrLinkUser(sm.id, {
+      id: sm.id,
+      userId: sm.id,
+      username: sm.username || sm.id,
+      name: sm.name,
+      email: sm.email || "",
+      phone: sm.phone || "",
+      nationalId: sm.nationalId || "",
+      role: "support_manager",
+      jobTitle: "مدير الدعم الفني وخدمة العملاء",
+      departmentId: "dep-1",
+      departmentName: "الإدارة التنفيذية",
+      permissions: ["view_department", "manage_tickets", "assign_tickets", "close_tickets"],
+      allowedDepartmentIds: ["dep-1"],
+      allowedPages: ["support"],
+      status: sm.status || "active",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: true,
+      notes: "مدير الدعم الفني"
+    }, "supportManagers");
   });
 
   (db.supportAgents || []).forEach((sa: any) => {
-    if (!userMap.has(sa.id)) {
-      userMap.set(sa.id, {
-        id: sa.id,
-        userId: sa.id,
-        username: sa.username || sa.id,
-        name: sa.name,
-        email: sa.email || "",
-        phone: sa.phone || "",
-        nationalId: sa.nationalId || "",
-        role: "support_agent",
-        jobTitle: "أخصائي دعم فني",
-        departmentId: "dep-1",
-        departmentName: "الإدارة التنفيذية",
-        permissions: sa.permissions || ["view_assigned_tasks", "reply_tickets", "close_tasks"],
-        allowedDepartmentIds: ["dep-1"],
-        allowedPages: ["support"],
-        status: sa.status || "active",
-        mustChangePassword: false,
-        lastLogin: null,
-        lastActivity: "2026-01-01T00:00:00Z",
-        createdAt: "2026-01-01T00:00:00Z",
-        emailVerified: true,
-        identityVerified: true,
-        notes: "موظف دعم فني"
-      });
-    }
+    registerOrLinkUser(sa.id, {
+      id: sa.id,
+      userId: sa.id,
+      username: sa.username || sa.id,
+      name: sa.name,
+      email: sa.email || "",
+      phone: sa.phone || "",
+      nationalId: sa.nationalId || "",
+      role: "support_agent",
+      jobTitle: "أخصائي دعم فني",
+      departmentId: "dep-1",
+      departmentName: "الإدارة التنفيذية",
+      permissions: sa.permissions || ["view_assigned_tasks", "reply_tickets", "close_tasks"],
+      allowedDepartmentIds: ["dep-1"],
+      allowedPages: ["support"],
+      status: sa.status || "active",
+      mustChangePassword: false,
+      lastLogin: null,
+      lastActivity: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+      emailVerified: true,
+      identityVerified: true,
+      notes: "موظف دعم فني"
+    }, "supportAgents");
   });
 
+  // 9. Dedicated Supervisor
+  registerOrLinkUser("sup-1", {
+    id: "sup-1",
+    userId: "sup-1",
+    username: "supervisor_1",
+    name: "أ. محمد العسيري (مشرف الإدارة)",
+    email: "supervisor@riadataleata.org.sa",
+    phone: "0550000088",
+    nationalId: "1000000088",
+    role: "supervisor",
+    jobTitle: "مشرف الإدارة والمتابعة",
+    departmentId: "dep-1",
+    departmentName: "الإدارة التنفيذية",
+    permissions: ["view_department", "view_reports", "manage_tasks"],
+    allowedDepartmentIds: ["dep-1"],
+    allowedPages: ["dashboard", "tasks", "reports"],
+    status: "active",
+    mustChangePassword: false,
+    lastLogin: null,
+    lastActivity: "2026-01-01T00:00:00Z",
+    createdAt: "2026-01-01T00:00:00Z",
+    emailVerified: true,
+    identityVerified: true,
+    notes: "مشرف الإدارة والمتابعة"
+  }, "supervisors");
+
   const allUsers = Array.from(userMap.values());
+
+  // Aggregate Summary Counters
+  const summary = {
+    total: allUsers.length,
+    byCategory: {
+      admins: allUsers.filter(u => u.role === 'admin' || u.role === 'operations_manager' || u.role === 'supervisor' || u.role === 'department_admin').length,
+      employees: allUsers.filter(u => u.role === 'employee' || u.role === 'storekeeper').length,
+      leaders: allUsers.filter(u => u.role === 'leader').length,
+      volunteers: allUsers.filter(u => u.role === 'volunteer').length,
+      beneficiaries: allUsers.filter(u => u.role === 'beneficiary').length,
+      support: allUsers.filter(u => u.role === 'support_manager' || u.role === 'support_agent').length
+    },
+    byStatus: {
+      active: allUsers.filter(u => u.status === 'active').length,
+      pending: allUsers.filter(u => u.status === 'pending').length,
+      suspended: allUsers.filter(u => u.status === 'suspended').length,
+      inactive: allUsers.filter(u => u.status === 'inactive').length,
+      rejected: allUsers.filter(u => u.status === 'rejected').length
+    }
+  };
+
   res.json({
     status: "success",
     users: allUsers,
     total: allUsers.length,
+    summary,
     departments: (db.departments || []).map((d: any) => ({ id: d.id, nameAr: d.nameAr, nameEn: d.nameEn }))
   });
 });
@@ -5592,6 +5884,35 @@ app.post(["/api/db/users/update", "/api/users/update"], (req, res) => {
     }
   }
 
+  if (db.beneficiaries) {
+    const ben = db.beneficiaries.find((b: any) => b.id === userId || (nationalId && b.nationalId === nationalId));
+    if (ben) {
+      if (name) ben.name = name;
+      if (email) ben.email = email;
+      if (phone) ben.phone = phone;
+      if (nationalId) ben.nationalId = nationalId;
+      if (status) {
+        ben.status = status === 'active' ? 'approved' : status === 'rejected' ? 'rejected' : status === 'suspended' ? 'suspended' : 'pending';
+      }
+      if (req.body.category) ben.category = req.body.category;
+      if (req.body.familySize !== undefined) ben.familySize = req.body.familySize;
+      if (req.body.monthlyIncome !== undefined) ben.monthlyIncome = req.body.monthlyIncome;
+      if (req.body.housingType) ben.housingType = req.body.housingType;
+      ben.updatedAt = new Date().toISOString();
+    }
+  }
+
+  if (db.teams) {
+    const team = db.teams.find((t: any) => `leader-${t.id}` === userId || t.id === userId);
+    if (team) {
+      if (name) team.leaderName = name;
+      if (phone) team.phone = phone;
+      if (email) team.email = email;
+      if (status) team.status = status;
+      team.updatedAt = new Date().toISOString();
+    }
+  }
+
   // Audit Log
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
   db.accessAuditLogs.unshift({
@@ -5724,6 +6045,13 @@ app.post("/api/db/users/toggle-status", (req, res) => {
   if (vol) vol.status = status;
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) sk.status = status;
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId);
+  if (ben) {
+    ben.status = status === 'active' ? 'approved' : status === 'rejected' ? 'rejected' : status === 'suspended' ? 'suspended' : 'pending';
+    ben.updatedAt = new Date().toISOString();
+  }
+  const team = (db.teams || []).find((t: any) => `leader-${t.id}` === userId || t.id === userId);
+  if (team) team.status = status;
 
   // Audit Log
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
@@ -5747,7 +6075,148 @@ app.post("/api/db/users/toggle-status", (req, res) => {
   writeDb(db);
   res.json({
     status: "success",
-    message: `تم تحديث حالة المستخدم إلى (${status === 'active' ? 'نشط' : status === 'suspended' ? 'موقوف' : 'غير مفعل'}) بنجاح.`
+    message: `تم تحديث حالة المستخدم إلى (${status === 'active' ? 'نشط' : status === 'suspended' ? 'موقوف' : status === 'rejected' ? 'مرفوض' : status === 'pending' ? 'بانتظار المراجعة' : 'غير مفعل'}) بنجاح.`
+  });
+});
+
+// Approve Pending User (Beneficiary, Volunteer, Team Leader, etc.)
+app.post("/api/db/users/approve", (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'اعتماد حساب المستخدم');
+  if (!auth.allowed) return;
+  const db = readDb();
+
+  const { userId, notes } = req.body || {};
+  if (!userId) return res.status(400).json({ error: "معرف المستخدم مطلوب." });
+
+  let matchedType = "حساب مستخدم";
+
+  // 1. userDepartmentAccess
+  if (!db.userDepartmentAccess) db.userDepartmentAccess = [];
+  const uEntry = db.userDepartmentAccess.find((u: any) => u.userId === userId || u.id === userId);
+  if (uEntry) {
+    uEntry.status = "active";
+    uEntry.updatedAt = new Date().toISOString();
+    uEntry.updatedBy = auth.context.userName;
+    matchedType = uEntry.role;
+  }
+
+  // 2. Beneficiaries
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId);
+  if (ben) {
+    ben.status = "approved";
+    ben.updatedAt = new Date().toISOString();
+    ben.approvedBy = auth.context.userName;
+    ben.approvedAt = new Date().toISOString();
+    matchedType = "مستفيد رعاية اجتماعية";
+  }
+
+  // 3. Volunteers
+  const vol = (db.volunteers || []).find((v: any) => v.id === userId);
+  if (vol) {
+    vol.status = "active";
+    vol.updatedAt = new Date().toISOString();
+    matchedType = "متطوع";
+  }
+
+  // 4. Teams
+  const team = (db.teams || []).find((t: any) => `leader-${t.id}` === userId || t.id === userId);
+  if (team) {
+    team.status = "active";
+    team.updatedAt = new Date().toISOString();
+    matchedType = "فريق تطوعي";
+  }
+
+  // 5. Employees
+  const emp = (db.employees || []).find((e: any) => e.id === userId);
+  if (emp) {
+    emp.status = "active";
+    emp.updatedAt = new Date().toISOString();
+    matchedType = "موظف";
+  }
+
+  // Audit Log
+  if (!db.accessAuditLogs) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-approve-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: auth.context.userId,
+    userName: auth.context.userName,
+    userRole: auth.context.role,
+    userDepartmentId: auth.context.primaryDepartmentId,
+    targetDepartmentId: 'auth',
+    action: 'approve_user',
+    resource: 'إدارة المستخدمين',
+    endpoint: '/api/db/users/approve',
+    status: 'allowed',
+    ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+    device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
+    notes: `تم اعتماد وقبول حساب (${matchedType}: ${userId}) بنجاح. ملاحظات: ${notes || 'معتمد'}`
+  });
+
+  writeDb(db);
+  res.json({
+    status: "success",
+    message: `تم اعتماد وتفعيل الحساب (${userId}) بنجاح.`
+  });
+});
+
+// Reject Pending User
+app.post("/api/db/users/reject", (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'رفض طلب حساب المستخدم');
+  if (!auth.allowed) return;
+  const db = readDb();
+
+  const { userId, reason } = req.body || {};
+  if (!userId) return res.status(400).json({ error: "معرف المستخدم مطلوب." });
+
+  let matchedType = "حساب مستخدم";
+
+  if (!db.userDepartmentAccess) db.userDepartmentAccess = [];
+  const uEntry = db.userDepartmentAccess.find((u: any) => u.userId === userId || u.id === userId);
+  if (uEntry) {
+    uEntry.status = "inactive";
+    uEntry.updatedAt = new Date().toISOString();
+    uEntry.updatedBy = auth.context.userName;
+  }
+
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId);
+  if (ben) {
+    ben.status = "rejected";
+    ben.rejectionReason = reason || "لم يستوفِ الشروط المعتمدة";
+    ben.updatedAt = new Date().toISOString();
+    matchedType = "مستفيد رعاية اجتماعية";
+  }
+
+  const vol = (db.volunteers || []).find((v: any) => v.id === userId);
+  if (vol) {
+    vol.status = "inactive";
+    vol.rejectionReason = reason || "تم رفض طلب الانضمام";
+    vol.updatedAt = new Date().toISOString();
+    matchedType = "متطوع";
+  }
+
+  if (!db.accessAuditLogs) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-reject-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: auth.context.userId,
+    userName: auth.context.userName,
+    userRole: auth.context.role,
+    userDepartmentId: auth.context.primaryDepartmentId,
+    targetDepartmentId: 'auth',
+    action: 'reject_user',
+    resource: 'إدارة المستخدمين',
+    endpoint: '/api/db/users/reject',
+    status: 'allowed',
+    ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+    device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
+    notes: `تم رفض طلب الحساب (${matchedType}: ${userId}). السبب: ${reason || 'غير محدد'}`
+  });
+
+  writeDb(db);
+  res.json({
+    status: "success",
+    message: `تم رفض الطلب (${userId}) بنجاح.`
   });
 });
 
@@ -15617,7 +16086,7 @@ app.post("/api/ai/chat", async (req, res) => {
       parts: [{ text: prompt }]
     });
 
-    const candidateModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest"];
+    const candidateModels = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
     let responseText = "";
     let lastError: any = null;
 

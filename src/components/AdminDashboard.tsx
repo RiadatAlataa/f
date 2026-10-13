@@ -459,7 +459,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data.partners || []).length || undefined },
         { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: (data.letters || []).filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
-        { id: 'users_mgmt', label: 'إدارة المستخدمين الإداريين', icon: Users, badge: 'جديد' },
+        { id: 'users_mgmt', label: 'إدارة المستخدمين الشاملة', icon: Users, badge: 'شامل' },
         { id: 'password_resets', label: 'طلبات تغيير كلمات المرور (مدير العمليات)', icon: KeyRound, badge: 'العمليات' },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
         { id: 'chat', label: 'الدردشة الداخلية', icon: MessageSquare },
@@ -1827,10 +1827,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {(data.teams || []).map(t => {
+                {(data.teams || []).map((t, idx) => {
                   const dep = (data.departments || []).find(d => d.id === t.departmentId);
                   return (
-                    <div key={t.id} className="border border-neutral-100 p-4 rounded-2xl flex flex-col justify-between hover:border-emerald-500 transition-all">
+                    <div key={t.id ? `${t.id}-${idx}` : `team-${idx}`} className="border border-neutral-100 p-4 rounded-2xl flex flex-col justify-between hover:border-emerald-500 transition-all">
                       <div>
                         <div className="flex justify-between items-start">
                           <div>
@@ -2080,24 +2080,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-50">
-                    {(data.initiatives || []).map(i => {
+                    {(data.initiatives || []).map((i, idx) => {
                       const dep = (data.departments || []).find(d => d.id === i.departmentId);
                       const team = (data.teams || []).find(t => t.id === i.teamId);
                       return (
-                        <tr key={i.id} className="hover:bg-neutral-50/20 transition-all">
+                        <tr key={i.id ? `${i.id}-${idx}` : `init-${idx}`} className="hover:bg-neutral-50/20 transition-all">
                           <td className="p-3">
-                            <span className="font-bold text-neutral-800 block">{i.name}</span>
-                            <span className="text-[10px] text-neutral-400 block max-w-xs truncate">{i.place}</span>
+                            <span className="font-bold text-neutral-800 block">{i.name || (i as any).title || "مبادرة بدون عنوان"}</span>
+                            <span className="text-[10px] text-neutral-400 block max-w-xs truncate">{i.place || "مكة المكرمة"}</span>
                           </td>
                           <td className="p-3 font-mono">
-                            <span className="block text-neutral-700">{i.date}</span>
-                            <span className="block text-[10px] text-neutral-400 mt-0.5">{i.startTime} - {i.endTime}</span>
+                            <span className="block text-neutral-700">{i.date || "-"}</span>
+                            <span className="block text-[10px] text-neutral-400 mt-0.5">{i.startTime || "--:--"} - {i.endTime || "--:--"}</span>
                           </td>
                           <td className="p-3">
                             <span className="text-neutral-500 block">{dep ? dep.nameAr : "مستقل"}</span>
                             <span className="text-[10px] text-emerald-600 block mt-0.5">{team ? team.nameAr : ""}</span>
                           </td>
-                          <td className="p-3 text-center font-bold text-neutral-700 font-mono">{i.acceptedVolunteerIds.length} / {i.neededCount}</td>
+                          <td className="p-3 text-center font-bold text-neutral-700 font-mono">{(i.acceptedVolunteerIds?.length || 0)} / {(i.neededCount || 0)}</td>
                           <td className="p-3 text-center">
                             <span className={`inline-block px-2.5 py-0.5 rounded-full font-bold text-[9px] ${
                               i.registrationStatus === 'open' ? 'bg-emerald-100 text-emerald-800' :
@@ -2208,7 +2208,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             if (!isAuthorized) {
               return (
                 <AccessDeniedCard 
-                  pageTitle="إدارة المستخدمين الإداريين"
+                  pageTitle="إدارة المستخدمين والحسابات الشاملة"
                   requiredPermission="إدارة المستخدمين (manage_users) أو رتبة مدير العمليات / الإدارة العليا"
                   userPermissions={authenticatedUser?.permissions || []}
                   allowedWorkspaces={authenticatedUser?.allowedPages || []}
@@ -2219,7 +2219,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }
 
             return (
-              <DashboardErrorBoundary pageName="إدارة المستخدمين الإداريين">
+              <DashboardErrorBoundary pageName="إدارة المستخدمين والحسابات الشاملة">
                 <UsersManager
                   currentUser={authenticatedUser}
                   currentUserRole={authenticatedUser?.role || 'admin'}
@@ -3225,8 +3225,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span>المتطوعين ({matchedVols.length})</span>
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {matchedVols.slice(0, 10).map(v => (
-                              <div key={v.id} className="border border-neutral-100 p-3.5 rounded-xl flex items-center justify-between hover:bg-neutral-50 transition-all bg-white shadow-2xs">
+                            {matchedVols.slice(0, 10).map((v, idx) => (
+                              <div key={v.id ? `${v.id}-${idx}` : `mv-${idx}`} className="border border-neutral-100 p-3.5 rounded-xl flex items-center justify-between hover:bg-neutral-50 transition-all bg-white shadow-2xs">
                                 <div className="flex items-center gap-3">
                                   <img src={v.photo} alt={v.name} className="w-10 h-10 rounded-full object-cover border" referrerPolicy="no-referrer" />
                                   <div className="space-y-0.5 text-right">
@@ -3251,8 +3251,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span>المبادرات ({matchedInits.length})</span>
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {matchedInits.slice(0, 10).map(i => (
-                              <div key={i.id} className="border border-neutral-100 p-3.5 rounded-xl space-y-2 hover:bg-neutral-50 transition-all bg-white shadow-2xs">
+                            {matchedInits.slice(0, 10).map((i, idx) => (
+                              <div key={i.id ? `${i.id}-${idx}` : `mi-${idx}`} className="border border-neutral-100 p-3.5 rounded-xl space-y-2 hover:bg-neutral-50 transition-all bg-white shadow-2xs">
                                 <div className="flex justify-between items-start">
                                   <h5 className="font-bold text-neutral-800 text-xs">{i.name}</h5>
                                   <span className="bg-emerald-50 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">{i.pointsGained} نقطة</span>
@@ -3276,8 +3276,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span>سجل العمليات والتدقيق ({matchedLogs.length})</span>
                           </h4>
                           <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden bg-white">
-                            {matchedLogs.slice(0, 8).map(log => (
-                              <div key={log.id} className="p-3 text-[11px] hover:bg-neutral-50/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-right">
+                            {matchedLogs.slice(0, 8).map((log, idx) => (
+                              <div key={log.id ? `${log.id}-${idx}` : `ml-${idx}`} className="p-3 text-[11px] hover:bg-neutral-50/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-right">
                                 <div className="space-y-1 text-right">
                                   <span className="font-bold text-neutral-800 block">{log.action}</span>
                                   <span className="text-[9.5px] text-neutral-400">المنفذ: {log.user} • {log.timestamp}</span>

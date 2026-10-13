@@ -67,8 +67,8 @@ export const AttendanceScanner: React.FC<AttendanceScannerProps> = ({
 
   // Filter volunteers that are registered for this initiative
   const registeredVolunteers = volunteers.filter(v => 
-    initiative.acceptedVolunteerIds.includes(v.id) || 
-    initiative.applicantVolunteerIds.includes(v.id)
+    (initiative?.acceptedVolunteerIds || []).includes(v.id) || 
+    (initiative?.applicantVolunteerIds || []).includes(v.id)
   );
 
   // Check if a volunteer already has attendance recorded
@@ -103,7 +103,7 @@ export const AttendanceScanner: React.FC<AttendanceScannerProps> = ({
       }
 
       // Check if volunteer is registered in this initiative
-      const isRegistered = initiative.acceptedVolunteerIds.includes(vol.id) || initiative.applicantVolunteerIds.includes(vol.id);
+      const isRegistered = (initiative?.acceptedVolunteerIds || []).includes(vol.id) || (initiative?.applicantVolunteerIds || []).includes(vol.id);
       
       // Section 9 & 10: Duplicate attendance prevention check
       const existingRecord = getAttendanceRecord(vol.id);

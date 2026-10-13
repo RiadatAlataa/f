@@ -212,7 +212,9 @@ export class AttachmentStorageService {
 
       fs.writeFileSync(destPath, fileBuffer);
       provider = 'local';
-      publicUrl = `/uploads/${fileKey}`;
+      publicUrl = (options.isPrivate ?? true)
+        ? `/api/attachments/download/${encodeURIComponent(fileKey)}`
+        : `/uploads/${fileKey}`;
     }
 
     // 6. Register Metadata
@@ -241,6 +243,25 @@ export class AttachmentStorageService {
   }
 
   /**
+   * Evaluates whether a fileKey represents a private attachment
+   * Implements secure default-deny classification
+   */
+  public isPrivateKey(fileKey: string, record?: AttachmentRecord): boolean {
+    if (record) {
+      return Boolean(record.isPrivate);
+    }
+    const clean = fileKey.replace(/^[\\/]+/, '').toLowerCase();
+    const top = clean.split(/[\\/]/)[0];
+    if (top === 'license' || top === 'licenses' || top === 'card_templates' || top === 'cards' || clean.startsWith('license_official')) {
+      return false;
+    }
+    if (['volunteers', 'beneficiaries', 'financial', 'reports', 'identities', 'confidential'].includes(top)) {
+      return true;
+    }
+    return true; // Default-deny: assume private unless explicitly public
+  }
+
+  /**
    * Retrieves an attachment with authorization check
    */
   public async getAttachmentBuffer(
@@ -248,14 +269,18 @@ export class AttachmentStorageService {
     userContext?: { role?: string; id?: string }
   ): Promise<{ buffer: Buffer; record?: AttachmentRecord; mimeType: string }> {
     // Prevent traversal
-    if (fileKey.includes('..') || path.isAbsolute(fileKey)) {
-      throw new Error("مسار ملف غير صالح.");
+    if (!fileKey || typeof fileKey !== 'string' || fileKey.includes('..') || path.isAbsolute(fileKey) || fileKey.includes('\0') || fileKey.includes('\\')) {
+      throw new Error("مسار ملف غير صالح أو محاولة اجتياز مسار.");
     }
 
     const record = this.attachmentRegistry.get(fileKey);
-    if (record && record.isPrivate) {
+    const isPrivate = this.isPrivateKey(fileKey, record);
+    if (isPrivate) {
       const role = userContext?.role || 'guest';
-      const isAuthorized = role === 'admin' || role === 'operations_manager' || (record.uploadedBy && record.uploadedBy === userContext?.id);
+      const isAuthorized = role === 'admin' || role === 'operations_manager' || 
+        (record && record.uploadedBy && record.uploadedBy === userContext?.id) ||
+        (record && record.entityId && record.entityId === userContext?.id) ||
+        (Boolean(userContext?.id) && userContext?.id !== 'guest' && userContext?.id !== 'public' && fileKey.includes(String(userContext?.id)));
       if (!isAuthorized) {
         throw new Error("غير مصرح لك بالوصول إلى هذا المرفق الخاص.");
       }
@@ -279,10 +304,15 @@ export class AttachmentStorageService {
       }
     } else {
       const localPath = path.join(this.localBaseDir, fileKey);
-      if (!fs.existsSync(localPath)) {
+      const resolved = path.resolve(localPath);
+      const baseResolved = path.resolve(this.localBaseDir);
+      if (!resolved.startsWith(baseResolved + path.sep) && resolved !== baseResolved) {
+        throw new Error("محاولة اجتياز مسار غير مشروعة (Path Traversal Detected).");
+      }
+      if (!fs.existsSync(resolved)) {
         throw new Error(`الملف المطلوب غير موجود في التخزين المحلي (${fileKey}).`);
       }
-      const buffer = fs.readFileSync(localPath);
+      const buffer = fs.readFileSync(resolved);
       return {
         buffer,
         record,

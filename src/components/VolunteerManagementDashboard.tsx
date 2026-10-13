@@ -388,7 +388,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-              {filteredInitiatives.map(init => {
+              {filteredInitiatives.map((init, idx) => {
                 const isPrivate = init.scope === 'private' || init.opportunityType?.includes('خاصة');
                 const isFull = (init.acceptedCount || 0) >= (init.neededCount || 0);
                 const shareUrl = init.registrationUrl || `${window.location.origin}/?oppCode=${init.opportunityCode || init.id}`;
@@ -402,15 +402,15 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
                 const pendingCount = oppApplicants.filter(a => a.status === 'pending').length;
 
                 return (
-                  <tr key={init.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/50 transition-colors">
+                  <tr key={init.id ? `${init.id}-${idx}` : `init-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/50 transition-colors">
                     <td className="p-3 font-mono font-bold">
                       <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md text-[11px]">
                         #{init.opportunityCode || init.id}
                       </span>
                     </td>
                     <td className="p-3 font-bold text-slate-800 dark:text-slate-100">
-                      <div>{init.name}</div>
-                      <span className="text-[10px] text-slate-400 font-normal">📍 {init.place} • {init.date}</span>
+                      <div>{init.name || (init as any).title || "مبادرة بدون عنوان"}</div>
+                      <span className="text-[10px] text-slate-400 font-normal">📍 {init.place || "مكة المكرمة"} • {init.date || "-"}</span>
                     </td>
                     <td className="p-3">
                       {isPrivate ? (

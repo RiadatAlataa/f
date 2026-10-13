@@ -34,8 +34,9 @@ export function useKnightsData(volunteers: Volunteer[], teams: VolunteerTeam[], 
   const rankedVolunteers = useMemo(() => {
     return (volunteers || [])
       .filter(v => {
+        if (!v) return false;
         if (v.status && v.status !== 'active') return false;
-        const name = (v.name || '').toLowerCase();
+        const name = (v.name || (v as any).fullName || (v as any).userName || '').toLowerCase();
         if (name.includes('موقوف') || name.includes('غير مفعل') || name.includes('معلق') || name.includes('تجريبي') || name.includes('حساب موقوف') || name.includes('تحت التفعيل')) {
           return false;
         }
@@ -43,21 +44,24 @@ export function useKnightsData(volunteers: Volunteer[], teams: VolunteerTeam[], 
       })
       .map(v => {
         // Find team
-        const team = teams.find(t => t.id === v.teamId);
+        const team = (teams || []).find(t => t && t.id === v.teamId);
         // Completed initiatives count
         const completedCount = v.completedInitiativesCount ?? 
-          initiatives.filter(i => (i.acceptedVolunteerIds || []).includes(v.id)).length ?? 0;
+          (initiatives || []).filter(i => (i?.acceptedVolunteerIds || []).includes(v.id)).length ?? 0;
         // Volunteer hours
         const hours = v.volunteerHours || (v as any).hours || (completedCount * 3) || 12;
         // Points
         const points = v.points || (hours * 5) || 50;
 
+        const volName = (v.name || (v as any).fullName || (v as any).userName || 'متطوع').trim();
+        const teamName = team ? (team.nameAr || (team as any).name || 'فريق التطوع') : (v.titleAr || 'فريق العطاء العام');
+
         return {
           id: v.id,
-          name: v.name,
+          name: volName || 'متطوع',
           photo: v.photo,
           teamId: v.teamId,
-          teamName: team ? team.nameAr : (v.titleAr || 'فريق العطاء العام'),
+          teamName: teamName || 'فريق التطوع',
           hours,
           initiativesCount: completedCount,
           points,
@@ -71,20 +75,23 @@ export function useKnightsData(volunteers: Volunteer[], teams: VolunteerTeam[], 
   const rankedTeams = useMemo(() => {
     return (teams || [])
       .filter(t => {
+        if (!t) return false;
         if ((t as any).status && (t as any).status !== 'active') return false;
-        const name = (t.nameAr || '').toLowerCase();
+        const name = (t.nameAr || (t as any).name || '').toLowerCase();
         if (name.includes('موقوف') || name.includes('غير مفعل') || name.includes('معلق')) return false;
         return true;
       })
       .map(t => {
+        const teamNameAr = (t.nameAr || (t as any).name || (t as any).teamName || 'فريق تطوعي').trim();
+        const teamNameEn = (t.nameEn || (t as any).nameEnglish || teamNameAr).trim();
         // Calculate initiatives count from database initiatives
-        const teamInits = initiatives.filter(i => i.teamId === t.id);
+        const teamInits = (initiatives || []).filter(i => i && i.teamId === t.id);
         const initsCount = (t.initiativesCount && t.initiativesCount > 0) 
           ? t.initiativesCount 
           : (teamInits.length > 0 ? teamInits.length : 5);
         
         // Sum hours
-        const teamVols = volunteers.filter(v => v.teamId === t.id && (v.status === 'active' || !v.status));
+        const teamVols = (volunteers || []).filter(v => v && v.teamId === t.id && (v.status === 'active' || !v.status));
         const totalVolsHours = teamVols.reduce((sum, v) => sum + (v.volunteerHours || (v as any).hours || 15), 0);
         const hours = t.pastVolunteerHours && t.pastVolunteerHours > 0 
           ? t.pastVolunteerHours 
@@ -98,10 +105,10 @@ export function useKnightsData(volunteers: Volunteer[], teams: VolunteerTeam[], 
 
         return {
           id: t.id,
-          nameAr: t.nameAr,
-          nameEn: t.nameEn,
+          nameAr: teamNameAr || 'فريق تطوعي',
+          nameEn: teamNameEn,
           logoUrl: t.logoUrl,
-          leaderName: t.leaderName || 'غير محدد',
+          leaderName: t.leaderName || (t as any).leader || 'غير محدد',
           color: t.color || '#059669',
           initiativesCount: initsCount,
           hours,
@@ -202,13 +209,13 @@ export const VolunteerKnightsHomeCard: React.FC<{
                       {topVolunteer.photo ? (
                         <img 
                           src={topVolunteer.photo} 
-                          alt={topVolunteer.name} 
+                          alt={topVolunteer.name || 'متطوع'} 
                           className="w-full h-full object-cover"
                           crossOrigin="anonymous"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-amber-300 font-black text-2xl bg-gradient-to-br from-emerald-800 to-teal-900">
-                          {topVolunteer.name.charAt(0)}
+                          {(topVolunteer.name || 'م').charAt(0)}
                         </div>
                       )}
                       <div className="absolute -bottom-1 -right-1 bg-amber-400 text-neutral-950 text-[10px] font-black rounded-full px-1.5 py-0.2 border border-amber-200">
@@ -220,12 +227,12 @@ export const VolunteerKnightsHomeCard: React.FC<{
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h4 className="font-black text-base sm:text-lg text-white truncate group-hover:text-amber-300 transition-colors">
-                          {topVolunteer.name}
+                          {topVolunteer.name || 'متطوع'}
                         </h4>
                       </div>
                       <p className="text-xs text-neutral-300 truncate mt-1 flex items-center gap-1.5">
                         <Users className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>{topVolunteer.teamName}</span>
+                        <span>{topVolunteer.teamName || 'فريق التطوع'}</span>
                       </p>
                       <span className="inline-block mt-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-md">
                         {lang === 'ar' ? 'متطوع معتمد ونشط' : 'Verified Volunteer'}
@@ -245,19 +252,19 @@ export const VolunteerKnightsHomeCard: React.FC<{
                   <div className="bg-black/30 rounded-xl p-2.5 border border-amber-400/20">
                     <div className="text-[10px] text-amber-300/80 font-bold">{lang === 'ar' ? 'مجموع النقاط' : 'Points'}</div>
                     <div className="text-sm sm:text-base font-black text-amber-300 font-mono mt-0.5">
-                      {topVolunteer.points.toLocaleString('ar-SA')}
+                      {(topVolunteer.points || 0).toLocaleString('ar-SA')}
                     </div>
                   </div>
                   <div className="bg-black/30 rounded-xl p-2.5 border border-emerald-400/20">
                     <div className="text-[10px] text-emerald-300/80 font-bold">{lang === 'ar' ? 'الساعات' : 'Hours'}</div>
                     <div className="text-sm sm:text-base font-black text-emerald-300 font-mono mt-0.5">
-                      {topVolunteer.hours} {lang === 'ar' ? 'س' : 'h'}
+                      {topVolunteer.hours || 0} {lang === 'ar' ? 'س' : 'h'}
                     </div>
                   </div>
                   <div className="bg-black/30 rounded-xl p-2.5 border border-teal-400/20">
                     <div className="text-[10px] text-teal-300/80 font-bold">{lang === 'ar' ? 'المبادرات' : 'Initiatives'}</div>
                     <div className="text-sm sm:text-base font-black text-teal-300 font-mono mt-0.5">
-                      {topVolunteer.initiativesCount}
+                      {topVolunteer.initiativesCount || 0}
                     </div>
                   </div>
                 </div>
@@ -285,13 +292,13 @@ export const VolunteerKnightsHomeCard: React.FC<{
                       {topTeam.logoUrl ? (
                         <img 
                           src={topTeam.logoUrl} 
-                          alt={topTeam.nameAr} 
+                          alt={topTeam.nameAr || 'فريق'} 
                           className="w-full h-full object-contain rounded-xl"
                           crossOrigin="anonymous"
                         />
                       ) : (
                         <div className="w-full h-full rounded-xl flex items-center justify-center text-emerald-300 font-black text-2xl bg-gradient-to-br from-teal-800 to-emerald-950">
-                          {topTeam.nameAr.charAt(0)}
+                          {(topTeam.nameAr || 'ف').charAt(0)}
                         </div>
                       )}
                       <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white text-[10px] font-black rounded-full px-1.5 py-0.2 border border-emerald-300">
@@ -303,15 +310,15 @@ export const VolunteerKnightsHomeCard: React.FC<{
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h4 className="font-black text-base sm:text-lg text-white truncate group-hover:text-emerald-300 transition-colors">
-                          {lang === 'ar' ? topTeam.nameAr : (topTeam.nameEn || topTeam.nameAr)}
+                          {lang === 'ar' ? (topTeam.nameAr || 'فريق تطوعي') : (topTeam.nameEn || topTeam.nameAr || 'Volunteer Team')}
                         </h4>
                       </div>
                       <p className="text-xs text-neutral-300 truncate mt-1 flex items-center gap-1.5">
                         <UserCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span>{lang === 'ar' ? `القائد: ${topTeam.leaderName}` : `Leader: ${topTeam.leaderName}`}</span>
+                        <span>{lang === 'ar' ? `القائد: ${topTeam.leaderName || 'غير محدد'}` : `Leader: ${topTeam.leaderName || 'N/A'}`}</span>
                       </p>
                       <span className="inline-block mt-1 text-[10px] font-bold text-teal-300 bg-teal-500/15 border border-teal-500/30 px-2 py-0.5 rounded-md">
-                        {lang === 'ar' ? `${topTeam.membersCount} متطوع بالفريق` : `${topTeam.membersCount} Volunteers`}
+                        {lang === 'ar' ? `${topTeam.membersCount || 1} متطوع بالفريق` : `${topTeam.membersCount || 1} Volunteers`}
                       </span>
                     </div>
                   </div>
@@ -394,7 +401,7 @@ export const VolunteerKnightsModal: React.FC<{
     .filter(v => {
       const q = searchQuery.trim().toLowerCase();
       if (!q) return true;
-      return v.name.toLowerCase().includes(q) || v.teamName.toLowerCase().includes(q);
+      return (v.name || '').toLowerCase().includes(q) || (v.teamName || '').toLowerCase().includes(q);
     })
     .sort((a, b) => {
       if (sortBy === 'hours') return b.hours - a.hours;
@@ -407,7 +414,7 @@ export const VolunteerKnightsModal: React.FC<{
     .filter(t => {
       const q = searchQuery.trim().toLowerCase();
       if (!q) return true;
-      return t.nameAr.toLowerCase().includes(q) || t.leaderName.toLowerCase().includes(q);
+      return (t.nameAr || '').toLowerCase().includes(q) || (t.leaderName || '').toLowerCase().includes(q);
     })
     .sort((a, b) => {
       if (sortBy === 'hours') return b.hours - a.hours;
@@ -651,13 +658,13 @@ export const VolunteerKnightsModal: React.FC<{
                           {vol.photo ? (
                             <img 
                               src={vol.photo} 
-                              alt={vol.name} 
+                              alt={vol.name || 'متطوع'} 
                               className="w-full h-full object-cover"
                               crossOrigin="anonymous"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-emerald-700 text-white font-black text-xl">
-                              {vol.name.charAt(0)}
+                              {(vol.name || 'م').charAt(0)}
                             </div>
                           )}
                         </div>
@@ -763,7 +770,7 @@ export const VolunteerKnightsModal: React.FC<{
                           {team.logoUrl ? (
                             <img 
                               src={team.logoUrl} 
-                              alt={team.nameAr} 
+                              alt={team.nameAr || 'فريق'} 
                               className="w-full h-full object-cover"
                               crossOrigin="anonymous"
                             />
@@ -772,7 +779,7 @@ export const VolunteerKnightsModal: React.FC<{
                               className="w-full h-full flex items-center justify-center text-white font-black text-xl"
                               style={{ backgroundColor: team.color || '#059669' }}
                             >
-                              {team.nameAr.slice(0, 2)}
+                              {(team.nameAr || 'فريق').slice(0, 2)}
                             </div>
                           )}
                         </div>

@@ -1593,7 +1593,7 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white font-black text-lg border border-white/15">
-              {user.name.charAt(0)}
+              {(user.name || 'م').charAt(0)}
             </div>
             <div>
               <div className="flex items-center gap-2">

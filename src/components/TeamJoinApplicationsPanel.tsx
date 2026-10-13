@@ -304,7 +304,7 @@ export const TeamJoinApplicationsPanel: React.FC<TeamJoinApplicationsPanelProps>
                           {app.logoUrl ? (
                             <img src={app.logoUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
-                            app.teamName.charAt(0)
+                            (app.teamName || 'ف').charAt(0)
                           )}
                         </div>
                         <div>
@@ -467,7 +467,7 @@ export const TeamJoinApplicationsPanel: React.FC<TeamJoinApplicationsPanelProps>
                   {viewingApp.logoUrl ? (
                     <img src={viewingApp.logoUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    viewingApp.teamName.charAt(0)
+                    (viewingApp.teamName || 'ف').charAt(0)
                   )}
                 </div>
                 <div>

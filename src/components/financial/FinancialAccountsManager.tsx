@@ -167,7 +167,7 @@ export const FinancialAccountsManager: React.FC<FinancialAccountsManagerProps> =
         <div>
           <span className="text-xs font-semibold text-emerald-200">السيولة النقدية المتاحة عبر كافة الحسابات</span>
           <div className="text-3xl font-black font-mono mt-1">
-            {totalBalance.toLocaleString()} <span className="text-sm font-normal">ريال سعودي</span>
+            {(Number(totalBalance) || 0).toLocaleString()} <span className="text-sm font-normal">ريال سعودي</span>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15">
@@ -213,13 +213,13 @@ export const FinancialAccountsManager: React.FC<FinancialAccountsManagerProps> =
               <div className="mt-4 pt-3 border-t border-neutral-100 dark:border-neutral-800">
                 <span className="text-xs text-neutral-400">الرصيد الفعلي الحالي:</span>
                 <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
-                  {acc.currentBalance.toLocaleString()} <span className="text-xs font-normal text-neutral-500">ريال</span>
+                  {(Number(acc.currentBalance) || 0).toLocaleString()} <span className="text-xs font-normal text-neutral-500">ريال</span>
                 </div>
               </div>
             </div>
 
             <div className="mt-4 pt-2 text-[11px] text-neutral-400 flex items-center justify-between border-t border-neutral-100 dark:border-neutral-800">
-              <span>الرصيد الافتتاحي: {acc.initialBalance.toLocaleString()} ريال</span>
+              <span>الرصيد الافتتاحي: {(Number(acc.initialBalance) || 0).toLocaleString()} ريال</span>
               <span className="text-emerald-600 dark:text-emerald-400 font-medium">نشط</span>
             </div>
           </div>
@@ -367,7 +367,7 @@ export const FinancialAccountsManager: React.FC<FinancialAccountsManagerProps> =
                 >
                   {accounts.map(acc => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.name} (رصيده: {acc.currentBalance.toLocaleString()} ر.س)
+                      {acc.name} (رصيده: {(Number(acc.currentBalance) || 0).toLocaleString()} ر.س)
                     </option>
                   ))}
                 </select>
@@ -383,7 +383,7 @@ export const FinancialAccountsManager: React.FC<FinancialAccountsManagerProps> =
                 >
                   {accounts.map(acc => (
                     <option key={acc.id} value={acc.id} disabled={acc.id === transferForm.fromAccountId}>
-                      {acc.name} (رصيده: {acc.currentBalance.toLocaleString()} ر.س)
+                      {acc.name} (رصيده: {(Number(acc.currentBalance) || 0).toLocaleString()} ر.س)
                     </option>
                   ))}
                 </select>

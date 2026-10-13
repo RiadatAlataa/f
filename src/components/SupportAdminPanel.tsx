@@ -556,12 +556,12 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
 
               {/* Tickets Scroll Area */}
               <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                {filteredTickets.length > 0 ? (
-                  filteredTickets.map((t) => {
+                {Array.isArray(filteredTickets) && filteredTickets.length > 0 ? (
+                  filteredTickets.map((t, idx) => {
                     const isSelected = t.id === selectedTicketId;
                     return (
                       <div
-                        key={t.id}
+                        key={t.id ? `${t.id}-${idx}` : `ticket-${idx}`}
                         onClick={() => setSelectedTicketId(t.id)}
                         className={`p-3 rounded-xl border transition-all cursor-pointer ${
                           isSelected
@@ -829,9 +829,9 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredTasks.length > 0 ? (
-                  filteredTasks.map((t) => (
-                    <tr key={t.id} className="hover:bg-gray-50/60 transition-colors">
+                {Array.isArray(filteredTasks) && filteredTasks.length > 0 ? (
+                  filteredTasks.map((t, idx) => (
+                    <tr key={t.id ? `${t.id}-${idx}` : `task-${idx}`} className="hover:bg-gray-50/60 transition-colors">
                       <td className="p-3 font-mono font-bold text-gray-700">
                         <span className="bg-gray-100 px-2 py-0.5 rounded text-[11px]">{t.taskNumber}</span>
                       </td>
@@ -946,7 +946,7 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
               <div key={agent.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black text-sm">
-                    {agent.name.charAt(0)}
+                    {(agent.name || 'م').charAt(0)}
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     agent.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
@@ -1307,9 +1307,9 @@ export const SupportAdminPanel: React.FC<SupportAdminPanelProps> = ({
             </div>
 
             <div className="space-y-3 max-h-72 overflow-y-auto">
-              {Array.isArray(selectedTask.history) && selectedTask.history.length > 0 ? (
+              {Array.isArray(selectedTask?.history) && selectedTask.history.length > 0 ? (
                 selectedTask.history.map((h, idx) => (
-                  <div key={h.id || idx} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
+                  <div key={h.id ? `${h.id}-${idx}` : `hist-${idx}`} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-gray-900">{h.action}</span>
                       <span className="text-[10px] text-gray-400 font-mono">

@@ -99,7 +99,7 @@ export const TeamPublicProfileModal: React.FC<TeamPublicProfileModalProps> = ({
                     className="w-full h-full rounded-2xl flex items-center justify-center text-white text-2xl font-black"
                     style={{ backgroundColor: teamColor }}
                   >
-                    {team.nameAr.charAt(0)}
+                    {(team.nameAr || (team as any).name || 'ف').charAt(0)}
                   </div>
                 )}
               </div>
