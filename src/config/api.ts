@@ -134,6 +134,18 @@ export const getApiBaseUrl = (): string => {
 };
 
 /**
+ * Ensures header values are strictly ASCII-safe (ByteString compatible)
+ * Non-ASCII characters (e.g. Arabic names/roles) are safely URI-encoded to prevent:
+ * "Failed to read the 'headers' property from 'RequestInit': String contains non ISO-8859-1 code point"
+ */
+export const safeHeaderValue = (val: any): string => {
+  if (val === undefined || val === null) return '';
+  const str = String(val).trim();
+  if (!str) return '';
+  return /^[\x20-\x7E]*$/.test(str) ? str : encodeURIComponent(str);
+};
+
+/**
  * Resolves standard authorization and context headers from stored authenticated session
  */
 export const getAuthHeaders = (): Record<string, string> => {
@@ -148,23 +160,23 @@ export const getAuthHeaders = (): Record<string, string> => {
       const session = JSON.parse(raw);
       if (session) {
         if (session.sessionToken) {
-          headers['x-session-token'] = session.sessionToken;
-          headers['Authorization'] = `Bearer ${session.sessionToken}`;
+          headers['x-session-token'] = safeHeaderValue(session.sessionToken);
+          headers['Authorization'] = `Bearer ${safeHeaderValue(session.sessionToken)}`;
         }
         if (session.user?.id || session.user?.userId) {
-          headers['x-user-id'] = session.user.id || session.user.userId;
+          headers['x-user-id'] = safeHeaderValue(session.user.id || session.user.userId);
         }
         if (session.role) {
-          headers['x-user-role'] = session.role;
+          headers['x-user-role'] = safeHeaderValue(session.role);
         }
         if (session.user?.departmentId) {
-          headers['x-department-id'] = session.user.departmentId;
+          headers['x-department-id'] = safeHeaderValue(session.user.departmentId);
         }
         if (session.user?.nationalId) {
-          headers['x-national-id'] = session.user.nationalId;
+          headers['x-national-id'] = safeHeaderValue(session.user.nationalId);
         }
         if (session.user?.teamId) {
-          headers['x-team-id'] = session.user.teamId;
+          headers['x-team-id'] = safeHeaderValue(session.user.teamId);
         }
       }
     }
@@ -394,6 +406,13 @@ export const checkHealthEndpoint = async (targetBaseUrl?: string): Promise<Healt
  */
 export const installGlobalFetchInterceptor = () => {
   if (typeof window === 'undefined') return;
+  // If running inside AI Studio preview or any iframe sandbox, never mutate window.fetch.
+  // The host environment provides its own fetch and messaging channels.
+  try {
+    if (window.self !== window.top) return;
+  } catch {
+    return;
+  }
   if ((window as any).__reyadat_fetch_installed__) return;
 
   try {

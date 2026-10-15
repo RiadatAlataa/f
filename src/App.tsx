@@ -242,15 +242,7 @@ export default function App() {
         const stored = getStoredSession();
         if (!stored?.user) return;
 
-        const headers: Record<string, string> = {};
-        if (stored.sessionToken) {
-          headers['x-session-token'] = stored.sessionToken;
-        }
-        if (stored.user.id) {
-          headers['x-user-id'] = stored.user.id;
-          headers['x-user-role'] = stored.role;
-        }
-
+        const headers = getAuthHeaders();
         const res = await fetch(buildApiUrl("/api/db/auth/session"), { headers });
         if (res.ok) {
           const sessionData = await res.json();
@@ -395,9 +387,9 @@ export default function App() {
   };
 
   // Fetch Database (Supports silent background fetch without unmounting active components)
-  const fetchDatabase = async (isBackground = false) => {
+  const fetchDatabase = async (isBackground = false, retryAttempt = 0) => {
     try {
-      if (!isBackground && !dbData) {
+      if (!isBackground && !dbData && retryAttempt === 0) {
         setLoading(true);
       }
       setIsRetrying(true);
@@ -494,6 +486,13 @@ export default function App() {
         }
       }
     } catch (err: any) {
+      // Auto-retry transient network/connection failures before reporting fatal error
+      if (retryAttempt < 2) {
+        setTimeout(() => {
+          fetchDatabase(isBackground, retryAttempt + 1);
+        }, 500 * (retryAttempt + 1));
+        return;
+      }
       console.error("[System Connection Error]:", err);
       const isNetworkError = err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network');
       const friendlyMessage = isNetworkError 

@@ -58,7 +58,7 @@ export interface SystemUser {
   permissions: string[];
   allowedDepartmentIds?: string[];
   allowedPages?: string[];
-  status: "active" | "suspended" | "inactive";
+  status: "active" | "suspended" | "inactive" | "pending" | "rejected";
   mustChangePassword?: boolean;
   lastLogin?: string | null;
   lastActivity?: string | null;
@@ -66,6 +66,23 @@ export interface SystemUser {
   emailVerified?: boolean;
   identityVerified?: boolean;
   notes?: string;
+  beneficiaryNumber?: string;
+  category?: string;
+  familySize?: number;
+  monthlyIncome?: number;
+  housingType?: string;
+  address?: string;
+  membershipNumber?: string;
+  hours?: number;
+  teamId?: string;
+  teamName?: string;
+  rejectionReason?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  linkedProfiles?: any[];
+  primarySource?: string;
+  loginDisabled?: boolean;
+  hasLoginAccount?: boolean;
 }
 
 interface Department {
@@ -209,11 +226,13 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Filters
+  const [activeCategoryTab, setActiveCategoryTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [mustChangeFilter, setMustChangeFilter] = useState(false);
+  const [pendingOnlyFilter, setPendingOnlyFilter] = useState(false);
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -282,6 +301,18 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
   // Filtered Users List
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
+      // Category Tab filter
+      if (activeCategoryTab !== "all") {
+        if (activeCategoryTab === "admins" && !(u.role === "admin" || u.role === "operations_manager")) return false;
+        if (activeCategoryTab === "dept_heads" && !(u.role === "department_admin" || u.role === "supervisor")) return false;
+        if (activeCategoryTab === "employees" && !(u.role === "employee")) return false;
+        if (activeCategoryTab === "storekeepers" && !(u.role === "storekeeper")) return false;
+        if (activeCategoryTab === "leaders" && !(u.role === "leader")) return false;
+        if (activeCategoryTab === "volunteers" && !(u.role === "volunteer")) return false;
+        if (activeCategoryTab === "beneficiaries" && !(u.role === "beneficiary")) return false;
+        if (activeCategoryTab === "support" && !u.role.includes("support")) return false;
+      }
+
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -291,7 +322,11 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         const matchesPhone = u.phone?.includes(q);
         const matchesNat = u.nationalId?.includes(q);
         const matchesTitle = u.jobTitle?.toLowerCase().includes(q);
-        if (!matchesName && !matchesUsername && !matchesEmail && !matchesPhone && !matchesNat && !matchesTitle) {
+        const matchesBenNum = u.beneficiaryNumber?.toLowerCase().includes(q);
+        const matchesVolNum = u.membershipNumber?.toLowerCase().includes(q);
+        const matchesTeam = u.teamName?.toLowerCase().includes(q);
+        const matchesCategory = u.category?.toLowerCase().includes(q);
+        if (!matchesName && !matchesUsername && !matchesEmail && !matchesPhone && !matchesNat && !matchesTitle && !matchesBenNum && !matchesVolNum && !matchesTeam && !matchesCategory) {
           return false;
         }
       }
@@ -300,11 +335,13 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       if (roleFilter !== "all") {
         if (roleFilter === "super_admin" && u.role !== "admin") return false;
         if (roleFilter === "operations_manager" && u.role !== "operations_manager") return false;
+        if (roleFilter === "supervisor" && u.role !== "supervisor") return false;
         if (roleFilter === "dept_head" && u.role !== "department_admin") return false;
         if (roleFilter === "employee" && u.role !== "employee") return false;
         if (roleFilter === "storekeeper" && u.role !== "storekeeper") return false;
         if (roleFilter === "leader" && u.role !== "leader") return false;
         if (roleFilter === "volunteer" && u.role !== "volunteer") return false;
+        if (roleFilter === "beneficiary" && u.role !== "beneficiary") return false;
         if (roleFilter === "support" && !u.role.includes("support")) return false;
       }
 
@@ -323,18 +360,33 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         return false;
       }
 
+      // Pending review filter
+      if (pendingOnlyFilter && u.status !== "pending") {
+        return false;
+      }
+
       return true;
     });
-  }, [users, searchQuery, roleFilter, deptFilter, statusFilter, mustChangeFilter]);
+  }, [users, activeCategoryTab, searchQuery, roleFilter, deptFilter, statusFilter, mustChangeFilter, pendingOnlyFilter]);
 
   // Statistics
   const stats = useMemo(() => {
     return {
       total: users.length,
       active: users.filter((u) => u.status === "active").length,
+      pending: users.filter((u) => u.status === "pending").length,
       suspended: users.filter((u) => u.status === "suspended").length,
+      rejected: users.filter((u) => u.status === "rejected").length,
+      inactive: users.filter((u) => u.status === "inactive").length,
       mustChange: users.filter((u) => u.mustChangePassword).length,
-      operationsAndAdmins: users.filter((u) => u.role === "admin" || u.role === "operations_manager").length
+      adminsAndOps: users.filter((u) => u.role === "admin" || u.role === "operations_manager").length,
+      deptHeadsAndSupervisors: users.filter((u) => u.role === "department_admin" || u.role === "supervisor").length,
+      employees: users.filter((u) => u.role === "employee").length,
+      storekeepers: users.filter((u) => u.role === "storekeeper").length,
+      leaders: users.filter((u) => u.role === "leader").length,
+      volunteers: users.filter((u) => u.role === "volunteer").length,
+      beneficiaries: users.filter((u) => u.role === "beneficiary").length,
+      support: users.filter((u) => u.role.includes("support")).length
     };
   }, [users]);
 
@@ -350,6 +402,11 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         return {
           label: "مدير العمليات (Operations)",
           bg: "bg-amber-100 text-amber-950 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-700"
+        };
+      case "supervisor":
+        return {
+          label: "مشرف إدارة ومتابعة",
+          bg: "bg-cyan-100 text-cyan-900 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800"
         };
       case "department_admin":
         return {
@@ -376,17 +433,192 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
           label: "متطوع مسجل",
           bg: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
         };
+      case "beneficiary":
+        return {
+          label: "مستفيد رعاية اجتماعية",
+          bg: "bg-rose-100 text-rose-900 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800"
+        };
       case "support_manager":
+        return {
+          label: "مدير الدعم الفني",
+          bg: "bg-indigo-100 text-indigo-900 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800"
+        };
       case "support_agent":
         return {
-          label: "الدعم الفني والخدمات",
-          bg: "bg-indigo-100 text-indigo-900 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800"
+          label: "أخصائي دعم فني",
+          bg: "bg-sky-100 text-sky-900 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800"
         };
       default:
         return {
           label: "مستخدم نظام",
           bg: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300"
         };
+    }
+  };
+
+  // Status Badge Styling
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "active":
+        return {
+          label: "نشط ومفعل",
+          bg: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900",
+          icon: CheckCircle2
+        };
+      case "pending":
+        return {
+          label: "قيد المراجعة والاعتماد",
+          bg: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+          icon: Clock
+        };
+      case "suspended":
+        return {
+          label: "موقوف إدارياً",
+          bg: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900",
+          icon: XCircle
+        };
+      case "rejected":
+        return {
+          label: "مرفوض",
+          bg: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900",
+          icon: XCircle
+        };
+      default:
+        return {
+          label: "غير مفعل",
+          bg: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+          icon: Info
+        };
+    }
+  };
+
+  // Approve Pending User (e.g. Beneficiary or Volunteer)
+  const handleApproveUser = async (user: SystemUser) => {
+    if (!window.confirm(`هل أنت متأكد من رغبتك في اعتماد وتفعيل حساب (${user.name})؟`)) return;
+
+    try {
+      const res = await fetch(buildApiUrl("/api/db/users/approve"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ userId: user.userId || user.id })
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "فشل اعتماد الحساب.");
+
+      setSuccessToast(data.message || `تم اعتماد وتفعيل حساب (${user.name}) بنجاح.`);
+      fetchUsers();
+    } catch (err: any) {
+      alert(err.message || "حدث خطأ أثناء اعتماد الحساب.");
+    }
+  };
+
+  // Reject Pending User
+  const handleRejectUser = async (user: SystemUser) => {
+    const reason = window.prompt(`يرجى كتابة سبب رفض طلب (${user.name}):`, "عدم استيفاء الشروط المعتمدة");
+    if (reason === null) return;
+
+    try {
+      const res = await fetch(buildApiUrl("/api/db/users/reject"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ userId: user.userId || user.id, reason: reason.trim() || undefined })
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "فشل رفض الطلب.");
+
+      setSuccessToast(data.message || `تم تسجيل رفض الطلب للمستخدم (${user.name}).`);
+      fetchUsers();
+    } catch (err: any) {
+      alert(err.message || "حدث خطأ أثناء رفض الطلب.");
+    }
+  };
+
+  // Helper to sanitize CSV cells against CSV Formula Injection (CWE-1236 / Excel Macro Injection)
+  const sanitizeCsvCell = (val: any): string => {
+    if (val === null || val === undefined) return '""';
+    let str = String(val);
+
+    // Strip leading whitespace and ASCII control characters (including tabs and newlines) to inspect real trigger
+    const trimmedLeading = str.replace(/^[\s\u0000-\u001F\u007F-\u009F]+/, '');
+    const formulaTriggers = ['=', '+', '-', '@', '\t', '\r', '%', '|'];
+
+    if (
+      formulaTriggers.some((prefix) => str.startsWith(prefix)) ||
+      (trimmedLeading.length > 0 && formulaTriggers.some((prefix) => trimmedLeading.startsWith(prefix)))
+    ) {
+      // Prefix with single quote to force spreadsheet processors (Excel, Calc, Sheets) to treat as literal text
+      str = `'${str}`;
+    }
+
+    // Escape internal double quotes by doubling them per RFC 4180
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
+  // Export Filtered Users to CSV (مع حماية Formula Injection ودعم كامل للعربية)
+  const handleExportCsv = () => {
+    // Check permission to export
+    const hasExportPerm = 
+      currentUser?.role === 'admin' || 
+      currentUser?.role === 'operations_manager' || 
+      currentUser?.permissions?.includes('export_excel') || 
+      currentUser?.permissions?.includes('super_admin') || 
+      currentUser?.permissions?.includes('all_permissions');
+
+    if (!hasExportPerm) {
+      alert("ليس لديك صلاحية تصدير البيانات (export_excel). يرجى مراجعة إدارة النظام.");
+      return;
+    }
+
+    try {
+      const headers = [
+        "المعرف",
+        "الاسم",
+        "اسم المستخدم",
+        "الدور",
+        "الفئة/المسمى",
+        "الهوية الوطنية",
+        "الجوال",
+        "البريد الإلكتروني",
+        "الإدارة",
+        "الحالة",
+        "حالة حساب الدخول",
+        "الساعات / الأفراد",
+        "ملاحظات",
+        "تاريخ التسجيل"
+      ];
+
+      const rows = filteredUsers.map((u) => [
+        sanitizeCsvCell(u.id),
+        sanitizeCsvCell(u.name),
+        sanitizeCsvCell(u.username),
+        sanitizeCsvCell(getRoleBadge(u.role).label),
+        sanitizeCsvCell(u.category || u.teamName || u.jobTitle || ""),
+        sanitizeCsvCell(u.nationalId || ""),
+        sanitizeCsvCell(u.phone || ""),
+        sanitizeCsvCell(u.email || ""),
+        sanitizeCsvCell(u.departmentName || ""),
+        sanitizeCsvCell(getStatusBadge(u.status).label),
+        sanitizeCsvCell(u.loginDisabled || u.hasLoginAccount === false ? "حساب دخول معطل" : "مفعل"),
+        sanitizeCsvCell(u.role === 'volunteer' ? (u.hours || 0) : u.role === 'beneficiary' ? (u.familySize || 1) : ""),
+        sanitizeCsvCell(u.notes || ""),
+        sanitizeCsvCell(u.createdAt ? new Date(u.createdAt).toLocaleDateString("ar-SA") : "")
+      ]);
+
+      const csvContent = "\uFEFF" + [headers.map(sanitizeCsvCell).join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `users_riadataleata_${new Date().toISOString().substring(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setSuccessToast(`تم تصدير (${rows.length}) سجل مستخدم بنجاح بصيغة CSV آمنة.`);
+    } catch (err) {
+      alert("حدث خطأ أثناء تصدير ملف CSV.");
     }
   };
 
@@ -420,14 +652,20 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
     }
   };
 
-  // Delete User
+  // Delete / Revoke User Login Account (إلغاء حساب الدخول مع الحفاظ على ملف وسجلات الشخص)
   const handleDeleteUser = async (user: SystemUser) => {
-    if (user.userId === "admin-user" || user.userId === "ops-manager") {
-      alert("لا يمكن حذف حساب الإدارة العليا أو مدير العمليات الرئيسي للحفاظ على استقرار النظام.");
+    if (user.userId === "admin-user" || user.userId === "ops-manager" || user.userId === "mosa" || user.userId === "perm-mosa") {
+      alert("لا يمكن تعطيل أو إلغاء حساب الإدارة العليا أو مدير العمليات الرئيسي للحفاظ على استقرار النظام.");
       return;
     }
 
-    if (!window.confirm(`هل أنت متأكد تماماً من حذف حساب (${user.name})؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+    const confirmMessage = user.role === "beneficiary"
+      ? `هل أنت متأكد من إلغاء حساب تسجيل الدخول للمستفيد (${user.name})؟\n\nتنبيه أمان: سيتم تعطيل إمكانية تسجيل الدخول فقط، مع الاحتفاظ الكامل بملف المستفيد ورقم رعايته وطلبات الإعانة وسجل الصرف والمرفقات في سجلات الجمعية دون أي حذف.`
+      : user.role === "volunteer"
+      ? `هل أنت متأكد من إلغاء حساب تسجيل الدخول للمتطوع (${user.name})؟\n\nتنبيه أمان: سيتم تعطيل إمكانية تسجيل الدخول فقط، مع الاحتفاظ الكامل بملف المتطوع وسجل ساعاته التطوعية (${user.hours || 0} ساعة) وعضويته وسجلات الفعاليات.`
+      : `هل أنت متأكد من إلغاء حساب تسجيل الدخول للمستخدم (${user.name})؟\n\nتنبيه أمان: سيتم إيقاف صلاحية الدخول فوراً مع الحفاظ التام على كامل السجلات والبيانات الإدارية المرتبطة.`;
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -439,12 +677,12 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       });
 
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "فشل حذف الحساب.");
+      if (!res.ok) throw new Error(data?.error || "فشل إلغاء حساب الدخول.");
 
-      setSuccessToast(`تم حذف حساب (${user.name}) بنجاح.`);
+      setSuccessToast(data?.message || `تم إلغاء حساب الدخول للمستخدم (${user.name}) بنجاح مع الاحتفاظ بكافة سجلاته.`);
       fetchUsers();
     } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء حذف الحساب.");
+      alert(err.message || "حدث خطأ أثناء إلغاء حساب الدخول.");
     }
   };
 
@@ -509,31 +747,39 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
             <div className="flex items-center gap-2.5">
               <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 px-3 py-1 rounded-full text-xs font-black flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                مركز إدارة الحسابات والصلاحيات
+                مركز إدارة الحسابات المركزية
               </span>
               <span className="bg-white/10 text-slate-300 px-3 py-1 rounded-full text-xs font-semibold">
-                إدارة المستخدمين الإداريين
+                جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              إدارة المستخدمين الإداريين
+              إدارة المستخدمين المركزية لجميع الفئات
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              المنظومة المركزية لإدارة حسابات الإدارة العليا، مدير العمليات، مدراء الإدارات الثماني، الموظفين، وأصحاب الصلاحيات، مع التحكم الكامل بكلمات المرور المشفرة وإرسال روابط الاستعادة والتحقق البريدي ومصفوفة الصلاحيات وسجلات النشاط.
+              المنظومة المركزية الشاملة لإدارة وتدقيق كافة الحسابات والكوادر: الإدارة العليا، مدير العمليات، المشرفون، مدراء الإدارات، الموظفون، المتطوعون، المستفيدون، قادة الفرق، أمناء المستودعات، والدعم الفني، مع صلاحيات الاعتماد والرفض والتحكم بكلمات المرور المشفرة.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-5 py-3 rounded-2xl text-xs font-black shadow-lg transition-all cursor-pointer flex items-center gap-2 active:scale-95"
+              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-4 py-3 rounded-2xl text-xs font-black shadow-lg transition-all cursor-pointer flex items-center gap-2 active:scale-95"
             >
               <UserPlus className="w-4 h-4" />
-              <span>إضافة مستخدم جديد</span>
+              <span>إضافة حساب جديد</span>
+            </button>
+            <button
+              onClick={handleExportCsv}
+              className="bg-white/10 hover:bg-white/20 text-white px-3.5 py-3 rounded-2xl text-xs font-bold border border-white/10 transition-all cursor-pointer flex items-center gap-2"
+              title="تصدير السجلات إلى ملف CSV / Excel"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+              <span className="hidden sm:inline">تصدير CSV</span>
             </button>
             <button
               onClick={fetchUsers}
-              className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-2xl text-xs font-bold border border-white/10 transition-all cursor-pointer flex items-center gap-2"
+              className="bg-white/10 hover:bg-white/20 text-white px-3.5 py-3 rounded-2xl text-xs font-bold border border-white/10 transition-all cursor-pointer flex items-center gap-2"
               title="تحديث البيانات من الخادم"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -543,43 +789,63 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         </div>
 
         {/* Quick Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/10">
-          <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6 border-t border-white/10">
+          <div className="bg-white/5 backdrop-blur-md p-3 rounded-2xl border border-white/10">
             <div className="text-[11px] text-slate-300 font-semibold flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-indigo-400" />
               <span>إجمالي الحسابات:</span>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-white mt-1 font-mono">
+            <div className="text-xl font-black text-white mt-1 font-mono">
               {stats.total}
             </div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+          <div className="bg-white/5 backdrop-blur-md p-3 rounded-2xl border border-white/10">
             <div className="text-[11px] text-emerald-300 font-semibold flex items-center gap-1.5">
               <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>الحسابات النشطة:</span>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-emerald-400 mt-1 font-mono">
+            <div className="text-xl font-black text-emerald-400 mt-1 font-mono">
               {stats.active}
             </div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+          <div className="bg-white/5 backdrop-blur-md p-3 rounded-2xl border border-white/10">
+            <div className="text-[11px] text-amber-300 font-semibold flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>بانتظار المراجعة:</span>
+            </div>
+            <div className="text-xl font-black text-amber-400 mt-1 font-mono">
+              {stats.pending}
+            </div>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-md p-3 rounded-2xl border border-white/10">
             <div className="text-[11px] text-rose-300 font-semibold flex items-center gap-1.5">
               <UserX className="w-3.5 h-3.5 text-rose-400" />
               <span>الموقوفة والمجمدة:</span>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-rose-400 mt-1 font-mono">
+            <div className="text-xl font-black text-rose-400 mt-1 font-mono">
               {stats.suspended}
             </div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+          <div className="bg-white/5 backdrop-blur-md p-3 rounded-2xl border border-white/10">
+            <div className="text-[11px] text-sky-300 font-semibold flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-sky-400" />
+              <span>المستفيدون والرعاية:</span>
+            </div>
+            <div className="text-xl font-black text-sky-300 mt-1 font-mono">
+              {stats.beneficiaries}
+            </div>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-md p-3 rounded-2xl border border-white/10">
             <div className="text-[11px] text-amber-300 font-semibold flex items-center gap-1.5">
               <KeyRound className="w-3.5 h-3.5 text-amber-400" />
               <span>يلزم تغيير كلمة المرور:</span>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-amber-400 mt-1 font-mono">
+            <div className="text-xl font-black text-amber-400 mt-1 font-mono">
               {stats.mustChange}
             </div>
           </div>
@@ -588,6 +854,44 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
 
       {/* Control & Search Bar */}
       <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+        {/* Category Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100 dark:border-slate-800/80 scrollbar-none">
+          {[
+            { id: "all", label: "كافة الحسابات", count: stats.total, icon: Users },
+            { id: "admins", label: "الإدارة والعمليات", count: stats.adminsAndOps, icon: ShieldCheck },
+            { id: "dept_heads", label: "المشرفون والإدارات", count: stats.deptHeadsAndSupervisors, icon: Building2 },
+            { id: "employees", label: "الموظفون والكوادر", count: stats.employees, icon: Briefcase },
+            { id: "storekeepers", label: "أمناء المستودعات", count: stats.storekeepers, icon: Sliders },
+            { id: "leaders", label: "قادة الفرق التطوعية", count: stats.leaders, icon: Sparkles },
+            { id: "volunteers", label: "المتطوعون", count: stats.volunteers, icon: CheckCircle2 },
+            { id: "beneficiaries", label: "المستفيدون وطلبات الرعاية", count: stats.beneficiaries, icon: Users },
+            { id: "support", label: "الدعم الفني", count: stats.support, icon: Shield }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeCategoryTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveCategoryTab(tab.id)}
+                className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+                  isActive
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                    : "bg-slate-100 hover:bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                  isActive ? "bg-white/20 text-white" : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400"
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           {/* Search Box */}
           <div className="md:col-span-4 relative">
@@ -596,7 +900,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="البحث بالاسم، اسم المستخدم، البريد، الجوال، الهوية..."
+              placeholder="البحث بالاسم، الهوية، الجوال، اسم المستخدم، رقم المستفيد، العضوية..."
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-2.5 pr-10 pl-4 text-xs font-sans text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             />
           </div>
@@ -611,11 +915,13 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
               <option value="all">كافة الأدوار والمستويات</option>
               <option value="super_admin">الإدارة العليا (Super Admin)</option>
               <option value="operations_manager">مدير العمليات والتشغيل</option>
+              <option value="supervisor">مشرف إدارة ومتابعة</option>
               <option value="dept_head">مدراء الإدارات التنفيذية</option>
               <option value="employee">الموظفين والكوادر</option>
               <option value="storekeeper">أمناء المستودعات</option>
               <option value="leader">قادة الفرق التطوعية</option>
               <option value="volunteer">المتطوعين المسجلين</option>
+              <option value="beneficiary">مستفيدي الرعاية الاجتماعية</option>
               <option value="support">فريق الدعم الفني</option>
             </select>
           </div>
@@ -645,7 +951,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
             >
               <option value="all">كافة الحالات</option>
               <option value="active">نشط (Active)</option>
+              <option value="pending">بانتظار المراجعة (Pending)</option>
               <option value="suspended">موقوف (Suspended)</option>
+              <option value="rejected">مرفوض (Rejected)</option>
               <option value="inactive">غير مفعل (Inactive)</option>
             </select>
           </div>
@@ -653,7 +961,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
 
         {/* Quick Toggles */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-5">
             <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
@@ -664,6 +972,19 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
               <span className="flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-amber-500" />
                 عرض الحسابات التي يلزمها تغيير كلمة المرور فقط ({stats.mustChange})
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={pendingOnlyFilter}
+                onChange={(e) => setPendingOnlyFilter(e.target.checked)}
+                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+              />
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
+                عرض الطلبات المعلقة قيد المراجعة فقط ({stats.pending})
               </span>
             </label>
           </div>
@@ -679,7 +1000,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         {isLoading ? (
           <div className="p-16 text-center space-y-3">
             <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-xs font-bold text-slate-500">جاري تحميل بيانات المستخدمين ومطابقة الصلاحيات مع قاعدة البيانات...</p>
+            <p className="text-xs font-bold text-slate-500">جاري تحميل وتوحيد بيانات المستخدمين ومطابقتها مع قاعدة البيانات...</p>
           </div>
         ) : error ? (
           <div className="p-12 text-center space-y-3">
@@ -705,17 +1026,20 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   <th className="p-4">المستخدم والحساب</th>
-                  <th className="p-4">الدور والمستوى</th>
-                  <th className="p-4">الإدارة التابعة</th>
-                  <th className="p-4">معلومات الاتصال</th>
+                  <th className="p-4">الدور والتصنيف</th>
+                  <th className="p-4">الإدارة / الفريق التابع</th>
+                  <th className="p-4">معلومات الاتصال والتحقق</th>
                   <th className="p-4">حالة الحساب والأمان</th>
-                  <th className="p-4">آخر نشاط</th>
-                  <th className="p-4 text-center">الإجراءات</th>
+                  <th className="p-4">تاريخ التسجيل والنشاط</th>
+                  <th className="p-4 text-center">الإجراءات والقرارات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                 {filteredUsers.map((u) => {
                   const roleBadge = getRoleBadge(u.role);
+                  const statusBadge = getStatusBadge(u.status);
+                  const StatusIcon = statusBadge.icon;
+
                   return (
                     <tr 
                       key={u.id}
@@ -730,18 +1054,28 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                             </div>
                             <span 
                               className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
-                                u.status === 'active' ? 'bg-emerald-500' : u.status === 'suspended' ? 'bg-rose-500' : 'bg-slate-400'
+                                u.status === 'active' ? 'bg-emerald-500' : u.status === 'pending' ? 'bg-amber-500' : u.status === 'suspended' ? 'bg-rose-500' : 'bg-slate-400'
                               }`} 
-                              title={u.status === 'active' ? 'حساب نشط' : u.status === 'suspended' ? 'موقوف' : 'غير مفعل'}
+                              title={statusBadge.label}
                             />
                           </div>
 
                           <div className="space-y-0.5">
-                            <div className="font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <div className="font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                               <span>{u.name}</span>
                               {u.role === "operations_manager" && (
                                 <span className="bg-amber-100 text-amber-950 text-[10px] font-black px-1.5 py-0.2 rounded-md">
                                   عمليات
+                                </span>
+                              )}
+                              {u.beneficiaryNumber && (
+                                <span className="bg-rose-100 text-rose-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
+                                  #{u.beneficiaryNumber}
+                                </span>
+                              )}
+                              {u.membershipNumber && (
+                                <span className="bg-teal-100 text-teal-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
+                                  #{u.membershipNumber}
                                 </span>
                               )}
                             </div>
@@ -760,18 +1094,18 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                             {roleBadge.label}
                           </span>
                           <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {u.jobTitle || "موظف معتمد"}
+                            {u.category ? `فئة: ${u.category}` : u.jobTitle || "مسجل في النظام"}
                           </div>
                         </div>
                       </td>
 
-                      {/* Department */}
+                      {/* Department / Team */}
                       <td className="p-4">
                         <div className="font-semibold text-slate-800 dark:text-slate-200">
-                          {u.departmentName || "الإدارة العامة"}
+                          {u.teamName ? `فريق ${u.teamName}` : u.departmentName || "الإدارة العامة"}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          {u.departmentId}
+                          {u.hours !== undefined ? `${u.hours} ساعة تطوعية` : u.familySize !== undefined ? `أسرة من ${u.familySize} أفراد` : u.departmentId}
                         </div>
                       </td>
 
@@ -806,22 +1140,16 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                       {/* Status & Security */}
                       <td className="p-4">
                         <div className="space-y-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                            u.status === 'active' 
-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' 
-                              : u.status === 'suspended'
-                              ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
-                              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                          }`}>
-                            {u.status === 'active' ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                            <span>{u.status === 'active' ? 'نشط ومفعل' : u.status === 'suspended' ? 'موقوف إدارياً' : 'غير مفعل'}</span>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.bg}`}>
+                            <StatusIcon className="w-3 h-3" />
+                            <span>{statusBadge.label}</span>
                           </span>
 
                           {u.mustChangePassword && (
                             <div>
                               <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/40">
                                 <KeyRound className="w-3 h-3 text-amber-500" />
-                                <span>يلزم تحديث كلمة المرور</span>
+                                <span>يلزم تغيير كلمة المرور</span>
                               </span>
                             </div>
                           )}
@@ -839,6 +1167,8 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                               {new Date(u.lastLogin).toLocaleTimeString("ar-SA", { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           </div>
+                        ) : u.createdAt ? (
+                          <span className="text-slate-400">مسجل: {new Date(u.createdAt).toLocaleDateString("ar-SA")}</span>
                         ) : (
                           <span className="text-slate-400">لم يسجل دخول بعد</span>
                         )}
@@ -847,11 +1177,31 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                       {/* Actions */}
                       <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          {/* Quick Approval / Rejection for Pending Users */}
+                          {u.status === "pending" && (
+                            <>
+                              <button
+                                onClick={() => handleApproveUser(u)}
+                                className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 transition-colors cursor-pointer"
+                                title="اعتماد وقبول الحساب"
+                              >
+                                <Check className="w-4 h-4 text-emerald-600" />
+                              </button>
+                              <button
+                                onClick={() => handleRejectUser(u)}
+                                className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-300 transition-colors cursor-pointer"
+                                title="رفض الطلب مع إدخال السبب"
+                              >
+                                <XCircle className="w-4 h-4 text-red-600" />
+                              </button>
+                            </>
+                          )}
+
                           {/* Details & Permissions Modal Trigger */}
                           <button
                             onClick={() => setSelectedUserForDetails(u)}
                             className="p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                            title="عرض تفاصيل الحساب والصلاحيات"
+                            title="عرض تفاصيل الحساب الكاملة والملفات المرتبطة"
                           >
                             <Shield className="w-4 h-4" />
                           </button>
@@ -874,18 +1224,20 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                             <Send className="w-4 h-4" />
                           </button>
 
-                          {/* Toggle Active / Suspended */}
-                          <button
-                            onClick={() => handleToggleStatus(u)}
-                            className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                              u.status === 'active'
-                                ? 'bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-slate-700'
-                                : 'bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 dark:bg-slate-800 dark:hover:bg-slate-700'
-                            }`}
-                            title={u.status === 'active' ? 'تعطيل الحساب' : 'إعادة تفعيل الحساب'}
-                          >
-                            {u.status === 'active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                          </button>
+                          {/* Toggle Active / Suspended (for non-pending users) */}
+                          {u.status !== "pending" && (
+                            <button
+                              onClick={() => handleToggleStatus(u)}
+                              className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                                u.status === 'active'
+                                  ? 'bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-slate-700'
+                                  : 'bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 dark:bg-slate-800 dark:hover:bg-slate-700'
+                              }`}
+                              title={u.status === 'active' ? 'تعطيل / تجميد الحساب' : 'إعادة تفعيل الحساب'}
+                            >
+                              {u.status === 'active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                            </button>
+                          )}
 
                           {/* Activity Logs Trigger */}
                           <button
@@ -896,14 +1248,20 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
                             <History className="w-4 h-4" />
                           </button>
 
-                          {/* Delete (if permitted) */}
+                          {/* Revoke / Disable Login Account (Safe Deletion with Profile Preservation) */}
                           {u.userId !== "admin-user" && u.userId !== "ops-manager" && (
                             <button
                               onClick={() => handleDeleteUser(u)}
                               className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                              title="حذف الحساب"
+                              title={
+                                u.role === 'beneficiary'
+                                  ? 'إلغاء حساب الدخول (مع الاحتفاظ بملف الرعاية والطلبات)'
+                                  : u.role === 'volunteer'
+                                  ? 'إلغاء حساب الدخول (مع الاحتفاظ بساعات وسجل التطوع)'
+                                  : 'إلغاء حساب الدخول (مع الاحتفاظ بكامل السجلات)'
+                              }
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <UserX className="w-4 h-4" />
                             </button>
                           )}
                         </div>
@@ -944,6 +1302,8 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
           currentUser={currentUser}
           currentUserRole={currentUserRole}
           onOpenResetPassword={(u) => setSelectedUserForReset(u)}
+          onApproveUser={handleApproveUser}
+          onRejectUser={handleRejectUser}
           onClose={() => setSelectedUserForDetails(null)}
           onSuccess={(msg) => {
             setSuccessToast(msg);
@@ -1304,9 +1664,13 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
               >
                 <option value="employee">موظف إدارة (Employee)</option>
                 <option value="operations_manager">مدير العمليات والتشغيل (Operations)</option>
+                <option value="supervisor">مشرف إدارة ومتابعة (Supervisor)</option>
                 <option value="department_admin">مدير إدارة تنفيذي (Dept Head)</option>
                 <option value="storekeeper">أمين مستودع (Storekeeper)</option>
                 <option value="leader">قائد فريق تطوعي (Leader)</option>
+                <option value="volunteer">متطوع مسجل (Volunteer)</option>
+                <option value="beneficiary">مستفيد رعاية اجتماعية (Beneficiary)</option>
+                <option value="support_manager">مدير الدعم الفني (Support Manager)</option>
                 <option value="support_agent">أخصائي دعم فني (Support)</option>
                 <option value="admin">الإدارة العليا (Super Admin)</option>
               </select>
@@ -1511,6 +1875,8 @@ interface UserDetailsModalProps {
   currentUser: any;
   currentUserRole?: string;
   onOpenResetPassword?: (user: SystemUser) => void;
+  onApproveUser?: (user: SystemUser) => void;
+  onRejectUser?: (user: SystemUser) => void;
   onClose: () => void;
   onSuccess: (msg: string) => void;
 }
@@ -1521,6 +1887,8 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   currentUser,
   currentUserRole = "admin",
   onOpenResetPassword,
+  onApproveUser,
+  onRejectUser,
   onClose,
   onSuccess
 }) => {
@@ -1773,11 +2141,14 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   >
                     <option value="employee">موظف إدارة (Employee)</option>
                     <option value="operations_manager">مدير العمليات والتشغيل (Operations)</option>
+                    <option value="supervisor">مشرف إدارة ومتابعة (Supervisor)</option>
                     <option value="department_admin">مدير إدارة تنفيذي (Dept Head)</option>
                     <option value="storekeeper">أمين مستودع (Storekeeper)</option>
                     <option value="leader">قائد فريق تطوعي (Leader)</option>
                     <option value="volunteer">متطوع مسجل (Volunteer)</option>
-                    <option value="support_agent">موظف دعم فني</option>
+                    <option value="beneficiary">مستفيد رعاية اجتماعية (Beneficiary)</option>
+                    <option value="support_manager">مدير الدعم الفني (Support Manager)</option>
+                    <option value="support_agent">أخصائي دعم فني</option>
                     <option value="admin">الإدارة العليا (Super Admin)</option>
                   </select>
                 </div>
@@ -1792,7 +2163,9 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2.5 text-xs font-sans text-slate-900 dark:text-white"
                   >
                     <option value="active">نشط ومفعل (Active)</option>
+                    <option value="pending">قيد المراجعة والاعتماد (Pending)</option>
                     <option value="suspended">موقوف إدارياً (Suspended)</option>
+                    <option value="rejected">مرفوض (Rejected)</option>
                     <option value="inactive">غير مفعل (Inactive)</option>
                   </select>
                 </div>
@@ -1811,6 +2184,124 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   </label>
                 </div>
               </div>
+
+              {/* Beneficiary Specific Details Card */}
+              {(user.role === 'beneficiary' || user.beneficiaryNumber) && (
+                <div className="bg-rose-50/70 dark:bg-rose-950/30 p-4 rounded-2xl border border-rose-200 dark:border-rose-900/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-900 dark:text-rose-200 flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-rose-600" />
+                      بيانات مستفيد الرعاية الاجتماعية (المستودع والإعانات)
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                      رقم الملف: #{user.beneficiaryNumber || user.id}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">فئة الرعاية:</span>
+                      <strong className="text-slate-800 dark:text-white">{user.category || 'عام'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">أفراد الأسرة:</span>
+                      <strong className="text-slate-800 dark:text-white">{user.familySize || 1} أفراد</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">الدخل التقديري:</span>
+                      <strong className="text-slate-800 dark:text-white font-mono">{user.monthlyIncome ? `${user.monthlyIncome} ر.س` : 'غير محدد'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">نوع السكن:</span>
+                      <strong className="text-slate-800 dark:text-white">{user.housingType || 'غير محدد'}</strong>
+                    </div>
+                  </div>
+
+                  {user.address && (
+                    <div className="text-[11px] text-slate-600 dark:text-slate-300 pt-1 border-t border-rose-200/60">
+                      العنوان الميداني: <strong>{user.address}</strong>
+                    </div>
+                  )}
+
+                  {user.status === "pending" && (
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-amber-300 dark:border-amber-700 flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                        طلب الاستفادة بانتظار الاعتماد الإداري
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onApproveUser) onApproveUser(user);
+                            onClose();
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                        >
+                          اعتماد الطلب ✓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onRejectUser) onRejectUser(user);
+                            onClose();
+                          }}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                        >
+                          رفض الطلب
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Volunteer Specific Details Card */}
+              {(user.role === 'volunteer' || user.membershipNumber) && (
+                <div className="bg-teal-50/70 dark:bg-teal-950/30 p-4 rounded-2xl border border-teal-200 dark:border-teal-900/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-teal-600" />
+                      بيانات العضوية التطوعية (الساعات والفرق)
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                      العضوية: #{user.membershipNumber || user.id}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">الساعات المعتمدة:</span>
+                      <strong className="text-slate-800 dark:text-white font-mono">{user.hours || 0} ساعة تطوعية</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">الفريق المسند:</span>
+                      <strong className="text-slate-800 dark:text-white">{user.teamName || 'عام'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-400 block">الإدارة المشرفة:</span>
+                      <strong className="text-slate-800 dark:text-white">إدارة التطوع والموارد البشرية</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Linked Profiles Card (if person has multiple records linked) */}
+              {user.linkedProfiles && user.linkedProfiles.length > 1 && (
+                <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/60 space-y-2">
+                  <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-indigo-500" />
+                    السجلات والملفات الموحدة لهذا المستخدم في النظام ({user.linkedProfiles.length}):
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {user.linkedProfiles.map((lp, idx) => (
+                      <span key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-xl text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                        {lp.source === 'beneficiaries' ? 'رعاية مستفيدين' : lp.source === 'volunteers' ? 'سجل متطوع' : lp.source === 'employees' ? 'سجل موظف' : lp.source === 'departments' ? 'مدير إدارة' : lp.source === 'teams' ? 'قائد فريق' : lp.source} • {lp.id}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Account Meta Badges */}
               <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">

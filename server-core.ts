@@ -68,36 +68,95 @@ app.use((req, res, next) => {
   next();
 });
 
-const allowedOriginsList = [
-  "https://www.riadataleata.com",
-  "https://riadataleata.com",
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:5173"
-];
+/**
+ * Strict CORS Origin Validator
+ * Enforces exact matching for official production domains and validated development hosts.
+ * Rejects any spoofed, wildcard, or untrusted external origins.
+ */
+export const isOriginAllowed = (origin?: string): boolean => {
+  if (!origin || typeof origin !== "string") return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(origin.trim());
+  } catch {
+    return false;
+  }
+
+  const protocol = parsed.protocol.toLowerCase();
+  const hostname = parsed.hostname.toLowerCase();
+  const port = parsed.port;
+
+  // 1. Official Society Production Domains (HTTPS only)
+  if (protocol === "https:" && (hostname === "www.riadataleata.com" || hostname === "riadataleata.com")) {
+    return true;
+  }
+
+  // 2. Official Production API Host on Render (HTTPS only)
+  if (protocol === "https:" && hostname === "riadataleata-api.onrender.com") {
+    return true;
+  }
+
+  // 3. Local Development Hosts (strictly constrained ports)
+  if ((protocol === "http:" || protocol === "https:") && (hostname === "localhost" || hostname === "127.0.0.1")) {
+    if (!port || ["3000", "5173", "8080"].includes(port)) {
+      return true;
+    }
+  }
+
+  // 4. Dedicated AI Studio Development Sandbox (strictly formatted Cloud Run subdomains)
+  // Format: https://ais-dev-<id>-<project>.<region>.run.app or ais-pre-...
+  if (protocol === "https:" && /^(ais-dev|ais-pre)-[a-z0-9]+-\d+\.[a-z0-9-]+\.run\.app$/.test(hostname)) {
+    return true;
+  }
+
+  // 5. Explicitly configured APP_URL environment variable if set
+  if (process.env.APP_URL) {
+    try {
+      const appUrlParsed = new URL(process.env.APP_URL);
+      if (protocol === appUrlParsed.protocol.toLowerCase() && hostname === appUrlParsed.hostname.toLowerCase()) {
+        return true;
+      }
+    } catch {}
+  }
+
+  return false;
+};
 
 // CORS and Pre-flight Handling for Custom Domains & SSL Proxies
 app.use((req, res, next) => {
   const reqOrigin = req.headers.origin;
+
+  // Always append Vary: Origin so intermediate caches/CDNs never mix responses between origins
+  res.header("Vary", "Origin");
+
   if (reqOrigin) {
-    const isAllowed = allowedOriginsList.includes(reqOrigin) || 
-      reqOrigin.includes('riadataleata.com') ||
-      reqOrigin.endsWith('.run.app') || 
-      reqOrigin.endsWith('.vercel.app') ||
-      reqOrigin.endsWith('.onrender.com');
-    res.header("Access-Control-Allow-Origin", isAllowed ? reqOrigin : allowedOriginsList[0]);
-    res.header("Access-Control-Allow-Credentials", "true");
+    if (isOriginAllowed(reqOrigin)) {
+      res.header("Access-Control-Allow-Origin", reqOrigin);
+      res.header("Access-Control-Allow-Credentials", "true");
+      res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
+      res.header(
+        "Access-Control-Allow-Headers",
+        "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-user-id, x-user-role, x-user-name, x-department-id, x-national-id, x-team-id"
+      );
+      res.header("Access-Control-Max-Age", "86400");
+    } else {
+      // Untrusted Origin:
+      // STRICT: Never send Access-Control-Allow-Origin or Access-Control-Allow-Credentials
+      if (req.method === "OPTIONS") {
+        return res.status(403).json({
+          error: "CORS Forbidden: Origin not allowed",
+          origin: reqOrigin
+        });
+      }
+    }
   }
 
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-token, x-user-id, x-user-role, x-user-name, x-department-id, x-national-id, x-team-id, *"
-  );
+  // Handle pre-flight for allowed origin (or non-CORS pre-flight)
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
   }
+
   next();
 });
 
@@ -5464,6 +5523,7 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
 
   // 6. Volunteers (المتطوعون بجميع الحالات: نشط، معلق، موقوف، غير نشط)
   (db.volunteers || []).forEach((v: any) => {
+    const isLoginDisabled = v.loginDisabled === true || v.hasLoginAccount === false;
     registerOrLinkUser(v.id, {
       id: v.id,
       userId: v.id,
@@ -5480,7 +5540,9 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       permissions: ["view_volunteer_portal", "join_initiatives", "print_card", "view_certificates"],
       allowedDepartmentIds: ["dep-5"],
       allowedPages: ["volunteer_portal"],
-      status: v.status || "pending",
+      status: isLoginDisabled ? "inactive" : (v.status || "pending"),
+      loginDisabled: isLoginDisabled,
+      hasLoginAccount: !isLoginDisabled,
       hours: v.hours || 0,
       membershipNumber: v.membershipNumber || v.id,
       mustChangePassword: false,
@@ -5489,13 +5551,16 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       createdAt: v.joinDate || "2026-01-01T00:00:00Z",
       emailVerified: true,
       identityVerified: !!v.nationalId,
-      notes: `عضوية تطوعية: ${v.membershipNumber || v.id} (${v.hours || 0} ساعة تطوعية)`
+      notes: isLoginDisabled
+        ? `عضوية تطوعية: ${v.membershipNumber || v.id} (حساب الدخول معطل - السجل والساعات محفوظة: ${v.hours || 0} ساعة)`
+        : `عضوية تطوعية: ${v.membershipNumber || v.id} (${v.hours || 0} ساعة تطوعية)`
     }, "volunteers");
   });
 
   // 7. Beneficiaries (المستفيدون بجميع الفئات والحالات: معتمد/نشط، معلق، مرفوض)
   (db.beneficiaries || []).forEach((b: any) => {
-    const benStatus = b.status === "approved" ? "active" : b.status === "rejected" ? "rejected" : "pending";
+    const isLoginDisabled = b.loginDisabled === true || b.hasLoginAccount === false;
+    const benStatus = isLoginDisabled ? "inactive" : (b.status === "approved" ? "active" : b.status === "rejected" ? "rejected" : "pending");
     registerOrLinkUser(b.id, {
       id: b.id,
       userId: b.id,
@@ -5512,6 +5577,8 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       allowedDepartmentIds: ["dep-4"],
       allowedPages: ["beneficiary_portal"],
       status: benStatus,
+      loginDisabled: isLoginDisabled,
+      hasLoginAccount: !isLoginDisabled,
       beneficiaryNumber: b.beneficiaryNumber || b.id,
       category: b.category || "عام",
       familySize: b.familySize || 1,
@@ -5524,7 +5591,9 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       createdAt: b.createdAt || "2026-01-01T00:00:00Z",
       emailVerified: true,
       identityVerified: !!b.nationalId,
-      notes: `ملف مستفيد مسجل برقم: ${b.beneficiaryNumber || b.id} (الفئة: ${b.category || 'عام'})`
+      notes: isLoginDisabled
+        ? `ملف مستفيد مسجل برقم: ${b.beneficiaryNumber || b.id} (حساب الدخول معطل - الملف وسجل الإعانات محفوظ)`
+        : `ملف مستفيد مسجل برقم: ${b.beneficiaryNumber || b.id} (الفئة: ${b.category || 'عام'})`
     }, "beneficiaries");
   });
 
@@ -5981,7 +6050,6 @@ app.post("/api/db/users/reset-password", (req, res) => {
     });
   }
 
-  // Synchronize across specific collections if applicable
   const dep = (db.departments || []).find((d: any) => `depadmin-${d.id}` === userId || d.id === userId);
   if (dep) dep.password = hashedPassword;
   const emp = (db.employees || []).find((e: any) => e.id === userId);
@@ -5990,6 +6058,16 @@ app.post("/api/db/users/reset-password", (req, res) => {
   if (vol) vol.password = hashedPassword;
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) sk.password = hashedPassword;
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId);
+  if (ben) {
+    ben.password = hashedPassword;
+    ben.passwordHash = hashedPassword;
+  }
+  const team = (db.teams || []).find((t: any) => `leader-${t.id}` === userId || t.id === userId);
+  if (team) {
+    team.password = hashedPassword;
+    team.passwordHash = hashedPassword;
+  }
 
   // Audit Log
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
@@ -6032,26 +6110,66 @@ app.post("/api/db/users/toggle-status", (req, res) => {
   let userEntry = db.userDepartmentAccess.find((u: any) => u.userId === userId || u.id === userId);
   if (userEntry) {
     userEntry.status = status;
+    if (status === 'active') {
+      userEntry.loginDisabled = false;
+      userEntry.hasLoginAccount = true;
+    } else if (status === 'suspended' || status === 'inactive') {
+      userEntry.loginDisabled = true;
+    }
     userEntry.updatedAt = new Date().toISOString();
     userEntry.updatedBy = auth.context.userName;
   }
 
   // Update in collections
   const dep = (db.departments || []).find((d: any) => `depadmin-${d.id}` === userId || d.id === userId);
-  if (dep) dep.status = status;
+  if (dep) {
+    dep.status = status;
+    if (status === 'active') { dep.loginDisabled = false; dep.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { dep.loginDisabled = true; }
+  }
   const emp = (db.employees || []).find((e: any) => e.id === userId);
-  if (emp) emp.status = status;
+  if (emp) {
+    emp.status = status;
+    if (status === 'active') { emp.loginDisabled = false; emp.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { emp.loginDisabled = true; }
+  }
   const vol = (db.volunteers || []).find((v: any) => v.id === userId);
-  if (vol) vol.status = status;
+  if (vol) {
+    vol.status = status;
+    if (status === 'active') { vol.loginDisabled = false; vol.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { vol.loginDisabled = true; }
+  }
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
-  if (sk) sk.status = status;
+  if (sk) {
+    sk.status = status;
+    if (status === 'active') { sk.loginDisabled = false; sk.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { sk.loginDisabled = true; }
+  }
   const ben = (db.beneficiaries || []).find((b: any) => b.id === userId);
   if (ben) {
     ben.status = status === 'active' ? 'approved' : status === 'rejected' ? 'rejected' : status === 'suspended' ? 'suspended' : 'pending';
+    if (status === 'active') { ben.loginDisabled = false; ben.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive' || status === 'rejected') { ben.loginDisabled = true; }
     ben.updatedAt = new Date().toISOString();
   }
   const team = (db.teams || []).find((t: any) => `leader-${t.id}` === userId || t.id === userId);
-  if (team) team.status = status;
+  if (team) {
+    team.status = status;
+    if (status === 'active') { team.loginDisabled = false; team.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { team.loginDisabled = true; }
+  }
+  const sm = (db.supportManagers || []).find((s: any) => s.id === userId);
+  if (sm) {
+    sm.status = status;
+    if (status === 'active') { sm.loginDisabled = false; sm.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { sm.loginDisabled = true; }
+  }
+  const sa = (db.supportAgents || []).find((s: any) => s.id === userId);
+  if (sa) {
+    sa.status = status;
+    if (status === 'active') { sa.loginDisabled = false; sa.hasLoginAccount = true; }
+    else if (status === 'suspended' || status === 'inactive') { sa.loginDisabled = true; }
+  }
 
   // Audit Log
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
@@ -6095,6 +6213,8 @@ app.post("/api/db/users/approve", (req, res) => {
   const uEntry = db.userDepartmentAccess.find((u: any) => u.userId === userId || u.id === userId);
   if (uEntry) {
     uEntry.status = "active";
+    uEntry.loginDisabled = false;
+    uEntry.hasLoginAccount = true;
     uEntry.updatedAt = new Date().toISOString();
     uEntry.updatedBy = auth.context.userName;
     matchedType = uEntry.role;
@@ -6104,6 +6224,8 @@ app.post("/api/db/users/approve", (req, res) => {
   const ben = (db.beneficiaries || []).find((b: any) => b.id === userId);
   if (ben) {
     ben.status = "approved";
+    ben.loginDisabled = false;
+    ben.hasLoginAccount = true;
     ben.updatedAt = new Date().toISOString();
     ben.approvedBy = auth.context.userName;
     ben.approvedAt = new Date().toISOString();
@@ -6114,6 +6236,8 @@ app.post("/api/db/users/approve", (req, res) => {
   const vol = (db.volunteers || []).find((v: any) => v.id === userId);
   if (vol) {
     vol.status = "active";
+    vol.loginDisabled = false;
+    vol.hasLoginAccount = true;
     vol.updatedAt = new Date().toISOString();
     matchedType = "متطوع";
   }
@@ -6122,6 +6246,8 @@ app.post("/api/db/users/approve", (req, res) => {
   const team = (db.teams || []).find((t: any) => `leader-${t.id}` === userId || t.id === userId);
   if (team) {
     team.status = "active";
+    team.loginDisabled = false;
+    team.hasLoginAccount = true;
     team.updatedAt = new Date().toISOString();
     matchedType = "فريق تطوعي";
   }
@@ -6130,6 +6256,8 @@ app.post("/api/db/users/approve", (req, res) => {
   const emp = (db.employees || []).find((e: any) => e.id === userId);
   if (emp) {
     emp.status = "active";
+    emp.loginDisabled = false;
+    emp.hasLoginAccount = true;
     emp.updatedAt = new Date().toISOString();
     matchedType = "موظف";
   }
@@ -6220,46 +6348,178 @@ app.post("/api/db/users/reject", (req, res) => {
   });
 });
 
-// Delete User Account
+// Disable / Revoke User Login Account (تعطيل وإلغاء حساب الدخول مع حماية ملفات الأشخاص وسجلاتهم)
 app.post("/api/db/users/delete", (req, res) => {
-  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'حذف حساب مستخدم');
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'تعطيل حساب دخول مستخدم');
   if (!auth.allowed) return;
   const db = readDb();
 
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: "معرف المستخدم مطلوب." });
 
-  if (userId === "admin-user" || userId === "ops-manager") {
-    return res.status(403).json({ error: "لا يمكن حذف حساب الإدارة العليا أو مدير العمليات الرئيسي." });
+  // 1. Strict protection for high-level administration accounts
+  if (userId === "admin-user" || userId === "ops-manager" || userId === "mosa" || userId === "perm-mosa") {
+    return res.status(403).json({ error: "لا يمكن حذف أو تعطيل حساب الإدارة العليا أو مدير العمليات الرئيسي للحفاظ على استقرار النظام." });
   }
 
-  if (db.userDepartmentAccess) {
-    db.userDepartmentAccess = db.userDepartmentAccess.filter((u: any) => u.userId !== userId && u.id !== userId);
-  }
-  if (db.employees) {
-    db.employees = db.employees.filter((e: any) => e.id !== userId);
+  let accountType = "مستخدم نظام";
+  let targetPersonName = userId;
+  let disabledAny = false;
+
+  // 2. Disable Dashboard/System access in userDepartmentAccess
+  if (Array.isArray(db.userDepartmentAccess)) {
+    db.userDepartmentAccess.forEach((u: any) => {
+      if (u.userId === userId || u.id === userId) {
+        targetPersonName = u.userName || u.name || targetPersonName;
+        accountType = u.role === 'admin' ? "إدارة عليا" : "موظف وصول";
+        u.loginDisabled = true;
+        u.hasLoginAccount = false;
+        u.status = "inactive";
+        delete u.password;
+        delete u.passwordHash;
+        disabledAny = true;
+      }
+    });
   }
 
+  // 3. Beneficiaries: Revoke login credentials ONLY; strictly retain beneficiary profile, requests, disbursements & attachments!
+  if (Array.isArray(db.beneficiaries)) {
+    const ben = db.beneficiaries.find((b: any) => b.id === userId || b.beneficiaryNumber === userId || (b.nationalId && b.nationalId === userId));
+    if (ben) {
+      targetPersonName = ben.name || targetPersonName;
+      accountType = "مستفيد رعاية";
+      ben.loginDisabled = true;
+      ben.hasLoginAccount = false;
+      delete ben.password;
+      delete ben.passwordHash;
+      disabledAny = true;
+      // Note: ben.id, ben.name, ben.nationalId, ben.phone, ben.category, ben.familySize,
+      // aid requests, disbursements, and attachments are strictly preserved!
+    }
+  }
+
+  // 4. Volunteers: Revoke login credentials ONLY; strictly retain volunteer profile, membership, hours & attendance!
+  if (Array.isArray(db.volunteers)) {
+    const vol = db.volunteers.find((v: any) => v.id === userId || v.membershipNumber === userId || (v.nationalId && v.nationalId === userId));
+    if (vol) {
+      targetPersonName = vol.name || targetPersonName;
+      accountType = "متطوع مسجل";
+      vol.loginDisabled = true;
+      vol.hasLoginAccount = false;
+      delete vol.password;
+      delete vol.passwordHash;
+      disabledAny = true;
+      // Note: vol.hours, vol.events, vol.tasks, vol.teamId are strictly preserved!
+    }
+  }
+
+  // 5. Employees: Revoke login credentials ONLY; retain employee record
+  if (Array.isArray(db.employees)) {
+    const emp = db.employees.find((e: any) => e.id === userId || e.employeeNumber === userId || (e.nationalId && e.nationalId === userId));
+    if (emp) {
+      targetPersonName = emp.name || targetPersonName;
+      accountType = "موظف";
+      emp.loginDisabled = true;
+      emp.hasLoginAccount = false;
+      delete emp.password;
+      delete emp.passwordHash;
+      disabledAny = true;
+    }
+  }
+
+  // 6. Storekeepers: Revoke login credentials ONLY; retain storekeeper profile
+  if (Array.isArray(db.storekeepers)) {
+    const sk = db.storekeepers.find((s: any) => s.id === userId || (s.nationalId && s.nationalId === userId));
+    if (sk) {
+      targetPersonName = sk.name || targetPersonName;
+      accountType = "أمين مستودع";
+      sk.loginDisabled = true;
+      sk.hasLoginAccount = false;
+      delete sk.password;
+      delete sk.passwordHash;
+      disabledAny = true;
+    }
+  }
+
+  // 7. Team Leaders: Revoke login credentials ONLY; retain team structure
+  if (Array.isArray(db.teams)) {
+    const team = db.teams.find((t: any) => `leader-${t.id}` === userId || t.id === userId);
+    if (team) {
+      targetPersonName = team.leaderName || targetPersonName;
+      accountType = "قائد فريق تطوعي";
+      team.loginDisabled = true;
+      team.hasLoginAccount = false;
+      delete team.password;
+      disabledAny = true;
+    }
+  }
+
+  // 8. Support Managers & Agents: Revoke login credentials ONLY; retain profile
+  if (Array.isArray(db.supportManagers)) {
+    const sm = db.supportManagers.find((s: any) => s.id === userId);
+    if (sm) {
+      targetPersonName = sm.name || targetPersonName;
+      accountType = "مدير دعم فني";
+      sm.loginDisabled = true;
+      sm.hasLoginAccount = false;
+      delete sm.password;
+      disabledAny = true;
+    }
+  }
+  if (Array.isArray(db.supportAgents)) {
+    const sa = db.supportAgents.find((s: any) => s.id === userId);
+    if (sa) {
+      targetPersonName = sa.name || targetPersonName;
+      accountType = "موظف دعم فني";
+      sa.loginDisabled = true;
+      sa.hasLoginAccount = false;
+      delete sa.password;
+      disabledAny = true;
+    }
+  }
+
+  // 9. Department Directors: Disable login
+  if (Array.isArray(db.departments)) {
+    const dep = db.departments.find((d: any) => `depadmin-${d.id}` === userId || d.id === userId);
+    if (dep) {
+      targetPersonName = dep.directorName || targetPersonName;
+      accountType = "مدير إدارة";
+      dep.loginDisabled = true;
+      dep.hasLoginAccount = false;
+      delete dep.password;
+      disabledAny = true;
+    }
+  }
+
+  if (!disabledAny) {
+    return res.status(404).json({ error: "لم يتم العثور على حساب المستخدم المحدد لتعطيل دخوله." });
+  }
+
+  // 10. Audit Logging (without sensitive passwords)
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
   db.accessAuditLogs.unshift({
-    id: `audit-del-user-${Date.now()}`,
+    id: `audit-disable-login-${Date.now()}`,
     timestamp: new Date().toISOString(),
     userId: auth.context.userId,
     userName: auth.context.userName,
     userRole: auth.context.role,
     userDepartmentId: auth.context.primaryDepartmentId,
     targetDepartmentId: 'auth',
-    action: 'delete_user',
-    resource: 'إدارة المستخدمين',
+    action: 'disable_user_login',
+    resource: 'إدارة المستخدمين المركزية',
     endpoint: '/api/db/users/delete',
     status: 'allowed',
     ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
     device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
-    notes: `تم حذف حساب المستخدم (${userId}) نهائياً بواسطة (${auth.context.userName})`
+    notes: `تم إلغاء وتعطيل حساب تسجيل الدخول للمستخدم (${targetPersonName} - ${accountType} - المعرف: ${userId}) مع الحفاظ التام على ملف الشخص وسجلاته التشغيلية وساعاته ومرفقاته.`
   });
+  if (db.accessAuditLogs.length > 300) db.accessAuditLogs.length = 300;
 
   writeDb(db);
-  res.json({ status: "success", message: "تم حذف المستخدم بنجاح." });
+  return res.json({
+    status: "success",
+    message: `تم إلغاء حساب تسجيل الدخول للمستخدم (${targetPersonName}) بنجاح، مع بقاء ملفه وسجلاته التشغيلية محفوظة بالكامل.`
+  });
 });
 
 // Send Password Reset Link Endpoint (إرسال رابط تغيير كلمة المرور)
@@ -9024,6 +9284,10 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (accessUser && accessUser.userId !== 'admin-user' && accessUser.userId !== 'ops-manager') {
+    if (accessUser.loginDisabled || accessUser.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'تم إلغاء وتعطيل حساب الدخول لهذا المستخدم');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول الخاص بك، يرجى مراجعة إدارة الجمعية." });
+    }
     const statusCheck = checkStatus(accessUser.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, statusCheck.error);
@@ -9081,6 +9345,10 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (depObj) {
+    if (depObj.loginDisabled || depObj.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: depObj.id, name: depObj.directorName, role: 'department_admin' }, 'تم تعطيل حساب دخول مدير الإدارة');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول للإدارة، يرجى مراجعة الإدارة العليا." });
+    }
     const statusCheck = checkStatus(depObj.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: depObj.id, name: depObj.directorName, role: 'department_admin' }, statusCheck.error);
@@ -9147,6 +9415,10 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (empObj) {
+    if (empObj.loginDisabled || empObj.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: empObj.id, name: empObj.name, role: 'employee' }, 'تم تعطيل حساب دخول الموظف');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لهذا الموظف مع بقاء سجله الإداري محفوظاً." });
+    }
     const statusCheck = checkStatus(empObj.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: empObj.id, name: empObj.name, role: 'employee' }, statusCheck.error);
@@ -9212,6 +9484,10 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (storekeeper) {
+    if (storekeeper.loginDisabled || storekeeper.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: storekeeper.id, name: storekeeper.name, role: 'storekeeper' }, 'حساب أمين المستودع معطل');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لأمين المستودع." });
+    }
     const statusCheck = checkStatus(storekeeper.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
@@ -9259,6 +9535,10 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (vol) {
+    if (vol.loginDisabled || vol.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: vol.id, name: vol.name, role: 'volunteer' }, 'حساب المتطوع معطل');
+      return res.status(403).json({ error: "تم إلغاء حساب تسجيل الدخول لهذا المتطوع، مع بقاء ملف التطوع وسجل ساعاته محفوظاً في الجمعية." });
+    }
     const statusCheck = checkStatus(vol.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
@@ -9284,6 +9564,9 @@ app.post("/api/db/auth/login", (req, res) => {
   // 5. Check Team Leaders
   const team = db.teams?.find((t: any) => matches(t.leaderName) || matches(t.id) || matches(t.name));
   if (team) {
+    if (team.loginDisabled || team.hasLoginAccount === false) {
+      return res.status(403).json({ error: "تم تعطيل حساب قائد الفريق مع بقاء بيانات الفريق محفوظة." });
+    }
     const statusCheck = checkStatus(team.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     if (!verifyPassword(team.password)) {
@@ -9315,6 +9598,10 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (ben) {
+    if (ben.loginDisabled || ben.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: ben.id, name: ben.name, role: 'beneficiary' }, 'حساب المستفيد معطل');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول للمستفيد، مع بقاء ملف الرعاية والطلبات والمرفقات محفوظة بالكامل في الجمعية." });
+    }
     const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     if (!verifyPassword(ben.password)) {
@@ -9358,6 +9645,9 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (supportManager) {
+    if (supportManager.loginDisabled || supportManager.hasLoginAccount === false) {
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لمدير الدعم الفني." });
+    }
     const statusCheck = checkStatus(supportManager.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     if (!verifyPassword(supportManager.password)) {
@@ -9390,6 +9680,9 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (supportAgent) {
+    if (supportAgent.loginDisabled || supportAgent.hasLoginAccount === false) {
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لموظف الدعم الفني." });
+    }
     const statusCheck = checkStatus(supportAgent.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     if (!verifyPassword(supportAgent.password)) {
@@ -9602,6 +9895,10 @@ app.post("/api/db/auth/google", async (req, res) => {
   );
 
   if (accessUser) {
+    if (accessUser.loginDisabled || accessUser.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'حساب الدخول معطل بقرار إداري');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول الخاص بك بقرار إداري. يرجى التواصل مع إدارة الجمعية." });
+    }
     const statusCheck = checkStatus(accessUser.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, statusCheck.error);
@@ -9682,6 +9979,10 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 2. Check Dedicated Employees (الموظفون)
   const emp = (db.employees || []).find((e: any) => e.email && e.email.toLowerCase().trim() === cleanEmail);
   if (emp) {
+    if (emp.loginDisabled || emp.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: emp.id, name: emp.name, role: 'employee' }, 'حساب الموظف معطل بقرار إداري');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول الخاص بالموظف بقرار إداري. مع الحفاظ على ملفك وسجلاتك، يرجى مراجعة إدارة الجمعية." });
+    }
     const statusCheck = checkStatus(emp.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: emp.id, name: emp.name, role: 'employee' }, statusCheck.error);
@@ -9714,6 +10015,10 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 3. Check Departments (Department Directors)
   const dep = (db.departments || []).find((d: any) => d.email && d.email.toLowerCase().trim() === cleanEmail);
   if (dep) {
+    if (dep.loginDisabled || dep.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: dep.id, name: dep.directorName, role: 'department_admin' }, 'حساب مدير القسم معطل بقرار إداري');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لهذا القسم بقرار إداري. يرجى مراجعة إدارة الجمعية." });
+    }
     const statusCheck = checkStatus(dep.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: dep.id, name: dep.directorName, role: 'department_admin' }, statusCheck.error);
@@ -9749,6 +10054,10 @@ app.post("/api/db/auth/google", async (req, res) => {
     (t.email && t.email.toLowerCase().trim() === cleanEmail)
   );
   if (team) {
+    if (team.loginDisabled || team.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: team.id, name: team.leaderName, role: 'leader' }, 'حساب قائد الفريق معطل بقرار إداري');
+      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لقائد الفريق بقرار إداري. يرجى مراجعة إدارة الجمعية." });
+    }
     const statusCheck = checkStatus(team.status || "active");
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: team.id, name: team.leaderName, role: 'leader' }, statusCheck.error);
@@ -9775,6 +10084,10 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 5. Check Volunteers
   const vol = (db.volunteers || []).find((v: any) => v.email && v.email.toLowerCase().trim() === cleanEmail);
   if (vol) {
+    if (vol.loginDisabled || vol.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: vol.id, name: vol.name, role: 'volunteer' }, 'حساب المتطوع معطل مع الاحتفاظ بسجلاته');
+      return res.status(403).json({ error: "تم إلغاء حساب تسجيل الدخول للمتطوع. مع الاحتفاظ الكامل بملفك التطوعي وساعاتك وسجلاتك، يرجى مراجعة إدارة الجمعية لإعادة التفعيل." });
+    }
     const statusCheck = checkStatus(vol.status);
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: vol.id, name: vol.name, role: 'volunteer' }, statusCheck.error);
@@ -9794,6 +10107,10 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 6. Check Beneficiaries
   const ben = (db.beneficiaries || []).find((b: any) => b.email && b.email.toLowerCase().trim() === cleanEmail);
   if (ben) {
+    if (ben.loginDisabled || ben.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: ben.id, name: ben.name, role: 'beneficiary' }, 'حساب المستفيد معطل مع الاحتفاظ بملفه');
+      return res.status(403).json({ error: "تم إلغاء حساب تسجيل الدخول للمستفيد. مع الاحتفاظ الكامل بملفك وطلباتك وسجلات الرعاية، يرجى مراجعة إدارة الجمعية لإعادة التفعيل." });
+    }
     const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status);
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: ben.id, name: ben.name, role: 'beneficiary' }, statusCheck.error);
@@ -9813,6 +10130,10 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 7. Check Storekeepers
   const storekeeper = (db.storekeepers || []).find((sk: any) => sk.email && sk.email.toLowerCase().trim() === cleanEmail);
   if (storekeeper) {
+    if (storekeeper.loginDisabled || storekeeper.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: storekeeper.id, name: storekeeper.name, role: 'storekeeper' }, 'حساب أمين المستودع معطل');
+      return res.status(403).json({ error: "تم إلغاء حساب تسجيل الدخول لأمين المستودع بقرار إداري. مع الحفاظ على سجلات العهد والمخزون، يرجى مراجعة إدارة الجمعية." });
+    }
     const statusCheck = checkStatus(storekeeper.status);
     if (!statusCheck.ok) {
       return res.status(403).json({ error: statusCheck.error, status: storekeeper.status });
