@@ -13095,10 +13095,14 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
   const isEdit = Boolean(req.body && req.body.id);
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
 
-  // If edit: strictly require authorized administrative session for dep-4
+  // If edit: strictly require authorized administrative session for dep-4 OR self-beneficiary updating own profile
   if (isEdit) {
-    const auth = checkDepartmentPermission(req, res, 'dep-4', 'edit_data', 'ملف المستفيد');
-    if (!auth.allowed) return;
+    const userContext = getUserAccessContext(req);
+    const isSelfBeneficiary = userContext && userContext.role === 'beneficiary' && userContext.userId === req.body.id;
+    if (!isSelfBeneficiary) {
+      const auth = checkDepartmentPermission(req, res, 'dep-4', 'edit_data', 'ملف المستفيد');
+      if (!auth.allowed) return;
+    }
   } else {
     // New registration rate limit
     const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
@@ -13128,6 +13132,50 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
   if (!cleanPhone || cleanPhone.length < 9) {
     return res.status(400).json({ error: "رقم الجوال مطلوب للتواصل وإرسال الإشعارات." });
   }
+
+  // 1. التحقق من تاريخ الميلاد ومنع التواريخ المستقبلية
+  let cleanBirthDate = ben.birthDate ? String(ben.birthDate).trim() : '';
+  let cleanBirthDateType = ben.birthCalendarType === 'hijri' ? 'hijri' : 'gregorian';
+  let cleanBirthDateHijri = ben.birthDateHijri ? String(ben.birthDateHijri).trim() : '';
+  let cleanAge = typeof ben.age === 'number' && !isNaN(ben.age) ? ben.age : 0;
+
+  if (cleanBirthDate) {
+    const bDate = new Date(cleanBirthDate);
+    const now = new Date();
+    if (isNaN(bDate.getTime())) {
+      return res.status(400).json({ error: "صيغة تاريخ الميلاد غير صالحة." });
+    }
+    if (bDate > now) {
+      return res.status(400).json({ error: "لا يمكن اختيار تاريخ ميلاد مستقبلي." });
+    }
+    if (cleanAge <= 0) {
+      let calculatedAge = now.getFullYear() - bDate.getFullYear();
+      const m = now.getMonth() - bDate.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < bDate.getDate())) {
+        calculatedAge--;
+      }
+      cleanAge = Math.max(0, calculatedAge);
+    }
+  }
+
+  // 2. التحقق من صفة المستفيد والجنسية
+  let cleanResidencyStatus = ben.residencyStatus || 'مواطن سعودي';
+  let cleanNationality = ben.nationality ? String(ben.nationality).trim() : 'سعودي';
+  if (cleanResidencyStatus === 'مواطن سعودي') {
+    cleanNationality = 'سعودي';
+  } else if (!cleanNationality) {
+    return res.status(400).json({ error: "حقل الجنسية إلزامي للمقيمين وأبناء المواطنات." });
+  }
+
+  // 3. التحقق من المدينة والحي وتطبيع العنوان التوافقي
+  let cleanCity = ben.city ? String(ben.city).trim() : 'مكة المكرمة';
+  let cleanDistrict = ben.district ? String(ben.district).trim() : 'العسيلة (نطاق الجمعية الرئيسي)';
+  let cleanCustomDistrict = ben.customDistrict ? String(ben.customDistrict).trim() : '';
+  let cleanAddress = ben.address ? String(ben.address).trim() : `${cleanCity} - ${cleanDistrict === 'أخرى / الحي غير موجود' ? (cleanCustomDistrict || cleanDistrict) : cleanDistrict}`;
+
+  // 4. التحقق من الحالة الاجتماعية وصفة اليتم
+  let cleanMaritalStatus = ben.maritalStatus ? String(ben.maritalStatus).trim() : 'متزوج';
+  let cleanOrphanStatus = ben.orphanStatus ? String(ben.orphanStatus).trim() : 'غير ذلك / لا ينطبق';
 
   try {
     const result = await mutateDb(async (db) => {
@@ -13162,8 +13210,20 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           nationalId: cleanNationalId,
           phone: cleanPhone,
           email: cleanEmail || ben.email,
+          birthDate: cleanBirthDate || ben.birthDate,
+          birthCalendarType: cleanBirthDateType,
+          birthDateHijri: cleanBirthDateHijri,
+          age: cleanAge,
+          residencyStatus: cleanResidencyStatus,
+          nationality: cleanNationality,
+          city: cleanCity,
+          district: cleanDistrict,
+          customDistrict: cleanCustomDistrict,
+          address: cleanAddress,
+          maritalStatus: cleanMaritalStatus,
+          orphanStatus: cleanOrphanStatus,
           role: "beneficiary", // Strictly beneficiary
-          status: "pending",   // Strictly pending approval
+          status: ben.status || "pending",   // Strictly pending approval unless admin creates approved
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -13175,7 +13235,7 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           id: "log-" + Date.now(),
           timestamp: new Date().toISOString(),
           user: cleanName,
-          action: `تسجيل حساب مستفيد جديد: ${cleanName} (رقم هوية: ${cleanNationalId}) - قيد المراجعة والبحث`,
+          action: `تسجيل حساب مستفيد جديد: ${cleanName} (رقم هوية: ${cleanNationalId} - صفة: ${cleanResidencyStatus} - حي: ${cleanDistrict}) - قيد المراجعة والبحث`,
           ip: req.ip || "127.0.0.1",
           device: req.headers["user-agent"] || "System"
         });
@@ -13188,6 +13248,18 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           db.beneficiaries[idx] = { 
             ...db.beneficiaries[idx], 
             ...ben, 
+            birthDate: cleanBirthDate || db.beneficiaries[idx].birthDate,
+            birthCalendarType: cleanBirthDateType || db.beneficiaries[idx].birthCalendarType,
+            birthDateHijri: cleanBirthDateHijri || db.beneficiaries[idx].birthDateHijri,
+            age: cleanAge > 0 ? cleanAge : db.beneficiaries[idx].age,
+            residencyStatus: cleanResidencyStatus || db.beneficiaries[idx].residencyStatus,
+            nationality: cleanNationality || db.beneficiaries[idx].nationality,
+            city: cleanCity || db.beneficiaries[idx].city,
+            district: cleanDistrict || db.beneficiaries[idx].district,
+            customDistrict: cleanCustomDistrict || db.beneficiaries[idx].customDistrict,
+            address: cleanAddress || db.beneficiaries[idx].address,
+            maritalStatus: cleanMaritalStatus || db.beneficiaries[idx].maritalStatus,
+            orphanStatus: cleanOrphanStatus || db.beneficiaries[idx].orphanStatus,
             id: db.beneficiaries[idx].id, 
             updatedAt: new Date().toISOString() 
           };

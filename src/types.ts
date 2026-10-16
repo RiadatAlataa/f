@@ -1181,7 +1181,22 @@ export interface Beneficiary {
   photo?: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
+  updatedAt?: string;
   password?: string;
+  
+  // الحقول المطورة والموحدة
+  birthCalendarType?: 'hijri' | 'gregorian';
+  birthDate?: string; // التاريخ الموحد ISO YYYY-MM-DD
+  birthDateHijri?: string; // التاريخ بالصيغة الهجرية YYYY/MM/DD
+  age?: number; // العمر المحسوب تلقائياً بالسنوات
+  residencyStatus?: 'مواطن سعودي' | 'مقيم' | 'ابن أو ابنة مواطنة سعودية' | string;
+  nationality?: string;
+  nationalityProofDoc?: string;
+  city?: string; // المدينة / المحافظة بمنطقة مكة المكرمة
+  district?: string; // الحي
+  customDistrict?: string; // اسم الحي غير الموجود للمراجعة الإدارية
+  maritalStatus?: string; // الحالة الاجتماعية: أعزب، عزباء، متزوج، متزوجة، مطلق، مطلقة، أرمل، أرملة
+  orphanStatus?: string; // صفة اليتم: يتيم، يتيمة، غير ذلك / لا ينطبق
 }
 
 export interface AidDistribution {
