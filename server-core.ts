@@ -33,7 +33,11 @@ import {
   setPostgresMaintenanceStatus,
   savePostgresVolunteerFileNumber,
   getPostgresVolunteerFileNumbers,
-  isPostgresConfigured 
+  isPostgresConfigured,
+  isPostgresStorageActive,
+  getPostgresSystemState,
+  savePostgresSystemState,
+  executePostgresTransactionMutation
 } from "./server/postgres";
 import { writeCoordinator } from "./server/writeLock";
 import { backupEngine } from "./server/backupEngine";
@@ -161,6 +165,28 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "50mb" }));
+
+// Write Freeze Barrier Middleware (Protects data consistency during snapshots/migrations)
+app.use((req, res, next) => {
+  if (writeCoordinator.getIsWriteFrozen() && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const p = req.path || '';
+    const isExempt = 
+      p.startsWith('/api/admin/freeze') ||
+      p.startsWith('/api/db/auth/login') ||
+      p.startsWith('/api/db/restore') ||
+      p.startsWith('/api/admin/restore');
+
+    if (!isExempt) {
+      return res.status(423).json({
+        ok: false,
+        error: "عمليات الكتابة والتعديل مجمدة مؤقتاً لأغراض الصيانة وحماية البيانات وأخذ النسخة الاحتياطية. النظام حالياً في وضع القراءة فقط.",
+        code: "WRITE_FROZEN_FOR_MAINTENANCE",
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+  next();
+});
 
 const cardTemplatesDir = path.join(process.cwd(), "public", "card_templates");
 const uploadsDir = path.join(process.cwd(), "public", "uploads");
@@ -2484,6 +2510,16 @@ export function migrateExistingApprovedVolunteersFileNumbers(db: any): boolean {
 let memoryDbCache: any = null;
 
 export function reloadDbFromDisk() {
+  if (isPostgresStorageActive()) {
+    getPostgresSystemState()
+      .then((pgState) => {
+        if (pgState && pgState.data) {
+          memoryDbCache = pgState.data;
+        }
+      })
+      .catch(() => {});
+    return memoryDbCache;
+  }
   memoryDbCache = null;
   return readDb();
 }
@@ -4224,6 +4260,14 @@ export function writeDb(data: any): boolean {
     data._version = ((typeof data._version === "number" ? data._version : 0) + 1);
     data._lastModified = new Date().toISOString();
 
+    if (isPostgresStorageActive()) {
+      memoryDbCache = data;
+      savePostgresSystemState(data, 'server-core writeDb').catch((pgErr) => {
+        console.error("[PostgreSQL writeDb error]:", pgErr?.message || pgErr);
+      });
+      return true;
+    }
+
     const isServerless = !!(
       process.env.VERCEL || 
       process.env.NOW_REGION || 
@@ -4300,8 +4344,19 @@ export function writeDb(data: any): boolean {
 
 /**
  * Executes a transactionally queued mutation to eliminate Lost Updates (Read-Modify-Write races).
+ * Supports both JSON storage (current baseline) and PostgreSQL ACID transactions with row-locking.
  */
 export async function mutateDb<T>(mutator: (db: any) => Promise<T> | T): Promise<T> {
+  if (isPostgresStorageActive()) {
+    const outcome = await executePostgresTransactionMutation(mutator);
+    try {
+      const latestPg = await getPostgresSystemState();
+      if (latestPg && latestPg.data) {
+        memoryDbCache = latestPg.data;
+      }
+    } catch {}
+    return outcome;
+  }
   return writeCoordinator.mutate(readDb, writeDb, mutator, reloadDbFromDisk);
 }
 
@@ -4331,6 +4386,14 @@ try {
 initPostgresTables()
   .then(async () => {
     try {
+      if (isPostgresStorageActive()) {
+        const pgState = await getPostgresSystemState();
+        if (pgState && pgState.data) {
+          memoryDbCache = pgState.data;
+          console.log(`[PostgreSQL Storage] Primary memory cache hydrated from system_state (version ${pgState.version}).`);
+        }
+      }
+
       const pgStatus = await getPostgresMaintenanceStatus();
       if (pgStatus) {
         const db = readDb();
@@ -7205,6 +7268,21 @@ app.get("/api/db/backup", (req, res) => {
 
   try {
     const data = readDb();
+    // Audit log the backup download
+    try {
+      if (Array.isArray(data.logs)) {
+        data.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          user: session.userName || "المسؤول الإداري",
+          action: "تنزيل نسخة احتياطية لقاعدة البيانات (db.json)",
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "System"
+        });
+        writeDb(data);
+      }
+    } catch (_) {}
+
     res.setHeader('Content-disposition', 'attachment; filename=backup_reyadat_alata.json');
     res.setHeader('Content-type', 'application/json');
     res.send(JSON.stringify(data, null, 2));
@@ -7212,6 +7290,231 @@ app.get("/api/db/backup", (req, res) => {
     console.error("[BACKUP ERROR] Failed generating backup:", err);
     res.status(500).json({ ok: false, error: "تعذر إنشاء ملف النسخة الاحتياطية.", code: "BACKUP_GENERATION_FAILED" });
   }
+});
+
+// Download Comprehensive Encrypted Backup Package (DB + Attachments + Offline Recovery Key)
+app.post("/api/admin/backup/package/download", async (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  if (!sessionToken) {
+    return res.status(401).json({
+      ok: false,
+      error: "غير مصرح: يلزم تسجيل الدخول بجلسة صالحة للوصول إلى النسخ الاحتياطي للنظام.",
+      code: "UNAUTHORIZED_SESSION_REQUIRED"
+    });
+  }
+
+  const session = getServerSession(sessionToken);
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({
+      ok: false,
+      error: "تم رفض الوصول: يتطلب تنزيل الحزمة الشاملة صلاحيات الإدارة العليا أو مدير العمليات.",
+      code: "FORBIDDEN_ADMIN_PRIVILEGE_REQUIRED"
+    });
+  }
+
+  try {
+    // 1. Capture consistent bundle of database + physical attachments
+    const { bundle, metadata } = await backupEngine.captureConsistentBundle(readDb);
+
+    // 2. Resolve or generate a cryptographically strong 256-bit recovery key
+    let recoveryKeyHex = (req.body && req.body.encryptionKeyHex);
+    let keyWasGenerated = false;
+    if (!recoveryKeyHex || typeof recoveryKeyHex !== 'string' || recoveryKeyHex.length !== 64) {
+      recoveryKeyHex = crypto.randomBytes(32).toString('hex');
+      keyWasGenerated = true;
+    }
+
+    // 3. Authenticated AES-256-GCM encryption with SHA-256 integrity digest
+    const envelope = backupEngine.encryptBundle(bundle, metadata, recoveryKeyHex);
+
+    // 4. Log operation into administrative audit trail
+    try {
+      const db = readDb();
+      if (Array.isArray(db.logs)) {
+        db.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          user: session.userName || "المسؤول الإداري",
+          action: `تنزيل حزمة نسخ احتياطي مشفرة شاملة (المعرف: ${metadata.backupId}) - ${metadata.attachmentsCount} مرفق`,
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "System"
+        });
+        writeDb(db);
+      }
+    } catch (_) {}
+
+    // 5. Send response with recovery key kept strictly outside the envelope
+    res.setHeader('X-Recovery-Key', recoveryKeyHex);
+    res.setHeader('X-Backup-Id', metadata.backupId);
+    res.setHeader('X-Attachments-Count', String(metadata.attachmentsCount));
+    
+    return res.json({
+      ok: true,
+      status: "success",
+      backupId: metadata.backupId,
+      timestamp: metadata.timestamp,
+      watermark: metadata.watermark,
+      recordCounts: metadata.recordCounts,
+      attachmentsCount: metadata.attachmentsCount,
+      sha256Plain: metadata.sha256Plain,
+      sha256Ciphertext: envelope.sha256Ciphertext,
+      recoveryKeyHex,
+      keyWasGenerated,
+      envelope,
+      instructions: "احفظ مفتاح الاستعادة (recoveryKeyHex) في مكان آمن ومنفصل تماماً عن ملف الحزمة المشفرة لضمان القدرة على فك التشفير والاستعادة."
+    });
+  } catch (err: any) {
+    console.error("[PACKAGE BACKUP ERROR]:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "فشل إنشاء حزمة النسخ الاحتياطي المشفرة",
+      details: err?.message
+    });
+  }
+});
+
+// Verify Encrypted Backup Package Integrity (Sandbox verification with ZERO PII exposure)
+app.post("/api/admin/backup/verify", async (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  if (!sessionToken) {
+    return res.status(401).json({ ok: false, error: "غير مصرح", code: "UNAUTHORIZED" });
+  }
+
+  const session = getServerSession(sessionToken);
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({ ok: false, error: "صلاحيات غير كافية", code: "FORBIDDEN" });
+  }
+
+  try {
+    const { envelope, recoveryKeyHex } = req.body;
+    if (!envelope || !recoveryKeyHex) {
+      return res.status(400).json({
+        ok: false,
+        error: "يلزم تقديم كل من ملف الحزمة المشفرة (envelope) ومفتاح الاستعادة (recoveryKeyHex)."
+      });
+    }
+
+    const verification = await backupEngine.testIsolatedRestore(envelope, recoveryKeyHex);
+
+    return res.json({
+      ok: true,
+      valid: verification.valid,
+      backupId: verification.backupId,
+      timestamp: verification.timestamp,
+      watermark: verification.watermark,
+      recordCounts: verification.recordCounts, // Aggregated summary without PII
+      attachmentsExtracted: verification.attachmentsExtracted,
+      referentialIntegrity: verification.referentialIntegrity,
+      durationMs: verification.durationMs,
+      summary: verification.valid 
+        ? "تم فك تشفير النسخة ومطابقة سلامة قاعدة البيانات والمرفقات بنجاح 100% دون كشف أي بيانات شخصية"
+        : "فشل التحقق من صحة النسخة أو مفتاح الاستعادة"
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      ok: false,
+      error: "فشل التحقق من النسخة الاحتياطية: " + (err?.message || "مفتاح فك التشفير غير مطابق أو الملف تالف.")
+    });
+  }
+});
+
+// Write Freeze Status & Controls
+app.get("/api/admin/freeze/status", (req, res) => {
+  res.json({
+    ok: true,
+    isFrozen: writeCoordinator.getIsWriteFrozen(),
+    status: writeCoordinator.getStatus(),
+    message: writeCoordinator.getIsWriteFrozen()
+      ? "عمليات الكتابة مجمدة مؤقتاً لأغراض الصيانة والترحيل والنسخ الاحتياطي"
+      : "النظام في وضع العمل الطبيعي وقابل للكتابة والقراءة"
+  });
+});
+
+app.post("/api/admin/freeze/acquire", async (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  const session = getServerSession(sessionToken || '');
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({ ok: false, error: "صلاحيات غير كافية", code: "FORBIDDEN" });
+  }
+
+  try {
+    await writeCoordinator.acquireWriteFreeze(15000);
+    try {
+      const db = readDb();
+      if (Array.isArray(db.logs)) {
+        db.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          user: session.userName || "المسؤول الإداري",
+          action: "تفعيل تجميد الكتابة للنظام (وضع القراءة فقط للترحيل/النسخ الاحتياطي)",
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "System"
+        });
+        writeDb(db);
+      }
+    } catch (_) {}
+
+    return res.json({
+      ok: true,
+      isFrozen: true,
+      message: "تم تجميد عمليات الكتابة بنجاح، النظام الآن في وضع القراءة فقط لحماية البيانات."
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: "فشل تجميد الكتابة: " + err.message });
+  }
+});
+
+app.post("/api/admin/freeze/release", (req, res) => {
+  const sessionToken = (req.headers['x-session-token'] as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    (req.cookies?.['reyadat_session'] as string);
+
+  const session = getServerSession(sessionToken || '');
+  if (!session || (session.role !== 'admin' && session.role !== 'operations_manager')) {
+    return res.status(403).json({ ok: false, error: "صلاحيات غير كافية", code: "FORBIDDEN" });
+  }
+
+  writeCoordinator.releaseWriteFreeze();
+  try {
+    const db = readDb();
+    if (Array.isArray(db.logs)) {
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: session.userName || "المسؤول الإداري",
+        action: "إلغاء تجميد الكتابة واستئناف العمليات الطبيعية للنظام",
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+      writeDb(db);
+    }
+  } catch (_) {}
+
+  return res.json({
+    ok: true,
+    isFrozen: false,
+    message: "تم إلغاء تجميد الكتابة بنجاح واستئناف استقبال العمليات بشكل طبيعي."
+  });
+});
+
+// Route to download the local Windows attachment extractor tool package directly from dev environment
+app.get("/api/tools/download-extractor-zip", (req, res) => {
+  const zipPath = path.join(process.cwd(), "public", "tools", "local-attachment-extractor-windows.zip");
+  if (!fs.existsSync(zipPath)) {
+    return res.status(404).json({ ok: false, error: "حزمة أداة الاستخراج غير متوفرة حالياً." });
+  }
+  res.setHeader("Content-Disposition", 'attachment; filename="local-attachment-extractor-windows.zip"');
+  res.setHeader("Content-Type", "application/zip");
+  return res.sendFile(zipPath);
 });
 
 // Trigger encrypted multi-source backup to Cloudflare R2

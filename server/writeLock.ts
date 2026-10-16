@@ -247,6 +247,16 @@ class WriteCoordinator extends EventEmitter {
     }
   }
 
+  public releaseWriteFreeze(): void {
+    this.isWriteFrozen = false;
+    this.flushFrozenWrites();
+    const waiters = [...this.freezeWaiters];
+    this.freezeWaiters = [];
+    for (const w of waiters) {
+      try { w(); } catch (_) {}
+    }
+  }
+
   public getStatus() {
     return {
       activeWritesCount: this.activeWritesCount,

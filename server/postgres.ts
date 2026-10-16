@@ -1,4 +1,5 @@
 import pg from 'pg';
+import crypto from 'crypto';
 
 const { Pool } = pg;
 
@@ -115,6 +116,18 @@ export async function initPostgresTables(): Promise<boolean> {
           CREATE INDEX IF NOT EXISTS idx_vfn_volunteer_id ON volunteer_file_numbers (volunteer_id);
         `);
 
+        // 4. Primary system_state table for unified ACID state storage
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS system_state (
+            id VARCHAR(32) PRIMARY KEY DEFAULT 'primary',
+            data JSONB NOT NULL,
+            version BIGINT NOT NULL DEFAULT 1,
+            last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            checksum_sha256 VARCHAR(64) NOT NULL,
+            updated_by VARCHAR(255)
+          );
+        `);
+
         // Ensure default row exists in maintenance_settings if empty
         const checkRes = await client.query('SELECT COUNT(*) FROM maintenance_settings WHERE id = 1;');
         if (parseInt(checkRes.rows[0].count, 10) === 0) {
@@ -125,7 +138,7 @@ export async function initPostgresTables(): Promise<boolean> {
           `);
         }
 
-        console.log('[PostgreSQL] Maintenance tables verified and ready.');
+        console.log('[PostgreSQL] Maintenance and system_state tables verified and ready.');
         isInitialized = true;
         return true;
       } finally {
@@ -295,5 +308,147 @@ export async function getPostgresVolunteerFileNumbers(): Promise<string[]> {
   } catch (err: any) {
     console.error('[PostgreSQL getVolunteerFileNumbers Error]:', err.message);
     return [];
+  }
+}
+
+/**
+ * Returns true if PostgreSQL is configured as the active primary storage backend
+ */
+export function isPostgresStorageActive(): boolean {
+  if (!isPostgresConfigured()) return false;
+  const backend = (process.env.STORAGE_BACKEND || '').toLowerCase();
+  return backend === 'postgres' || backend === 'postgresql';
+}
+
+/**
+ * Reads the unified system state from PostgreSQL
+ */
+export async function getPostgresSystemState(): Promise<{
+  data: any;
+  version: number;
+  lastModified: string;
+  checksum: string;
+} | null> {
+  const p = getPostgresPool();
+  if (!p) return null;
+
+  try {
+    await initPostgresTables();
+    const res = await p.query(
+      `SELECT data, version, last_modified, checksum_sha256 FROM system_state WHERE id = 'primary' LIMIT 1;`
+    );
+    if (!res.rows || res.rows.length === 0) return null;
+
+    const row = res.rows[0];
+    return {
+      data: row.data,
+      version: Number(row.version),
+      lastModified: row.last_modified ? new Date(row.last_modified).toISOString() : new Date().toISOString(),
+      checksum: row.checksum_sha256
+    };
+  } catch (err: any) {
+    console.error('[PostgreSQL getSystemState Error]:', err.message);
+    throw new Error(`PostgreSQL system_state read failed: ${err.message}`);
+  }
+}
+
+/**
+ * Saves or initializes the system state in PostgreSQL
+ */
+export async function savePostgresSystemState(data: any, updatedBy: string = 'System'): Promise<{
+  success: boolean;
+  version: number;
+  checksum: string;
+}> {
+  const p = getPostgresPool();
+  if (!p) throw new Error('PostgreSQL pool not available');
+
+  await initPostgresTables();
+
+  const serialized = JSON.stringify(data);
+  const checksum = crypto.createHash('sha256').update(serialized).digest('hex');
+  const version = (typeof data._version === 'number' ? data._version : 1);
+
+  await p.query(
+    `INSERT INTO system_state (id, data, version, last_modified, checksum_sha256, updated_by)
+     VALUES ('primary', $1::jsonb, $2, NOW(), $3, $4)
+     ON CONFLICT (id) DO UPDATE SET
+       data = EXCLUDED.data,
+       version = EXCLUDED.version,
+       last_modified = NOW(),
+       checksum_sha256 = EXCLUDED.checksum_sha256,
+       updated_by = EXCLUDED.updated_by;`,
+    [serialized, version, checksum, updatedBy]
+  );
+
+  return { success: true, version, checksum };
+}
+
+/**
+ * Executes an atomic transaction mutation with pessimistic row-locking (FOR UPDATE)
+ * Guarantees Zero Lost Updates across concurrent processes and multi-instance deployments.
+ * Fail-Closed: Never silently falls back to local JSON on database error.
+ */
+export async function executePostgresTransactionMutation<T>(
+  mutator: (db: any) => Promise<T> | T,
+  updatedBy: string = 'System'
+): Promise<T> {
+  const p = getPostgresPool();
+  if (!p) {
+    throw new Error('PostgreSQL storage is active but connection pool is unavailable.');
+  }
+
+  await initPostgresTables();
+  const client = await p.connect();
+
+  try {
+    await client.query('BEGIN;');
+
+    // 1. Lock the row exclusively. Other concurrent transactions will block here until this transaction commits/rolls back.
+    const res = await client.query(
+      `SELECT data, version FROM system_state WHERE id = 'primary' FOR UPDATE;`
+    );
+
+    let currentDb: any;
+    let currentVersion = 1;
+
+    if (!res.rows || res.rows.length === 0) {
+      throw new Error("system_state table row 'primary' is missing. Database must be initialized before mutations.");
+    } else {
+      currentDb = res.rows[0].data;
+      currentVersion = Number(res.rows[0].version);
+    }
+
+    // 2. Execute the user mutator function on the latest locked state
+    const result = await mutator(currentDb);
+
+    // 3. Increment sequential version and update timestamp
+    const nextVersion = currentVersion + 1;
+    currentDb._version = nextVersion;
+    currentDb._lastModified = new Date().toISOString();
+
+    const serialized = JSON.stringify(currentDb);
+    const checksum = crypto.createHash('sha256').update(serialized).digest('hex');
+
+    // 4. Update row atomically
+    await client.query(
+      `UPDATE system_state 
+       SET data = $1::jsonb, 
+           version = $2, 
+           last_modified = NOW(), 
+           checksum_sha256 = $3, 
+           updated_by = $4 
+       WHERE id = 'primary';`,
+      [serialized, nextVersion, checksum, updatedBy]
+    );
+
+    await client.query('COMMIT;');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK;').catch(() => {});
+    console.error('[PostgreSQL Transaction Mutation Failed]:', err);
+    throw err;
+  } finally {
+    client.release();
   }
 }

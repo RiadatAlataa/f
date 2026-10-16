@@ -6,7 +6,7 @@ import {
   ExternalLink, Download, Upload, Eye, Key, ShieldCheck, HelpCircle, 
   Sparkles, FileCode, Clock, Mail, Phone, MapPin, Hash, Image as ImageIcon,
   Share2, UserCheck, Smartphone, Sliders, MessageSquare,
-  Volume2, VolumeX, BellRing
+  Volume2, VolumeX, BellRing, Copy, Check
 } from "lucide-react";
 import { SystemSettings, OperationLog, SystemStats } from "../types";
 import { ImagePickerControl } from "./ImagePickerControl";
@@ -57,6 +57,17 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
   const [newBlockedIp, setNewBlockedIp] = useState("");
   const [newRoleNameAr, setNewRoleNameAr] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
+
+  // Comprehensive Encrypted Backup & Verification States
+  const [packageDownloading, setPackageDownloading] = useState(false);
+  const [downloadedKey, setDownloadedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [verifyEnvelope, setVerifyEnvelope] = useState<any>(null);
+  const [verifyFileName, setVerifyFileName] = useState<string>("");
+  const [verifyKey, setVerifyKey] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<any>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   // Application Audio Alert Hook (Volunteer & Team applications)
   const { isAudioEnabled: isAppAudioEnabled, toggleAudio: toggleAppAudio, testSound: testAppSound } = useApplicationAudio();
@@ -1498,11 +1509,231 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
                 className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 cursor-pointer shadow-xs"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>تنزيل النسخة الاحتياطية (db.json)</span>
+                <span>تنزيل نسخة قاعدة البيانات (db.json فقط)</span>
               </button>
             </div>
 
-            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
+            {/* Comprehensive Encrypted Backup Package (DB + All Attachments) */}
+            <div className="p-4 bg-sky-50 rounded-xl border border-sky-200 space-y-3">
+              <h3 className="text-xs font-bold text-sky-950 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-sky-700" />
+                <span>تنزيل الحزمة الشاملة المشفرة (قاعدة البيانات + المرفقات):</span>
+              </h3>
+              <p className="text-[11px] text-sky-800">
+                حزمة مشفرة بتشفير معتمد (AES-256-GCM) تضم ملف قاعدة البيانات وكافة المرفقات والشهادات والبطاقات، مع توليد مفتاح استعادة خارجي منفصل.
+              </p>
+              <button
+                disabled={packageDownloading}
+                onClick={async () => {
+                  setPackageDownloading(true);
+                  try {
+                    const headers = getAuthHeaders();
+                    const res = await fetch("/api/admin/backup/package/download", {
+                      method: "POST",
+                      headers: {
+                        ...headers,
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({})
+                    });
+
+                    if (!res.ok) {
+                      const errJson = await res.json().catch(() => null);
+                      alert(errJson?.error || "فشل إنشاء الحزمة الشاملة.");
+                      return;
+                    }
+
+                    const data = await res.json();
+                    if (!data.envelope || !data.recoveryKeyHex) {
+                      alert("استجابة الخادم غير مكتملة.");
+                      return;
+                    }
+
+                    // Save downloaded key to local state for safe copying
+                    setDownloadedKey(data.recoveryKeyHex);
+                    setCopiedKey(false);
+
+                    // Download envelope JSON
+                    const blob = new Blob([JSON.stringify(data.envelope, null, 2)], { type: "application/json" });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `backup_package_encrypted_${data.backupId}.json`;
+                    document.body.appendChild(link);
+                    link.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(link);
+                  } catch (err) {
+                    console.error("Package download error:", err);
+                    alert("تعذر تنزيل الحزمة الشاملة المشفرة.");
+                  } finally {
+                    setPackageDownloading(false);
+                  }
+                }}
+                className="bg-sky-700 hover:bg-sky-800 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {packageDownloading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                <span>{packageDownloading ? "جارِ تجميع وتشفير الحزمة..." : "تنزيل الحزمة الشاملة المشفرة (DB + المرفقات)"}</span>
+              </button>
+
+              {downloadedKey && (
+                <div className="p-3 bg-white rounded-lg border border-sky-300 space-y-2 text-right">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-sky-900">مفتاح الاستعادة الخارجي الخاص بهذه النسخة:</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(downloadedKey);
+                        setCopiedKey(true);
+                        setTimeout(() => setCopiedKey(false), 3000);
+                      }}
+                      className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedKey ? "تم النسخ بنجاح" : "نسخ المفتاح"}</span>
+                    </button>
+                  </div>
+                  <div className="p-2 bg-neutral-900 text-emerald-400 font-mono text-[10px] rounded break-all select-all text-left dir-ltr">
+                    {downloadedKey}
+                  </div>
+                  <p className="text-[10px] text-amber-800 font-medium leading-relaxed">
+                    تنبيه أمني هام: هذا المفتاح محفوظ خارج ملف النسخة المشفرة لحمايته من التسريب. يرجى نسخه وحفظه في مكان آمن ومنفصل (مثل مدير كلمات المرور) لأن استعادة النسخة مستحيلة بدونه.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Sandbox Integrity Verification Tool */}
+            <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200 space-y-3 md:col-span-2">
+              <h3 className="text-xs font-bold text-indigo-950 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-indigo-700" />
+                <span>التحقق من سلامة نسخة احتياطية مشفرة (في Sandbox معزول دون عرض بيانات شخصية):</span>
+              </h3>
+              <p className="text-[11px] text-indigo-800">
+                يقوم الخادم بفك تشفير النسخة في بيئة اختبار معزولة فورية والتأكد من مطابقة البصمة والعلاقات وعدد السجلات والمرفقات دون كشف أو حفظ أي بيانات.
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-indigo-900 mb-1">ملف النسخة المشفرة (.json):</label>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setVerifyFileName(file.name);
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          try {
+                            const parsed = JSON.parse(ev.target?.result as string);
+                            setVerifyEnvelope(parsed);
+                            setVerificationError(null);
+                          } catch {
+                            setVerificationError("الملف المرفوع ليس ملف JSON صالح.");
+                          }
+                        };
+                        reader.readAsText(file);
+                      }
+                    }}
+                    className="text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                  />
+                  {verifyFileName && <span className="block text-[10px] text-indigo-700 mt-1 font-mono">{verifyFileName}</span>}
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-indigo-900 mb-1">مفتاح فك التشفير والاستعادة (64 حرفاً):</label>
+                  <input
+                    type="text"
+                    value={verifyKey}
+                    onChange={e => setVerifyKey(e.target.value.trim())}
+                    placeholder="أدخل مفتاح الاستعادة الخاص بهذه النسخة..."
+                    className="w-full px-3 py-1.5 bg-white border border-indigo-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <button
+                disabled={verifying || !verifyEnvelope || !verifyKey}
+                onClick={async () => {
+                  setVerifying(true);
+                  setVerificationResult(null);
+                  setVerificationError(null);
+                  try {
+                    const headers = getAuthHeaders();
+                    const res = await fetch("/api/admin/backup/verify", {
+                      method: "POST",
+                      headers: {
+                        ...headers,
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({
+                        envelope: verifyEnvelope,
+                        recoveryKeyHex: verifyKey
+                      })
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok || !data.ok) {
+                      setVerificationError(data?.error || "فشل التحقق من النسخة.");
+                    } else {
+                      setVerificationResult(data);
+                    }
+                  } catch (err: any) {
+                    setVerificationError("خطأ في الاتصال أثناء التحقق: " + err.message);
+                  } finally {
+                    setVerifying(false);
+                  }
+                }}
+                className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {verifying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                <span>{verifying ? "جارِ التحقق في بيئة Sandbox المعزولة..." : "بدء فحص السلامة والاستعادة التجريبية"}</span>
+              </button>
+
+              {verificationError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-xs font-medium">
+                  {verificationError}
+                </div>
+              )}
+
+              {verificationResult && (
+                <div className="p-3 bg-white border border-indigo-300 rounded-xl space-y-2 text-right">
+                  <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+                    <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>{verificationResult.summary}</span>
+                    </span>
+                    <span className="text-[10px] text-neutral-500 font-mono">زمن الفحص: {verificationResult.durationMs}ms</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                    <div className="p-2 bg-neutral-50 rounded-lg">
+                      <span className="text-neutral-500 block text-[10px]">معرف النسخة:</span>
+                      <span className="font-mono font-bold text-neutral-900 text-[10px] truncate block">{verificationResult.backupId}</span>
+                    </div>
+                    <div className="p-2 bg-neutral-50 rounded-lg">
+                      <span className="text-neutral-500 block text-[10px]">تاريخ الإنشاء:</span>
+                      <span className="font-bold text-neutral-900 text-[10px]">{verificationResult.timestamp?.slice(0, 16)}</span>
+                    </div>
+                    <div className="p-2 bg-neutral-50 rounded-lg">
+                      <span className="text-neutral-500 block text-[10px]">المرفقات الصالحة:</span>
+                      <span className="font-bold text-indigo-700">{verificationResult.attachmentsExtracted} ملف</span>
+                    </div>
+                    <div className="p-2 bg-neutral-50 rounded-lg">
+                      <span className="text-neutral-500 block text-[10px]">سلامة العلاقات:</span>
+                      <span className="font-bold text-emerald-700">{verificationResult.referentialIntegrity?.passed ? "سليمة تماماً" : "تالفة"}</span>
+                    </div>
+                  </div>
+                  {verificationResult.recordCounts && (
+                    <div className="text-[10px] text-neutral-600 pt-1">
+                      <span className="font-bold text-neutral-800">إحصاء السجلات المعتمدة (بدون بيانات شخصية): </span>
+                      {Object.entries(verificationResult.recordCounts).slice(0, 8).map(([col, cnt]) => `${col}: ${cnt}`).join(" | ")}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3 md:col-span-2">
               <h3 className="text-xs font-bold text-amber-900 flex items-center gap-2">
                 <Upload className="w-4 h-4 text-amber-700" />
                 <span>استعادة قاعدة البيانات من ملف JSON:</span>

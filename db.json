@@ -3639,6 +3639,54 @@
   ],
   "logs": [
     {
+      "id": "log-1792171598745",
+      "timestamp": "2026-10-16T17:26:38.745Z",
+      "user": "المشرف العام (اختبار)",
+      "action": "إلغاء تجميد الكتابة واستئناف العمليات الطبيعية للنظام",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1792171598713",
+      "timestamp": "2026-10-16T17:26:38.713Z",
+      "user": "المشرف العام (اختبار)",
+      "action": "تفعيل تجميد الكتابة للنظام (وضع القراءة فقط للترحيل/النسخ الاحتياطي)",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1792171598608",
+      "timestamp": "2026-10-16T17:26:38.608Z",
+      "user": "المشرف العام (اختبار)",
+      "action": "تنزيل حزمة نسخ احتياطي مشفرة شاملة (المعرف: backup_1792171598597_b873cbf1) - 1 مرفق",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1792171525751",
+      "timestamp": "2026-10-16T17:25:25.751Z",
+      "user": "المشرف العام (اختبار)",
+      "action": "إلغاء تجميد الكتابة واستئناف العمليات الطبيعية للنظام",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1792171525720",
+      "timestamp": "2026-10-16T17:25:25.720Z",
+      "user": "المشرف العام (اختبار)",
+      "action": "تفعيل تجميد الكتابة للنظام (وضع القراءة فقط للترحيل/النسخ الاحتياطي)",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
+      "id": "log-1792171525596",
+      "timestamp": "2026-10-16T17:25:25.596Z",
+      "user": "المشرف العام (اختبار)",
+      "action": "تنزيل حزمة نسخ احتياطي مشفرة شاملة (المعرف: backup_1792171525584_318de4a1) - 1 مرفق",
+      "ip": "127.0.0.1",
+      "device": "node"
+    },
+    {
       "id": "log-1791909956673",
       "timestamp": "2026-10-13T16:45:56.673Z",
       "user": "موسى (مسؤول النظام Administrator)",
@@ -14785,57 +14833,6 @@
   ],
   "activeSessions": [
     {
-      "token": "sess_1791558153253_jr8wlnnkizkn80",
-      "userId": "mosa",
-      "role": "admin",
-      "user": {
-        "id": "mosa",
-        "userId": "mosa",
-        "username": "mosa",
-        "name": "موسى (مسؤول النظام Administrator)",
-        "email": "mosa@riadataleata.org.sa",
-        "phone": "0550000099",
-        "nationalId": "1000000099",
-        "role": "admin",
-        "jobTitle": "مسؤول النظام (Administrator)",
-        "primaryDepartmentId": "dep-1",
-        "primaryDepartmentName": "الإدارة التنفيذية",
-        "allowedDepartmentIds": [
-          "dep-1",
-          "dep-2",
-          "dep-3",
-          "dep-4",
-          "dep-5",
-          "dep-7",
-          "dep-8",
-          "dep-9"
-        ],
-        "permissions": [
-          "super_admin",
-          "view_department",
-          "create_data",
-          "edit_data",
-          "delete_data",
-          "export_pdf",
-          "export_excel",
-          "manage_staff",
-          "manage_tasks",
-          "view_reports",
-          "cross_department_access",
-          "all_permissions"
-        ],
-        "mustChangePassword": false,
-        "status": "active",
-        "lastLogin": "2026-10-09T15:02:33.241Z"
-      },
-      "departmentId": "dep-1",
-      "nationalId": "1000000099",
-      "teamId": "",
-      "createdAt": 1791558153253,
-      "lastActive": 1791558153253,
-      "expiresAt": 1792162953253
-    },
-    {
       "token": "sess_1791908081275_gy9xbtryqeaycx",
       "userId": "mosa",
       "role": "admin",
@@ -15290,6 +15287,198 @@
       "createdAt": 1792079043004,
       "lastActive": 1792079043004,
       "expiresAt": 1792683843004
+    },
+    {
+      "token": "sess_1792169355216_p733th8binr6sj",
+      "userId": "mosa",
+      "role": "admin",
+      "user": {
+        "id": "mosa",
+        "role": "admin",
+        "name": "موسى"
+      },
+      "userName": "موسى",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792169355216,
+      "lastActive": 1792169355244,
+      "expiresAt": 1792774155216
+    },
+    {
+      "token": "sess_1792169355246_mvclwtubwixlb6",
+      "userId": "vol-123",
+      "role": "volunteer",
+      "user": {
+        "id": "vol-123",
+        "role": "volunteer",
+        "name": "أحمد المتطوع"
+      },
+      "userName": "أحمد المتطوع",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792169355246,
+      "lastActive": 1792169355277,
+      "expiresAt": 1792774155246
+    },
+    {
+      "token": "sess_1792169355284_fxnshmzjyafjrl",
+      "userId": "vol-999",
+      "role": "volunteer",
+      "user": {
+        "id": "vol-999",
+        "role": "volunteer",
+        "name": "سعيد المتطوع"
+      },
+      "userName": "سعيد المتطوع",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792169355284,
+      "lastActive": 1792169355284,
+      "expiresAt": 1792774155284
+    },
+    {
+      "token": "sess_1792171506440_4nb9c2xtt8ig0y",
+      "userId": "user",
+      "role": "المشرف العام (اختبار)",
+      "user": "usr-admin-test",
+      "userName": "",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792171506440,
+      "lastActive": 1792171506440,
+      "expiresAt": 1792776306440
+    },
+    {
+      "token": "sess_1792171506465_wywev4fn2wtvik",
+      "userId": "user",
+      "role": "مستخدم عادي",
+      "user": "usr-reg-test",
+      "userName": "",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792171506465,
+      "lastActive": 1792171506465,
+      "expiresAt": 1792776306465
+    },
+    {
+      "token": "sess_1792171525447_c46szqzx9zzklp",
+      "userId": "usr-admin-test",
+      "role": "admin",
+      "user": {
+        "id": "usr-admin-test",
+        "name": "المشرف العام (اختبار)"
+      },
+      "userName": "المشرف العام (اختبار)",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792171525447,
+      "lastActive": 1792171525729,
+      "expiresAt": 1792776325447
+    },
+    {
+      "token": "sess_1792171525480_jz79fj2v3f8svd",
+      "userId": "usr-reg-test",
+      "role": "volunteer",
+      "user": {
+        "id": "usr-reg-test",
+        "name": "مستخدم عادي"
+      },
+      "userName": "مستخدم عادي",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792171525480,
+      "lastActive": 1792171525557,
+      "expiresAt": 1792776325480
+    },
+    {
+      "token": "sess_1792171598470_2gngtwjhik4l6y",
+      "userId": "usr-admin-test",
+      "role": "admin",
+      "user": {
+        "id": "usr-admin-test",
+        "name": "المشرف العام (اختبار)"
+      },
+      "userName": "المشرف العام (اختبار)",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792171598471,
+      "lastActive": 1792171598722,
+      "expiresAt": 1792776398471
+    },
+    {
+      "token": "sess_1792171598495_mildlshu4c5zif",
+      "userId": "usr-reg-test",
+      "role": "volunteer",
+      "user": {
+        "id": "usr-reg-test",
+        "name": "مستخدم عادي"
+      },
+      "userName": "مستخدم عادي",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792171598495,
+      "lastActive": 1792171598567,
+      "expiresAt": 1792776398495
+    },
+    {
+      "token": "sess_1792172705518_bx5tny9855ika8",
+      "userId": "mosa",
+      "role": "admin",
+      "user": {
+        "id": "mosa",
+        "role": "admin",
+        "name": "موسى"
+      },
+      "userName": "موسى",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792172705518,
+      "lastActive": 1792172705545,
+      "expiresAt": 1792777505518
+    },
+    {
+      "token": "sess_1792172705548_g5ht2xhw1826o5",
+      "userId": "vol-123",
+      "role": "volunteer",
+      "user": {
+        "id": "vol-123",
+        "role": "volunteer",
+        "name": "أحمد المتطوع"
+      },
+      "userName": "أحمد المتطوع",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792172705548,
+      "lastActive": 1792172705578,
+      "expiresAt": 1792777505548
+    },
+    {
+      "token": "sess_1792172705585_uvnqu42eb4k0jk",
+      "userId": "vol-999",
+      "role": "volunteer",
+      "user": {
+        "id": "vol-999",
+        "role": "volunteer",
+        "name": "سعيد المتطوع"
+      },
+      "userName": "سعيد المتطوع",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792172705585,
+      "lastActive": 1792172705585,
+      "expiresAt": 1792777505585
     }
   ],
   "passwordResetOtps": [
@@ -15413,8 +15602,8 @@
       "reviewerNotes": "تم التحقق من هوية المتطوع وإرسال رمز التحقق الآمن المؤقت"
     }
   ],
-  "_version": 714,
-  "_lastModified": "2026-10-15T15:44:03.004Z",
+  "_version": 732,
+  "_lastModified": "2026-10-16T17:45:05.585Z",
   "_deletedRecordIds": [],
   "_deletedTombstones": {}
 }
