@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { Beneficiary, BenefitRequest, Initiative, DistributionHandoverRecord, AidDistribution, BeneficiaryRating } from "../types";
 import { BeneficiaryRatingModal } from "./BeneficiaryRatingModal";
+import { BeneficiaryFormFields, BeneficiaryFormData } from "./BeneficiaryFormFields";
+import { normalizeLegacyBeneficiaryData, ResidencyStatus } from "../data/beneficiaryRegistryData";
 
 interface BeneficiaryDashboardProps {
   beneficiary: Beneficiary;
@@ -52,10 +54,24 @@ export function BeneficiaryDashboard({
   const [reqDetails, setReqDetails] = useState<string>("");
 
   // Edit Profile States
+  const legacyProfile = normalizeLegacyBeneficiaryData(beneficiary);
   const [phone, setPhone] = useState(beneficiary.phone);
   const [email, setEmail] = useState(beneficiary.email);
   const [address, setAddress] = useState(beneficiary.address);
   const [familySize, setFamilySize] = useState(beneficiary.familySize);
+  const [profileFormData, setProfileFormData] = useState<BeneficiaryFormData>({
+    birthCalendarType: beneficiary.birthCalendarType || 'hijri',
+    birthDate: beneficiary.birthDate || '2000-01-01',
+    birthDateHijri: beneficiary.birthDateHijri || '1420/10/24',
+    age: beneficiary.age || 26,
+    residencyStatus: (beneficiary.residencyStatus as ResidencyStatus) || legacyProfile.residencyStatus,
+    nationality: beneficiary.nationality || legacyProfile.nationality,
+    city: beneficiary.city || legacyProfile.city,
+    district: beneficiary.district || legacyProfile.district,
+    customDistrict: beneficiary.customDistrict || legacyProfile.customDistrict || '',
+    maritalStatus: beneficiary.maritalStatus || legacyProfile.maritalStatus || 'متزوج',
+    orphanStatus: beneficiary.orphanStatus || legacyProfile.orphanStatus || 'غير ذلك / لا ينطبق'
+  });
 
   // Filter requests & handovers for current beneficiary
   const myRequests = requests.filter(r => r.beneficiaryId === beneficiary.id);
@@ -125,7 +141,8 @@ export function BeneficiaryDashboard({
       phone,
       email,
       address,
-      familySize: Number(familySize)
+      familySize: Number(familySize),
+      ...profileFormData
     });
     if (success) {
       alert(lang === "ar" ? "تم تحديث الملف الشخصي بنجاح" : "Profile updated successfully");
@@ -486,18 +503,50 @@ export function BeneficiaryDashboard({
                   </div>
                 )}
 
-                <div className="border-t border-neutral-100 pt-4 space-y-2">
+                <div className="border-t border-neutral-100 pt-4 space-y-2.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "صفة المستفيد" : "Status"}:</span>
+                    <strong className="text-neutral-800 font-bold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800">
+                      {beneficiary.residencyStatus || legacyProfile.residencyStatus}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "الجنسية" : "Nationality"}:</span>
+                    <strong className="text-neutral-700">{beneficiary.nationality || legacyProfile.nationality}</strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "تاريخ الميلاد" : "Date of Birth"}:</span>
+                    <strong className="text-neutral-800 font-mono">
+                      {(beneficiary.birthCalendarType === 'hijri' || (!beneficiary.birthCalendarType && beneficiary.birthDateHijri))
+                        ? `${beneficiary.birthDateHijri || '1420/10/24'} هـ`
+                        : `${beneficiary.birthDate || '2000-01-01'} م`}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "العمر المحسوب" : "Age"}:</span>
+                    <strong className="text-neutral-700">{beneficiary.age || profileFormData.age || '—'} {lang === "ar" ? "سنة" : "years"}</strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "المدينة والحي" : "City & District"}:</span>
+                    <strong className="text-neutral-700 truncate max-w-[180px]">
+                      {beneficiary.city || legacyProfile.city} - {beneficiary.district || legacyProfile.district}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "الحالة الاجتماعية" : "Marital Status"}:</span>
+                    <strong className="text-neutral-700">{beneficiary.maritalStatus || legacyProfile.maritalStatus || 'غير محدد'}</strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">{lang === "ar" ? "صفة اليتم" : "Orphan Status"}:</span>
+                    <strong className="text-neutral-700">{beneficiary.orphanStatus || legacyProfile.orphanStatus || 'غير ذلك / لا ينطبق'}</strong>
+                  </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-neutral-400">{lang === "ar" ? "حجم الأسرة المسجل" : "Family Size"}:</span>
                     <strong className="text-neutral-700">{beneficiary.familySize} {lang === "ar" ? "أفراد" : "Members"}</strong>
                   </div>
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-neutral-400">{lang === "ar" ? "نطاق الحي السكني" : "District"}:</span>
-                    <strong className="text-neutral-700">{beneficiary.address || "العسيلة"}</strong>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
                     <span className="text-neutral-400">{lang === "ar" ? "تاريخ التسجيل" : "Created Date"}:</span>
-                    <strong className="text-neutral-500 font-mono">{new Date(beneficiary.createdAt).toLocaleDateString('ar-SA')}</strong>
+                    <strong className="text-neutral-500 font-mono">{beneficiary.createdAt ? new Date(beneficiary.createdAt).toLocaleDateString('ar-SA') : 'مسجل'}</strong>
                   </div>
                 </div>
               </div>
@@ -925,6 +974,14 @@ export function BeneficiaryDashboard({
                     className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 focus:bg-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
                   />
                 </div>
+              </div>
+
+              {/* Standardized Beneficiary Form Fields */}
+              <div className="pt-2 border-t border-neutral-100">
+                <BeneficiaryFormFields
+                  values={profileFormData}
+                  onChange={(upd) => setProfileFormData(prev => ({ ...prev, ...upd }))}
+                />
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t border-neutral-100">

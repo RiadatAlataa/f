@@ -20,6 +20,12 @@ import {
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Beneficiary } from '../types';
+import { 
+  normalizeLegacyBeneficiaryData, 
+  hijriToGregorian, 
+  gregorianToHijri, 
+  calculateAge 
+} from '../data/beneficiaryRegistryData';
 
 // Set up pdfjs worker
 try {
@@ -47,6 +53,17 @@ interface ParsedRow {
   beneficiaryNumber?: string;
   barcodeId?: string;
   notes?: string;
+  birthCalendarType?: 'hijri' | 'gregorian';
+  birthDate?: string;
+  birthDateHijri?: string;
+  age?: number;
+  residencyStatus?: string;
+  nationality?: string;
+  city?: string;
+  district?: string;
+  customDistrict?: string;
+  maritalStatus?: string;
+  orphanStatus?: string;
   status: 'valid' | 'duplicate' | 'incomplete';
   statusReason: string;
   raw: any;
@@ -78,6 +95,16 @@ export const BeneficiariesImportModal: React.FC<BeneficiariesImportModalProps> =
         "الاسم الكامل": "عبد الله بن محمد الحارثي",
         "رقم الهوية الوطنية": "1087654321",
         "رقم الجوال": "0551234567",
+        "صفة المستفيد": "مواطن سعودي",
+        "الجنسية": "سعودي",
+        "نوع التقويم": "هجري",
+        "تاريخ الميلاد هجري": "1415/05/12",
+        "تاريخ الميلاد ميلادي": "1994-11-15",
+        "العمر": 32,
+        "المدينة": "مكة المكرمة",
+        "الحي": "العسيلة (نطاق الجمعية الرئيسي)",
+        "الحالة الاجتماعية": "متزوج",
+        "صفة اليتم": "غير ذلك / لا ينطبق",
         "عدد أفراد الأسرة": 5,
         "العنوان والحي": "مكة المكرمة - العسيلة - مخطط 1",
         "فئة الاستحقاق": "أسر متعففة",
@@ -87,6 +114,16 @@ export const BeneficiariesImportModal: React.FC<BeneficiariesImportModalProps> =
         "الاسم الكامل": "نورة بنت سعد العتيبي",
         "رقم الهوية الوطنية": "1098761234",
         "رقم الجوال": "0559876543",
+        "صفة المستفيد": "مواطن سعودي",
+        "الجنسية": "سعودي",
+        "نوع التقويم": "هجري",
+        "تاريخ الميلاد هجري": "1418/02/10",
+        "تاريخ الميلاد ميلادي": "1997-06-15",
+        "العمر": 29,
+        "المدينة": "مكة المكرمة",
+        "الحي": "العسيلة (نطاق الجمعية الرئيسي)",
+        "الحالة الاجتماعية": "أرملة",
+        "صفة اليتم": "غير ذلك / لا ينطبق",
         "عدد أفراد الأسرة": 3,
         "العنوان والحي": "مكة المكرمة - العسيلة - جوار المسجد الكبير",
         "فئة الاستحقاق": "أرامل وأيتام",
@@ -96,6 +133,16 @@ export const BeneficiariesImportModal: React.FC<BeneficiariesImportModalProps> =
         "الاسم الكامل": "منصور بن سالم الزهراني",
         "رقم الهوية الوطنية": "1045612378",
         "رقم الجوال": "0503344556",
+        "صفة المستفيد": "مواطن سعودي",
+        "الجنسية": "سعودي",
+        "نوع التقويم": "ميلادي",
+        "تاريخ الميلاد هجري": "1380/04/15",
+        "تاريخ الميلاد ميلادي": "1960-10-05",
+        "العمر": 65,
+        "المدينة": "مكة المكرمة",
+        "الحي": "العسيلة (نطاق الجمعية الرئيسي)",
+        "الحالة الاجتماعية": "متزوج",
+        "صفة اليتم": "غير ذلك / لا ينطبق",
         "عدد أفراد الأسرة": 2,
         "العنوان والحي": "مكة المكرمة - العسيلة - الشارع العام",
         "فئة الاستحقاق": "كبار السن ومرضى",
@@ -155,13 +202,65 @@ export const BeneficiariesImportModal: React.FC<BeneficiariesImportModalProps> =
       const rawFamily = item["عدد أفراد الأسرة"] || item["أفراد الأسرة"] || item["الأسرة"] || item["familySize"] || 1;
       const familySize = parseInt(String(rawFamily), 10) || 1;
 
+      // Extract standardized fields via normalizer
+      const legacyNorm = normalizeLegacyBeneficiaryData(item);
+
+      const residencyRaw = (item["صفة المستفيد"] || item["residencyStatus"] || "").toString().trim();
+      let residencyStatus = legacyNorm.residencyStatus;
+      if (residencyRaw === "مواطن سعودي" || residencyRaw === "مقيم" || residencyRaw === "ابن أو ابنة مواطنة سعودية") {
+        residencyStatus = residencyRaw;
+      }
+
+      const nationalityRaw = (item["الجنسية"] || item["nationality"] || "").toString().trim();
+      const nationality = residencyStatus === 'مواطن سعودي' 
+        ? 'سعودي' 
+        : (nationalityRaw || legacyNorm.nationality || 'مقيم');
+
+      const calTypeRaw = (item["نوع التقويم"] || item["birthCalendarType"] || "").toString().toLowerCase().trim();
+      const birthCalendarType: 'hijri' | 'gregorian' = (calTypeRaw.includes('ميلاد') || calTypeRaw === 'gregorian') ? 'gregorian' : 'hijri';
+
+      const birthDateHijri = (item["تاريخ الميلاد هجري"] || item["birthDateHijri"] || "").toString().trim();
+      const birthDateGreg = (item["تاريخ الميلاد ميلادي"] || item["تاريخ الميلاد"] || item["birthDate"] || "").toString().trim();
+
+      let resolvedBirthDate = birthDateGreg;
+      let resolvedBirthHijri = birthDateHijri;
+      let calculatedAgeNum = parseInt(String(item["العمر"] || item["age"]), 10) || 0;
+
+      if (birthCalendarType === 'hijri' && birthDateHijri) {
+        const parts = birthDateHijri.split(/[/ -]/);
+        if (parts.length === 3) {
+          const hy = parseInt(parts[0], 10);
+          const hm = parseInt(parts[1], 10);
+          const hd = parseInt(parts[2], 10);
+          if (hy > 1300 && hm >= 1 && hm <= 12 && hd >= 1 && hd <= 30) {
+            const gConv = hijriToGregorian(hy, hm, hd);
+            resolvedBirthDate = gConv.isoDate;
+            if (!calculatedAgeNum) calculatedAgeNum = calculateAge(gConv.isoDate, 'hijri', hy);
+          }
+        }
+      } else if (birthDateGreg) {
+        const parts = birthDateGreg.split('-');
+        if (parts.length === 3) {
+          const gy = parseInt(parts[0], 10);
+          const gm = parseInt(parts[1], 10);
+          const gd = parseInt(parts[2], 10);
+          const hConv = gregorianToHijri(gy, gm, gd);
+          resolvedBirthHijri = hConv.hijriDateStr;
+          if (!calculatedAgeNum) calculatedAgeNum = calculateAge(birthDateGreg, 'gregorian');
+        }
+      }
+
+      const city = (item["المدينة"] || item["المحافظة"] || item["city"] || legacyNorm.city).toString().trim();
+      const district = (item["الحي"] || item["district"] || legacyNorm.district).toString().trim();
+      const customDistrict = (item["الحي المخصص"] || item["customDistrict"] || legacyNorm.customDistrict || "").toString().trim();
+      const maritalStatus = (item["الحالة الاجتماعية"] || item["maritalStatus"] || legacyNorm.maritalStatus || "متزوج").toString().trim();
+      const orphanStatus = (item["صفة اليتم"] || item["orphanStatus"] || legacyNorm.orphanStatus || "غير ذلك / لا ينطبق").toString().trim();
+
       const address = (
         item["العنوان والحي"] || 
         item["العنوان"] || 
-        item["الحي"] || 
         item["address"] || 
-        item["city"] || 
-        "مكة المكرمة - العسيلة"
+        `${city} - ${district}`
       ).toString().trim();
 
       const category = (
@@ -206,6 +305,17 @@ export const BeneficiariesImportModal: React.FC<BeneficiariesImportModalProps> =
         beneficiaryNumber,
         barcodeId,
         notes,
+        birthCalendarType,
+        birthDate: resolvedBirthDate || "2000-01-01",
+        birthDateHijri: resolvedBirthHijri || "1420/10/24",
+        age: calculatedAgeNum || 26,
+        residencyStatus,
+        nationality,
+        city,
+        district,
+        customDistrict,
+        maritalStatus,
+        orphanStatus,
         status,
         statusReason,
         raw: item
@@ -385,6 +495,17 @@ export const BeneficiariesImportModal: React.FC<BeneficiariesImportModalProps> =
         beneficiaryNumber: r.beneficiaryNumber,
         barcodeId: r.barcodeId,
         notes: r.notes,
+        birthCalendarType: r.birthCalendarType,
+        birthDate: r.birthDate,
+        birthDateHijri: r.birthDateHijri,
+        age: r.age,
+        residencyStatus: r.residencyStatus as any,
+        nationality: r.nationality,
+        city: r.city,
+        district: r.district,
+        customDistrict: r.customDistrict,
+        maritalStatus: r.maritalStatus,
+        orphanStatus: r.orphanStatus,
         status: 'approved'
       }));
 

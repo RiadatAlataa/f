@@ -1197,10 +1197,42 @@ export interface Beneficiary {
   customDistrict?: string; // اسم الحي غير الموجود للمراجعة الإدارية
   maritalStatus?: string; // الحالة الاجتماعية: أعزب، عزباء، متزوج، متزوجة، مطلق، مطلقة، أرمل، أرملة
   orphanStatus?: string; // صفة اليتم: يتيم، يتيمة، غير ذلك / لا ينطبق
+  aidHistory?: {
+    id: string;
+    distributionId: string;
+    title: string;
+    aidType: string;
+    quantity: number;
+    unit: string;
+    date: string;
+    time: string;
+    status: string;
+    handedByUserName: string;
+    handedDepartment?: string;
+  }[];
+}
+
+export type DistributionWorkflowStatus = 
+  | 'draft'                         // 1. مسودة
+  | 'pending_approval'              // 2. بانتظار اعتماد إدارة المستفيدين
+  | 'dispatched_to_warehouse'       // 3. معتمد ومحال إلى المستودع
+  | 'preparing_items'               // 4. قيد تجهيز الأصناف
+  | 'ready_for_pickup'              // 5. جاهز للاستلام
+  | 'partially_delivered'           // 6. تم التسليم جزئيًا
+  | 'completed'                     // 7. مكتمل
+  | 'cancelled_rejected';           // 8. ملغي أو مرفوض مع ذكر السبب
+
+export interface DistributionStatusHistoryEntry {
+  status: DistributionWorkflowStatus;
+  changedBy: string;
+  changedAt: string; // ISO datetime
+  notes?: string;
+  role?: string;
 }
 
 export interface AidDistribution {
   id: string;
+  distributionNumber?: string; // e.g. "DIST-2026-001"
   title: string; // e.g. "توزيع سلال غذائية - رمضان 1448"
   aidType: 'food_basket' | 'clothing' | 'water' | 'meals' | 'financial' | 'medical' | 'school_supplies' | 'other' | string;
   aidTypeLabel?: string;
@@ -1209,11 +1241,44 @@ export interface AidDistribution {
   quantityPerBeneficiary: string; // e.g. "1 سلة غذائية متكاملة"
   targetAudience: 'all' | 'approved_only' | 'orphans' | 'widows' | 'large_families' | 'custom' | string;
   targetedBeneficiaryIds?: string[];
-  status: 'active' | 'planned' | 'completed' | 'archived';
+  excludedBeneficiaryIds?: string[];
+  status: 'active' | 'planned' | 'completed' | 'archived'; // Legacy compat
+  workflowStatus?: DistributionWorkflowStatus; // 8 workflow stages
+  rejectionReason?: string;
+  requestingDepartment?: string; // Default: "إدارة المستفيدين"
+  statusHistory?: DistributionStatusHistoryEntry[];
+  distributionMode?: 'all_eligible' | 'category_match' | 'manual_selection';
+  filterLogic?: 'AND' | 'OR';
+  criteria?: {
+    maritalStatuses?: string[];
+    orphanStatuses?: string[];
+    residencyStatuses?: string[];
+    cities?: string[];
+    districts?: string[];
+    nationalities?: string[];
+  };
   location?: string;
+  pickupLocation?: string;
+  pickupAppointment?: string;
   createdAt: string;
   createdBy?: string;
   notes?: string;
+  // Email Notification Tracking
+  emailNotificationSent?: boolean;
+  emailDispatchSummary?: {
+    totalTargeted: number;
+    sentCount: number;
+    failedCount: number;
+    noEmailCount: number;
+    dispatchedAt: string;
+    logs?: Array<{
+      beneficiaryId: string;
+      beneficiaryName: string;
+      email?: string;
+      status: 'sent' | 'failed' | 'no_email';
+      error?: string;
+    }>;
+  };
   // Inventory Direct Link (إدارة المخزون والتوزيعات)
   inventoryItemId?: string;
   inventoryItemName?: string;

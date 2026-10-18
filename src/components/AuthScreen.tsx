@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { evaluatePasswordStrength, generateStrongPassword } from "../utils/passwordSecurity";
+import { BeneficiaryFormFields, BeneficiaryFormData } from "./BeneficiaryFormFields";
 
 declare global {
   interface Window {
@@ -127,6 +128,19 @@ export function AuthScreen({
   const [gRegCategory, setGRegCategory] = useState("أسر محتاجة");
   const [gRegMonthlyIncome, setGRegMonthlyIncome] = useState(3000);
   const [gRegHousingType, setGRegHousingType] = useState("إيجار");
+  const [gRegBenFormData, setGRegBenFormData] = useState<BeneficiaryFormData>({
+    birthCalendarType: 'hijri',
+    birthDate: '2000-01-01',
+    birthDateHijri: '1420/10/24',
+    age: 26,
+    residencyStatus: 'مواطن سعودي',
+    nationality: 'سعودي',
+    city: 'مكة المكرمة',
+    district: 'العسيلة (نطاق الجمعية الرئيسي)',
+    customDistrict: '',
+    maritalStatus: 'متزوج',
+    orphanStatus: 'غير ذلك / لا ينطبق'
+  });
   // Mandatory charter & terms agreement
   const [gRegAgreedToTerms, setGRegAgreedToTerms] = useState(false);
 
@@ -449,6 +463,18 @@ export function AuthScreen({
         payload.category = gRegCategory;
         payload.monthlyIncome = gRegMonthlyIncome;
         payload.housingType = gRegHousingType;
+        payload.birthCalendarType = gRegBenFormData.birthCalendarType;
+        payload.birthDate = gRegBenFormData.birthDate;
+        payload.birthDateHijri = gRegBenFormData.birthDateHijri;
+        payload.age = gRegBenFormData.age;
+        payload.residencyStatus = gRegBenFormData.residencyStatus;
+        payload.nationality = gRegBenFormData.nationality;
+        payload.city = gRegBenFormData.city;
+        payload.district = gRegBenFormData.district;
+        payload.customDistrict = gRegBenFormData.customDistrict;
+        payload.maritalStatus = gRegBenFormData.maritalStatus;
+        payload.orphanStatus = gRegBenFormData.orphanStatus;
+        payload.address = gRegAddress ? `${gRegBenFormData.city} - ${gRegBenFormData.district} (${gRegAddress})` : `${gRegBenFormData.city} - ${gRegBenFormData.district}`;
       }
 
       const res = await fetch("/api/db/auth/google/complete-registration", {
@@ -2013,7 +2039,7 @@ export function AuthScreen({
                     </div>
                   </div>
 
-                  {/* Gender & Birth Date */}
+                  {/* Gender (Volunteer & Beneficiary) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div className="space-y-1">
                       <label className="block font-bold text-slate-700 dark:text-slate-300">
@@ -2028,32 +2054,37 @@ export function AuthScreen({
                         <option value="female">أنثى</option>
                       </select>
                     </div>
+
+                    {googleAccountType === 'volunteer' && (
+                      <div className="space-y-1">
+                        <label className="block font-bold text-slate-700 dark:text-slate-300">
+                          تاريخ الميلاد:
+                        </label>
+                        <input
+                          type="date"
+                          value={gRegBirthDate}
+                          onChange={(e) => setGRegBirthDate(e.target.value)}
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Address (Volunteer generic or Beneficiary extra notes) */}
+                  {googleAccountType === 'volunteer' && (
                     <div className="space-y-1">
                       <label className="block font-bold text-slate-700 dark:text-slate-300">
-                        تاريخ الميلاد:
+                        العنوان والحي السكني:
                       </label>
                       <input
-                        type="date"
-                        value={gRegBirthDate}
-                        onChange={(e) => setGRegBirthDate(e.target.value)}
+                        type="text"
+                        value={gRegAddress}
+                        onChange={(e) => setGRegAddress(e.target.value)}
+                        placeholder="مكة المكرمة - مخطط العسيلة"
                         className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                       />
                     </div>
-                  </div>
-
-                  {/* Address */}
-                  <div className="space-y-1">
-                    <label className="block font-bold text-slate-700 dark:text-slate-300">
-                      العنوان والحي السكني:
-                    </label>
-                    <input
-                      type="text"
-                      value={gRegAddress}
-                      onChange={(e) => setGRegAddress(e.target.value)}
-                      placeholder="مكة المكرمة - مخطط العسيلة"
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
+                  )}
 
                   {/* VOLUNTEER SPECIFIC FIELDS */}
                   {googleAccountType === 'volunteer' && (
@@ -2114,6 +2145,24 @@ export function AuthScreen({
                   {/* BENEFICIARY SPECIFIC FIELDS */}
                   {googleAccountType === 'beneficiary' && (
                     <div className="space-y-3 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      {/* Standardized Beneficiary Fields */}
+                      <BeneficiaryFormFields
+                        values={gRegBenFormData}
+                        onChange={(upd) => setGRegBenFormData(prev => ({ ...prev, ...upd }))}
+                      />
+
+                      <div className="space-y-1">
+                        <label className="block font-bold text-slate-700 dark:text-slate-300">
+                          تفاصيل إضافية لمقر السكن بالعسيلة (اختياري):
+                        </label>
+                        <input
+                          type="text"
+                          value={gRegAddress}
+                          onChange={(e) => setGRegAddress(e.target.value)}
+                          placeholder="مثال: بجوار مسجد النور، الشارع العام"
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div className="space-y-1">
                           <label className="block font-bold text-slate-700 dark:text-slate-300">

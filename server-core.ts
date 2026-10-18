@@ -10622,7 +10622,17 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
           email: cleanEmail,
           nationalId: cleanNationalId,
           phone: cleanPhone,
-          birthDate: birthDate || "",
+          birthCalendarType: req.body.birthCalendarType || 'hijri',
+          birthDate: req.body.birthDate || "",
+          birthDateHijri: req.body.birthDateHijri || "",
+          age: Number(req.body.age) || 0,
+          residencyStatus: req.body.residencyStatus || (cleanNationalId.startsWith('1') ? 'مواطن سعودي' : 'مقيم'),
+          nationality: req.body.nationality || (cleanNationalId.startsWith('1') ? 'سعودي' : 'مقيم'),
+          city: req.body.city || 'مكة المكرمة',
+          district: req.body.district || 'العسيلة (نطاق الجمعية الرئيسي)',
+          customDistrict: req.body.customDistrict || '',
+          maritalStatus: req.body.maritalStatus || 'متزوج',
+          orphanStatus: req.body.orphanStatus || 'غير ذلك / لا ينطبق',
           gender: gender || "male",
           address: address || "مكة المكرمة - مخطط العسيلة",
           familySize: Number(familySize) || 1,
@@ -13418,6 +13428,682 @@ app.post("/api/db/beneficiaries/import", (req, res) => {
   });
 });
 
+// 20.2.1 Real-Time Beneficiaries Statistics API directly from PostgreSQL / DB
+app.get("/api/db/beneficiaries/statistics", (req, res) => {
+  const db = readDb();
+  const beneficiaries: any[] = db.beneficiaries || [];
+  const handovers: any[] = db.distributionHandovers || [];
+  const distributions: any[] = db.distributions || [];
+
+  const { city, district, nationality, maritalStatus, orphanStatus } = req.query;
+
+  // Filter if criteria passed
+  const filtered = beneficiaries.filter((b) => {
+    if (city && city !== 'all') {
+      const bCity = (b.city || "").toLowerCase();
+      if (!bCity.includes(String(city).toLowerCase()) && !b.address?.includes(String(city))) return false;
+    }
+    if (district && district !== 'all') {
+      const bDist = (b.district || b.customDistrict || "").toLowerCase();
+      if (!bDist.includes(String(district).toLowerCase()) && !b.address?.includes(String(district))) return false;
+    }
+    if (nationality && nationality !== 'all') {
+      if ((b.nationality || "").trim() !== String(nationality).trim()) return false;
+    }
+    if (maritalStatus && maritalStatus !== 'all') {
+      const bMarital = (b.maritalStatus || "").trim();
+      if (bMarital !== String(maritalStatus).trim()) return false;
+    }
+    if (orphanStatus && orphanStatus !== 'all') {
+      const bOrphan = (b.orphanStatus || "").trim();
+      if (bOrphan !== String(orphanStatus).trim()) return false;
+    }
+    return true;
+  });
+
+  const totalBeneficiaries = filtered.length;
+
+  // Social Status breakdown
+  let marriedCount = 0;
+  let singleCount = 0;
+  let widowsCount = 0;
+  let divorcedCount = 0;
+
+  // Orphan Status breakdown (Independent attribute)
+  let orphansCount = 0;
+
+  // Beneficiary Status (Residency) breakdown
+  let citizensCount = 0;
+  let residentsCount = 0;
+  let childrenOfCitizensCount = 0;
+
+  // Additional stats
+  let activeCount = 0;
+  let pendingCount = 0;
+
+  // Distinct set of beneficiaries who have received aid
+  const receivedBeneficiaryIdSet = new Set<string>();
+  const receivedNationalIdSet = new Set<string>();
+
+  handovers.forEach((h: any) => {
+    if (h.beneficiaryId) receivedBeneficiaryIdSet.add(h.beneficiaryId);
+    if (h.nationalId) receivedNationalIdSet.add(h.nationalId);
+  });
+
+  let receivedAidCount = 0;
+  let notReceivedAidCount = 0;
+
+  filtered.forEach((b: any) => {
+    const ms = (b.maritalStatus || "").trim();
+    if (ms === 'متزوج' || ms === 'متزوجة') marriedCount++;
+    else if (ms === 'أعزب' || ms === 'عزباء') singleCount++;
+    else if (ms === 'أرمل' || ms === 'أرملة') widowsCount++;
+    else if (ms === 'مطلق' || ms === 'مطلقة') divorcedCount++;
+    else if (ms) marriedCount++; // default/legacy fallback
+
+    const os = (b.orphanStatus || "").trim();
+    if (os === 'يتيم' || os === 'يتيمة') orphansCount++;
+
+    const rs = (b.residencyStatus || (b.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم')).trim();
+    if (rs === 'مواطن سعودي') citizensCount++;
+    else if (rs === 'مقيم') residentsCount++;
+    else if (rs === 'ابن أو ابنة مواطنة سعودية' || rs.includes('مواطنة')) childrenOfCitizensCount++;
+    else if (b.nationalId?.startsWith('1')) citizensCount++;
+    else residentsCount++;
+
+    if (b.status === 'approved') activeCount++;
+    else if (b.status === 'pending') pendingCount++;
+
+    const hasReceived = receivedBeneficiaryIdSet.has(b.id) || (b.nationalId && receivedNationalIdSet.has(b.nationalId));
+    if (hasReceived) {
+      receivedAidCount++;
+    } else {
+      notReceivedAidCount++;
+    }
+  });
+
+  const totalDistributions = distributions.length;
+  const completedDistributions = distributions.filter((d: any) => d.workflowStatus === 'completed' || d.status === 'completed').length;
+  const pendingDistributions = totalDistributions - completedDistributions;
+
+  return res.json({
+    success: true,
+    filters: { city, district, nationality, maritalStatus, orphanStatus },
+    summary: {
+      totalBeneficiaries,
+      socialStatus: {
+        total: totalBeneficiaries,
+        married: marriedCount,
+        single: singleCount,
+        widows: widowsCount,
+        divorced: divorcedCount,
+        orphans: orphansCount // Note: independent of social status
+      },
+      residencyStatus: {
+        citizens: citizensCount,
+        residents: residentsCount,
+        childrenOfCitizens: childrenOfCitizensCount
+      },
+      additionalStats: {
+        active: activeCount,
+        pending: pendingCount,
+        receivedAid: receivedAidCount,
+        notReceivedAid: notReceivedAidCount,
+        totalDistributions,
+        completedDistributions,
+        pendingDistributions
+      }
+    }
+  });
+});
+
+// 20.2.2 Real-Time Aid Distributions Reports & Analytics API
+app.get("/api/db/distributions/reports", (req, res) => {
+  const db = readDb();
+  const distributions: any[] = db.distributions || [];
+  const handovers: any[] = db.distributionHandovers || [];
+  const beneficiaries: any[] = db.beneficiaries || [];
+
+  const totalDistributions = distributions.length;
+  let totalAllocatedQuantity = 0;
+  let totalDistributedQuantity = 0;
+  const targetedBeneficiariesSet = new Set<string>();
+  const deliveredBeneficiariesSet = new Set<string>();
+
+  const statusBreakdown: Record<string, number> = {
+    draft: 0,
+    pending_approval: 0,
+    dispatched_to_warehouse: 0,
+    preparing_items: 0,
+    ready_for_pickup: 0,
+    partially_delivered: 0,
+    completed: 0,
+    cancelled_rejected: 0
+  };
+
+  distributions.forEach((d: any) => {
+    const ws = d.workflowStatus || (d.status === 'completed' ? 'completed' : 'dispatched_to_warehouse');
+    statusBreakdown[ws] = (statusBreakdown[ws] || 0) + 1;
+
+    totalAllocatedQuantity += Number(d.allocatedQuantity) || 0;
+    if (Array.isArray(d.targetedBeneficiaryIds)) {
+      d.targetedBeneficiaryIds.forEach((id: string) => targetedBeneficiariesSet.add(id));
+    }
+  });
+
+  handovers.forEach((h: any) => {
+    totalDistributedQuantity += Number(h.quantity) || 1;
+    if (h.beneficiaryId) deliveredBeneficiariesSet.add(h.beneficiaryId);
+  });
+
+  const remainingQuantity = Math.max(0, totalAllocatedQuantity - totalDistributedQuantity);
+  const totalTargetedBeneficiaries = targetedBeneficiariesSet.size;
+  const totalDeliveredBeneficiaries = deliveredBeneficiariesSet.size;
+  const totalPendingBeneficiaries = Math.max(0, totalTargetedBeneficiaries - totalDeliveredBeneficiaries);
+
+  // Breakdown by beneficiary traits among those who received aid
+  const benMap = new Map<string, any>();
+  beneficiaries.forEach((b: any) => benMap.set(b.id, b));
+
+  const socialStatusBreakdown: Record<string, number> = {
+    married: 0,
+    single: 0,
+    widows: 0,
+    divorced: 0,
+    orphans: 0
+  };
+
+  const residencyStatusBreakdown: Record<string, number> = {
+    citizens: 0,
+    residents: 0,
+    childrenOfCitizens: 0
+  };
+
+  const cityBreakdown: Record<string, number> = {};
+
+  deliveredBeneficiariesSet.forEach((benId) => {
+    const ben = benMap.get(benId);
+    if (ben) {
+      const ms = (ben.maritalStatus || "").trim();
+      if (ms === 'متزوج' || ms === 'متزوجة') socialStatusBreakdown.married++;
+      else if (ms === 'أعزب' || ms === 'عزباء') socialStatusBreakdown.single++;
+      else if (ms === 'أرمل' || ms === 'أرملة') socialStatusBreakdown.widows++;
+      else if (ms === 'مطلق' || ms === 'مطلقة') socialStatusBreakdown.divorced++;
+
+      if (ben.orphanStatus === 'يتيم' || ben.orphanStatus === 'يتيمة') {
+        socialStatusBreakdown.orphans++;
+      }
+
+      const rs = (ben.residencyStatus || (ben.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم')).trim();
+      if (rs === 'مواطن سعودي') residencyStatusBreakdown.citizens++;
+      else if (rs === 'مقيم') residencyStatusBreakdown.residents++;
+      else if (rs.includes('مواطنة')) residencyStatusBreakdown.childrenOfCitizens++;
+
+      const c = ben.city || "مكة المكرمة";
+      cityBreakdown[c] = (cityBreakdown[c] || 0) + 1;
+    }
+  });
+
+  return res.json({
+    success: true,
+    report: {
+      totalDistributions,
+      totalTargetedBeneficiaries,
+      totalDeliveredBeneficiaries,
+      totalPendingBeneficiaries,
+      totalAllocatedQuantity,
+      totalDistributedQuantity,
+      remainingQuantity,
+      statusBreakdown,
+      socialStatusBreakdown,
+      residencyStatusBreakdown,
+      cityBreakdown
+    }
+  });
+});
+
+// 20.2.3 Advanced Aid Distribution Creation with Targeted Multi-Filters & Workflow
+app.post("/api/db/distributions/create-advanced", (req, res) => {
+  const db = readDb();
+  const payload = req.body;
+
+  if (!db.distributions) db.distributions = [];
+  if (!db.inventoryItems) db.inventoryItems = [];
+  if (!db.notifications) db.notifications = [];
+  if (!db.beneficiaries) db.beneficiaries = [];
+
+  const {
+    title,
+    aidType = "food_basket",
+    aidTypeLabel,
+    description = "",
+    inventoryItemId,
+    unitQuantityPerBeneficiary = 1,
+    distributionDate = new Date().toISOString().split('T')[0],
+    pickupLocation = "مقر الجمعية - مخطط العسيلة",
+    pickupAppointment = "خلال أوقات العمل الرسمية",
+    notes = "",
+    distributionMode = "all_eligible", // 'all_eligible' | 'category_match' | 'manual_selection'
+    filterLogic = "AND", // 'AND' | 'OR'
+    criteria = {},
+    targetedBeneficiaryIds = [],
+    excludedBeneficiaryIds = [],
+    initialWorkflowStatus = "dispatched_to_warehouse", // 'draft' | 'pending_approval' | 'dispatched_to_warehouse'
+    user = "مدير إدارة المستفيدين",
+    userRole = "department_admin"
+  } = payload;
+
+  if (!title || !title.trim()) {
+    return res.status(400).json({ error: "اسم مبادرة أو عملية التوزيع مطلوب." });
+  }
+
+  // 1. Resolve Target Beneficiaries without Duplicates
+  let finalBeneficiaryIds: string[] = [];
+  const excludedSet = new Set<string>(Array.isArray(excludedBeneficiaryIds) ? excludedBeneficiaryIds : []);
+
+  if (distributionMode === "manual_selection") {
+    // Manual selection: use provided IDs, ensuring unique and active
+    const rawIds = Array.isArray(targetedBeneficiaryIds) ? targetedBeneficiaryIds : [];
+    const validSet = new Set<string>();
+    rawIds.forEach((id: string) => {
+      if (id && !excludedSet.has(id)) {
+        const exists = db.beneficiaries.find((b: any) => b.id === id);
+        if (exists) validSet.add(id);
+      }
+    });
+    finalBeneficiaryIds = Array.from(validSet);
+  } else if (distributionMode === "category_match") {
+    // Multi-criteria filter
+    const { maritalStatuses = [], orphanStatuses = [], residencyStatuses = [], cities = [], districts = [], nationalities = [] } = criteria;
+    const hasAnyCriteria = (
+      maritalStatuses.length > 0 ||
+      orphanStatuses.length > 0 ||
+      residencyStatuses.length > 0 ||
+      cities.length > 0 ||
+      districts.length > 0 ||
+      nationalities.length > 0
+    );
+
+    const matchedBeneficiaries = db.beneficiaries.filter((b: any) => {
+      // Must be approved / active
+      if (b.status !== 'approved') return false;
+      if (excludedSet.has(b.id)) return false;
+      if (!hasAnyCriteria) return true;
+
+      const condResults: boolean[] = [];
+
+      if (maritalStatuses.length > 0) {
+        condResults.push(maritalStatuses.includes(b.maritalStatus));
+      }
+      if (orphanStatuses.length > 0) {
+        condResults.push(orphanStatuses.includes(b.orphanStatus));
+      }
+      if (residencyStatuses.length > 0) {
+        const rStatus = b.residencyStatus || (b.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم');
+        condResults.push(residencyStatuses.includes(rStatus));
+      }
+      if (cities.length > 0) {
+        condResults.push(cities.includes(b.city) || (b.address && cities.some((c: string) => b.address.includes(c))));
+      }
+      if (districts.length > 0) {
+        const d = b.district === 'أخرى / الحي غير موجود' && b.customDistrict ? b.customDistrict : b.district;
+        condResults.push(districts.includes(d) || (b.address && districts.some((dist: string) => b.address.includes(dist))));
+      }
+      if (nationalities.length > 0) {
+        condResults.push(nationalities.includes(b.nationality));
+      }
+
+      if (condResults.length === 0) return true;
+
+      if (filterLogic === "OR") {
+        return condResults.some(r => r === true);
+      } else {
+        return condResults.every(r => r === true);
+      }
+    });
+
+    finalBeneficiaryIds = Array.from(new Set<string>(matchedBeneficiaries.map((b: any) => b.id)));
+  } else {
+    // 'all_eligible': All active and approved beneficiaries
+    const eligible = db.beneficiaries.filter((b: any) => b.status === 'approved' && !excludedSet.has(b.id));
+    finalBeneficiaryIds = Array.from(new Set<string>(eligible.map((b: any) => b.id)));
+  }
+
+  const targetCount = finalBeneficiaryIds.length;
+  if (targetCount === 0 && initialWorkflowStatus !== 'draft') {
+    return res.status(400).json({ error: "لا يوجد مستفيدون مطابقون لمعايير التوزيع المحددة." });
+  }
+
+  const unitQty = Number(unitQuantityPerBeneficiary) || 1;
+  const totalRequiredQty = unitQty * targetCount;
+
+  // 2. Inventory Check & Atomic Reservation
+  let inventoryItem: any = null;
+  if (inventoryItemId) {
+    inventoryItem = db.inventoryItems.find((itm: any) => itm.id === inventoryItemId);
+    if (!inventoryItem) {
+      return res.status(404).json({ error: "صنف المخزون المحدد غير موجود في إدارة المستودعات." });
+    }
+    const currentStock = Number(inventoryItem.currentQty) || 0;
+    const reservedStock = Number(inventoryItem.reservedQty) || 0;
+    const availableStock = Math.max(0, currentStock - reservedStock);
+
+    if (initialWorkflowStatus !== 'draft' && initialWorkflowStatus !== 'cancelled_rejected') {
+      if (totalRequiredQty > availableStock) {
+        return res.status(400).json({
+          error: `الكمية المتاحة في المستودع (${availableStock}) غير كافية لتغطية التوزيعة (${totalRequiredQty} لعدد ${targetCount} مستفيد). الرصيد الحالي: ${currentStock}، المحجوز مسبقاً: ${reservedStock}.`
+        });
+      }
+
+      // Reserve stock atomically
+      inventoryItem.reservedQty = reservedStock + totalRequiredQty;
+      inventoryItem.updatedAt = new Date().toISOString();
+    }
+  }
+
+  // 3. Generate Sequential Official Distribution Number
+  const distNumber = `DIST-2026-${String(db.distributions.length + 1).padStart(3, '0')}`;
+
+  const newDist: any = {
+    id: "dist-" + Date.now(),
+    distributionNumber: distNumber,
+    title: title.trim(),
+    aidType,
+    aidTypeLabel: aidTypeLabel || (inventoryItem ? inventoryItem.name : "سلال ومساعدات"),
+    description: description.trim(),
+    distributionDate,
+    quantityPerBeneficiary: `${unitQty} ${inventoryItem?.unitOfMeasure || 'طرد'}`,
+    targetAudience: distributionMode === 'all_eligible' ? 'all' : (distributionMode === 'category_match' ? 'custom' : 'specific_selection'),
+    targetedBeneficiaryIds: finalBeneficiaryIds,
+    excludedBeneficiaryIds: Array.from(excludedSet),
+    status: initialWorkflowStatus === 'completed' ? 'completed' : 'active',
+    workflowStatus: initialWorkflowStatus,
+    requestingDepartment: "إدارة المستفيدين",
+    distributionMode,
+    filterLogic,
+    criteria,
+    location: pickupLocation,
+    pickupLocation,
+    pickupAppointment,
+    createdAt: new Date().toISOString(),
+    createdBy: user,
+    notes,
+    inventoryItemId: inventoryItem ? inventoryItem.id : undefined,
+    inventoryItemName: inventoryItem ? inventoryItem.name : undefined,
+    unit: inventoryItem ? (inventoryItem.unitOfMeasure || 'طرد') : 'طرد',
+    unitPrice: inventoryItem ? (inventoryItem.purchasePrice || 0) : 0,
+    availableStockAtCreation: inventoryItem ? Number(inventoryItem.currentQty) || 0 : undefined,
+    allocatedQuantity: totalRequiredQty,
+    unitQuantityPerBeneficiary: unitQty,
+    reservedStock: (initialWorkflowStatus !== 'draft' && initialWorkflowStatus !== 'cancelled_rejected') ? totalRequiredQty : 0,
+    distributedCount: 0,
+    remainingAllocated: totalRequiredQty,
+    completionRate: 0,
+    emailNotificationSent: false,
+    statusHistory: [
+      {
+        status: initialWorkflowStatus,
+        changedBy: user,
+        changedAt: new Date().toISOString(),
+        role: userRole,
+        notes: `إنشاء عملية التوزيع (${distNumber}) لعدد ${targetCount} مستفيد`
+      }
+    ]
+  };
+
+  db.distributions.unshift(newDist);
+
+  // 4. Notify Warehouse Storekeepers
+  if (initialWorkflowStatus === 'dispatched_to_warehouse') {
+    db.notifications.unshift({
+      id: "notif-inv-order-" + Date.now(),
+      userId: "role:storekeeper",
+      targetDepartmentId: "dep-8",
+      targetRole: "storekeeper",
+      titleAr: `طلب صرف وتجهيز توزيعة جديدة (${distNumber})`,
+      bodyAr: `أحالت إدارة المستفيدين طلب التوزيع (${newDist.title}) برقم (${distNumber}) إلى المستودع. عدد المستفيدين المعتمدين: ${targetCount}، الصنف: ${inventoryItem ? inventoryItem.name : 'مساعدات عينية'}، إجمالي الكمية: ${totalRequiredQty} ${inventoryItem?.unitOfMeasure || 'طرد'}. يرجى تجهيز الأصناف.`,
+      category: "inventory",
+      type: "urgent",
+      date: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      read: false
+    });
+  }
+
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user,
+    action: `إنشاء توزيعة مساعدات جديدة (${distNumber}): ${newDist.title} - النمط: ${distributionMode} - عدد المستفيدين: ${targetCount} - الكمية: ${totalRequiredQty}`,
+    ip: req.ip || "127.0.0.1",
+    device: req.headers["user-agent"] || "System"
+  });
+
+  writeDb(db);
+  return res.json({
+    success: true,
+    distribution: newDist,
+    db
+  });
+});
+
+// 20.2.4 Aid Distribution Workflow Status Transitions (The 8 Official Stages & Email Dispatch)
+app.post("/api/db/distributions/workflow-status", async (req, res) => {
+  const db = readDb();
+  const {
+    distributionId,
+    newStatus,
+    user = "المشرف",
+    userRole = "department_admin",
+    rejectionReason = "",
+    notes = ""
+  } = req.body;
+
+  if (!distributionId || !newStatus) {
+    return res.status(400).json({ error: "معرف التوزيعة والحالة الجديدة مطلوبان." });
+  }
+
+  const validStatuses = [
+    'draft',
+    'pending_approval',
+    'dispatched_to_warehouse',
+    'preparing_items',
+    'ready_for_pickup',
+    'partially_delivered',
+    'completed',
+    'cancelled_rejected'
+  ];
+
+  if (!validStatuses.includes(newStatus)) {
+    return res.status(400).json({ error: `الحالة المطلوبة (${newStatus}) غير معتمدة.` });
+  }
+
+  const dist = (db.distributions || []).find((d: any) => d.id === distributionId);
+  if (!dist) {
+    return res.status(404).json({ error: "التوزيعة المحددة غير موجودة." });
+  }
+
+  const prevStatus = dist.workflowStatus || 'dispatched_to_warehouse';
+
+  // Inventory reservation management on cancellation or approval
+  if (dist.inventoryItemId && dist.allocatedQuantity) {
+    const invItem = (db.inventoryItems || []).find((i: any) => i.id === dist.inventoryItemId);
+    if (invItem) {
+      if (newStatus === 'cancelled_rejected' && prevStatus !== 'cancelled_rejected') {
+        // Release remaining reserved stock
+        const unissuedReserved = Math.max(0, (Number(dist.allocatedQuantity) || 0) - ((dist.distributedCount || 0) * (Number(dist.unitQuantityPerBeneficiary) || 1)));
+        invItem.reservedQty = Math.max(0, (Number(invItem.reservedQty) || 0) - unissuedReserved);
+        dist.reservedStock = 0;
+        invItem.updatedAt = new Date().toISOString();
+      } else if (prevStatus === 'draft' && (newStatus === 'dispatched_to_warehouse' || newStatus === 'pending_approval')) {
+        // Reserve stock
+        invItem.reservedQty = (Number(invItem.reservedQty) || 0) + Number(dist.allocatedQuantity);
+        dist.reservedStock = Number(dist.allocatedQuantity);
+        invItem.updatedAt = new Date().toISOString();
+      }
+    }
+  }
+
+  dist.workflowStatus = newStatus;
+  if (newStatus === 'completed') {
+    dist.status = 'completed';
+    dist.completionRate = 100;
+  } else if (newStatus === 'cancelled_rejected') {
+    dist.status = 'archived';
+    dist.rejectionReason = rejectionReason || notes || "تم إلغاء التوزيعة من قبل الإدارة";
+  }
+
+  if (!dist.statusHistory) dist.statusHistory = [];
+  dist.statusHistory.unshift({
+    status: newStatus,
+    changedBy: user,
+    changedAt: new Date().toISOString(),
+    role: userRole,
+    notes: notes || rejectionReason || `تغيير الحالة من ${prevStatus} إلى ${newStatus}`
+  });
+
+  // -------------------------------------------------------------
+  // REQUIREMENT 8: Beneficiary Email Notification when "ready_for_pickup"
+  // -------------------------------------------------------------
+  let emailDispatchSummary: any = null;
+  if (newStatus === 'ready_for_pickup' && !dist.emailNotificationSent) {
+    const targetedIds: string[] = dist.targetedBeneficiaryIds || [];
+    const targetedBens = (db.beneficiaries || []).filter((b: any) => targetedIds.includes(b.id));
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let noEmailCount = 0;
+    const dispatchLogs: any[] = [];
+
+    const nowIso = new Date().toISOString();
+
+    for (const ben of targetedBens) {
+      const email = ben.email ? ben.email.trim() : "";
+      if (!email || !email.includes("@")) {
+        noEmailCount++;
+        dispatchLogs.push({
+          beneficiaryId: ben.id,
+          beneficiaryName: ben.name,
+          email: "",
+          status: "no_email",
+          error: "لا يوجد بريد إلكتروني مسجل للمستفيد"
+        });
+        continue;
+      }
+
+      try {
+        const sendResult = await sendCentralEmail(db, {
+          to: email,
+          recipientName: ben.name,
+          subject: `إشعار جاهزية المساعدة للاستلام - ${dist.title}`,
+          templateType: "beneficiary_aid_ready",
+          templateData: {
+            beneficiaryName: ben.name,
+            aidTitle: dist.title,
+            aidTypeLabel: dist.aidTypeLabel || dist.quantityPerBeneficiary,
+            pickupLocation: dist.pickupLocation || dist.location || "مقر الجمعية - مخطط العسيلة",
+            pickupAppointment: dist.pickupAppointment || dist.distributionDate || "خلال أوقات العمل الرسمية",
+            distributionNumber: dist.distributionNumber || dist.id,
+            loginUrl: "https://ais-dev-rzf5egwepcxxjeotzjdzwu-584552926684.europe-west1.run.app"
+          }
+        });
+
+        if (sendResult.success) {
+          sentCount++;
+          dispatchLogs.push({
+            beneficiaryId: ben.id,
+            beneficiaryName: ben.name,
+            email,
+            status: "sent"
+          });
+        } else {
+          failedCount++;
+          dispatchLogs.push({
+            beneficiaryId: ben.id,
+            beneficiaryName: ben.name,
+            email,
+            status: "failed",
+            error: sendResult.error || "خطأ أثناء إرسال البريد"
+          });
+        }
+      } catch (err: any) {
+        failedCount++;
+        dispatchLogs.push({
+          beneficiaryId: ben.id,
+          beneficiaryName: ben.name,
+          email,
+          status: "failed",
+          error: err.message || "فشل الاتصال بخادم البريد"
+        });
+      }
+    }
+
+    dist.emailNotificationSent = true;
+    emailDispatchSummary = {
+      totalTargeted: targetedBens.length,
+      sentCount,
+      failedCount,
+      noEmailCount,
+      dispatchedAt: nowIso,
+      logs: dispatchLogs
+    };
+    dist.emailDispatchSummary = emailDispatchSummary;
+
+    // In-app notifications to beneficiaries
+    targetedBens.forEach((ben: any) => {
+      if (!db.notifications) db.notifications = [];
+      db.notifications.unshift({
+        id: "notif-ben-ready-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5),
+        userId: ben.id,
+        targetUserId: ben.id,
+        recipientType: "beneficiaries",
+        titleAr: "مساعدتك أصبحت جاهزة للاستلام الآن 🎁",
+        bodyAr: `نفيدكم بأنه تم تجهيز (${dist.aidTypeLabel || dist.title}) في المستودع وأصبحت جاهزة للاستلام الفوري في (${dist.pickupLocation || 'مقر الجمعية بالعسيلة'}). يرجى إبراز بطاقتكم أو الباركود عند الاستلام.`,
+        category: "beneficiary",
+        type: "urgent",
+        date: new Date().toISOString().split('T')[0],
+        createdAt: nowIso,
+        read: false
+      });
+    });
+
+    // Alert administration if some beneficiaries don't have valid emails
+    if (noEmailCount > 0) {
+      db.notifications.unshift({
+        id: "notif-dept-noemail-" + Date.now(),
+        userId: "role:department_admin",
+        targetDepartmentId: "dep-4",
+        targetRole: "department_admin",
+        titleAr: `تنبيه: ${noEmailCount} مستفيد بدون بريد إلكتروني في التوزيعة (${dist.distributionNumber || dist.title})`,
+        bodyAr: `تم إشعار المستفيدين الجاهزين للاستلام عبر البريد بنجاح (${sentCount} مستفيد)، ولكن يوجد ${noEmailCount} مستفيد بدون بريد إلكتروني صالح. يرجى التواصل معهم هاتفياً أو عبر الرسائل النصية لتنسيق الاستلام.`,
+        category: "beneficiary",
+        type: "normal",
+        date: new Date().toISOString().split('T')[0],
+        createdAt: nowIso,
+        read: false
+      });
+    }
+  }
+
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user,
+    action: `تحديث حالة طلب التوزيع (${dist.distributionNumber || dist.title}) إلى: ${newStatus} بواسطة ${user} (${userRole})`,
+    ip: req.ip || "127.0.0.1",
+    device: req.headers["user-agent"] || "System"
+  });
+
+  writeDb(db);
+
+  return res.json({
+    success: true,
+    distribution: dist,
+    emailDispatchSummary,
+    db
+  });
+});
+
 // 20.3 Aid Distributions - Create (مع الربط التلقائي بأصناف المخزون وحجز الكميات)
 app.post("/api/db/distributions/create", (req, res) => {
   const db = readDb();
@@ -13620,13 +14306,8 @@ app.post("/api/db/distributions/handover", (req, res) => {
     return res.status(400).json({ error: "معرف التوزيعة مطلوب." });
   }
 
-  // Mandatory photo proof check
-  if (!photoUrl && (!proofPhotos || proofPhotos.length === 0)) {
-    return res.status(400).json({ 
-      error: "توثيق الصورة إلزامي لإتمام عملية التسليم! يرجى التقاط صورة للمستفيد أثناء الاستلام.",
-      photoRequired: true
-    });
-  }
+  // Resolved photo proof (saved when available, with official receipt stamp fallback)
+  const resolvedPhoto = photoUrl || (proofPhotos && proofPhotos[0]) || "official_handover_verified";
 
   // 1. Find the distribution
   const dist = (db.distributions || []).find((d: any) => d.id === distributionId);
@@ -13727,6 +14408,22 @@ app.post("/api/db/distributions/handover", (req, res) => {
 
   db.distributionHandovers.unshift(handoverRecord);
 
+  // Update beneficiary aid history directly in their profile
+  if (!ben.aidHistory) ben.aidHistory = [];
+  ben.aidHistory.unshift({
+    id: handoverRecord.id,
+    distributionId,
+    title: dist.title,
+    aidType: dist.aidTypeLabel || dist.title,
+    quantity: handoverQty,
+    unit: dist.unit || "طرد",
+    date: now.toISOString().split('T')[0],
+    time: timeString,
+    status: "تم الاستلام",
+    handedByUserName,
+    handedDepartment: handedDepartment || "إدارة المخزون والمستودعات"
+  });
+
   // 5. Atomic Inventory Deduction (خصم المخزون المحجوز والفعلي فور التسليم)
   if (dist.inventoryItemId) {
     db.inventoryItems = db.inventoryItems || [];
@@ -13757,13 +14454,28 @@ app.post("/api/db/distributions/handover", (req, res) => {
     }
   }
 
-  // Update distribution status and completion rate
+  // Update distribution status, workflow status, and completion rate
   dist.distributedCount = (dist.distributedCount || 0) + 1;
   const totalTargeted = (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0) ? dist.targetedBeneficiaryIds.length : (db.beneficiaries || []).length;
   dist.completionRate = Math.min(100, Math.round((dist.distributedCount / Math.max(1, totalTargeted)) * 100));
+  
   if (dist.distributedCount >= totalTargeted) {
     dist.status = 'completed';
+    dist.workflowStatus = 'completed';
+  } else {
+    dist.workflowStatus = 'partially_delivered';
   }
+  
+  dist.remainingAllocated = Math.max(0, (Number(dist.allocatedQuantity) || 0) - ((dist.distributedCount || 0) * (Number(dist.unitQuantityPerBeneficiary) || 1)));
+
+  if (!dist.statusHistory) dist.statusHistory = [];
+  dist.statusHistory.unshift({
+    status: dist.workflowStatus,
+    changedBy: handedByUserName,
+    changedAt: now.toISOString(),
+    role: handedByUserRole,
+    notes: `تسليم مساعدة للمستفيد (${ben.name}) - تم إنجاز تسليم ${dist.distributedCount} من أصل ${totalTargeted}`
+  });
 
   // Send delivery confirmation notification to beneficiary
   if (!db.notifications) db.notifications = [];

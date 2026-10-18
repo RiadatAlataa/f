@@ -50,6 +50,9 @@ import {
 import { AidHandoverScannerModal } from './AidHandoverScannerModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
 import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
+import { BeneficiaryFormFields, BeneficiaryFormData } from './BeneficiaryFormFields';
+import { CreateAidDistributionModal } from './CreateAidDistributionModal';
+import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
 
 interface BeneficiariesMasterDashboardProps {
   beneficiaries: Beneficiary[];
@@ -123,6 +126,8 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [selectedScannerDistId, setSelectedScannerDistId] = useState<string>('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAdvancedCreateModalOpen, setIsAdvancedCreateModalOpen] = useState(false);
+  const [isBeneficiaryStatsModalOpen, setIsBeneficiaryStatsModalOpen] = useState(false);
   const [editingDist, setEditingDist] = useState<AidDistribution | null>(null);
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
@@ -157,6 +162,19 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [benCategory, setBenCategory] = useState('أسر متعففة');
   const [benNotes, setBenNotes] = useState('');
   const [benSubmitting, setBenSubmitting] = useState(false);
+  const [benFormData, setBenFormData] = useState<BeneficiaryFormData>({
+    birthCalendarType: 'hijri',
+    birthDate: '2000-01-01',
+    birthDateHijri: '1420/10/24',
+    age: 26,
+    residencyStatus: 'مواطن سعودي',
+    nationality: 'سعودي',
+    city: 'مكة المكرمة',
+    district: 'العسيلة (نطاق الجمعية الرئيسي)',
+    customDistrict: '',
+    maritalStatus: 'متزوج',
+    orphanStatus: 'غير ذلك / لا ينطبق'
+  });
 
   // Search & Filter States
   const [benSearchQuery, setBenSearchQuery] = useState('');
@@ -420,18 +438,34 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     try {
       if (onAddBeneficiary) {
         const barcodeSeq = Math.floor(100000 + Math.random() * 900000);
+        const resolvedAddress = benFormData.city 
+          ? `${benFormData.city} - ${benFormData.district === 'أخرى / الحي غير موجود' ? (benFormData.customDistrict || 'حي آخر') : benFormData.district}`
+          : benAddress;
+
         await onAddBeneficiary({
           name: benName,
           nationalId: benNationalId,
           phone: benPhone,
           familySize: Number(benFamilySize) || 1,
-          address: benAddress,
+          address: resolvedAddress,
           category: benCategory,
           notes: benNotes,
           barcodeId: `BC-BEN-${barcodeSeq}`,
           beneficiaryNumber: `BEN-2026-${String(beneficiaries.length + 1).padStart(4, '0')}`,
           status: 'approved',
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          birthCalendarType: benFormData.birthCalendarType,
+          birthDate: benFormData.birthDate,
+          birthDateHijri: benFormData.birthDateHijri,
+          age: benFormData.age,
+          residencyStatus: benFormData.residencyStatus,
+          nationality: benFormData.nationality,
+          nationalityProofDoc: benFormData.nationalityProofDoc,
+          city: benFormData.city,
+          district: benFormData.district,
+          customDistrict: benFormData.customDistrict,
+          maritalStatus: benFormData.maritalStatus,
+          orphanStatus: benFormData.orphanStatus
         });
         setIsAddBenModalOpen(false);
         setBenName('');
@@ -588,6 +622,24 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
 
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Explicit Create Aid Distribution Button (Requirement 2) */}
+            <button
+              onClick={() => setIsAdvancedCreateModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-black transition-all shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              <Package className="w-4 h-4 text-emerald-200" />
+              <span>إنشاء توزيع مساعدات</span>
+            </button>
+
+            {/* Real-time Beneficiaries Statistics (Requirement 1) */}
+            <button
+              onClick={() => setIsBeneficiaryStatsModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-850 border border-indigo-200 text-xs font-black transition-all shadow-2xs flex items-center gap-2 cursor-pointer"
+            >
+              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              <span>إحصائيات المستفيدين المباشرة</span>
+            </button>
+
             <button
               onClick={() => {
                 setSelectedScannerDistId(distributions[0]?.id || '');
@@ -597,14 +649,6 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
             >
               <Camera className="w-4 h-4" />
               مسح الباركود والتسليم الفوري
-            </button>
-
-            <button
-              onClick={handleOpenCreateModal}
-              className="px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              إنشاء توزيعة مرتبطة بالمخزون
             </button>
           </div>
         </div>
@@ -2283,6 +2327,12 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                 </div>
               </div>
 
+              {/* Standardized Beneficiary Fields */}
+              <BeneficiaryFormFields
+                values={benFormData}
+                onChange={(upd) => setBenFormData(prev => ({ ...prev, ...upd }))}
+              />
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-neutral-700 block mb-1">عدد أفراد الأسرة:</label>
@@ -2312,11 +2362,12 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
               </div>
 
               <div>
-                <label className="font-bold text-neutral-700 block mb-1">عنوان السكن والحي:</label>
+                <label className="font-bold text-neutral-700 block mb-1">تفاصيل إضافية للعنوان السكني (اختياري):</label>
                 <input
                   type="text"
                   value={benAddress}
                   onChange={(e) => setBenAddress(e.target.value)}
+                  placeholder="مثال: الشارع التجاري، بجوار المسجد"
                   className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-neutral-900 focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -2381,6 +2432,37 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           handoverRecords={handoverRecords}
           isOpen={!!historyBeneficiary}
           onClose={() => setHistoryBeneficiary(null)}
+          lang={lang}
+        />
+      {/* ========================================================================= */}
+      {/* MODAL: ADVANCED CREATE AID DISTRIBUTION (Requirements 2, 3, 4, 5) */}
+      {/* ========================================================================= */}
+      {isAdvancedCreateModalOpen && (
+        <CreateAidDistributionModal
+          isOpen={isAdvancedCreateModalOpen}
+          onClose={() => setIsAdvancedCreateModalOpen(false)}
+          beneficiaries={beneficiaries}
+          inventoryItems={inventoryItems}
+          currentUser={currentUser}
+          onSuccess={() => {
+            setIsAdvancedCreateModalOpen(false);
+            setActiveTab('distributions');
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REAL-TIME BENEFICIARIES & OPERATIONS STATISTICS (Requirement 1) */}
+      {/* ========================================================================= */}
+      {isBeneficiaryStatsModalOpen && (
+        <BeneficiariesStatisticsModal
+          isOpen={isBeneficiaryStatsModalOpen}
+          onClose={() => setIsBeneficiaryStatsModalOpen(false)}
+          beneficiaries={beneficiaries}
+          distributions={distributions}
+          handoverRecords={handoverRecords}
+          currentUser={currentUser}
           lang={lang}
         />
       )}

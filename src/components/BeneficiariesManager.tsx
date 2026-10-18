@@ -39,15 +39,24 @@ import {
   ExternalLink,
   ShieldCheck,
   FileDown,
-  Loader2
+  Loader2,
+  Edit,
+  Pencil,
+  UserCheck,
+  Heart,
+  BarChart3
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Beneficiary, HomeSettings, DistributionHandoverRecord } from '../types';
+import { Beneficiary, HomeSettings, DistributionHandoverRecord, AidDistribution } from '../types';
 import { BeneficiariesImportModal } from './BeneficiariesImportModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
 import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
+import { BeneficiaryFormFields, BeneficiaryFormData } from './BeneficiaryFormFields';
+import { normalizeLegacyBeneficiaryData, ResidencyStatus } from '../data/beneficiaryRegistryData';
+import { CreateAidDistributionModal } from './CreateAidDistributionModal';
+import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
 
 interface BeneficiariesManagerProps {
   beneficiaries: Beneficiary[];
@@ -61,6 +70,8 @@ interface BeneficiariesManagerProps {
   onImportBeneficiaries?: (beneficiaries: Partial<Beneficiary>[], fileType: 'excel' | 'pdf') => Promise<boolean>;
   onNavigateToDistributions?: () => void;
   activeDistributionsCount?: number;
+  distributions?: AidDistribution[];
+  inventoryItems?: any[];
 }
 
 type SortField = 'index' | 'name' | 'nationalId' | 'phone' | 'familySize' | 'createdAt' | 'status';
@@ -77,8 +88,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   onAddNewBeneficiary,
   onImportBeneficiaries,
   onNavigateToDistributions,
-  activeDistributionsCount = 0
+  activeDistributionsCount = 0,
+  distributions = [],
+  inventoryItems = []
 }) => {
+  // Modal states for Distribution & Statistics
+  const [isCreateDistributionOpen, setIsCreateDistributionOpen] = useState(false);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   // Beneficiary Aid History Modal State
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
 
@@ -90,6 +106,8 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month" | "year">("all");
   const [familySizeFilter, setFamilySizeFilter] = useState<"all" | "small" | "medium" | "large">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [residencyFilter, setResidencyFilter] = useState<string>("all");
+  const [orphanFilter, setOrphanFilter] = useState<string>("all");
 
   // Sorting states (Requirement 1 & 6)
   const [sortField, setSortField] = useState<SortField>('createdAt');
@@ -133,6 +151,20 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   const [selectedDetailsBen, setSelectedDetailsBen] = useState<Beneficiary | null>(null);
 
   // Add Beneficiary Form Data
+  const defaultBenFormValues: BeneficiaryFormData = {
+    birthCalendarType: 'hijri',
+    birthDate: '2000-01-01',
+    birthDateHijri: '1420/10/24',
+    age: 26,
+    residencyStatus: 'مواطن سعودي',
+    nationality: 'سعودي',
+    city: 'مكة المكرمة',
+    district: 'العسيلة (نطاق الجمعية الرئيسي)',
+    customDistrict: '',
+    maritalStatus: 'متزوج',
+    orphanStatus: 'غير ذلك / لا ينطبق'
+  };
+
   const [newBenData, setNewBenData] = useState({
     name: "",
     nationalId: "",
@@ -142,8 +174,40 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
     address: "مكة المكرمة - العسيلة",
     category: "أسر متعففة",
     notes: "",
-    status: "approved" as "approved" | "pending" | "rejected"
+    status: "approved" as "approved" | "pending" | "rejected",
+    ...defaultBenFormValues
   });
+
+  const [editingBen, setEditingBen] = useState<Beneficiary | null>(null);
+  const [editBenData, setEditBenData] = useState<any>(null);
+  const [isSubmittingBen, setIsSubmittingBen] = useState(false);
+
+  const handleOpenEdit = (ben: Beneficiary) => {
+    const legacy = normalizeLegacyBeneficiaryData(ben);
+    setEditingBen(ben);
+    setEditBenData({
+      ...ben,
+      name: ben.name || '',
+      nationalId: ben.nationalId || '',
+      phone: ben.phone || '',
+      email: ben.email || '',
+      familySize: ben.familySize || 4,
+      category: ben.category || 'أسر متعففة',
+      notes: ben.notes || '',
+      status: ben.status || 'approved',
+      residencyStatus: (ben.residencyStatus as ResidencyStatus) || legacy.residencyStatus,
+      nationality: ben.nationality || legacy.nationality,
+      city: ben.city || legacy.city,
+      district: ben.district || legacy.district,
+      customDistrict: ben.customDistrict || legacy.customDistrict || '',
+      maritalStatus: ben.maritalStatus || legacy.maritalStatus || 'متزوج',
+      orphanStatus: ben.orphanStatus || legacy.orphanStatus || 'غير ذلك / لا ينطبق',
+      birthCalendarType: ben.birthCalendarType || 'hijri',
+      birthDate: ben.birthDate || '2000-01-01',
+      birthDateHijri: ben.birthDateHijri || '1420/10/24',
+      age: ben.age || 26
+    });
+  };
 
   // Security Check: Authorized roles (Requirement 6)
   const isAuthorizedToExport = useMemo(() => {
@@ -205,7 +269,19 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           return false;
         }
 
-        // Multi-criteria Search filter (Name, National ID, Phone, Email, Address, Notes)
+        // Residency Status filter
+        if (residencyFilter !== "all") {
+          const benRes = ben.residencyStatus || (ben.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم');
+          if (benRes !== residencyFilter) return false;
+        }
+
+        // Orphan Status filter
+        if (orphanFilter !== "all") {
+          const benOrphan = ben.orphanStatus || (ben.category?.includes('أيتام') ? 'يتيم' : 'غير ذلك / لا ينطبق');
+          if (benOrphan !== orphanFilter) return false;
+        }
+
+        // Multi-criteria Search filter
         if (searchTerm.trim()) {
           const q = searchTerm.toLowerCase().trim();
           const matchesName = (ben.name || "").toLowerCase().includes(q);
@@ -217,6 +293,15 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           const matchesNotes = (ben.notes || "").toLowerCase().includes(q);
           const matchesBenNum = (ben.beneficiaryNumber || "").toLowerCase().includes(q);
           const matchesBarcode = (ben.barcodeId || "").toLowerCase().includes(q);
+          
+          // Enhanced fields
+          const matchesResidency = (ben.residencyStatus || "").toLowerCase().includes(q);
+          const matchesNationality = (ben.nationality || "").toLowerCase().includes(q);
+          const matchesCity = (ben.city || "").toLowerCase().includes(q);
+          const matchesDistrict = (ben.district || "").toLowerCase().includes(q) || (ben.customDistrict || "").toLowerCase().includes(q);
+          const matchesMarital = (ben.maritalStatus || "").toLowerCase().includes(q);
+          const matchesOrphan = (ben.orphanStatus || "").toLowerCase().includes(q);
+          const matchesBirth = (ben.birthDate || "").includes(q) || (ben.birthDateHijri || "").includes(q);
 
           return (
             matchesName || 
@@ -227,7 +312,14 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             matchesCategory || 
             matchesNotes || 
             matchesBenNum || 
-            matchesBarcode
+            matchesBarcode ||
+            matchesResidency ||
+            matchesNationality ||
+            matchesCity ||
+            matchesDistrict ||
+            matchesMarital ||
+            matchesOrphan ||
+            matchesBirth
           );
         }
 
@@ -253,12 +345,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
         return sortOrder === 'asc' ? comparison : -comparison;
       });
-  }, [beneficiaries, statusFilter, dateFilter, familySizeFilter, categoryFilter, searchTerm, sortField, sortOrder]);
+  }, [beneficiaries, statusFilter, dateFilter, familySizeFilter, categoryFilter, residencyFilter, orphanFilter, searchTerm, sortField, sortOrder]);
 
   // Reset page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, dateFilter, familySizeFilter, categoryFilter, rowsPerPage]);
+  }, [searchTerm, statusFilter, dateFilter, familySizeFilter, categoryFilter, residencyFilter, orphanFilter, rowsPerPage]);
 
   // Paginated records
   const totalPages = rowsPerPage === 'all' ? 1 : Math.ceil(filteredBeneficiaries.length / (rowsPerPage as number)) || 1;
@@ -268,15 +360,42 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
     return filteredBeneficiaries.slice(start, start + (rowsPerPage as number));
   }, [filteredBeneficiaries, currentPage, rowsPerPage]);
 
-  // Quick stats
+  // Quick stats directly from DB
   const stats = useMemo(() => {
     const total = beneficiaries.length;
     const approved = beneficiaries.filter((b) => b.status === "approved").length;
     const pending = beneficiaries.filter((b) => b.status === "pending").length;
     const rejected = beneficiaries.filter((b) => b.status === "rejected").length;
     const totalIndividuals = beneficiaries.reduce((sum, b) => sum + (Number(b.familySize) || 0), 0);
-    return { total, approved, pending, rejected, totalIndividuals };
-  }, [beneficiaries]);
+    const saudiCount = beneficiaries.filter(b => b.residencyStatus === 'مواطن سعودي' || (b.nationalId && String(b.nationalId).startsWith('1'))).length;
+    const residentCount = beneficiaries.filter(b => b.residencyStatus === 'مقيم' || (!String(b.nationalId).startsWith('1') && b.residencyStatus !== 'مواطن سعودي')).length;
+    const marriedCount = beneficiaries.filter(b => b.maritalStatus === 'متزوج' || b.maritalStatus === 'متزوجة').length;
+    const singleCount = beneficiaries.filter(b => b.maritalStatus === 'أعزب' || b.maritalStatus === 'عزباء').length;
+    const widowCount = beneficiaries.filter(b => b.maritalStatus === 'أرمل' || b.maritalStatus === 'أرملة').length;
+    const divorcedCount = beneficiaries.filter(b => b.maritalStatus === 'مطلق' || b.maritalStatus === 'مطلقة').length;
+    const orphanCount = beneficiaries.filter(b => b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة' || (b.category && b.category.includes('أيتام'))).length;
+
+    const receivedIds = new Set(handoverRecords.map(h => h.beneficiaryId || h.nationalId));
+    const receivedCount = beneficiaries.filter(b => receivedIds.has(b.id) || (b.nationalId && receivedIds.has(b.nationalId))).length;
+    const notReceivedCount = Math.max(0, total - receivedCount);
+
+    return { 
+      total, 
+      approved, 
+      pending, 
+      rejected, 
+      totalIndividuals, 
+      saudiCount, 
+      residentCount,
+      marriedCount,
+      singleCount,
+      widowCount,
+      divorcedCount,
+      orphanCount,
+      receivedCount,
+      notReceivedCount
+    };
+  }, [beneficiaries, handoverRecords]);
 
   // Status label translation & styling
   const getStatusInfo = (status: string) => {
@@ -390,8 +509,18 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           "الرقم التسلسلي",
           "اسم المستفيد",
           "رقم الهوية الوطنية",
+          "صفة المستفيد",
+          "الجنسية",
+          "نوع التقويم",
+          "تاريخ الميلاد هجري",
+          "تاريخ الميلاد ميلادي",
+          "العمر",
           "رقم الجوال",
           "البريد الإلكتروني",
+          "المدينة / المحافظة",
+          "الحي السكني",
+          "الحالة الاجتماعية",
+          "صفة اليتم",
           "عدد أفراد الأسرة",
           "العنوان ومقر السكن",
           "فئة الاستحقاق",
@@ -418,14 +547,35 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           ? new Date(ben.createdAt).toLocaleDateString('ar-SA')
           : "-";
 
+        const birthCal = ben.birthCalendarType === 'hijri' ? 'هجري' : 'ميلادي';
+        const birthH = ben.birthDateHijri || '-';
+        const birthG = ben.birthDate || '-';
+        const benAge = ben.age || '-';
+        const resStatus = ben.residencyStatus || (ben.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم');
+        const nat = ben.nationality || (resStatus === 'مواطن سعودي' ? 'سعودي' : 'مقيم');
+        const cty = ben.city || 'مكة المكرمة';
+        const dst = ben.district || 'العسيلة (نطاق الجمعية الرئيسي)';
+        const marStatus = ben.maritalStatus || '-';
+        const orphStatus = ben.orphanStatus || 'غير ذلك / لا ينطبق';
+
         worksheetData.push([
           index + 1,
           ben.name || "-",
           String(ben.nationalId || "-"),
+          resStatus,
+          nat,
+          birthCal,
+          birthH,
+          birthG,
+          benAge,
           String(ben.phone || "-"),
           ben.email || "-",
+          cty,
+          dst,
+          marStatus,
+          orphStatus,
           Number(ben.familySize) || 1,
-          ben.address || "مكة المكرمة - العسيلة",
+          ben.address || `${cty} - ${dst}`,
           ben.category || "أسر متعففة",
           statusArabic,
           regDate,
@@ -441,6 +591,16 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       worksheetData.push([
         "الإجمالي العام",
         `عدد المستفيدين: ${filteredBeneficiaries.length} مستفيد`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
         "",
         "",
         "",
@@ -462,18 +622,18 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       // Set sheet direction to RTL and freeze panes at row 8 (table header)
       ws['!views'] = [{ RTL: true, state: 'frozen', ySplit: 8 }];
 
-      // Enable autofilter on table headers (Row 8, cols A to N)
+      // Enable autofilter on table headers (Row 8, cols A to X)
       const headerRowIndex = 8;
       const lastDataRowIndex = headerRowIndex + filteredBeneficiaries.length;
-      ws['!autofilter'] = { ref: `A${headerRowIndex}:N${lastDataRowIndex}` };
+      ws['!autofilter'] = { ref: `A${headerRowIndex}:X${lastDataRowIndex}` };
 
       // Ensure National ID, Phone, BenNum, Barcode are stored explicitly as strings with text format (@)
-      // to avoid Excel truncating leading zeros (Requirement 4.10)
+      // to avoid Excel truncating leading zeros
       for (let r = 8; r < 8 + filteredBeneficiaries.length; r++) {
         const cellId = XLSX.utils.encode_cell({ r, c: 2 });
-        const cellPhone = XLSX.utils.encode_cell({ r, c: 3 });
-        const cellBenNum = XLSX.utils.encode_cell({ r, c: 12 });
-        const cellBarcode = XLSX.utils.encode_cell({ r, c: 13 });
+        const cellPhone = XLSX.utils.encode_cell({ r, c: 9 });
+        const cellBenNum = XLSX.utils.encode_cell({ r, c: 22 });
+        const cellBarcode = XLSX.utils.encode_cell({ r, c: 23 });
 
         if (ws[cellId]) { ws[cellId].t = 's'; ws[cellId].z = '@'; }
         if (ws[cellPhone]) { ws[cellPhone].t = 's'; ws[cellPhone].z = '@'; }
@@ -485,27 +645,11 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       const tableHeaders = worksheetData[7];
       const colWidths = tableHeaders.map((header: string, colIndex: number) => {
         let maxLen = (header || "").length;
-        filteredBeneficiaries.forEach((ben, idx) => {
-          let text = "";
-          switch (colIndex) {
-            case 0: text = String(idx + 1); break;
-            case 1: text = ben.name || ""; break;
-            case 2: text = ben.nationalId || ""; break;
-            case 3: text = ben.phone || ""; break;
-            case 4: text = ben.email || ""; break;
-            case 5: text = `${ben.familySize || 1} أفراد`; break;
-            case 6: text = ben.address || ""; break;
-            case 7: text = ben.category || ""; break;
-            case 8: text = ben.status === "approved" ? "معتمد نشط" : ben.status === "pending" ? "قيد الدراسة" : "موقوف / غير معتمد"; break;
-            case 9: text = ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : ""; break;
-            case 10: text = ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : ""; break;
-            case 11: text = ben.notes || ""; break;
-            case 12: text = ben.beneficiaryNumber || ""; break;
-            case 13: text = ben.barcodeId || ""; break;
-          }
-          if (text.length > maxLen) maxLen = text.length;
-        });
-        return { wch: Math.min(Math.max(maxLen + 4, 15), 45) };
+        for (let r = 8; r < 8 + filteredBeneficiaries.length; r++) {
+          const val = String(worksheetData[r]?.[colIndex] || "");
+          if (val.length > maxLen) maxLen = val.length;
+        }
+        return { wch: Math.min(Math.max(maxLen + 4, 14), 50) };
       });
       ws['!cols'] = colWidths;
 
@@ -611,6 +755,8 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
     setDateFilter("all");
     setFamilySizeFilter("all");
     setCategoryFilter("all");
+    setResidencyFilter("all");
+    setOrphanFilter("all");
     setSortField("createdAt");
     setSortOrder("desc");
     setCurrentPage(1);
@@ -620,7 +766,9 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
     statusFilter !== "all" || 
     dateFilter !== "all" || 
     familySizeFilter !== "all" || 
-    categoryFilter !== "all";
+    categoryFilter !== "all" ||
+    residencyFilter !== "all" ||
+    orphanFilter !== "all";
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -707,6 +855,28 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 <span>{lang === "ar" ? "استيراد بيانات" : "Import"}</span>
               </button>
             )}
+
+            {/* CREATE AID DISTRIBUTION BUTTON (Requirement 2) */}
+            <button
+              type="button"
+              onClick={() => setIsCreateDistributionOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-sm hover:shadow-md active:scale-95"
+              title="إنشاء وتخصيص عملية توزيع مساعدات جديدة وفق الفئات أو يدوياً أو للجميع"
+            >
+              <Package className="w-4 h-4 text-emerald-200" />
+              <span>{lang === "ar" ? "إنشاء توزيع مساعدات" : "Create Aid Distribution"}</span>
+            </button>
+
+            {/* BENEFICIARIES REAL-TIME STATS BUTTON (Requirement 1) */}
+            <button
+              type="button"
+              onClick={() => setIsStatsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-850 rounded-xl text-xs font-black transition-all cursor-pointer border border-indigo-200 shadow-2xs"
+              title="عرض إحصائيات المستفيدين المباشرة وتوزيعات الحالات الاجتماعية والجنسية"
+            >
+              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              <span>{lang === "ar" ? "إحصائيات المستفيدين" : "Beneficiary Statistics"}</span>
+            </button>
 
             {/* DISTRIBUTIONS NAVIGATION SHORTCUT */}
             {onNavigateToDistributions && (
@@ -830,7 +1000,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
         </div>
 
         {/* QUICK STATS TILES */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3 border-t border-neutral-100">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-3 border-t border-neutral-100">
           <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
             <span className="text-[10.5px] font-bold text-neutral-500 block">إجمالي المستفيدين</span>
             <span className="text-lg font-black text-neutral-800 font-mono">{stats.total}</span>
@@ -840,12 +1010,20 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             <span className="text-lg font-black text-emerald-800 font-mono">{stats.approved}</span>
           </div>
           <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-100">
-            <span className="text-[10.5px] font-bold text-amber-700 block">قيد الدراسة والمراجعة</span>
+            <span className="text-[10.5px] font-bold text-amber-700 block">قيد الدراسة</span>
             <span className="text-lg font-black text-amber-800 font-mono">{stats.pending}</span>
           </div>
           <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-100">
             <span className="text-[10.5px] font-bold text-rose-700 block">موقوفون ومرفوضون</span>
             <span className="text-lg font-black text-rose-800 font-mono">{stats.rejected}</span>
+          </div>
+          <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
+            <span className="text-[10.5px] font-bold text-indigo-700 block">مواطنون سعوديون</span>
+            <span className="text-lg font-black text-indigo-800 font-mono">{stats.saudiCount}</span>
+          </div>
+          <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100">
+            <span className="text-[10.5px] font-bold text-purple-700 block">أيتام مسجلون</span>
+            <span className="text-lg font-black text-purple-800 font-mono">{stats.orphanCount}</span>
           </div>
           <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 col-span-2 sm:col-span-1">
             <span className="text-[10.5px] font-bold text-blue-700 block">إجمالي أفراد الأسر</span>
@@ -863,7 +1041,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="ابحث بالاسم، رقم الهوية الوطنية، رقم الجوال، البريد، أو الحي بالعسيلة..."
+                placeholder="ابحث بالاسم، الهوية، الجوال، المدينة، الحي، صفة المستفيد، أو اليتم..."
                 className="w-full pr-9 pl-8 py-2.5 bg-neutral-50 hover:bg-neutral-100/70 focus:bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 outline-none focus:border-emerald-500 transition-all placeholder:text-neutral-400"
               />
               {searchTerm && (
@@ -892,6 +1070,36 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   <option value="approved">معتمد نشط ({stats.approved})</option>
                   <option value="pending">قيد الدراسة ({stats.pending})</option>
                   <option value="rejected">موقوف/مرفوض ({stats.rejected})</option>
+                </select>
+              </div>
+
+              {/* RESIDENCY STATUS FILTER */}
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
+                <span className="text-neutral-500 text-[11px] font-bold">صفة المستفيد:</span>
+                <select
+                  value={residencyFilter}
+                  onChange={(e) => setResidencyFilter(e.target.value)}
+                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                >
+                  <option value="all">كافة الصفات</option>
+                  <option value="مواطن سعودي">مواطن سعودي</option>
+                  <option value="مقيم">مقيم</option>
+                  <option value="ابن أو ابنة مواطنة سعودية">ابن أو ابنة مواطنة سعودية</option>
+                </select>
+              </div>
+
+              {/* ORPHAN STATUS FILTER */}
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
+                <span className="text-neutral-500 text-[11px] font-bold">صفة اليتم:</span>
+                <select
+                  value={orphanFilter}
+                  onChange={(e) => setOrphanFilter(e.target.value)}
+                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                >
+                  <option value="all">الكل</option>
+                  <option value="يتيم">يتيم</option>
+                  <option value="يتيمة">يتيمة</option>
+                  <option value="غير ذلك / لا ينطبق">غير ذلك / لا ينطبق</option>
                 </select>
               </div>
 
@@ -1180,10 +1388,25 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               <strong className="text-neutral-900 dark:text-neutral-100 block text-xs font-black truncate max-w-[190px]">
                                 {ben.name}
                               </strong>
-                              <div className="flex items-center gap-1.5 mt-0.5">
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                                 <span className="text-[9px] font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200/50 dark:border-emerald-800/50">
                                   {ben.beneficiaryNumber || `BEN-2026-${String(rowNumber).padStart(4, '0')}`}
                                 </span>
+                                {ben.residencyStatus && (
+                                  <span className="text-[9px] font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                    {ben.residencyStatus}
+                                  </span>
+                                )}
+                                {(ben.orphanStatus === 'يتيم' || ben.orphanStatus === 'يتيمة') && (
+                                  <span className="text-[9px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-300/60">
+                                    {ben.orphanStatus}
+                                  </span>
+                                )}
+                                {ben.age ? (
+                                  <span className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400">
+                                    ({ben.age} سنة)
+                                  </span>
+                                ) : null}
                                 {ben.barcodeId && (
                                   <span className="text-[9px] font-mono text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-200/60 dark:border-neutral-700">
                                     {ben.barcodeId}
@@ -1319,6 +1542,16 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               <Eye className="w-3.5 h-3.5" />
                             </button>
 
+                            {/* Edit Beneficiary */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(ben)}
+                              title="تعديل بيانات المستفيد"
+                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+
                             {/* Approve Status */}
                             <button
                               onClick={() => onUpdateBeneficiaryStatus(ben.id, "approved")}
@@ -1445,9 +1678,21 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                       </div>
                       <div>
                         <h4 className="text-xs font-black text-neutral-900 leading-tight">{ben.name}</h4>
-                        <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-100">
-                          {ben.beneficiaryNumber || `BEN-2026-${String(idx + 1).padStart(4, '0')}`}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-100">
+                            {ben.beneficiaryNumber || `BEN-2026-${String(idx + 1).padStart(4, '0')}`}
+                          </span>
+                          {ben.residencyStatus && (
+                            <span className="text-[9px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded">
+                              {ben.residencyStatus}
+                            </span>
+                          )}
+                          {(ben.orphanStatus === 'يتيم' || ben.orphanStatus === 'يتيمة') && (
+                            <span className="text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded">
+                              {ben.orphanStatus}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${status.color}`}>
@@ -1494,6 +1739,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                         {ben.address || "مكة المكرمة - العسيلة"}
                       </span>
                     </div>
+
+                    <div className="flex items-center justify-between pt-0.5">
+                      <span className="text-[11px] text-neutral-400 font-bold shrink-0">الميلاد والعمر:</span>
+                      <span className="text-neutral-700 text-left text-[11px] font-mono">
+                        {(ben.birthCalendarType === 'hijri' ? (ben.birthDateHijri || ben.birthDate) : ben.birthDate) || '—'} {ben.age ? `(${ben.age} سنة)` : ''}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="pt-3 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
@@ -1514,6 +1766,24 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                       >
                         <Package className="w-3.5 h-3.5 text-purple-600" />
                         <span>المساعدات ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDetailsBen(ben)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        title="عرض الملف الكامل"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(ben)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        title="تعديل بيانات المستفيد"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
@@ -1730,11 +2000,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                     <tr className="bg-neutral-100 text-neutral-800 border-b border-neutral-300 font-bold">
                       <th className="p-2 text-center w-8 border-l border-neutral-300">م</th>
                       <th className="p-2 border-l border-neutral-300">اسم المستفيد</th>
-                      <th className="p-2 border-l border-neutral-300">الهوية الوطنية</th>
+                      <th className="p-2 border-l border-neutral-300">الهوية / الصفة</th>
+                      <th className="p-2 border-l border-neutral-300">تاريخ الميلاد</th>
                       <th className="p-2 border-l border-neutral-300">الجوال</th>
-                      <th className="p-2 border-l border-neutral-300">البريد الإلكتروني</th>
+                      <th className="p-2 border-l border-neutral-300">المدينة / الحي</th>
+                      <th className="p-2 border-l border-neutral-300">الحالة / اليتم</th>
                       <th className="p-2 text-center border-l border-neutral-300">الأفراد</th>
-                      <th className="p-2 border-l border-neutral-300">العنوان ومقر السكن</th>
                       <th className="p-2 text-center border-l border-neutral-300">الفئة</th>
                       <th className="p-2 text-center border-l border-neutral-300">الحالة</th>
                       <th className="p-2 text-center border-l border-neutral-300">التسجيل</th>
@@ -1742,49 +2013,68 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200">
-                    {filteredBeneficiaries.map((ben, idx) => (
-                      <tr key={ben.id} className={`print-row ${idx % 2 === 1 ? "bg-neutral-50/70" : "bg-white"}`}>
-                        <td className="p-2 text-center font-mono font-bold text-neutral-600 border-l border-neutral-200">
-                          {idx + 1}
-                        </td>
-                        <td className="p-2 font-bold text-neutral-900 border-l border-neutral-200">
-                          {ben.name}
-                        </td>
-                        <td className="p-2 font-mono text-neutral-800 border-l border-neutral-200 whitespace-nowrap">
-                          {ben.nationalId}
-                        </td>
-                        <td className="p-2 font-mono text-neutral-800 border-l border-neutral-200 whitespace-nowrap">
-                          {ben.phone}
-                        </td>
-                        <td className="p-2 font-mono text-[10px] text-neutral-600 border-l border-neutral-200">
-                          {ben.email || "-"}
-                        </td>
-                        <td className="p-2 text-center font-mono font-bold text-neutral-800 border-l border-neutral-200">
-                          {ben.familySize}
-                        </td>
-                        <td className="p-2 text-neutral-700 border-l border-neutral-200 text-[11px]">
-                          {ben.address || "مكة المكرمة - العسيلة"}
-                        </td>
-                        <td className="p-2 text-center text-[10.5px] border-l border-neutral-200">
-                          {ben.category || "أسر متعففة"}
-                        </td>
-                        <td className="p-2 text-center border-l border-neutral-200">
-                          {ben.status === "approved" ? (
-                            <span className="text-emerald-800 font-bold">معتمد</span>
-                          ) : ben.status === "pending" ? (
-                            <span className="text-amber-800 font-bold">قيد الدراسة</span>
-                          ) : (
-                            <span className="text-rose-800 font-bold">موقوف</span>
-                          )}
-                        </td>
-                        <td className="p-2 text-center font-mono text-[10px] text-neutral-600 border-l border-neutral-200 whitespace-nowrap">
-                          {ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : "-"}
-                        </td>
-                        <td className="p-2 text-[10px] text-neutral-500 max-w-[140px] truncate">
-                          {ben.notes || "-"}
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredBeneficiaries.map((ben, idx) => {
+                      const birthDisplay = ben.birthCalendarType === 'hijri'
+                        ? (ben.birthDateHijri ? `${ben.birthDateHijri} هـ` : (ben.birthDate || "-"))
+                        : (ben.birthDate ? `${ben.birthDate} م` : (ben.birthDateHijri ? `${ben.birthDateHijri} هـ` : "-"));
+                      const ageDisplay = ben.age ? ` (${ben.age} سنة)` : "";
+
+                      const locationDisplay = ben.city || ben.district 
+                        ? `${ben.city || 'مكة المكرمة'} - ${ben.district === 'أخرى / الحي غير موجود' && ben.customDistrict ? ben.customDistrict : (ben.district || 'العسيلة')}`
+                        : (ben.address || "مكة المكرمة - العسيلة");
+
+                      return (
+                        <tr key={ben.id} className={`print-row ${idx % 2 === 1 ? "bg-neutral-50/70" : "bg-white"}`}>
+                          <td className="p-2 text-center font-mono font-bold text-neutral-600 border-l border-neutral-200">
+                            {idx + 1}
+                          </td>
+                          <td className="p-2 font-bold text-neutral-900 border-l border-neutral-200">
+                            {ben.name}
+                          </td>
+                          <td className="p-2 border-l border-neutral-200 whitespace-nowrap">
+                            <span className="font-mono text-neutral-800 font-bold block">{ben.nationalId}</span>
+                            <span className="text-[10px] text-neutral-500">{ben.residencyStatus || (ben.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم')}</span>
+                          </td>
+                          <td className="p-2 border-l border-neutral-200 whitespace-nowrap text-[10.5px]">
+                            <span className="font-medium text-neutral-800 block">{birthDisplay}</span>
+                            {ageDisplay && <span className="text-[10px] text-emerald-700 font-bold">{ageDisplay}</span>}
+                          </td>
+                          <td className="p-2 font-mono text-neutral-800 border-l border-neutral-200 whitespace-nowrap">
+                            {ben.phone}
+                          </td>
+                          <td className="p-2 text-neutral-700 border-l border-neutral-200 text-[10.5px] max-w-[150px]">
+                            {locationDisplay}
+                          </td>
+                          <td className="p-2 text-neutral-700 border-l border-neutral-200 text-[10.5px] whitespace-nowrap">
+                            <span className="block font-medium">{ben.maritalStatus || "متزوج"}</span>
+                            {(ben.orphanStatus === 'يتيم' || ben.orphanStatus === 'يتيمة') && (
+                              <span className="text-[9.5px] text-amber-700 font-bold block">{ben.orphanStatus}</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-center font-mono font-bold text-neutral-800 border-l border-neutral-200">
+                            {ben.familySize}
+                          </td>
+                          <td className="p-2 text-center text-[10.5px] border-l border-neutral-200">
+                            {ben.category || "أسر متعففة"}
+                          </td>
+                          <td className="p-2 text-center border-l border-neutral-200">
+                            {ben.status === "approved" ? (
+                              <span className="text-emerald-800 font-bold">معتمد</span>
+                            ) : ben.status === "pending" ? (
+                              <span className="text-amber-800 font-bold">قيد الدراسة</span>
+                            ) : (
+                              <span className="text-rose-800 font-bold">موقوف</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-center font-mono text-[10px] text-neutral-600 border-l border-neutral-200 whitespace-nowrap">
+                            {ben.createdAt ? new Date(ben.createdAt).toLocaleDateString('ar-SA') : "-"}
+                          </td>
+                          <td className="p-2 text-[10px] text-neutral-500 max-w-[140px] truncate">
+                            {ben.notes || "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1843,59 +2133,143 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-[10px] text-neutral-400 block font-bold">الهوية الوطنية:</span>
-                <span dir="ltr" className="font-mono font-bold text-neutral-800 block text-right">
-                  {selectedDetailsBen.nationalId}
-                </span>
-              </div>
-              <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-[10px] text-neutral-400 block font-bold">رقم الجوال:</span>
-                <span dir="ltr" className="font-mono font-bold text-neutral-800 block text-right">
-                  {selectedDetailsBen.phone}
-                </span>
-              </div>
-              <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-[10px] text-neutral-400 block font-bold">البريد الإلكتروني:</span>
-                <span className="font-mono text-neutral-800 block truncate">
-                  {selectedDetailsBen.email || "غير مسجل"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-[10px] text-neutral-400 block font-bold">عدد أفراد الأسرة:</span>
-                <span className="font-black text-blue-700 block font-mono">
-                  {selectedDetailsBen.familySize} أفراد
-                </span>
-              </div>
-              <div className="p-2.5 bg-neutral-50 rounded-xl col-span-2">
-                <span className="text-[10px] text-neutral-400 block font-bold">العنوان ومقر السكن:</span>
-                <span className="text-neutral-800 block font-medium">
-                  {selectedDetailsBen.address || "مكة المكرمة - مخطط العسيلة"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-[10px] text-neutral-400 block font-bold">فئة الاستحقاق:</span>
-                <span className="text-emerald-800 font-bold block">
-                  {selectedDetailsBen.category || "أسر متعففة"}
-                </span>
-              </div>
-              <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-[10px] text-neutral-400 block font-bold">رمز الباركود:</span>
-                <span className="font-mono font-bold text-neutral-700 block">
-                  {selectedDetailsBen.barcodeId || "-"}
-                </span>
-              </div>
-              {selectedDetailsBen.notes && (
-                <div className="p-2.5 bg-neutral-50 rounded-xl col-span-2">
-                  <span className="text-[10px] text-neutral-400 block font-bold">الملاحظات:</span>
-                  <span className="text-neutral-800 block">{selectedDetailsBen.notes}</span>
-                </div>
-              )}
-            </div>
+            {(() => {
+              const legacy = normalizeLegacyBeneficiaryData(selectedDetailsBen);
+              const residency = selectedDetailsBen.residencyStatus || legacy.residencyStatus;
+              const nationality = selectedDetailsBen.nationality || legacy.nationality;
+              const city = selectedDetailsBen.city || legacy.city;
+              const district = selectedDetailsBen.district || legacy.district;
+              const customDistrict = selectedDetailsBen.customDistrict || legacy.customDistrict;
+              const marital = selectedDetailsBen.maritalStatus || legacy.maritalStatus || 'متزوج';
+              const orphan = selectedDetailsBen.orphanStatus || legacy.orphanStatus || 'غير ذلك / لا ينطبق';
+              const birthDateFormatted = selectedDetailsBen.birthCalendarType === 'hijri'
+                ? (selectedDetailsBen.birthDateHijri ? `${selectedDetailsBen.birthDateHijri} هـ` : selectedDetailsBen.birthDate)
+                : (selectedDetailsBen.birthDate || 'غير مسجل');
+              const ageFormatted = selectedDetailsBen.age ? `${selectedDetailsBen.age} سنة` : 'غير محدد';
 
-            <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
-              <div className="flex items-center gap-2">
+              return (
+                <div className="space-y-3 text-xs">
+                  {/* Grid 1: Basic Identifiers */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">الهوية الوطنية / الإقامة:</span>
+                      <span dir="ltr" className="font-mono font-bold text-neutral-800 dark:text-neutral-100 block text-right">
+                        {selectedDetailsBen.nationalId}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">رقم الجوال:</span>
+                      <span dir="ltr" className="font-mono font-bold text-neutral-800 dark:text-neutral-100 block text-right">
+                        {selectedDetailsBen.phone}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Grid 2: Birth, Calendar & Age */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">
+                        تاريخ الميلاد ({selectedDetailsBen.birthCalendarType === 'hijri' ? 'تقويم هجري' : 'تقويم ميلادي'}):
+                      </span>
+                      <span className="font-bold text-emerald-800 dark:text-emerald-300 block">
+                        {birthDateFormatted}
+                      </span>
+                      {selectedDetailsBen.birthCalendarType === 'hijri' && selectedDetailsBen.birthDate && (
+                        <span className="text-[10px] text-neutral-400 block">الموافق: {selectedDetailsBen.birthDate} م</span>
+                      )}
+                    </div>
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">العمر المحسوب:</span>
+                      <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 block text-sm">
+                        {ageFormatted}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Grid 3: Residency & Nationality */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">صفة المستفيد:</span>
+                      <span className="font-bold text-neutral-800 dark:text-neutral-200 block">
+                        {residency}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">الجنسية:</span>
+                      <span className="font-bold text-neutral-800 dark:text-neutral-200 block">
+                        {nationality}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Grid 4: Location */}
+                  <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                    <span className="text-[10px] text-neutral-400 block font-bold">الموقع والحي السكني (منطقة مكة):</span>
+                    <span className="font-bold text-neutral-800 dark:text-neutral-200 block">
+                      {city} - {district === 'أخرى / الحي غير موجود' && customDistrict ? `${customDistrict} (مخصص)` : district}
+                    </span>
+                    {selectedDetailsBen.address && (
+                      <span className="text-[10.5px] text-neutral-500 block mt-0.5">{selectedDetailsBen.address}</span>
+                    )}
+                  </div>
+
+                  {/* Grid 5: Marital & Orphan Status */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">الحالة الاجتماعية:</span>
+                      <span className="font-bold text-neutral-800 dark:text-neutral-200 block">
+                        {marital}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">صفة اليتم (مستقل):</span>
+                      <span className={`font-bold block ${orphan.includes('يتيم') ? 'text-amber-700 dark:text-amber-400' : 'text-neutral-600'}`}>
+                        {orphan}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Grid 6: Family Size & Category */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">عدد أفراد الأسرة:</span>
+                      <span className="font-black text-blue-700 dark:text-blue-400 block font-mono">
+                        {selectedDetailsBen.familySize} أفراد
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">فئة الاستحقاق:</span>
+                      <span className="text-emerald-800 dark:text-emerald-400 font-bold block">
+                        {selectedDetailsBen.category || "أسر متعففة"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedDetailsBen.notes && (
+                    <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                      <span className="text-[10px] text-neutral-400 block font-bold">الملاحظات:</span>
+                      <span className="text-neutral-800 dark:text-neutral-200 block">{selectedDetailsBen.notes}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="flex flex-wrap items-center justify-between pt-3 border-t border-neutral-100 gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const benToEdit = selectedDetailsBen;
+                    setSelectedDetailsBen(null);
+                    handleOpenEdit(benToEdit);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-800 hover:bg-blue-100 rounded-xl text-xs font-bold border border-blue-200 cursor-pointer"
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span>تعديل بيانات المستفيد</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1918,7 +2292,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-800 hover:bg-purple-100 rounded-xl text-xs font-bold border border-purple-200 cursor-pointer"
                 >
                   <Package className="w-4 h-4 text-purple-600" />
-                  <span>سجل المساعدات المستلمة</span>
+                  <span>سجل المساعدات</span>
                 </button>
               </div>
 
@@ -1938,16 +2312,16 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       {/* ADD NEW BENEFICIARY MODAL                                      */}
       {/* ------------------------------------------------------------- */}
       {showAddModal && onAddNewBeneficiary && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-lg border border-neutral-200 shadow-2xl p-6 text-right space-y-4" dir="rtl">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in text-right" dir="rtl">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl border border-neutral-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl">
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-xl">
                   <UserPlus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-neutral-800">إضافة ملف مستفيد جديد</h3>
-                  <p className="text-[11px] text-neutral-400">تسجيل بيانات رب الأسرة في النظام</p>
+                  <h3 className="text-sm font-black text-neutral-800 dark:text-white">إضافة ملف مستفيد جديد</h3>
+                  <p className="text-[11px] text-neutral-400">تسجيل بيانات رب الأسرة ومطابقة الحقول المعتمدة</p>
                 </div>
               </div>
               <button 
@@ -1965,155 +2339,384 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                   alert("يرجى إدخال كافة الحقول الإلزامية");
                   return;
                 }
-                const ok = await onAddNewBeneficiary({
-                  ...newBenData,
-                  beneficiaryNumber: `BEN-2026-${String(beneficiaries.length + 1).padStart(4, '0')}`,
-                  barcodeId: `BC-BEN-${newBenData.nationalId.trim() || Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-                });
-                if (ok) {
-                  setShowAddModal(false);
-                  setNewBenData({
-                    name: "",
-                    nationalId: "",
-                    phone: "",
-                    email: "",
-                    familySize: 4,
-                    address: "مكة المكرمة - العسيلة",
-                    category: "أسر متعففة",
-                    notes: "",
-                    status: "approved"
+                setIsSubmittingBen(true);
+                try {
+                  const ok = await onAddNewBeneficiary({
+                    ...newBenData,
+                    beneficiaryNumber: `BEN-2026-${String(beneficiaries.length + 1).padStart(4, '0')}`,
+                    barcodeId: `BC-BEN-${newBenData.nationalId.trim() || Math.random().toString(36).substring(2, 8).toUpperCase()}`,
                   });
-                  setExportNotice("تمت إضافة المستفيد بنجاح مع توليد بطاقة الباركود الفريدة.");
-                  setTimeout(() => setExportNotice(null), 4000);
+                  if (ok) {
+                    setShowAddModal(false);
+                    setNewBenData({
+                      name: "",
+                      nationalId: "",
+                      phone: "",
+                      email: "",
+                      familySize: 4,
+                      address: "مكة المكرمة - العسيلة",
+                      category: "أسر متعففة",
+                      notes: "",
+                      status: "approved",
+                      ...defaultBenFormValues
+                    });
+                    setExportNotice("تمت إضافة المستفيد بنجاح مع توليد بطاقة الباركود الفريدة.");
+                    setTimeout(() => setExportNotice(null), 4000);
+                  }
+                } finally {
+                  setIsSubmittingBen(false);
                 }
               }}
-              className="space-y-3"
+              className="space-y-4"
             >
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">اسم المستفيد / رب الأسرة *</label>
-                <input
-                  type="text"
-                  required
-                  value={newBenData.name}
-                  onChange={(e) => setNewBenData({ ...newBenData, name: e.target.value })}
-                  placeholder="مثال: عبدالله بن صالح الحربي"
-                  className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500"
-                />
-              </div>
+              {/* Basic Identifiers */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <label className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5 border-b border-slate-200/80 dark:border-slate-800 pb-2">
+                  <Users className="w-4 h-4 text-emerald-600" />
+                  <span>البيانات الأساسية لرب الأسرة</span>
+                </label>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">رقم الهوية الوطنية *</label>
+                  <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">اسم المستفيد / رب الأسرة *</label>
                   <input
                     type="text"
                     required
-                    value={newBenData.nationalId}
-                    onChange={(e) => setNewBenData({ ...newBenData, nationalId: e.target.value })}
-                    placeholder="10XXXXXXXX"
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500 font-mono"
+                    value={newBenData.name}
+                    onChange={(e) => setNewBenData({ ...newBenData, name: e.target.value })}
+                    placeholder="مثال: عبدالله بن صالح الحربي"
+                    className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">رقم الجوال *</label>
-                  <input
-                    type="tel"
-                    required
-                    value={newBenData.phone}
-                    onChange={(e) => setNewBenData({ ...newBenData, phone: e.target.value })}
-                    placeholder="05XXXXXXXX"
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500 font-mono"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">عدد أفراد الأسرة</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={25}
-                    value={newBenData.familySize}
-                    onChange={(e) => setNewBenData({ ...newBenData, familySize: parseInt(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500 font-mono"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">رقم الهوية الوطنية / الإقامة (10 أرقام) *</label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={10}
+                      value={newBenData.nationalId}
+                      onChange={(e) => setNewBenData({ ...newBenData, nationalId: e.target.value.replace(/[^0-9]/g, '') })}
+                      placeholder="10XXXXXXXX"
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-left font-bold"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">رقم الجوال للتواصل *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={newBenData.phone}
+                      onChange={(e) => setNewBenData({ ...newBenData, phone: e.target.value })}
+                      placeholder="05XXXXXXXX"
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-left font-bold"
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">فئة الاستحقاق</label>
-                  <select
-                    value={newBenData.category}
-                    onChange={(e) => setNewBenData({ ...newBenData, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500 bg-white"
-                  >
-                    <option value="أسر متعففة">أسر متعففة</option>
-                    <option value="أيتام">أيتام</option>
-                    <option value="أرامل ومطلقات">أرامل ومطلقات</option>
-                    <option value="ذوي الاحتياجات">ذوي الاحتياجات الخاصة</option>
-                    <option value="كبار السن">كبار السن</option>
-                  </select>
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">العنوان والحي بالعسيلة</label>
-                <input
-                  type="text"
-                  value={newBenData.address}
-                  onChange={(e) => setNewBenData({ ...newBenData, address: e.target.value })}
-                  placeholder="مكة المكرمة - مخطط العسيلة - خلف مدرسة الرضوان"
-                  className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">البريد الإلكتروني (اختياري)</label>
+                  <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">البريد الإلكتروني (اختياري)</label>
                   <input
                     type="email"
                     value={newBenData.email}
                     onChange={(e) => setNewBenData({ ...newBenData, email: e.target.value })}
                     placeholder="example@email.com"
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500 font-mono"
+                    className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-left"
+                    dir="ltr"
                   />
                 </div>
+              </div>
+
+              {/* Standardized Beneficiary Fields Component */}
+              <BeneficiaryFormFields
+                values={newBenData}
+                onChange={(upd) => setNewBenData(prev => ({ ...prev, ...upd }))}
+              />
+
+              {/* Family & Eligibility Details */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">عدد أفراد الأسرة *</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={35}
+                      value={newBenData.familySize}
+                      onChange={(e) => setNewBenData({ ...newBenData, familySize: parseInt(e.target.value) || 1 })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">فئة الاستحقاق والرعاية</label>
+                    <select
+                      value={newBenData.category}
+                      onChange={(e) => setNewBenData({ ...newBenData, category: e.target.value })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+                    >
+                      <option value="أسر متعففة">أسر متعففة</option>
+                      <option value="أيتام">أيتام</option>
+                      <option value="أرامل ومطلقات">أرامل ومطلقات</option>
+                      <option value="ذوي الاحتياجات">ذوي الاحتياجات الخاصة</option>
+                      <option value="كبار السن">كبار السن</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">حالة الاعتماد في النظام</label>
+                    <select
+                      value={newBenData.status}
+                      onChange={(e) => setNewBenData({ ...newBenData, status: e.target.value as any })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+                    >
+                      <option value="approved">معتمد نشط</option>
+                      <option value="pending">قيد الدراسة والبحث الاجتماعي</option>
+                      <option value="rejected">موقوف / مستبعد</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">تفاصيل إضافية للعنوان السكني</label>
+                    <input
+                      type="text"
+                      value={newBenData.address}
+                      onChange={(e) => setNewBenData({ ...newBenData, address: e.target.value })}
+                      placeholder="مثال: بجوار مسجد النور، شارع 15"
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 mb-1">حالة الاستحقاق</label>
-                  <select
-                    value={newBenData.status}
-                    onChange={(e) => setNewBenData({ ...newBenData, status: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500 bg-white"
-                  >
-                    <option value="approved">معتمد نشط</option>
-                    <option value="pending">قيد الدراسة</option>
-                    <option value="rejected">موقوف/مرفوض</option>
-                  </select>
+                  <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">ملاحظات الباحث الميداني</label>
+                  <input
+                    type="text"
+                    value={newBenData.notes}
+                    onChange={(e) => setNewBenData({ ...newBenData, notes: e.target.value })}
+                    placeholder="أي ملاحظات إضافية حول احتياجات المستفيد أو حالته الخاصة..."
+                    className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 mb-1">ملاحظات الحالة الاجتماعية</label>
-                <input
-                  type="text"
-                  value={newBenData.notes}
-                  onChange={(e) => setNewBenData({ ...newBenData, notes: e.target.value })}
-                  placeholder="ملاحظات الباحث الاجتماعي أو متطلبات الدعم الخاصة"
-                  className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-xs outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-neutral-100 text-neutral-700 text-xs font-bold rounded-xl hover:bg-neutral-200 cursor-pointer"
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-neutral-700 dark:text-neutral-300 text-xs font-bold rounded-xl cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 text-white text-xs font-black rounded-xl hover:bg-emerald-700 cursor-pointer shadow-sm"
+                  disabled={isSubmittingBen}
+                  className="px-5 py-2 bg-emerald-600 text-white text-xs font-black rounded-xl hover:bg-emerald-700 cursor-pointer shadow-sm flex items-center gap-1.5"
                 >
-                  حفظ المستفيد
+                  {isSubmittingBen && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>حفظ وإضافة المستفيد</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* EDIT BENEFICIARY MODAL                                          */}
+      {/* ------------------------------------------------------------- */}
+      {editingBen && editBenData && onAddNewBeneficiary && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in text-right" dir="rtl">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl border border-neutral-200 dark:border-slate-800 shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-xl">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-neutral-800 dark:text-white">تعديل ملف المستفيد: {editingBen.name}</h3>
+                  <p className="text-[11px] text-neutral-400">تحديث الحقول والبيانات الشخصية والاجتماعية في قاعدة البيانات</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setEditingBen(null); setEditBenData(null); }}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-xl cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editBenData.name || !editBenData.nationalId || !editBenData.phone) {
+                  alert("يرجى إدخال كافة الحقول الإلزامية");
+                  return;
+                }
+                setIsSubmittingBen(true);
+                try {
+                  const ok = await onAddNewBeneficiary({
+                    ...editBenData,
+                    id: editingBen.id,
+                  });
+                  if (ok) {
+                    setEditingBen(null);
+                    setEditBenData(null);
+                    setExportNotice("تم تحديث بيانات ملف المستفيد بنجاح في قاعدة البيانات.");
+                    setTimeout(() => setExportNotice(null), 4000);
+                  }
+                } finally {
+                  setIsSubmittingBen(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              {/* Basic Identifiers */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <label className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5 border-b border-slate-200/80 dark:border-slate-800 pb-2">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  <span>البيانات الأساسية لرب الأسرة</span>
+                </label>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">اسم المستفيد / رب الأسرة *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editBenData.name}
+                    onChange={(e) => setEditBenData({ ...editBenData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">رقم الهوية الوطنية / الإقامة *</label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={10}
+                      value={editBenData.nationalId}
+                      onChange={(e) => setEditBenData({ ...editBenData, nationalId: e.target.value.replace(/[^0-9]/g, '') })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono text-left font-bold"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">رقم الجوال للتواصل *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={editBenData.phone}
+                      onChange={(e) => setEditBenData({ ...editBenData, phone: e.target.value })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono text-left font-bold"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">البريد الإلكتروني</label>
+                  <input
+                    type="email"
+                    value={editBenData.email || ""}
+                    onChange={(e) => setEditBenData({ ...editBenData, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono text-left"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* Standardized Beneficiary Fields Component */}
+              <BeneficiaryFormFields
+                values={editBenData}
+                onChange={(upd) => setEditBenData((prev: any) => ({ ...prev, ...upd }))}
+              />
+
+              {/* Family & Eligibility Details */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">عدد أفراد الأسرة *</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={35}
+                      value={editBenData.familySize}
+                      onChange={(e) => setEditBenData({ ...editBenData, familySize: parseInt(e.target.value) || 1 })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">فئة الاستحقاق والرعاية</label>
+                    <select
+                      value={editBenData.category}
+                      onChange={(e) => setEditBenData({ ...editBenData, category: e.target.value })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+                    >
+                      <option value="أسر متعففة">أسر متعففة</option>
+                      <option value="أيتام">أيتام</option>
+                      <option value="أرامل ومطلقات">أرامل ومطلقات</option>
+                      <option value="ذوي الاحتياجات">ذوي الاحتياجات الخاصة</option>
+                      <option value="كبار السن">كبار السن</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">حالة الاعتماد في النظام</label>
+                    <select
+                      value={editBenData.status}
+                      onChange={(e) => setEditBenData({ ...editBenData, status: e.target.value as any })}
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+                    >
+                      <option value="approved">معتمد نشط</option>
+                      <option value="pending">قيد الدراسة والبحث الاجتماعي</option>
+                      <option value="rejected">موقوف / مستبعد</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">تفاصيل إضافية للعنوان السكني</label>
+                    <input
+                      type="text"
+                      value={editBenData.address || ""}
+                      onChange={(e) => setEditBenData({ ...editBenData, address: e.target.value })}
+                      placeholder="مثال: بجوار مسجد النور، شارع 15"
+                      className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 mb-1">ملاحظات الباحث الميداني</label>
+                  <input
+                    type="text"
+                    value={editBenData.notes || ""}
+                    onChange={(e) => setEditBenData({ ...editBenData, notes: e.target.value })}
+                    placeholder="أي ملاحظات إضافية حول احتياجات المستفيد أو حالته الخاصة..."
+                    className="w-full px-3 py-2 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setEditingBen(null); setEditBenData(null); }}
+                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-neutral-700 dark:text-neutral-300 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingBen}
+                  className="px-5 py-2 bg-blue-600 text-white text-xs font-black rounded-xl hover:bg-blue-700 cursor-pointer shadow-sm flex items-center gap-1.5"
+                >
+                  {isSubmittingBen && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>حفظ التعديلات</span>
                 </button>
               </div>
             </form>
@@ -2150,6 +2753,37 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           handoverRecords={handoverRecords || []}
           isOpen={!!historyBeneficiary}
           onClose={() => setHistoryBeneficiary(null)}
+          lang={lang}
+        />
+      )}
+
+      {/* CREATE AID DISTRIBUTION MODAL (Requirements 2, 3, 4, 5) */}
+      {isCreateDistributionOpen && (
+        <CreateAidDistributionModal
+          isOpen={isCreateDistributionOpen}
+          onClose={() => setIsCreateDistributionOpen(false)}
+          beneficiaries={beneficiaries}
+          inventoryItems={inventoryItems}
+          currentUser={{ name: currentUserName || "مدير إدارة المستفيدين", role: currentUserRole }}
+          onSuccess={() => {
+            setIsCreateDistributionOpen(false);
+            if (onNavigateToDistributions) {
+              onNavigateToDistributions();
+            }
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* BENEFICIARIES REAL-TIME STATISTICS MODAL (Requirement 1) */}
+      {isStatsModalOpen && (
+        <BeneficiariesStatisticsModal
+          isOpen={isStatsModalOpen}
+          onClose={() => setIsStatsModalOpen(false)}
+          beneficiaries={beneficiaries}
+          distributions={distributions}
+          handoverRecords={handoverRecords}
+          currentUser={{ name: currentUserName, role: currentUserRole }}
           lang={lang}
         />
       )}

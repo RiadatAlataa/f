@@ -373,6 +373,8 @@ export const NATIONALITIES_LIST: string[] = [
   "جنسية أخرى"
 ];
 
+export const SAUDI_AND_GLOBAL_NATIONALITIES = NATIONALITIES_LIST;
+
 // -------------------------------------------------------------
 // 3. صفة المستفيد (حالة الجنسية والإقامة)
 // -------------------------------------------------------------

@@ -46,8 +46,10 @@ import {
   Upload,
   CheckCircle,
   ArrowRightLeft,
-  KeyRound
+  KeyRound,
+  BarChart3
 } from 'lucide-react';
+import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
 import { 
   Department, 
   DepartmentDirective, 
@@ -288,6 +290,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
       tabs.push({ id: 'team_support', label: 'الدعم الفني للفرق والمتطوعين' });
     }
     if (isExecutiveDept) {
+      tabs.push({ id: 'beneficiary_stats', label: 'إحصائيات المستفيدين والعمليات' });
       tabs.push({ id: 'password_resets', label: 'طلبات تغيير كلمات المرور (العمليات)' });
     }
     if (isBeneficiaryDept) tabs.push({ id: 'beneficiaries', label: 'إدارة المستفيدين والتوزيعات' });
@@ -329,6 +332,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   };
 
   const [activeTab, setActiveTab] = useState<string>(getDefaultTab());
+  const [isBenStatsModalOpen, setIsBenStatsModalOpen] = useState(false);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
   const [selectedDirective, setSelectedDirective] = useState<DepartmentDirective | null>(null);
   const [reportNotes, setReportNotes] = useState('');
@@ -831,6 +835,21 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
             </button>
           )}
 
+          {isExecutiveDept && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('beneficiary_stats')}
+              className={`px-5 py-3 rounded-t-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'beneficiary_stats'
+                  ? 'bg-emerald-600 text-white shadow-lg border-b-2 border-emerald-400'
+                  : 'bg-slate-900/80 text-emerald-300 hover:bg-slate-800 border-t border-x border-slate-800'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-300" />
+              <span>إحصائيات المستفيدين والعمليات</span>
+            </button>
+          )}
+
           {isExecutiveDept && isPageAllowed('password_resets') && (
             <button
               type="button"
@@ -1194,6 +1213,147 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
               currentUser={currentUser}
               userRole={effectiveRole}
             />
+          </div>
+        )}
+
+        {/* BENEFICIARIES & OPERATIONS REAL-TIME STATISTICS TAB (Requirement 1) */}
+        {activeTab === 'beneficiary_stats' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                    <BarChart3 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-white flex items-center gap-2">
+                      <span>إحصائيات المستفيدين والعمليات الميدانية المباشرة</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
+                        Direct PostgreSQL DB
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      مؤشرات حية ومحدثة لحظياً للحالات الاجتماعية، صفة المستفيد، والعمليات التوزيعية دون أي تكرار
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBenStatsModalOpen(true)}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                  >
+                    <Filter className="w-4 h-4" />
+                    <span>فتح لوحة الفلاتر والتقارير المتقدمة</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Summary Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400 font-bold">إجمالي المستفيدين المسجلين</p>
+                  <p className="text-2xl font-black text-white mt-1 font-mono">{beneficiaries.length}</p>
+                  <p className="text-[10px] text-emerald-400 mt-1">سجل رقمي موحد ومعتمد</p>
+                </div>
+
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400 font-bold">المستفيدون النشطون</p>
+                  <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">
+                    {beneficiaries.filter(b => b.status === 'approved').length}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">معتمدون لاستحقاق المساعدات</p>
+                </div>
+
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400 font-bold">قيد المراجعة والتدقيق</p>
+                  <p className="text-2xl font-black text-amber-400 mt-1 font-mono">
+                    {beneficiaries.filter(b => b.status === 'pending').length}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">بانتظار استكمال الوثائق</p>
+                </div>
+
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400 font-bold">إجمالي عمليات التوزيع</p>
+                  <p className="text-2xl font-black text-blue-400 mt-1 font-mono">{distributions.length}</p>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {distributions.filter(d => (d as any).workflowStatus === 'completed' || d.status === 'completed').length} مكتملة
+                  </p>
+                </div>
+              </div>
+
+              {/* Social Status & Residency Breakdown Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                {/* Social Status Card */}
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-5">
+                  <h3 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                    <span>توزيع الحالة الاجتماعية واليتم</span>
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">المتزوجون والمتزوجات</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.maritalStatus === 'متزوج' || b.maritalStatus === 'متزوجة').length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">العزاب والعازبات</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.maritalStatus === 'أعزب' || b.maritalStatus === 'عزباء').length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">الأرامل</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.maritalStatus === 'أرمل' || b.maritalStatus === 'أرملة').length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">المطلقون والمطلقات</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.maritalStatus === 'مطلق' || b.maritalStatus === 'مطلقة').length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-emerald-950/40 rounded-xl border border-emerald-500/30 flex justify-between items-center col-span-2">
+                      <span className="text-emerald-300 font-bold">الأيتام واليتيمات (صفة مستقلة)</span>
+                      <span className="font-black text-emerald-400 font-mono text-sm">
+                        {beneficiaries.filter(b => b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة').length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Residency Status Card */}
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-5">
+                  <h3 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-teal-400" />
+                    <span>توزيع صفة المستفيد ونطاق الرعاية</span>
+                  </h3>
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">المواطنون السعوديون</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.residencyStatus === 'مواطن سعودي' || (!b.residencyStatus && b.nationalId?.startsWith('1'))).length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">المقيمون</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.residencyStatus === 'مقيم' || (!b.residencyStatus && b.nationalId?.startsWith('2'))).length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-300">أبناء وبنات المواطنات السعوديات</span>
+                      <span className="font-bold text-white font-mono">
+                        {beneficiaries.filter(b => b.residencyStatus === 'ابن أو ابنة مواطنة سعودية' || b.residencyStatus?.includes('مواطنة')).length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2566,6 +2726,19 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
           return { success: false, message: "تعذر إرسال الخطاب" };
         }}
       />
+
+      {/* BENEFICIARIES REAL-TIME STATISTICS MODAL FOR OPERATIONS MANAGER (Requirement 1) */}
+      {isBenStatsModalOpen && (
+        <BeneficiariesStatisticsModal
+          isOpen={isBenStatsModalOpen}
+          onClose={() => setIsBenStatsModalOpen(false)}
+          beneficiaries={beneficiaries}
+          distributions={distributions}
+          handoverRecords={distributionHandovers}
+          currentUser={currentUser}
+          lang="ar"
+        />
+      )}
 
     </div>
   );

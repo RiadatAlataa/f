@@ -28,6 +28,7 @@ import { OrgMember, HeroSlide } from "../types";
 import { UserSettingsModal } from "./UserSettingsModal";
 import { PartnersSlider } from "./PartnersSlider";
 import { playApplicationSubmittedChime } from "../utils/audioNotification";
+import { BeneficiaryFormFields, BeneficiaryFormData } from "./BeneficiaryFormFields";
 
 // -------------------------------------------------------------
 // Reusable Animated Counter (Counts up from 0 when scrolled into view)
@@ -295,6 +296,22 @@ export function OfficialHomePage({
   const [regAddress, setRegAddress] = useState("");
   const [regTeam, setRegTeam] = useState("");
   const [regDept, setRegDept] = useState("");
+
+  // Beneficiary Standardized Form State
+  const defaultBenFormState: BeneficiaryFormData = {
+    birthCalendarType: 'hijri',
+    birthDate: '2000-01-01',
+    birthDateHijri: '1420/10/24',
+    age: 26,
+    residencyStatus: 'مواطن سعودي',
+    nationality: 'سعودي',
+    city: 'مكة المكرمة',
+    district: 'العسيلة (نطاق الجمعية الرئيسي)',
+    customDistrict: '',
+    maritalStatus: 'متزوج',
+    orphanStatus: 'غير ذلك / لا ينطبق'
+  };
+  const [benFormData, setBenFormData] = useState<BeneficiaryFormData>(defaultBenFormState);
 
   // Volunteer Team Registration States
   const [teamName, setTeamName] = useState("");
@@ -689,8 +706,9 @@ export function OfficialHomePage({
       phone: regPhone,
       nationalId: regNationalId,
       familySize: Number(regFamilySize),
-      address: regAddress || "مكة المكرمة - العسيلة",
-      status: "pending"
+      address: regAddress ? `${benFormData.city} - ${benFormData.district} (${regAddress})` : `${benFormData.city} - ${benFormData.district}`,
+      status: "pending",
+      ...benFormData
     });
     if (success) {
       alert(lang === "ar" ? "تم تقديم طلب التسجيل كمسفيد وجاري مراجعته والتحقق منه من قبل الباحث الاجتماعي." : "Beneficiary registration request submitted! It is under review.");
@@ -716,6 +734,7 @@ export function OfficialHomePage({
     setTeamStep(1);
     setBeneficiaryStep(1);
     setSelectedOpportunityForJoin(null);
+    setBenFormData(defaultBenFormState);
   };
 
   const handleFeedbackSubmit = (e: React.FormEvent) => {
@@ -4018,6 +4037,12 @@ export function OfficialHomePage({
                         <strong>تنويه الباحث الاجتماعي:</strong> يخضع حساب المستفيد لتدقيق باحثي الضمان الاجتماعي الميداني المعتمد بالعسيلة للتحقق من أعداد الأسرة والدخل وصحة المستندات.
                       </div>
 
+                      {/* Standardized Beneficiary Fields Component */}
+                      <BeneficiaryFormFields 
+                        values={benFormData} 
+                        onChange={(upd) => setBenFormData(prev => ({ ...prev, ...upd }))} 
+                      />
+
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="sm:col-span-1">
                           <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1">عدد الأفراد <span className="text-rose-500">*</span></label>
@@ -4026,19 +4051,19 @@ export function OfficialHomePage({
                             value={regFamilySize}
                             onChange={(e) => setRegFamilySize(Number(e.target.value))}
                             min={1}
+                            max={35}
                             required
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-bold"
                           />
                         </div>
 
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1">العنوان الدقيق وتفاصيل السكن بالعسيلة <span className="text-rose-500">*</span></label>
+                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1">تفاصيل إضافية لمقر السكن بالعسيلة</label>
                           <input 
                             type="text" 
                             value={regAddress}
                             onChange={(e) => setRegAddress(e.target.value)}
-                            required
-                            placeholder="مكة المكرمة - العسيلة - الشارع التجاري"
+                            placeholder="مثال: الشارع التجاري، بجوار مسجد النور"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-bold"
                           />
                         </div>

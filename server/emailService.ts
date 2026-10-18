@@ -335,6 +335,30 @@ export function generateEmailHtml(
         { label: "بيان الأصناف", value: data.itemDescription || "-" },
         { label: "الجهة / الإدارة", value: data.departmentName || "-" }
       ];
+    case 'beneficiary_aid_ready':
+      title = "إشعار جاهزية المساعدة للاستلام - جمعية ريادة العطاء";
+      preheader = "نفيدكم بأنه تم تخصيص مساعدة لكم وأصبحت جاهزة للاستلام";
+      greeting = `السلام عليكم ورحمة الله وبركاته،\nعزيزي المستفيد / ${data.beneficiaryName || data.recipientName || 'المحترم'}`;
+      bodyParagraphs = [
+        "السلام عليكم ورحمة الله وبركاته،",
+        "عزيزي المستفيد، نفيدكم بأنه تم تخصيص مساعدة لكم من جمعية ريادة العطاء لخدمة الإنسان بالعسيلة، وأصبحت جاهزة للاستلام.",
+        "يرجى الدخول إلى حسابكم للاطلاع على تفاصيل المساعدة وموعد ومكان الاستلام.",
+        "مع خالص التحية والتقدير،\nجمعية ريادة العطاء لخدمة الإنسان بالعسيلة."
+      ];
+      highlightBadge = {
+        label: "حالة المساعدة",
+        value: "جاهزة للاستلام الفوري",
+        color: "#059669"
+      };
+      keyValues = [
+        { label: "المبادرة / نوع المساعدة", value: data.aidTitle || data.aidTypeLabel || "مساعدة عينية" },
+        { label: "مكان الاستلام", value: data.pickupLocation || "مقر الجمعية - مخطط العسيلة" },
+        { label: "موعد الاستلام", value: data.pickupAppointment || data.distributionDate || "خلال أوقات العمل الرسمية" },
+        { label: "رقم الطلب / رمز الاستلام", value: data.distributionNumber || data.pickupCode || data.distributionId || "-" }
+      ];
+      if (data.loginUrl) {
+        actionButton = { text: "الدخول إلى حسابي ومتابعة الاستلام", url: data.loginUrl };
+      }
       break;
 
     case 'broadcast_general':

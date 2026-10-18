@@ -10,6 +10,7 @@ import {
   AidDistribution, DistributionHandoverRecord, AttendanceRecord,
   OperationLog
 } from "../types";
+import { BeneficiariesStatisticsModal } from "./BeneficiariesStatisticsModal";
 
 export interface ExecutiveKpiDashboardProps {
   data: {
@@ -45,6 +46,7 @@ export const ExecutiveKpiDashboard: React.FC<ExecutiveKpiDashboardProps> = ({
   lang = 'ar'
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBeneficiaryStatsModalOpen, setIsBeneficiaryStatsModalOpen] = useState(false);
   const [lastRefreshedTime, setLastRefreshedTime] = useState<string>(() => {
     return new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
   });
@@ -127,10 +129,71 @@ export const ExecutiveKpiDashboard: React.FC<ExecutiveKpiDashboardProps> = ({
 
   const totalDepartmentsCount = scopedDepartments.length;
 
-  // 2. Aid Dispatches & Handovers
+  // 2. Aid Dispatches & Handovers & Beneficiaries Demographics
   const totalDistributionsCount = (data.distributions || []).length;
   const totalHandoversCount = (data.distributionHandovers || []).length;
   const totalAidDispatches = totalDistributionsCount + totalHandoversCount;
+
+  const beneficiariesStatsBreakdown = useMemo(() => {
+    const bens = scopedBeneficiaries;
+    const handovers = data.distributionHandovers || [];
+    const dists = data.distributions || [];
+
+    let married = 0;
+    let single = 0;
+    let widows = 0;
+    let divorced = 0;
+    let orphans = 0;
+    let citizens = 0;
+    let residents = 0;
+    let childrenOfCitizens = 0;
+
+    const receivedSet = new Set<string>();
+    handovers.forEach(h => {
+      if (h.beneficiaryId) receivedSet.add(h.beneficiaryId);
+      if (h.nationalId) receivedSet.add(h.nationalId);
+    });
+
+    let receivedCount = 0;
+
+    bens.forEach(b => {
+      const ms = (b.maritalStatus || "").trim();
+      if (ms === 'متزوج' || ms === 'متزوجة') married++;
+      else if (ms === 'أعزب' || ms === 'عزباء') single++;
+      else if (ms === 'أرمل' || ms === 'أرملة') widows++;
+      else if (ms === 'مطلق' || ms === 'مطلقة') divorced++;
+
+      if (b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة') orphans++;
+
+      const rs = (b.residencyStatus || (b.nationalId?.startsWith('1') ? 'مواطن سعودي' : 'مقيم')).trim();
+      if (rs === 'مواطن سعودي') citizens++;
+      else if (rs === 'مقيم') residents++;
+      else if (rs.includes('مواطنة')) childrenOfCitizens++;
+
+      if (receivedSet.has(b.id) || (b.nationalId && receivedSet.has(b.nationalId))) {
+        receivedCount++;
+      }
+    });
+
+    const notReceivedCount = Math.max(0, bens.length - receivedCount);
+    const completedDists = dists.filter(d => d.workflowStatus === 'completed' || d.status === 'completed').length;
+    const pendingDists = dists.length - completedDists;
+
+    return {
+      married,
+      single,
+      widows,
+      divorced,
+      orphans,
+      citizens,
+      residents,
+      childrenOfCitizens,
+      receivedCount,
+      notReceivedCount,
+      completedDists,
+      pendingDists
+    };
+  }, [scopedBeneficiaries, data.distributionHandovers, data.distributions]);
 
   // 3. Inventory Summary
   const inventoryItems = data.inventoryItems || [];
@@ -681,47 +744,84 @@ export const ExecutiveKpiDashboard: React.FC<ExecutiveKpiDashboardProps> = ({
                   <span>خدمات المستفيدين وتوزيع المساعدات</span>
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  بيانات الرعاية الاجتماعية والحملات الميدانية وسندات الاستلام
+                  بيانات الرعاية الاجتماعية والحملات الميدانية وسندات الاستلام المباشرة
                 </p>
               </div>
-              <button
-                onClick={() => onNavigateTab && onNavigateTab('beneficiaries')}
-                className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-              >
-                إدارة المستفيدين
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBeneficiaryStatsModalOpen(true)}
+                  className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-bold transition-all border border-emerald-200 dark:border-emerald-800 cursor-pointer flex items-center gap-1"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>الإحصائيات التفصيلية</span>
+                </button>
+                <button
+                  onClick={() => onNavigateTab && onNavigateTab('beneficiaries')}
+                  className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                >
+                  إدارة المستفيدين
+                </button>
+              </div>
             </div>
 
+            {/* Core Counts Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-2">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl text-center border border-slate-100 dark:border-slate-800">
                 <span className="text-xl font-black text-slate-900 dark:text-white block font-mono">{totalBeneficiariesCount}</span>
-                <span className="text-[10px] text-slate-500 font-bold">المستفيدين المسجلين</span>
+                <span className="text-[10px] text-slate-500 font-bold">إجمالي المستفيدين</span>
               </div>
               <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl text-center border border-emerald-100 dark:border-emerald-800">
                 <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 block font-mono">{approvedBeneficiariesCount}</span>
-                <span className="text-[10px] text-slate-500 font-bold">ملفات معتمدة</span>
+                <span className="text-[10px] text-slate-500 font-bold">ملفات معتمدة نشطة</span>
               </div>
               <div className="p-3 bg-teal-50 dark:bg-teal-950/40 rounded-xl text-center border border-teal-100 dark:border-teal-800">
-                <span className="text-xl font-black text-teal-700 dark:text-teal-400 block font-mono">{totalDistributionsCount}</span>
-                <span className="text-[10px] text-slate-500 font-bold">حملات التوزيع</span>
+                <span className="text-xl font-black text-teal-700 dark:text-teal-400 block font-mono">{beneficiariesStatsBreakdown.receivedCount}</span>
+                <span className="text-[10px] text-slate-500 font-bold">استلموا مساعدات</span>
               </div>
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl text-center border border-slate-100 dark:border-slate-800">
-                <span className="text-xl font-black text-slate-700 dark:text-slate-300 block font-mono">{totalHandoversCount}</span>
-                <span className="text-[10px] text-slate-500 font-bold">سندات استلام</span>
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl text-center border border-amber-100 dark:border-amber-800">
+                <span className="text-xl font-black text-amber-700 dark:text-amber-400 block font-mono">{beneficiariesStatsBreakdown.notReceivedCount}</span>
+                <span className="text-[10px] text-slate-500 font-bold">لم يستلموا بعد</span>
               </div>
             </div>
 
-            {/* Beneficiaries Breakdown by Category */}
-            <div className="mt-4 space-y-2">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">تصنيف المستفيدين حسب الفئة المسجلة:</h4>
-              <div className="space-y-1.5 text-xs">
-                {scopedBeneficiaries.slice(0, 3).map((ben, idx) => (
-                  <div key={ben.id || idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-                    <span className="font-bold">{ben.name}</span>
-                    <span className="text-[11px] text-slate-500">فئة: {ben.category || "أسر متعففة"} (أفراد: {ben.familySize || 5})</span>
-                  </div>
-                ))}
+            {/* Live Social Status & Trait Breakdown Grid */}
+            <div className="mt-3 p-3 bg-neutral-50 dark:bg-slate-800/40 rounded-xl border border-neutral-200/60 dark:border-slate-800 space-y-2">
+              <span className="text-[11px] font-bold text-neutral-600 dark:text-slate-400 block">
+                توزيع المستفيدين حسب الحالة الاجتماعية وصفة المستفيد:
+              </span>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center text-xs">
+                <div className="p-1.5 bg-white dark:bg-slate-900 rounded-lg border border-neutral-200/50 dark:border-slate-700">
+                  <span className="text-[10px] text-neutral-400 block">متزوجون</span>
+                  <strong className="font-mono text-neutral-900 dark:text-neutral-100">{beneficiariesStatsBreakdown.married}</strong>
+                </div>
+                <div className="p-1.5 bg-white dark:bg-slate-900 rounded-lg border border-neutral-200/50 dark:border-slate-700">
+                  <span className="text-[10px] text-neutral-400 block">عزاب</span>
+                  <strong className="font-mono text-neutral-900 dark:text-neutral-100">{beneficiariesStatsBreakdown.single}</strong>
+                </div>
+                <div className="p-1.5 bg-white dark:bg-slate-900 rounded-lg border border-neutral-200/50 dark:border-slate-700">
+                  <span className="text-[10px] text-purple-600 dark:text-purple-400 block">أرامل</span>
+                  <strong className="font-mono text-purple-900 dark:text-purple-200">{beneficiariesStatsBreakdown.widows}</strong>
+                </div>
+                <div className="p-1.5 bg-white dark:bg-slate-900 rounded-lg border border-neutral-200/50 dark:border-slate-700">
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 block">مطلقون</span>
+                  <strong className="font-mono text-amber-900 dark:text-amber-200">{beneficiariesStatsBreakdown.divorced}</strong>
+                </div>
+                <div className="p-1.5 bg-rose-50 dark:bg-rose-950/60 rounded-lg border border-rose-200 dark:border-rose-900">
+                  <span className="text-[10px] text-rose-700 dark:text-rose-400 block font-bold">أيتام</span>
+                  <strong className="font-mono text-rose-900 dark:text-rose-200">{beneficiariesStatsBreakdown.orphans}</strong>
+                </div>
+                <div className="p-1.5 bg-emerald-50 dark:bg-emerald-950/60 rounded-lg border border-emerald-200 dark:border-emerald-900">
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 block font-bold">سعوديون</span>
+                  <strong className="font-mono text-emerald-900 dark:text-emerald-200">{beneficiariesStatsBreakdown.citizens}</strong>
+                </div>
               </div>
+            </div>
+
+            {/* Residency & Distribution Workflow Summary */}
+            <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
+              <span>المقيمون: <strong className="font-mono text-slate-700 dark:text-slate-200">{beneficiariesStatsBreakdown.residents}</strong> | أبناء المواطنات: <strong className="font-mono text-slate-700 dark:text-slate-200">{beneficiariesStatsBreakdown.childrenOfCitizens}</strong></span>
+              <span>حملات مكتملة: <strong className="font-mono text-emerald-600">{beneficiariesStatsBreakdown.completedDists}</strong> | جارية: <strong className="font-mono text-amber-600">{beneficiariesStatsBreakdown.pendingDists}</strong></span>
             </div>
           </div>
 
@@ -1070,6 +1170,19 @@ export const ExecutiveKpiDashboard: React.FC<ExecutiveKpiDashboardProps> = ({
         </div>
 
       </div>
+
+      {/* BENEFICIARIES REAL-TIME STATISTICS MODAL */}
+      {isBeneficiaryStatsModalOpen && (
+        <BeneficiariesStatisticsModal
+          isOpen={isBeneficiaryStatsModalOpen}
+          onClose={() => setIsBeneficiaryStatsModalOpen(false)}
+          beneficiaries={data.beneficiaries || []}
+          distributions={data.distributions || []}
+          handoverRecords={data.distributionHandovers || []}
+          currentUser={authenticatedUser}
+          lang={lang}
+        />
+      )}
 
     </div>
   );

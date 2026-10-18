@@ -60,6 +60,79 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [aidSearchQuery, setAidSearchQuery] = useState('');
   const [aidStatusFilter, setAidStatusFilter] = useState<'all' | 'delivered' | 'pending'>('all');
 
+  // Workflow Status Management for Warehouse Keeper (Requirements 6, 7, 8)
+  const [updatingWorkflow, setUpdatingWorkflow] = useState(false);
+  const [workflowStatusFeedback, setWorkflowStatusFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const getWorkflowStatusBadge = (ws: string) => {
+    switch (ws) {
+      case 'draft':
+        return { label: '1. مسودة', color: 'bg-neutral-100 text-neutral-700 border-neutral-300' };
+      case 'pending_approval':
+        return { label: '2. بانتظار اعتماد إدارة المستفيدين', color: 'bg-amber-100 text-amber-800 border-amber-300' };
+      case 'dispatched_to_warehouse':
+        return { label: '3. معتمد ومحال إلى المستودع', color: 'bg-blue-100 text-blue-800 border-blue-300' };
+      case 'preparing_items':
+        return { label: '4. قيد تجهيز الأصناف بالمستودع', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' };
+      case 'ready_for_pickup':
+        return { label: '5. جاهز للاستلام (تم إشعار المستفيدين بالبريد)', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+      case 'partially_delivered':
+        return { label: '6. تم التسليم جزئيًا', color: 'bg-teal-100 text-teal-800 border-teal-300' };
+      case 'completed':
+        return { label: '7. مكتمل الصرف بالكامل', color: 'bg-green-100 text-green-800 border-green-300' };
+      case 'cancelled_rejected':
+        return { label: '8. ملغي أو مرفوض مع ذكر السبب', color: 'bg-rose-100 text-rose-800 border-rose-300' };
+      default:
+        return { label: ws || 'معتمد ومحال للمستودع', color: 'bg-blue-100 text-blue-800 border-blue-300' };
+    }
+  };
+
+  const handleUpdateDistributionWorkflowStatus = async (distributionId: string, newStatus: string, rejectionReason?: string) => {
+    setUpdatingWorkflow(true);
+    setWorkflowStatusFeedback(null);
+    try {
+      const res = await fetch("/api/db/distributions/workflow-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          distributionId,
+          newStatus,
+          user: currentUser?.name || "أمين المستودع",
+          userRole: currentUser?.role || "storekeeper",
+          rejectionReason: rejectionReason || ""
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (newStatus === 'ready_for_pickup' && data.emailDispatchSummary) {
+          const s = data.emailDispatchSummary;
+          setWorkflowStatusFeedback({
+            type: 'success',
+            message: `تم تحديث الحالة إلى "جاهز للاستلام". تم إرسال إشعارات البريد إلى ${s.sentCount} مستفيد بنجاح! ${s.noEmailCount > 0 ? `(تنبيه للإدارة: ${s.noEmailCount} مستفيد ليس لديهم بريد إلكتروني مسجل)` : ''}`
+          });
+        } else {
+          setWorkflowStatusFeedback({
+            type: 'success',
+            message: `تم تحديث حالة طلب التوزيع بنجاح إلى: ${getWorkflowStatusBadge(newStatus).label}`
+          });
+        }
+        if (onRefreshGlobalData) onRefreshGlobalData();
+      } else {
+        setWorkflowStatusFeedback({
+          type: 'error',
+          message: data.error || "تعذر تحديث حالة التوزيعة"
+        });
+      }
+    } catch (err: any) {
+      setWorkflowStatusFeedback({
+        type: 'error',
+        message: err.message || "خطأ أثناء الاتصال بالخادم"
+      });
+    } finally {
+      setUpdatingWorkflow(false);
+    }
+  };
+
   const distributionsIdsKey = useMemo(() => (distributions || []).map(d => d.id).join(','), [distributions]);
   useEffect(() => {
     if (distributions && distributions.length > 0 && (!selectedAidDistId || !distributions.some(d => d.id === selectedAidDistId))) {
