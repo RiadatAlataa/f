@@ -5,6 +5,7 @@ import {
   X, Check, AlertCircle, Sparkles, Send, ShieldCheck, QrCode
 } from "lucide-react";
 import { ElectronicCustody, CustodyHistoryItem, Volunteer } from "../types";
+import { OfficialLetterheadTemplate } from "./OfficialLetterheadTemplate";
 
 interface CustodyManagerProps {
   volunteers?: Volunteer[];
@@ -853,154 +854,88 @@ export const CustodyManager: React.FC<CustodyManagerProps> = ({
 
       {/* 3. Official Printable Handover Document (محضر تسليم عهدة رسمي) */}
       {showPrintModal && selectedCustody && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl text-slate-900 space-y-6 print:p-0 print:shadow-none print:w-full">
-            {/* Header controls for screen only */}
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
-              <div className="flex items-center gap-2">
-                <Printer className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-black text-slate-900 text-base">محضر وسند تسليم عهدة إلكترونية رسمي</h3>
+        <OfficialLetterheadTemplate
+          documentTitle="محضر تسليم واستلام عهدة رسمية"
+          documentNumber={selectedCustody.custodyCode}
+          gregorianDate={selectedCustody.deliveryDate}
+          subject={`محضر تسليم واستلام عهدة: ${selectedCustody.itemName}`}
+          recipientTitle={`المكرم / ${selectedCustody.recipientName} المحترم (${
+            selectedCustody.recipientType === "volunteer" ? "متطوع رسمي بالجمعية" :
+            selectedCustody.recipientType === "employee" ? "موظف" :
+            selectedCustody.recipientType === "leader" ? "قائد فريق تطوعي" : "مصرح له"
+          })`}
+          signatoryName={selectedCustody.adminName || "مسؤول العهد والمستودعات"}
+          signatoryTitle="إدارة العهد والمستودعات والخدمات المساندة"
+          signatoryDepartment="جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"
+          onClose={() => {
+            setShowPrintModal(false);
+            setSelectedCustody(null);
+          }}
+          isModal={true}
+        >
+          <div className="space-y-6 text-right text-xs text-neutral-900" dir="rtl">
+            {/* Recipient Box */}
+            <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-300">
+              <div>
+                <span className="text-neutral-500 block text-[10.5px]">اسم المستلم المعتمد:</span>
+                <strong className="text-neutral-900 text-sm font-black">{selectedCustody.recipientName}</strong>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePrint}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>طباعة السند</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPrintModal(false);
-                    setSelectedCustody(null);
-                  }}
-                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+              <div>
+                <span className="text-neutral-500 block text-[10.5px]">الصفة التطوعية / الوظيفية:</span>
+                <strong className="text-neutral-800 font-bold">
+                  {selectedCustody.recipientType === "volunteer" ? "متطوع رسمي بالجمعية" :
+                   selectedCustody.recipientType === "employee" ? "موظف" :
+                   selectedCustody.recipientType === "leader" ? "قائد فريق تطوعي" : "مصرح له"}
+                </strong>
+              </div>
+              <div>
+                <span className="text-neutral-500 block text-[10.5px]">رقم الهوية الوطنية / العضوية:</span>
+                <strong className="text-neutral-800 font-mono font-bold">{selectedCustody.recipientIdNumber || "مسجل بالملف"}</strong>
+              </div>
+              <div>
+                <span className="text-neutral-500 block text-[10.5px]">رقم الجوال:</span>
+                <strong className="text-neutral-800 font-mono font-bold">{selectedCustody.recipientPhone || "غير مسجل"}</strong>
               </div>
             </div>
 
-            {/* Printable Document Area */}
-            <div ref={printAreaRef} className="space-y-6 text-right p-4 border border-slate-200 rounded-2xl bg-white" dir="rtl">
-              {/* Document Header */}
-              <div className="flex items-center justify-between border-b-2 border-emerald-800 pb-4">
-                <div className="flex items-center gap-4">
-                  <img
-                    src={logoUrl}
-                    alt={associationName}
-                    className="w-16 h-16 object-contain"
-                    crossOrigin="anonymous"
-                  />
-                  <div>
-                    <h2 className="font-bold text-lg text-emerald-900" style={{ fontFamily: "'Lyon Arabic', 'Amiri', serif" }}>
-                      {associationName}
-                    </h2>
-                    <p className="text-[11px] text-slate-500 font-bold">إدارة العهد والمستودعات والخدمات المساندة</p>
-                    <p className="text-[10px] text-slate-400">المملكة العربية السعودية • تصريح رسمي</p>
-                  </div>
-                </div>
+            {/* Item Specification Table */}
+            <div className="border border-neutral-300 rounded-xl overflow-hidden">
+              <table className="w-full text-right text-[11px]">
+                <thead className="bg-neutral-100 text-neutral-800 font-bold border-b border-neutral-300">
+                  <tr>
+                    <th className="p-2.5">م</th>
+                    <th className="p-2.5">بيان العهدة والمواصفات المعتمدة</th>
+                    <th className="p-2.5">الرقم التسلسلي / S/N</th>
+                    <th className="p-2.5 text-center">الكمية</th>
+                    <th className="p-2.5">الحالة عند التسليم</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200">
+                  <tr className="break-inside-avoid">
+                    <td className="p-2.5 font-bold">1</td>
+                    <td className="p-2.5 font-black text-neutral-900">{selectedCustody.itemName}</td>
+                    <td className="p-2.5 font-mono text-neutral-600">{selectedCustody.serialNumber || "-"}</td>
+                    <td className="p-2.5 text-center font-mono font-bold">{selectedCustody.quantity}</td>
+                    <td className="p-2.5 text-emerald-800 font-bold">{selectedCustody.conditionOnDelivery}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-                <div className="text-left font-mono space-y-1">
-                  <div className="bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg text-xs font-bold text-emerald-900">
-                    {selectedCustody.custodyCode}
-                  </div>
-                  <span className="text-[10px] text-slate-400 block">تاريخ التحرير: {selectedCustody.deliveryDate}</span>
-                </div>
+            {/* Notes */}
+            {selectedCustody.notes && (
+              <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl">
+                <span className="font-bold text-neutral-700 block mb-0.5">ملاحظات الاستخدام والملحقات:</span>
+                <p className="text-neutral-600 leading-relaxed">{selectedCustody.notes}</p>
               </div>
+            )}
 
-              {/* Title Banner */}
-              <div className="text-center py-2 bg-emerald-50/70 border-y border-emerald-200">
-                <h3 className="text-base font-black text-emerald-950" style={{ fontFamily: "'Lyon Arabic', 'Amiri', serif" }}>
-                  محضر تسليم واستلام عهدة مؤقتة
-                </h3>
-                <span className="text-[10.5px] text-emerald-800">Electronic Custody Handover Document</span>
-              </div>
-
-              {/* Recipient Box */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[10.5px]">اسم المستلم:</span>
-                  <strong className="text-slate-900 text-sm">{selectedCustody.recipientName}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10.5px]">الصفة التطوعية / الوظيفية:</span>
-                  <strong className="text-slate-800">
-                    {selectedCustody.recipientType === "volunteer" ? "متطوع رسمي بالجمعية" :
-                     selectedCustody.recipientType === "employee" ? "موظف" :
-                     selectedCustody.recipientType === "leader" ? "قائد فريق تطوعي" : "مصرح له"}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10.5px]">رقم الهوية الوطنية / العضوية:</span>
-                  <strong className="text-slate-800 font-mono">{selectedCustody.recipientIdNumber || "مسجل بالملف"}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10.5px]">رقم الجوال:</span>
-                  <strong className="text-slate-800 font-mono">{selectedCustody.recipientPhone || "غير مسجل"}</strong>
-                </div>
-              </div>
-
-              {/* Item Specification Table */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
-                <table className="w-full text-right">
-                  <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
-                    <tr>
-                      <th className="p-2.5">م</th>
-                      <th className="p-2.5">بيان العهدة والمواصفات</th>
-                      <th className="p-2.5">الرقم التسلسلي / S/N</th>
-                      <th className="p-2.5 text-center">الكمية</th>
-                      <th className="p-2.5">الحالة عند التسليم</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    <tr>
-                      <td className="p-2.5 font-bold">1</td>
-                      <td className="p-2.5 font-bold text-slate-900">{selectedCustody.itemName}</td>
-                      <td className="p-2.5 font-mono text-slate-600">{selectedCustody.serialNumber || "-"}</td>
-                      <td className="p-2.5 text-center font-mono font-bold">{selectedCustody.quantity}</td>
-                      <td className="p-2.5 text-emerald-800 font-bold">{selectedCustody.conditionOnDelivery}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Notes */}
-              {selectedCustody.notes && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                  <span className="font-bold text-slate-700 block mb-0.5">ملاحظات الاستخدام والملحقات:</span>
-                  <p className="text-slate-600 leading-relaxed">{selectedCustody.notes}</p>
-                </div>
-              )}
-
-              {/* Legal Pledge (الإقرار والتعهد) */}
-              <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
-                <strong>إقرار وتعهد بالاستلام:</strong> أقر أنا الموقع أدناه بأنني قد استلمت العهدة الموضحة بياناتها أعلاه بحالة سليمة وجاهزة للاستخدام، وأتعهد بالمحافظة عليها واستخدامها في الأغراض المخصصة لها فقط، وإعادتها فور انتهاء المهمة أو عند طلب إدارة الجمعية، وأتحمل المسؤولية الكاملة في حال التلف أو الإهمال أو الفقدان.
-              </div>
-
-              {/* Signatures Area */}
-              <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-200 text-center text-xs">
-                <div className="space-y-8">
-                  <span className="font-bold text-slate-700 block">المسلّم (مسؤول العهد):</span>
-                  <p className="font-bold text-slate-900">{selectedCustody.adminName || "إدارة العهد والمستودع"}</p>
-                  <div className="border-t border-dashed border-slate-300 pt-1 text-[10px] text-slate-400">التوقيع والختم</div>
-                </div>
-
-                <div className="space-y-8">
-                  <span className="font-bold text-slate-700 block">المستلم للعهدة:</span>
-                  <p className="font-bold text-slate-900">{selectedCustody.recipientName}</p>
-                  <div className="border-t border-dashed border-slate-300 pt-1 text-[10px] text-slate-400">التوقيع والبصمة</div>
-                </div>
-
-                <div className="space-y-8">
-                  <span className="font-bold text-slate-700 block">اعتماد الإدارة:</span>
-                  <p className="font-bold text-emerald-800">معتمد إلكترونياً</p>
-                  <div className="border-t border-dashed border-slate-300 pt-1 text-[10px] text-slate-400">الرمز: {selectedCustody.id.substring(0, 8)}</div>
-                </div>
-              </div>
+            {/* Legal Pledge (الإقرار والتعهد) */}
+            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-[11px] text-amber-950 leading-relaxed">
+              <strong>إقرار وتعهد بالاستلام:</strong> أقر أنا الموقع أدناه بأنني قد استلمت العهدة الموضحة بياناتها أعلاه بحالة سليمة وجاهزة للاستخدام، وأتعهد بالمحافظة عليها واستخدامها في الأغراض المخصصة لها فقط، وإعادتها فور انتهاء المهمة أو عند طلب إدارة الجمعية، وأتحمل المسؤولية الكاملة في حال التلف أو الإهمال أو الفقدان.
             </div>
           </div>
-        </div>
+        </OfficialLetterheadTemplate>
       )}
 
       {/* 4. History Timeline Modal */}

@@ -487,7 +487,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       const now = new Date();
       const timestampFormatted = getExportTimestamp();
       const associationName = homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
-      const licenseNumber = homeSettings?.licenseNumber || "100088868";
+      const licenseNumber = homeSettings?.licenseNumber || "1000888600";
 
       const totalFamilySum = filteredBeneficiaries.reduce((sum, b) => sum + (Number(b.familySize) || 0), 0);
 
@@ -1940,7 +1940,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                         {homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
                       </h1>
                       <p className="text-[11px] text-neutral-600 font-bold mt-0.5">
-                        المركز الوطني لتنمية القطاع غير الربحي | ترخيص رقم: {homeSettings?.licenseNumber || "100088868"}
+                        المركز الوطني لتنمية القطاع غير الربحي | ترخيص رقم: {homeSettings?.licenseNumber || "1000888600"}
                       </p>
                       <p className="text-[10px] text-emerald-800 font-bold">
                         إدارة الرعاية الاجتماعية وشؤون المستفيدين - مكة المكرمة

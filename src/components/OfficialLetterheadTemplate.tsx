@@ -57,25 +57,82 @@ export const OfficialLetterheadTemplate: React.FC<OfficialLetterheadProps> = ({
   const footerContact = homeSettings?.officialLetterhead?.footerContactAr || `هاتف: ${homeSettings?.contactPhone || '0550123456'} | بريد: ${homeSettings?.contactEmail || 'info@riadataleata.org.sa'}`;
   const footerBankInfo = homeSettings?.officialLetterhead?.footerBankInfoAr || "الحساب البنكي المعتمد (مصرف الراجحي): SA0000000000000000000000";
 
+  // Computed default Hijri Date if not explicitly provided
+  const computedHijriDate = React.useMemo(() => {
+    if (hijriDate) return hijriDate;
+    try {
+      return new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(new Date());
+    } catch {
+      return "";
+    }
+  }, [hijriDate]);
+
   // Trigger print directly with native print styles
   const handlePrint = () => {
     window.print();
   };
 
   const documentContent = (
-    <div 
-      ref={printContainerRef}
-      className={`official-document-sheet bg-white text-neutral-900 mx-auto print:mx-0 shadow-lg print:shadow-none border border-neutral-300 print:border-none p-8 sm:p-12 print:p-8 flex flex-col justify-between transition-colors duration-200 ${
-        orientation === 'landscape' ? 'max-w-[297mm] min-h-[210mm]' : 'max-w-[210mm] min-h-[297mm]'
-      }`}
-      dir="rtl"
-      style={{
-        boxSizing: 'border-box',
-        backgroundColor: '#ffffff',
-        color: '#171717',
-        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
-      }}
-    >
+    <>
+      {/* Strict Print CSS for A4 Letterhead isolation and crisp text-selectable PDF */}
+      <style>{`
+        @media print {
+          @page {
+            size: ${orientation === 'landscape' ? 'A4 landscape' : 'A4 portrait'};
+            margin: 10mm 10mm 10mm 10mm;
+          }
+          html, body {
+            background: #ffffff !important;
+            color: #111827 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 11pt !important;
+            direction: rtl !important;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .official-document-sheet, .official-document-sheet * {
+            visibility: visible;
+          }
+          .official-document-sheet {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: #ffffff !important;
+          }
+          .no-print, [role="navigation"], aside, nav, button, .mobile-safe-header, .mobile-safe-bottom-nav {
+            display: none !important;
+          }
+          .break-inside-avoid, .signature-block, tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      `}</style>
+      <div 
+        ref={printContainerRef}
+        className={`official-document-sheet bg-white text-neutral-900 mx-auto print:mx-0 shadow-lg print:shadow-none border border-neutral-300 print:border-none p-8 sm:p-12 print:p-6 flex flex-col justify-between transition-colors duration-200 ${
+          orientation === 'landscape' ? 'max-w-[297mm] min-h-[210mm]' : 'max-w-[210mm] min-h-[297mm]'
+        }`}
+        dir="rtl"
+        style={{
+          boxSizing: 'border-box',
+          backgroundColor: '#ffffff',
+          color: '#171717',
+          fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+        }}
+      >
       {/* ------------------------------------------------------------------ */}
       {/* 1. OFFICIAL LETTERHEAD (ترويسة الخطاب والمستند الرسمي) */}
       {/* ------------------------------------------------------------------ */}
@@ -125,10 +182,10 @@ export const OfficialLetterheadTemplate: React.FC<OfficialLetterheadProps> = ({
                 <span className="font-black text-neutral-900">{documentNumber}</span>
               </div>
             )}
-            {hijriDate && (
+            {(computedHijriDate || hijriDate) && (
               <div className="text-right">
                 <span className="text-[10px] text-neutral-500 font-sans block">التاريخ الهجري:</span>
-                <span className="font-bold text-neutral-800">{hijriDate}</span>
+                <span className="font-bold text-neutral-800">{computedHijriDate || hijriDate}</span>
               </div>
             )}
             <div className="text-right">
@@ -250,6 +307,7 @@ export const OfficialLetterheadTemplate: React.FC<OfficialLetterheadProps> = ({
         </div>
       </footer>
     </div>
+    </>
   );
 
   // If used inside a Modal dialog (Preview & Print workflow)

@@ -38,8 +38,9 @@ import { DistributionsManager } from "./DistributionsManager";
 import { BeneficiaryRatingsManager } from "./BeneficiaryRatingsManager";
 import { AdminLettersManager } from "./AdminLettersManager";
 import { VolunteerMonthlyReportModal } from "./VolunteerMonthlyReportModal";
-import { AdminStaffManager } from "./AdminStaffManager";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
+import { OfficialIdentitySettingsPanel } from "./OfficialIdentitySettingsPanel";
+import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
 import { VolunteerManagementDashboard } from "./VolunteerManagementDashboard";
 import { VolunteerTeamTransferManager } from "./VolunteerTeamTransferManager";
 import { PasswordResetRequestsManager } from "./PasswordResetRequestsManager";
@@ -53,6 +54,7 @@ import { expandPermissionsWithLegacyKeys } from "../data/departmentPermissionsRe
 import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
 import { AccessDeniedCard } from "./AccessDeniedCard";
 import { SiteStatusManager } from "./SiteStatusManager";
+import { AdminStaffManager } from "./AdminStaffManager";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
@@ -60,7 +62,7 @@ const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
   associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
   associationNameEn: "Reyadat Al-Ata Association",
-  licenseNumber: "5081",
+  licenseNumber: "1000888600",
   heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
   heroTitleEn: "Leadership in Giving",
   heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",
@@ -298,7 +300,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRefreshGlobalData,
   onToggleMaintenance
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -509,6 +511,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       badge: 'المدير',
       items: [
         { id: 'maintenance_status', label: '🔧 وضع الصيانة وحالة الموقع', icon: Wrench, badge: isMaintenanceActive ? '🔴 تحت الصيانة' : '🟢 يعمل' },
+        { id: 'official_identity', label: '🏛️ الهوية الرسمية والخطابات', icon: FileText, badge: 'معتمد' },
+        { id: 'whatsapp_settings', label: '💬 إعدادات واتساب والإشعارات', icon: MessageSquare, badge: 'جديد' },
         { id: 'email_settings', label: 'إعدادات البريد الحقيقي (Sender & SMTP)', icon: Mail, badge: 'جديد' },
         { id: 'system_settings', label: 'إعدادات النظام الشاملة', icon: Settings, badge: 'المدير' },
         { id: 'backup', label: 'قاعدة البيانات والنسخ', icon: Database }
@@ -812,7 +816,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div class="print-card" style="page-break-inside: avoid; margin-bottom: 30px; width: 350px; border: 2px solid #16a34a; border-radius: 16px; padding: 15px; background: #fff; direction: rtl; font-family: sans-serif; position: relative;">
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px;">
               <span style="font-weight: bold; color: #15803d; font-size: 13px;">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</span>
-              <span style="font-size: 9px; color: #666;">ترخيص: 100088868</span>
+              <span style="font-size: 9px; color: #666;">ترخيص: 1000888600</span>
             </div>
             <div style="display: flex; gap: 10px; align-items: start;">
               <img src="${v.photo}" style="width: 70px; height: 70px; border-radius: 8px; object-fit: cover; border: 1px solid #16a34a;" />
@@ -1212,6 +1216,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               currentUser={authenticatedUser}
               lang={lang}
             />
+          )}
+
+          {/* TAB: OFFICIAL IDENTITY & LETTERHEAD SETTINGS (الهوية الرسمية والخطابات) */}
+          {activeSubTab === 'official_identity' && (
+            <OfficialIdentitySettingsPanel
+              homeSettings={data.homeSettings || {}}
+              onSaveHomeSettings={onUpdateHomeSettings || (async () => false)}
+              currentUser={authenticatedUser}
+            />
+          )}
+
+          {/* TAB: WHATSAPP & CENTRALIZED NOTIFICATIONS SETTINGS (إعدادات واتساب والإشعارات) */}
+          {activeSubTab === 'whatsapp_settings' && (
+            <WhatsAppSettingsPanel isDark={isDark} />
           )}
 
           {/* TAB: EMAIL SETTINGS & SENDER SMTP */}

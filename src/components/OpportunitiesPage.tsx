@@ -281,13 +281,12 @@ export const OpportunitiesPage: React.FC<OpportunitiesPageProps> = ({
                 const oppCategory = (opp as any).category || (opp as any).domain || 'خدمة المجتمع';
                 const volunteerHours = (opp as any).hours || opp.points || 4;
 
-                const defaultImages = [
-                  "https://images.unsplash.com/photo-1542810634-71277d95dcbb?w=800&h=500&fit=crop",
-                  "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&h=500&fit=crop",
-                  "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800&h=500&fit=crop",
-                  "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=800&h=500&fit=crop"
-                ];
-                const coverImage = (opp as any).imageUrl || defaultImages[Math.abs(opp.id.charCodeAt(opp.id.length - 1)) % defaultImages.length];
+                const hasRealCover = Boolean(
+                  (opp as any).imageUrl &&
+                  !(opp as any).imageUrl.includes('unsplash.com') &&
+                  !(opp as any).imageUrl.includes('placeholder')
+                );
+                const coverImage = (opp as any).imageUrl;
 
                 return (
                   <div
@@ -295,14 +294,26 @@ export const OpportunitiesPage: React.FC<OpportunitiesPageProps> = ({
                     className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group"
                   >
                     <div>
-                      {/* Image & Tags */}
-                      <div className="relative h-48 w-full overflow-hidden bg-slate-100 dark:bg-slate-700">
-                        <img
-                          src={coverImage}
-                          alt={opp.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent"></div>
+                      {/* Image or Elegant Branded Header */}
+                      <div className="relative h-44 sm:h-48 w-full overflow-hidden bg-gradient-to-br from-emerald-850 via-teal-900 to-slate-900 flex items-center justify-center">
+                        {hasRealCover ? (
+                          <>
+                            <img
+                              src={coverImage}
+                              alt={opp.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent"></div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 relative z-0">
+                            <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xs border border-white/20 flex items-center justify-center text-emerald-300 mb-2 shadow-inner group-hover:scale-110 transition-transform">
+                              <Sparkles className="w-7 h-7" />
+                            </div>
+                            <span className="text-xs font-bold text-emerald-200/90">{oppCategory}</span>
+                          </div>
+                        )}
 
                         {/* Top Badges */}
                         <div className="absolute top-3 right-3 flex items-center gap-1.5">

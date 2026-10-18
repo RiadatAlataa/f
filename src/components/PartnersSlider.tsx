@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   ChevronLeft, ChevronRight, ExternalLink, Star, Globe, 
   Pause, Play, Sparkles, ShieldCheck, Award, HeartHandshake,
-  Layers, CheckCircle2, Shield
+  Layers, CheckCircle2, Shield, Building2
 } from "lucide-react";
 import { PartnerItem } from "../types";
 
@@ -389,15 +389,27 @@ export const PartnersSlider: React.FC<PartnersSliderProps> = ({
 
                       {/* Partner Logo Container */}
                       <div className="w-full h-32 sm:h-36 bg-gradient-to-b from-neutral-50 to-white dark:from-neutral-950 dark:to-neutral-900 rounded-2xl p-4 flex items-center justify-center border border-neutral-100 dark:border-neutral-800/80 shadow-inner overflow-hidden mb-5 group-hover:scale-[1.02] transition-transform duration-300">
-                        <img 
-                          src={partner.logo} 
-                          alt={partner.nameAr}
-                          className="max-h-full max-w-full object-contain filter drop-shadow-xs group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=300&h=300&fit=crop";
-                          }}
-                        />
+                        {partner.logo && !partner.logo.includes("unsplash.com") && !partner.logo.includes("placeholder") ? (
+                          <img 
+                            src={partner.logo} 
+                            alt={partner.nameAr}
+                            className="max-h-full max-w-full object-contain filter drop-shadow-xs group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none";
+                              const fallbackEl = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                              if (fallbackEl) fallbackEl.style.display = "flex";
+                            }}
+                          />
+                        ) : null}
+                        <div 
+                          className={`flex-col items-center justify-center text-center text-emerald-700 dark:text-emerald-400 gap-1.5 ${
+                            partner.logo && !partner.logo.includes("unsplash.com") && !partner.logo.includes("placeholder") ? "hidden" : "flex"
+                          }`}
+                        >
+                          <Building2 className="w-10 h-10 opacity-70 stroke-[1.5]" />
+                          <span className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 line-clamp-1">{partner.nameAr}</span>
+                        </div>
                       </div>
 
                       {/* Partner Name & Subtitle */}

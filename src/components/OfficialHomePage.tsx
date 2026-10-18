@@ -1693,16 +1693,6 @@ export function OfficialHomePage({
         </div>
       </section>
 
-      {/* 5.1 Organizational Structure Section (الهيكل الإداري الاحترافي) */}
-      {settings?.sectionVisibility?.orgChart !== false && (
-        <OrgChartSection
-          members={orgMembers && orgMembers.length > 0 ? orgMembers : (settings?.orgMembers || [])}
-          lang={lang}
-          associationName={lang === "ar" ? settings?.associationNameAr : settings?.associationNameEn}
-          licenseNumber="1000888600"
-        />
-      )}
-
       {/* 6. Live Statistics (الإحصائيات المباشرة الفاخرة المتحركة عند التصفح) */}
       {settings?.sectionVisibility?.stats && (
         <section id="stats" className="py-10 sm:py-14 bg-gradient-to-b from-neutral-950 via-slate-900 to-neutral-950 text-white relative overflow-hidden border-y border-emerald-500/20 shadow-2xl">
@@ -2372,6 +2362,16 @@ export function OfficialHomePage({
             </div>
           )}
         </section>
+      )}
+
+      {/* 9.9 Organizational Structure Section (الهيكل الإداري للجمعية - شبكة بطاقات مباشرة فوق شركاء النجاح) */}
+      {settings?.sectionVisibility?.orgChart !== false && (
+        <OrgChartSection
+          members={orgMembers && orgMembers.length > 0 ? orgMembers : (settings?.orgMembers || [])}
+          lang={lang}
+          associationName={lang === "ar" ? settings?.associationNameAr : settings?.associationNameEn}
+          licenseNumber="1000888600"
+        />
       )}
 
       {/* 10. Partners & Sponsors (سلايدر شركاء النجاح التفاعلي الاحترافي بالبطاقات الفخمة) */}

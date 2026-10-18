@@ -18,6 +18,7 @@ import {
   Download
 } from "lucide-react";
 import { Beneficiary, DistributionHandoverRecord } from "../types";
+import { OfficialLetterheadTemplate } from "./OfficialLetterheadTemplate";
 
 interface BeneficiaryHistoryModalProps {
   beneficiary: Beneficiary | null;
@@ -35,6 +36,7 @@ export const BeneficiaryHistoryModal: React.FC<BeneficiaryHistoryModalProps> = (
   lang = "ar"
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string; record: DistributionHandoverRecord } | null>(null);
+  const [isPrintReportOpen, setIsPrintReportOpen] = useState(false);
 
   if (!isOpen || !beneficiary) return null;
 
@@ -112,12 +114,12 @@ export const BeneficiaryHistoryModal: React.FC<BeneficiaryHistoryModalProps> = (
 
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                  title="طباعة السجل"
+                  onClick={() => setIsPrintReportOpen(true)}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="طباعة السجل الرسمي"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>طباعة</span>
+                  <span>طباعة رسمية</span>
                 </button>
               </>
             )}
@@ -290,6 +292,93 @@ export const BeneficiaryHistoryModal: React.FC<BeneficiaryHistoryModalProps> = (
               </div>
             </div>
           </div>
+        )}
+
+        {/* OFFICIAL LETTERHEAD PRINT MODAL (Requirement 2) */}
+        {isPrintReportOpen && (
+          <OfficialLetterheadTemplate
+            documentTitle="تقرير سجل مساعدات ودعم المستفيد"
+            documentNumber={`BEN-HIST-${beneficiary.nationalId || beneficiary.id.substring(0, 8)}`}
+            gregorianDate={new Date().toISOString().split('T')[0]}
+            subject={`كشف المساعدات والدعم الإنساني والغذائي للمستفيد: ${beneficiary.name}`}
+            recipientTitle={`المكرم / ${beneficiary.name} وأسرته الكريمة`}
+            signatoryName="أ. محمد بن عبد الله الزهراني"
+            signatoryTitle="نائب رئيس مجلس الإدارة والمشرف على شؤون المستفيدين"
+            signatoryDepartment="إدارة الرعاية والخدمات الاجتماعية"
+            onClose={() => setIsPrintReportOpen(false)}
+            isModal={true}
+          >
+            <div className="space-y-6 text-xs text-neutral-900" dir="rtl">
+              {/* Beneficiary Info Card */}
+              <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-300 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <span className="text-neutral-500 block text-[10px]">اسم المستفيد:</span>
+                  <strong className="text-sm font-black text-neutral-900">{beneficiary.name}</strong>
+                </div>
+                <div>
+                  <span className="text-neutral-500 block text-[10px]">رقم الهوية الوطنية / الإقامة:</span>
+                  <strong className="font-mono text-neutral-800">{beneficiary.nationalId || 'غير مسجل'}</strong>
+                </div>
+                <div>
+                  <span className="text-neutral-500 block text-[10px]">فئة الاستحقاق والحي:</span>
+                  <strong className="text-emerald-800">{beneficiary.category || 'أسرة متعففة'} - {beneficiary.district || 'العسيلة'}</strong>
+                </div>
+                <div>
+                  <span className="text-neutral-500 block text-[10px]">عدد أفراد الأسرة:</span>
+                  <strong className="font-mono text-neutral-800">{beneficiary.familySize || 1} أفراد</strong>
+                </div>
+              </div>
+
+              {/* History Table */}
+              <div>
+                <h4 className="font-bold text-xs text-neutral-900 mb-2">
+                  سجل المساعدات والسلل والمواد المسلّمة رسمياً ({myHandovers.length}):
+                </h4>
+                <div className="border border-neutral-300 rounded-xl overflow-hidden">
+                  <table className="w-full text-right text-[11px]">
+                    <thead className="bg-neutral-100 font-bold border-b border-neutral-300">
+                      <tr>
+                        <th className="p-2.5">م</th>
+                        <th className="p-2.5">بيان المساعدة / المادة</th>
+                        <th className="p-2.5 text-center">الكمية</th>
+                        <th className="p-2.5">تاريخ ووقت الاستلام</th>
+                        <th className="p-2.5">الموظف / القسم المسلّم</th>
+                        <th className="p-2.5 text-center">الحالة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-200">
+                      {myHandovers.map((item, idx) => (
+                        <tr key={item.id} className="break-inside-avoid">
+                          <td className="p-2.5 font-bold text-neutral-500">{idx + 1}</td>
+                          <td className="p-2.5 font-black text-neutral-900">{item.itemName || "سلة غذائية / مساعدة عينية"}</td>
+                          <td className="p-2.5 text-center font-mono font-bold text-emerald-800">{item.quantity} {item.unit || 'طرد'}</td>
+                          <td className="p-2.5 font-mono text-neutral-600">{item.date} {item.time}</td>
+                          <td className="p-2.5 text-neutral-600">{item.handedByUserName} ({item.handedDepartment || 'إدارة الرعاية'})</td>
+                          <td className="p-2.5 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold">
+                              مكتمل التسليم ✓
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {myHandovers.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="p-4 text-center text-neutral-400">
+                            لا توجد عمليات تسليم مسجلة للمستفيد حتى تاريخه.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Confidentiality and Official Footer Note */}
+              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-[10px] text-neutral-600">
+                هذا المستند سجل إلكتروني رسمي معتمد صادر من جمعية ريادة العطاء لخدمة الإنسان بالعسيلة، والمعلومات الواردة فيه سرية وتخضع لأنظمة حماية البيانات الشخصية بالقطاع غير الربحي.
+              </div>
+            </div>
+          </OfficialLetterheadTemplate>
         )}
       </div>
     </div>

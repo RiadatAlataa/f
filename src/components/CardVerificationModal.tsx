@@ -35,11 +35,14 @@ export const CardVerificationModal: React.FC<CardVerificationModalProps> = ({
     return `${start}${"*".repeat(Math.max(4, id.length - 4))}${end}`;
   };
 
-  const isFemale = volunteer.gender === 'female' || (volunteer.name && (volunteer.name.includes('سارة') || volunteer.name.includes('مريم') || volunteer.name.includes('فاطمة') || volunteer.name.includes('أنثى')));
+  const NEUTRAL_USER_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='%23059669'%3E%3Ccircle cx='50' cy='35' r='18' opacity='0.8'/%3E%3Cpath d='M24 82c0-14.359 11.64-26 26-26s26 11.641 26 26' opacity='0.8'/%3E%3C/svg%3E";
+
+  const hasCustomPhoto = volunteer.photo && !volunteer.photo.includes("unsplash.com") && !volunteer.photo.includes("placeholder");
+  const hasUnifiedPhoto = femaleUnifiedPhotoUrl && !femaleUnifiedPhotoUrl.includes("unsplash.com") && !femaleUnifiedPhotoUrl.includes("placeholder");
 
   const displayPhoto = (isFemale && isFemaleUnifiedPhotoUsed)
-    ? (femaleUnifiedPhotoUrl || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80")
-    : (volunteer.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop");
+    ? (hasUnifiedPhoto ? femaleUnifiedPhotoUrl : NEUTRAL_USER_SVG)
+    : (hasCustomPhoto ? volunteer.photo! : NEUTRAL_USER_SVG);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn" dir="rtl">

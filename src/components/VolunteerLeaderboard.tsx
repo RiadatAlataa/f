@@ -1,6 +1,12 @@
 import React, { useState } from "react";
-import { Award, Trophy, Medal, Star, Flame, Users, Sparkles, Clock, CheckCircle2, Shield } from "lucide-react";
+import { Award, Trophy, Medal, Star, Flame, Users, Sparkles, Clock, CheckCircle2, Shield, User } from "lucide-react";
 import { Volunteer, VolunteerTeam, Department, AttendanceRecord } from "../types";
+
+const isRealPhoto = (url?: string): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  return trimmed !== '' && !trimmed.includes('unsplash.com') && !trimmed.includes('placeholder') && !trimmed.includes('via.placeholder');
+};
 
 interface VolunteerLeaderboardProps {
   volunteers: Volunteer[];
@@ -99,12 +105,18 @@ export const VolunteerLeaderboard: React.FC<VolunteerLeaderboardProps> = ({
               </div>
 
               <div className="pt-2">
-                <img
-                  src={top3[1].photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"}
-                  alt={top3[1].name}
-                  className="w-16 h-16 rounded-full object-cover mx-auto border-3 border-slate-300 shadow-sm"
-                  referrerPolicy="no-referrer"
-                />
+                {isRealPhoto(top3[1].photo) ? (
+                  <img
+                    src={top3[1].photo}
+                    alt={top3[1].name}
+                    className="w-16 h-16 rounded-full object-cover mx-auto border-3 border-slate-300 shadow-sm"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 mx-auto border-3 border-slate-300 shadow-sm">
+                    <User className="w-8 h-8 opacity-75" />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -135,12 +147,18 @@ export const VolunteerLeaderboard: React.FC<VolunteerLeaderboardProps> = ({
 
               <div className="pt-2">
                 <div className="relative inline-block">
-                  <img
-                    src={top3[0].photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"}
-                    alt={top3[0].name}
-                    className="w-20 h-20 rounded-full object-cover mx-auto border-4 border-amber-400 shadow-md"
-                    referrerPolicy="no-referrer"
-                  />
+                  {isRealPhoto(top3[0].photo) ? (
+                    <img
+                      src={top3[0].photo}
+                      alt={top3[0].name}
+                      className="w-20 h-20 rounded-full object-cover mx-auto border-4 border-amber-400 shadow-md"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-950 flex items-center justify-center text-amber-700 dark:text-amber-400 mx-auto border-4 border-amber-400 shadow-md">
+                      <User className="w-10 h-10 opacity-75" />
+                    </div>
+                  )}
                   <span className="absolute -bottom-1 -right-1 bg-amber-500 text-white text-xs p-1 rounded-full shadow-xs">
                     👑
                   </span>
@@ -174,12 +192,18 @@ export const VolunteerLeaderboard: React.FC<VolunteerLeaderboardProps> = ({
               </div>
 
               <div className="pt-2">
-                <img
-                  src={top3[2].photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"}
-                  alt={top3[2].name}
-                  className="w-16 h-16 rounded-full object-cover mx-auto border-3 border-amber-700/50 shadow-sm"
-                  referrerPolicy="no-referrer"
-                />
+                {isRealPhoto(top3[2].photo) ? (
+                  <img
+                    src={top3[2].photo}
+                    alt={top3[2].name}
+                    className="w-16 h-16 rounded-full object-cover mx-auto border-3 border-amber-700/50 shadow-sm"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-amber-100/60 dark:bg-neutral-800 flex items-center justify-center text-amber-800 dark:text-amber-300 mx-auto border-3 border-amber-700/50 shadow-sm">
+                    <User className="w-8 h-8 opacity-75" />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -222,12 +246,18 @@ export const VolunteerLeaderboard: React.FC<VolunteerLeaderboardProps> = ({
                     #{idx + 4}
                   </span>
 
-                  <img
-                    src={v.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"}
-                    alt={v.name}
-                    className="w-10 h-10 rounded-full object-cover border border-neutral-200 dark:border-neutral-700"
-                    referrerPolicy="no-referrer"
-                  />
+                  {isRealPhoto(v.photo) ? (
+                    <img
+                      src={v.photo}
+                      alt={v.name}
+                      className="w-10 h-10 rounded-full object-cover border border-neutral-200 dark:border-neutral-700"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-neutral-500 border border-neutral-200 dark:border-neutral-700">
+                      <User className="w-5 h-5 opacity-70" />
+                    </div>
+                  )}
 
                   <div>
                     <h4 className="text-xs font-black text-neutral-800 dark:text-neutral-100">{v.name}</h4>

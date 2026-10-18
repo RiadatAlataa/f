@@ -1,6 +1,7 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { FinancialReceipt, FinancialSettings } from '../../types/finance';
-import { Printer, X, CheckCircle2, QrCode, ShieldCheck, Download } from 'lucide-react';
+import { CheckCircle2, QrCode, CreditCard, Building2 } from 'lucide-react';
+import { OfficialLetterheadTemplate } from '../OfficialLetterheadTemplate';
 
 interface FinancialReceiptModalProps {
   receipt: FinancialReceipt | null;
@@ -15,178 +16,150 @@ export const FinancialReceiptModal: React.FC<FinancialReceiptModalProps> = ({
   isOpen,
   onClose
 }) => {
-  const printRef = useRef<HTMLDivElement>(null);
-
   if (!isOpen || !receipt) return null;
 
   const isIncome = receipt.type === 'receipt';
-
-  const handlePrint = () => {
-    window.print();
-  };
+  const docTitle = isIncome ? 'سند قبض مالي رسمي معتمد' : 'سند صرف مالي رسمي معتمد';
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="relative w-full max-w-2xl bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden text-right dir-rtl animate-in fade-in zoom-in-95 duration-200">
-        {/* Header Toolbar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-850/80 no-print">
+    <OfficialLetterheadTemplate
+      documentTitle={docTitle}
+      documentNumber={receipt.receiptNumber}
+      gregorianDate={receipt.date}
+      subject={`${isIncome ? 'استلام وقبض مالي من' : 'صرف وإيداع مالي إلى'}: ${receipt.partyName}`}
+      recipientTitle={isIncome ? 'المكرم / الجهة الدافعة المحترمين' : 'المكرم / الجهة المستفيدة المحترمين'}
+      signatoryName={receipt.issuedByName || 'أ. فهد بن ناصر العتيبي'}
+      signatoryTitle="المشرف المالي وعضو مجلس الإدارة"
+      signatoryDepartment="الإدارة المالية والمحاسبية"
+      onClose={onClose}
+      isModal={true}
+    >
+      <div className="space-y-6 text-neutral-900" dir="rtl">
+        {/* Document Subtype Ribbon */}
+        <div className="flex items-center justify-between p-3.5 rounded-xl bg-neutral-50 border border-neutral-200">
           <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-colors shadow-xs"
-            >
-              <Printer className="w-4 h-4" />
-              <span>طباعة السند / PDF</span>
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-neutral-600 dark:text-neutral-400">
-              {isIncome ? 'سند قبض رسمي معتمد' : 'سند صرف رسمي معتمد'}
+            <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black ${
+              isIncome 
+                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' 
+                : 'bg-rose-100 text-rose-900 border border-rose-300'
+            }`}>
+              {isIncome ? 'سند قـبـض رسمي' : 'سـنـد صـرف رسمي'}
             </span>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <span className="text-xs font-bold text-neutral-700">
+              {isIncome ? 'إيداع نقدي / بنكي معتمد' : 'صرف نفقات برامج ومشاريع'}
+            </span>
+          </div>
+
+          <div className="text-xs font-mono font-bold text-neutral-600">
+            رقم السند: <span className="text-neutral-900 font-black">{receipt.receiptNumber}</span>
           </div>
         </div>
 
-        {/* Printable Voucher Paper */}
-        <div ref={printRef} className="p-8 sm:p-10 bg-white dark:bg-neutral-900 printable-voucher">
-          {/* Border Frame Style */}
-          <div className="p-6 sm:p-8 rounded-xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 relative bg-neutral-50/30 dark:bg-neutral-850/20">
-            {/* Top Bar: Association Header */}
-            <div className="flex items-center justify-between border-b-2 border-emerald-600/30 dark:border-emerald-500/30 pb-6 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-700 flex items-center justify-center text-white shadow-md">
-                  <ShieldCheck className="w-9 h-9" />
-                </div>
-                <div>
-                  <h1 className="text-lg sm:text-xl font-bold text-neutral-900 dark:text-white">
-                    {settings?.associationName || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة'}
-                  </h1>
-                  <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                    {settings?.licenseNumber || 'ترخيص رسمي رقم: 100054219'} | مكة المكرمة - العسيلة
-                  </p>
-                </div>
-              </div>
+        {/* Amount Box */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/60 to-emerald-50 border-2 border-emerald-700/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs sm:text-sm font-bold text-emerald-900">المبلغ المستلم / المصروف:</span>
+            <span className="text-2xl sm:text-3xl font-black font-mono text-emerald-800">
+              {receipt.amount.toLocaleString('ar-SA')} 
+            </span>
+            <span className="text-xs font-bold text-emerald-900">ريال سعودي (SAR)</span>
+          </div>
 
-              <div className="text-left font-mono">
-                <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${isIncome ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'}`}>
-                  {isIncome ? 'سند قـبـض' : 'سـنـد صـرف'}
-                </span>
-                <div className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mt-2">
-                  {receipt.receiptNumber}
-                </div>
-                <div className="text-xs text-neutral-500 mt-0.5">
-                  التاريخ: {receipt.date}
-                </div>
-              </div>
-            </div>
+          <div className="text-xs sm:text-sm font-bold text-neutral-800 bg-white px-4 py-2 rounded-xl border border-emerald-200 shadow-2xs text-center">
+            فقط: {receipt.amountInWords || `${receipt.amount.toLocaleString()} ريال سعودي لا غير`}
+          </div>
+        </div>
 
-            {/* Amount Badge */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 mb-6">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">المبلغ بالأرقام:</span>
-                <span className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-300">
-                  {receipt.amount.toLocaleString()} <span className="text-sm font-normal">ريال سعودي</span>
-                </span>
-              </div>
-              <div className="text-xs sm:text-sm font-medium text-emerald-800 dark:text-emerald-300">
-                {receipt.amountInWords || `${receipt.amount.toLocaleString()} ريال سعودي لا غير`}
-              </div>
-            </div>
-
-            {/* Main Details Grid */}
-            <div className="space-y-4 text-sm text-neutral-800 dark:text-neutral-200">
-              <div className="flex items-start gap-3 py-2 border-b border-neutral-200/80 dark:border-neutral-750">
-                <span className="w-32 font-bold text-neutral-500 dark:text-neutral-400 shrink-0">
-                  {isIncome ? 'استلمنا من المكرم:' : 'يُصرف إلى المكرم:'}
-                </span>
-                <span className="font-semibold text-base text-neutral-900 dark:text-white">
+        {/* Detailed Voucher Ledger Table */}
+        <div className="overflow-hidden rounded-xl border border-neutral-300">
+          <table className="w-full text-right text-xs">
+            <tbody>
+              <tr className="border-b border-neutral-200 bg-neutral-50/70">
+                <td className="w-36 p-3 font-black text-neutral-700 bg-neutral-100/70 border-l border-neutral-200">
+                  {isIncome ? 'وصلنا من المكرم / الجهة:' : 'يُصرف إلى المكرم / الجهة:'}
+                </td>
+                <td className="p-3 font-black text-sm text-neutral-900">
                   {receipt.partyName}
-                </span>
-              </div>
+                </td>
+              </tr>
 
-              <div className="flex items-start gap-3 py-2 border-b border-neutral-200/80 dark:border-neutral-750">
-                <span className="w-32 font-bold text-neutral-500 dark:text-neutral-400 shrink-0">
-                  وذلك مقابل (البيان):
-                </span>
-                <span className="font-medium">
+              <tr className="border-b border-neutral-200">
+                <td className="p-3 font-black text-neutral-700 bg-neutral-100/70 border-l border-neutral-200">
+                  وذلك لقاء (البيان الرسمي):
+                </td>
+                <td className="p-3 font-medium text-neutral-800 leading-relaxed">
                   {receipt.reason}
-                </span>
-              </div>
+                </td>
+              </tr>
 
               {receipt.projectName && (
-                <div className="flex items-start gap-3 py-2 border-b border-neutral-200/80 dark:border-neutral-750">
-                  <span className="w-32 font-bold text-neutral-500 dark:text-neutral-400 shrink-0">
+                <tr className="border-b border-neutral-200 bg-neutral-50/70">
+                  <td className="p-3 font-black text-neutral-700 bg-neutral-100/70 border-l border-neutral-200">
                     المشروع / المبادرة:
-                  </span>
-                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                  </td>
+                  <td className="p-3 font-bold text-emerald-900">
                     {receipt.projectName}
-                  </span>
-                </div>
+                  </td>
+                </tr>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-neutral-500 dark:text-neutral-400">الحساب المالي:</span>
-                  <span className="font-medium text-xs sm:text-sm">{receipt.accountName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-neutral-500 dark:text-neutral-400">طريقة الدفع:</span>
-                  <span className="font-medium text-xs sm:text-sm">
-                    {receipt.paymentMethod === 'bank_transfer' ? 'تحويل بنكي رسمي' : receipt.paymentMethod === 'card' ? 'بطاقة بنكية مدى / فيزا' : receipt.paymentMethod === 'cash' ? 'نقداً عبر الخزينة' : 'شيك بنكي'}
-                  </span>
-                </div>
-              </div>
+              <tr className="border-b border-neutral-200">
+                <td className="p-3 font-black text-neutral-700 bg-neutral-100/70 border-l border-neutral-200">
+                  الحساب المالي والبنكي:
+                </td>
+                <td className="p-3 font-medium text-neutral-800">
+                  {receipt.accountName}
+                </td>
+              </tr>
+
+              <tr className="border-b border-neutral-200 bg-neutral-50/70">
+                <td className="p-3 font-black text-neutral-700 bg-neutral-100/70 border-l border-neutral-200">
+                  طريقة التحصيل / الصرف:
+                </td>
+                <td className="p-3 font-bold text-neutral-900">
+                  {receipt.paymentMethod === 'bank_transfer' ? 'تحويل بنكي رسمي' : 
+                   receipt.paymentMethod === 'card' ? 'بطاقة بنكية مدى / فيزا' : 
+                   receipt.paymentMethod === 'cash' ? 'نقداً عبر الخزينة' : 'شيك بنكي معتمد'}
+                </td>
+              </tr>
 
               {receipt.referenceNumber && (
-                <div className="flex items-center gap-2 pt-1 text-xs text-neutral-500">
-                  <span className="font-bold">رقم المرجع / الحوالة:</span>
-                  <span className="font-mono">{receipt.referenceNumber}</span>
-                </div>
+                <tr>
+                  <td className="p-3 font-black text-neutral-700 bg-neutral-100/70 border-l border-neutral-200">
+                    رقم الحوالة / المرجع:
+                  </td>
+                  <td className="p-3 font-mono font-bold text-neutral-900">
+                    {receipt.referenceNumber}
+                  </td>
+                </tr>
               )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Verification and Legal Validity Statement */}
+        <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-white border border-neutral-300 shadow-2xs">
+              <QrCode className="w-12 h-12 text-neutral-800" />
             </div>
-
-            {/* Footer Signatures & QR Code */}
-            <div className="mt-8 pt-6 border-t-2 border-neutral-200 dark:border-neutral-750 flex items-end justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="p-2.5 rounded-xl bg-white border border-neutral-300 shadow-2xs flex flex-col items-center">
-                  <QrCode className="w-14 h-14 text-neutral-800" />
-                  <span className="text-[9px] font-mono text-neutral-600 mt-1">التحقق الإلكتروني</span>
-                </div>
-                <div className="text-xs text-neutral-500 space-y-1">
-                  <div>رمز التحقق: <span className="font-mono font-bold text-neutral-700 dark:text-neutral-300">{receipt.qrVerificationCode}</span></div>
-                  <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>مستند إلكتروني معتمد رسمياً</span>
-                  </div>
-                </div>
+            <div className="text-xs space-y-1">
+              <div className="font-bold text-neutral-800">
+                رمز التوثيق الإلكتروني: <span className="font-mono text-emerald-800">{receipt.qrVerificationCode || 'FIN-2026-VAL'}</span>
               </div>
-
-              <div className="text-center">
-                <div className="text-xs text-neutral-400 mb-1">الموظف المسؤول:</div>
-                <div className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{receipt.issuedByName}</div>
-                <div className="text-[11px] text-neutral-400 mt-4 border-t border-neutral-300 dark:border-neutral-700 pt-1 px-4">
-                  التوقيع والختم المالي
-                </div>
+              <div className="text-[11px] text-neutral-500 flex items-center gap-1 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>سند مالي رسمي صادر من المنظومة التقنية المعتمدة لجمعية ريادة العطاء</span>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Modal Footer */}
-        <div className="flex justify-end p-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-850 no-print">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 rounded-xl transition-colors"
-          >
-            إغلاق
-          </button>
+          <div className="text-center sm:text-left text-[11px] text-neutral-500">
+            <p>المحاسب المسؤول: <strong className="text-neutral-800">{receipt.issuedByName}</strong></p>
+            <p className="text-[10px] text-neutral-400 mt-0.5">تم التحقق من القيد المالي والترحيل للدفاتر</p>
+          </div>
         </div>
       </div>
-    </div>
+    </OfficialLetterheadTemplate>
   );
 };

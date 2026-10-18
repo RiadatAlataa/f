@@ -26,6 +26,7 @@ import type {
 } from "./src/types";
 import { setupFinancialRoutes } from "./server/financeRoutes";
 import { setupEmailRoutes } from "./server/emailRoutes";
+import { setupWhatsAppRoutes } from "./server/whatsappRoutes";
 import { sendCentralEmail, getSanitizedEmailConfig } from "./server/emailService";
 import { 
   initPostgresTables, 
@@ -20791,6 +20792,9 @@ setupFinancialRoutes(app, readDb, writeDb);
 
 // Setup Central Enterprise Email Management & SMTP/Resend Service routes
 setupEmailRoutes(app, readDb, writeDb);
+
+// Setup Centralized Multi-Channel WhatsApp Business & Notifications routes
+setupWhatsAppRoutes(app, readDb, writeDb);
 
 // Fallback 404 handler specifically for /api/* routes
 app.use("/api", (req, res) => {

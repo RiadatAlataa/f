@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b" />
+      <stop offset="50%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#065f46" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4af37" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Ring with Gold Accent -->
+  <circle cx="200" cy="200" r="185" fill="#ffffff" stroke="url(#goldGrad)" stroke-width="4" filter="url(#shadow)"/>
+  <circle cx="200" cy="200" r="176" fill="url(#emeraldGrad)" stroke="url(#goldGrad)" stroke-width="2"/>
+  <circle cx="200" cy="200" r="168" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+
+  <!-- Inner Crest / Motif -->
+  <g transform="translate(200, 155)">
+    <!-- Palm & Giving Hands Motif -->
+    <path d="M 0,-70 C 15,-40 35,-20 50,0 C 25,5 0,25 0,45 C 0,25 -25,5 -50,0 C -35,-20 -15,-40 0,-70 Z" fill="url(#goldGrad)" filter="url(#shadow)"/>
+    <circle cx="0" cy="-78" r="12" fill="url(#goldGrad)"/>
+    
+    <!-- Protective Shield / Crescent Base -->
+    <path d="M -70,25 C -40,65 40,65 70,25 C 50,75 -50,75 -70,25 Z" fill="#ffffff" opacity="0.95"/>
+    <path d="M -50,42 C -25,70 25,70 50,42 C 35,68 -35,68 -50,42 Z" fill="url(#goldGrad)"/>
+  </g>
+
+  <!-- Association Name Arched -->
+  <text x="200" y="260" font-family="'Tajawal', 'Segoe UI', Tahoma, sans-serif" font-size="24" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="0.5">
+    جمعية ريادة العطاء
+  </text>
+  
+  <text x="200" y="288" font-family="'Tajawal', 'Segoe UI', Tahoma, sans-serif" font-size="16" font-weight="700" fill="url(#goldGrad)" text-anchor="middle">
+    لخدمة الإنسان بالعسيلة
+  </text>
+
+  <!-- Official License Badge Ribbon -->
+  <rect x="100" y="310" width="200" height="28" rx="14" fill="#ffffff" opacity="0.95"/>
+  <text x="200" y="329" font-family="'JetBrains Mono', 'Segoe UI', monospace" font-size="13" font-weight="800" fill="#064e3b" text-anchor="middle">
+    ترخيص: 1000888600
+  </text>
+</svg>

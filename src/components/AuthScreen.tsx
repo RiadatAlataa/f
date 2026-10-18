@@ -4,7 +4,7 @@ import {
   RefreshCw, Globe, ArrowRight, ArrowLeft, CheckCircle2, 
   ChevronDown, ChevronUp, HeartHandshake, Award, X,
   KeyRound, CreditCard, Mail, Check, User, Users, Heart,
-  Phone, Calendar, MapPin, Clock, FileCheck, CheckCircle, Info
+  Phone, Calendar, MapPin, Clock, FileCheck, CheckCircle, Info, MessageSquare
 } from "lucide-react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { evaluatePasswordStrength, generateStrongPassword } from "../utils/passwordSecurity";
@@ -70,12 +70,18 @@ export function AuthScreen({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Multi-Step Password Recovery with Salted OTP & Bcrypt
+  // Multi-Step Password Recovery with Salted OTP & Bcrypt (WhatsApp & Email)
   const [showForgotModal, setShowForgotModal] = useState(false);
-  const [recoveryStep, setRecoveryStep] = useState<1 | 2 | 3 | 4>(1);
+  const [recoveryStep, setRecoveryStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [recoveryIdentifier, setRecoveryIdentifier] = useState("");
+  const [recoveryChannel, setRecoveryChannel] = useState<'whatsapp' | 'email'>('whatsapp');
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  const [availableChannels, setAvailableChannels] = useState<{
+    whatsapp: { available: boolean; masked: string };
+    email: { available: boolean; masked: string };
+  } | null>(null);
   const [otpCode, setOtpCode] = useState("");
   const [resetToken, setResetToken] = useState("");
   const [recoveryNewPassword, setRecoveryNewPassword] = useState("");
@@ -506,8 +512,9 @@ export function AuthScreen({
     }
   };
 
-  // Multi-Step Password Recovery Handlers (OTP & Bcrypt)
-  const handleRequestOtp = async (e?: React.FormEvent) => {
+  // Multi-Step Password Recovery Handlers (WhatsApp & Email OTP)
+  // Step 1: Identify account and fetch available recovery channels
+  const handleIdentifyAccount = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setRecoveryError(null);
     setRecoverySuccess(null);
@@ -515,15 +522,15 @@ export function AuthScreen({
     if (!recoveryIdentifier.trim()) {
       setRecoveryError(
         lang === 'ar' 
-          ? "يرجى إدخال رقم الهوية أو اسم المستخدم أو البريد الإلكتروني المسجل." 
-          : "Please enter your registered ID, username, or email."
+          ? "يرجى إدخال رقم الهوية أو اسم المستخدم أو البريد الإلكتروني أو رقم الجوال." 
+          : "Please enter your registered ID, username, email, or phone."
       );
       return;
     }
 
     setRecoveryLoading(true);
     try {
-      const res = await fetch("/api/db/auth/forgot-password", {
+      const res = await fetch("/api/db/auth/forgot-password/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: recoveryIdentifier.trim() })
@@ -531,13 +538,18 @@ export function AuthScreen({
       const data = await res.json().catch(() => null);
 
       if (res.ok && data?.status === "success") {
-        setRecoveryEmail(data.email || recoveryIdentifier.trim());
-        setMaskedEmail(data.maskedEmail || data.email || recoveryIdentifier.trim());
-        setRecoveryStep(2);
-        setOtpTimer(60); // 60 seconds countdown for resend
-        setRecoverySuccess(data.message || (lang === 'ar' ? "تم إرسال رمز التحقق OTP بنجاح." : "OTP code has been sent."));
+        setAvailableChannels(data.availableChannels || null);
+        setMaskedEmail(data.availableChannels?.email?.masked || "");
+        setMaskedPhone(data.availableChannels?.whatsapp?.masked || "");
+        // Default to WhatsApp if phone available, else email
+        if (data.availableChannels?.whatsapp?.available) {
+          setRecoveryChannel('whatsapp');
+        } else {
+          setRecoveryChannel('email');
+        }
+        setRecoveryStep(2); // Go to Channel Selection step
       } else {
-        setRecoveryError(data?.error || (lang === 'ar' ? "تعذر إرسال رمز التحقق، يرجى المحاولة لاحقاً." : "Failed to process request."));
+        setRecoveryError(data?.error || (lang === 'ar' ? "تعذر التحقق من المعرف، يرجى المحاولة لاحقاً." : "Failed to verify account."));
       }
     } catch {
       setRecoveryError(lang === 'ar' ? "حدث خطأ أثناء الاتصال بالخادم." : "An error occurred.");
@@ -546,6 +558,44 @@ export function AuthScreen({
     }
   };
 
+  // Step 2 -> Step 3: Request 6-digit OTP via chosen channel (WhatsApp or Email)
+  const handleRequestOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setRecoveryError(null);
+    setRecoverySuccess(null);
+
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/db/auth/forgot-password/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          identifier: recoveryIdentifier.trim(),
+          channel: recoveryChannel 
+        })
+      });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.status === "success") {
+        setRecoveryStep(3); // Go to Enter OTP step
+        setOtpTimer(60); // 60 seconds countdown for resend
+        setRecoverySuccess(
+          data.message || 
+          (lang === 'ar' 
+            ? `تم إرسال رمز التحقق OTP بنجاح عبر (${recoveryChannel === 'whatsapp' ? 'واتساب' : 'البريد الإلكتروني'}).` 
+            : "OTP code has been sent.")
+        );
+      } else {
+        setRecoveryError(data?.error || (lang === 'ar' ? "تعذر إرسال رمز التحقق، يرجى المحاولة لاحقاً." : "Failed to send code."));
+      }
+    } catch {
+      setRecoveryError(lang === 'ar' ? "حدث خطأ أثناء الاتصال بالخادم." : "An error occurred.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  // Step 3 -> Step 4: Verify 6-digit OTP
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setRecoveryError(null);
@@ -558,11 +608,11 @@ export function AuthScreen({
 
     setRecoveryLoading(true);
     try {
-      const res = await fetch("/api/db/auth/verify-otp", {
+      const res = await fetch("/api/db/auth/forgot-password/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: recoveryEmail,
+          identifier: recoveryIdentifier.trim(),
           otpCode: otpCode.trim()
         })
       });
@@ -570,7 +620,7 @@ export function AuthScreen({
 
       if (res.ok && data?.status === "success") {
         setResetToken(data.resetToken);
-        setRecoveryStep(3);
+        setRecoveryStep(4); // Go to Set New Password step
         setRecoverySuccess(data.message || (lang === 'ar' ? "تم التحقق من الرمز بنجاح." : "Code verified successfully."));
       } else {
         setRecoveryError(data?.error || (lang === 'ar' ? "رمز التحقق غير صحيح أو منتهي الصلاحية." : "Invalid or expired OTP."));
@@ -582,6 +632,7 @@ export function AuthScreen({
     }
   };
 
+  // Step 4 -> Step 5: Save New Password
   const handleResetPasswordWithOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setRecoveryError(null);
@@ -609,25 +660,24 @@ export function AuthScreen({
 
     setRecoveryLoading(true);
     try {
-      const res = await fetch("/api/db/auth/reset-password-with-otp", {
+      const res = await fetch("/api/db/auth/forgot-password/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: recoveryEmail,
+          identifier: recoveryIdentifier.trim(),
           resetToken,
-          newPassword: recoveryNewPassword.trim(),
-          confirmPassword: recoveryConfirmPassword.trim()
+          newPassword: recoveryNewPassword.trim()
         })
       });
       const data = await res.json().catch(() => null);
 
       if (res.ok && data?.status === "success") {
-        setRecoveryStep(4);
+        setRecoveryStep(5);
         setRecoverySuccess(
           data.message || 
           (lang === 'ar' 
-            ? "تم تحديث كلمة المرور وتشفيرها بنجاح بواسطة نظام Bcrypt." 
-            : "Password has been updated and hashed with Bcrypt.")
+            ? "تم تحديث كلمة المرور وتأمين حسابك بنجاح." 
+            : "Password has been successfully updated.")
         );
       } else {
         setRecoveryError(data?.error || (lang === 'ar' ? "فشل حفظ كلمة المرور الجديدة." : "Failed to reset password."));

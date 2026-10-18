@@ -21,6 +21,7 @@ import {
   Clock,
   UserCheck
 } from 'lucide-react';
+import { OfficialLetterheadTemplate } from '../OfficialLetterheadTemplate';
 
 interface FinancialReportsAuditProps {
   income: FinancialIncome[];
@@ -90,8 +91,10 @@ export const FinancialReportsAudit: React.FC<FinancialReportsAuditProps> = ({
     document.body.removeChild(link);
   };
 
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+
   const handlePrint = () => {
-    window.print();
+    setIsPrintModalOpen(true);
   };
 
   return (
@@ -221,7 +224,7 @@ export const FinancialReportsAudit: React.FC<FinancialReportsAuditProps> = ({
                 </span>
               </div>
               <div className="text-xs font-mono font-bold text-neutral-600 dark:text-neutral-400">
-                جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص 100054219
+                جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص 1000888600
               </div>
             </div>
 
@@ -342,6 +345,124 @@ export const FinancialReportsAudit: React.FC<FinancialReportsAuditProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* OFFICIAL LETTERHEAD PRINT MODAL (Requirement 2) */}
+      {isPrintModalOpen && (
+        <OfficialLetterheadTemplate
+          documentTitle="تقرير القوائم المالية والمركز الرقابي"
+          documentNumber={`FIN-REP-${new Date().getFullYear()}-${dateRange.start.replace(/-/g, '')}`}
+          gregorianDate={new Date().toISOString().split('T')[0]}
+          subject={`قائمة الإيرادات والمصروفات والمركز المالي للفترة من ${dateRange.start} حتى ${dateRange.end}`}
+          recipientTitle="سعادة أعضاء مجلس الإدارة والجمعية العمومية الموقرين"
+          signatoryName="أ. فهد بن ناصر العتيبي"
+          signatoryTitle="المشرف المالي وعضو مجلس الإدارة"
+          signatoryDepartment="الإدارة المالية والحسابات العامة"
+          onClose={() => setIsPrintModalOpen(false)}
+          isModal={true}
+          orientation="portrait"
+        >
+          <div className="space-y-6 text-xs text-neutral-900" dir="rtl">
+            {/* KPI Summary Block */}
+            <div className="grid grid-cols-3 gap-3 p-3.5 rounded-xl bg-neutral-50 border border-neutral-300">
+              <div className="text-center p-2 rounded-lg bg-white border border-neutral-200">
+                <span className="text-[10px] text-neutral-500 font-bold block">إجمالي الإيرادات</span>
+                <span className="text-sm font-black text-emerald-800 font-mono mt-0.5 block">
+                  {totalIncome.toLocaleString()} ريال
+                </span>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-white border border-neutral-200">
+                <span className="text-[10px] text-neutral-500 font-bold block">إجمالي المصروفات</span>
+                <span className="text-sm font-black text-rose-800 font-mono mt-0.5 block">
+                  {totalExpenses.toLocaleString()} ريال
+                </span>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-white border border-neutral-200">
+                <span className="text-[10px] text-neutral-500 font-bold block">صافي الفائض / (العجز)</span>
+                <span className={`text-sm font-black font-mono mt-0.5 block ${netSurplus >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                  {netSurplus.toLocaleString()} ريال
+                </span>
+              </div>
+            </div>
+
+            {/* Income Table */}
+            <div>
+              <div className="font-bold text-xs text-emerald-900 mb-2 pb-1 border-b border-emerald-700/40">
+                أولاً: الإيرادات والتبرعات الواردة المقبوضة
+              </div>
+              <table className="w-full text-right text-[11px] border border-neutral-300 rounded-lg overflow-hidden">
+                <thead className="bg-neutral-100 font-bold border-b border-neutral-300">
+                  <tr>
+                    <th className="p-2">رقم القيد</th>
+                    <th className="p-2">مصدر الإيراد / التبرع</th>
+                    <th className="p-2">الداعم / الجهة</th>
+                    <th className="p-2">الحساب المالي</th>
+                    <th className="p-2 text-left">المبلغ (ريال)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200">
+                  {filteredIncome.map(i => (
+                    <tr key={i.id} className="break-inside-avoid">
+                      <td className="p-2 font-mono text-neutral-600">{i.operationNumber}</td>
+                      <td className="p-2 font-medium">{i.source}</td>
+                      <td className="p-2 text-neutral-700">{i.donorName}</td>
+                      <td className="p-2 text-neutral-500">{i.accountName}</td>
+                      <td className="p-2 text-left font-mono font-bold text-emerald-800">
+                        {Number(i.amount).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredIncome.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-3 text-center text-neutral-400">لا توجد إيرادات مسجلة للفترة</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Expenses Table */}
+            <div>
+              <div className="font-bold text-xs text-rose-900 mb-2 pb-1 border-b border-rose-700/40">
+                ثانياً: المصروفات والنفقات التشغيلية والبرامجية
+              </div>
+              <table className="w-full text-right text-[11px] border border-neutral-300 rounded-lg overflow-hidden">
+                <thead className="bg-neutral-100 font-bold border-b border-neutral-300">
+                  <tr>
+                    <th className="p-2">رقم القيد</th>
+                    <th className="p-2">بيان المصروف</th>
+                    <th className="p-2">الجهة المستفيدة</th>
+                    <th className="p-2">الحساب</th>
+                    <th className="p-2 text-left">المبلغ (ريال)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200">
+                  {filteredExpenses.map(e => (
+                    <tr key={e.id} className="break-inside-avoid">
+                      <td className="p-2 font-mono text-neutral-600">{e.expenseNumber}</td>
+                      <td className="p-2 font-medium">{e.description}</td>
+                      <td className="p-2 text-neutral-700">{e.beneficiaryName}</td>
+                      <td className="p-2 text-neutral-500">{e.accountName || '-'}</td>
+                      <td className="p-2 text-left font-mono font-bold text-rose-800">
+                        {Number(e.amount).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredExpenses.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-3 text-center text-neutral-400">لا توجد مصروفات مسجلة للفترة</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Legal Statement */}
+            <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200 text-[10px] text-neutral-600 leading-relaxed">
+              تم إعداد هذه القائمة ومطابقتها دفترياً ورقابياً وفق معايير المحاسبة والشفافية المعتمدة للمنظمات غير الربحية بالمملكة العربية السعودية، تحت إشراف المركز الوطني لتنمية القطاع غير الربحي.
+            </div>
+          </div>
+        </OfficialLetterheadTemplate>
       )}
     </div>
   );

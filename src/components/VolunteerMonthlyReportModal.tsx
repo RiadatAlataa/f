@@ -248,7 +248,7 @@ export const VolunteerMonthlyReportModal: React.FC<VolunteerMonthlyReportModalPr
                   جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
                 </h1>
                 <p className="text-[10px] font-semibold text-emerald-800">
-                  مسجلة بالمركز الوطني لتنمية القطاع غير الربحي برقم (5081) - مكة المكرمة
+                  مسجلة بالمركز الوطني لتنمية القطاع غير الربحي برقم ترخيص (1000888600) - مكة المكرمة
                 </p>
                 <p className="text-[9px] text-slate-500">
                   الإدارة العامة للشؤون التطوعية والعمل المجتمعي
@@ -265,7 +265,7 @@ export const VolunteerMonthlyReportModal: React.FC<VolunteerMonthlyReportModalPr
                     crossOrigin="anonymous"
                   />
                 </div>
-                <span className="text-[9px] font-bold text-slate-600 font-mono mt-1">ترخيص: 5081</span>
+                <span className="text-[9px] font-bold text-slate-600 font-mono mt-1">ترخيص: 1000888600</span>
               </div>
 
               {/* Report Reference & Metadata Box */}
@@ -468,7 +468,7 @@ export const VolunteerMonthlyReportModal: React.FC<VolunteerMonthlyReportModalPr
                   <span className="text-[8px] font-black leading-tight font-lyon">جمعية ريادة العطاء</span>
                   <ShieldCheck className="w-5 h-5 text-emerald-600 my-0.5" />
                   <span className="text-[7px] font-bold">ختم التوثيق الرسمي</span>
-                  <span className="text-[6px] font-mono">ترخيص: 5081</span>
+                  <span className="text-[6px] font-mono">ترخيص: 1000888600</span>
                 </div>
                 <span className="text-[8px] text-slate-400 mt-1">وثيقة إلكترونية مصدقة</span>
               </div>

@@ -37,6 +37,7 @@ import {
   HRPayrollSheet,
   HRDecision
 } from '../types';
+import { OfficialLetterheadTemplate } from './OfficialLetterheadTemplate';
 
 interface HRDashboardProps {
   departments: Department[];
@@ -63,6 +64,7 @@ export const HRDashboard: React.FC<HRDashboardProps> = ({
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<HRDecision | null>(null);
+  const [isPayrollPrintOpen, setIsPayrollPrintOpen] = useState(false);
 
   // New Employee Form State
   const [empForm, setEmpForm] = useState<Partial<Employee>>({
@@ -607,8 +609,8 @@ export const HRDashboard: React.FC<HRDashboardProps> = ({
               <p className="text-xs text-slate-500">إصدار وتدقيق مسير الرواتب الشهري مع البدلات والاستقطاعات</p>
             </div>
             <button
-              onClick={() => window.print()}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+              onClick={() => setIsPayrollPrintOpen(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <Printer className="w-4 h-4" />
               <span>طباعة كشف المسير</span>
@@ -914,52 +916,114 @@ export const HRDashboard: React.FC<HRDashboardProps> = ({
         </div>
       )}
 
-      {/* DECISION PREVIEW MODAL */}
+      {/* OFFICIAL ADMINISTRATIVE DECISION MODAL (Requirement 2) */}
       {selectedDecision && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-8 text-right border border-slate-200 shadow-2xl space-y-6 my-8 text-slate-900" dir="rtl">
-            <div className="text-center border-b border-slate-200 pb-4 space-y-1">
-              <h3 className="text-base font-black">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h3>
-              <p className="text-xs text-slate-500">إدارة الموارد البشرية والشؤون الإدارية</p>
-              <div className="inline-block bg-slate-100 px-3 py-1 rounded-full text-xs font-mono font-bold mt-2">
-                وثيقة رسمية: {selectedDecision.decisionNumber}
-              </div>
+        <OfficialLetterheadTemplate
+          documentTitle="قرار إداري معتمد"
+          documentNumber={selectedDecision.decisionNumber}
+          gregorianDate={selectedDecision.issueDate}
+          subject={selectedDecision.title}
+          recipientTitle="إلى كافة الإدارات والأقسام والمنسوبين المعنيين المحترمين"
+          signatoryName={selectedDecision.signedBy || "أ. عبد الرحمن السليمان"}
+          signatoryTitle="الرئيس التنفيذي"
+          signatoryDepartment="إدارة الموارد البشرية والشؤون الإدارية"
+          onClose={() => setSelectedDecision(null)}
+          isModal={true}
+        >
+          <div className="space-y-6 text-neutral-900" dir="rtl">
+            <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200">
+              <h4 className="text-sm font-black text-emerald-950 mb-1">
+                قرار إداري رقم: {selectedDecision.decisionNumber}
+              </h4>
+              <p className="text-xs font-bold text-neutral-700">
+                بشأن: {selectedDecision.title}
+              </p>
             </div>
 
-            <div className="space-y-4 text-xs">
-              <h4 className="text-sm font-black text-center">{selectedDecision.title}</h4>
-              <div className="bg-slate-50 p-4 rounded-xl leading-relaxed text-slate-700 text-justify">
-                {selectedDecision.content}
-              </div>
-              <div className="flex justify-between items-center text-[11px] pt-4 border-t border-slate-200">
-                <div>
-                  <span className="block text-slate-500">تاريخ الإصدار:</span>
-                  <span className="font-mono font-bold">{selectedDecision.issueDate}</span>
-                </div>
-                <div className="text-left">
-                  <span className="block text-slate-500">الاعتماد والتوقيع:</span>
-                  <span className="font-bold text-indigo-700">{selectedDecision.signedBy}</span>
-                </div>
-              </div>
+            <div className="text-sm leading-relaxed whitespace-pre-line text-neutral-800 text-justify p-4 rounded-xl border border-neutral-200 bg-white">
+              {selectedDecision.content}
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-slate-150">
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>طباعة الوثيقة</span>
-              </button>
-              <button
-                onClick={() => setSelectedDecision(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs cursor-pointer"
-              >
-                إغلاق
-              </button>
+            <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs font-medium text-emerald-950 space-y-1">
+              <p className="font-bold">المقتضى النظامي والتنفيذي:</p>
+              <p>يعمل بهذا القرار اعتباراً من تاريخ صدوره، ويبلغ لمن يلزم لإنفاذه والعمل بموجبه رسمياً، ويلغي ما يتعارض معه من قرارات وتعاميم سابقة.</p>
             </div>
           </div>
-        </div>
+        </OfficialLetterheadTemplate>
+      )}
+
+      {/* OFFICIAL PAYROLL SHEET PRINT MODAL (Requirement 2) */}
+      {isPayrollPrintOpen && (
+        <OfficialLetterheadTemplate
+          documentTitle="مسير رواتب ومستحقات الكوادر المعتمد"
+          documentNumber={`PAY-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}
+          gregorianDate={new Date().toISOString().split('T')[0]}
+          subject="كشف صرف مسير رواتب وبدلات الموظفين المعتمد للشهر الجاري"
+          recipientTitle="سعادة المشرف المالي وأمين الصندوق المحترمين"
+          signatoryName="أ. عبد الرحمن السليمان"
+          signatoryTitle="الرئيس التنفيذي"
+          signatoryDepartment="إدارة الموارد البشرية والعمليات"
+          onClose={() => setIsPayrollPrintOpen(false)}
+          isModal={true}
+          orientation="landscape"
+        >
+          <div className="space-y-4 text-xs text-neutral-900" dir="rtl">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 border border-neutral-300">
+              <div>
+                <span className="font-bold text-neutral-800">بيان مسير الرواتب: </span>
+                <span>كشف إجمالي الاستحقاقات والاستقطاعات والرواتب الصافية المودعة بالحسابات البنكية للموظفين</span>
+              </div>
+              <div className="font-mono font-bold text-neutral-700">
+                عدد الموظفين: {employees.length}
+              </div>
+            </div>
+
+            <div className="overflow-hidden border border-neutral-300 rounded-xl">
+              <table className="w-full text-right text-[11px]">
+                <thead className="bg-neutral-100 font-bold border-b border-neutral-300">
+                  <tr>
+                    <th className="p-2.5">الموظف</th>
+                    <th className="p-2.5">الرقم الوظيفي</th>
+                    <th className="p-2.5">المسمى والجهة</th>
+                    <th className="p-2.5 text-center">الراتب الأساسي</th>
+                    <th className="p-2.5 text-center">البدلات</th>
+                    <th className="p-2.5 text-center">الاستقطاعات</th>
+                    <th className="p-2.5 text-center font-bold text-emerald-900">الصافي المستحق</th>
+                    <th className="p-2.5 text-center">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200">
+                  {employees.map(emp => {
+                    const basic = emp.salary || 4000;
+                    const allowances = Math.round(basic * 0.15);
+                    const deductions = 0;
+                    const net = basic + allowances - deductions;
+                    return (
+                      <tr key={emp.id} className="break-inside-avoid">
+                        <td className="p-2.5 font-bold text-neutral-900">{emp.name}</td>
+                        <td className="p-2.5 font-mono text-neutral-600">{emp.employeeNumber}</td>
+                        <td className="p-2.5 text-neutral-600">{emp.jobTitle} - {emp.department}</td>
+                        <td className="p-2.5 text-center font-mono">{basic.toLocaleString()} ريال</td>
+                        <td className="p-2.5 text-center font-mono text-neutral-600">+{allowances.toLocaleString()} ريال</td>
+                        <td className="p-2.5 text-center font-mono text-rose-700">-{deductions.toLocaleString()} ريال</td>
+                        <td className="p-2.5 text-center font-mono font-bold text-emerald-800">{net.toLocaleString()} ريال</td>
+                        <td className="p-2.5 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold">
+                            معتمد للصرف
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-[10px] text-neutral-600">
+              تمت مطابقة هذا المسير نظامياً ومحاسبياً وإيداعه بحسابات المستفيدين عبر نظام حماية الأجور (WPS) وفق تعليمات وزارة الموارد البشرية والتنمية الاجتماعية.
+            </div>
+          </div>
+        </OfficialLetterheadTemplate>
       )}
     </div>
   );

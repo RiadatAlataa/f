@@ -53,6 +53,7 @@ import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
 import { BeneficiaryFormFields, BeneficiaryFormData } from './BeneficiaryFormFields';
 import { CreateAidDistributionModal } from './CreateAidDistributionModal';
 import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
+import { OfficialLetterheadTemplate } from './OfficialLetterheadTemplate';
 
 interface BeneficiariesMasterDashboardProps {
   beneficiaries: Beneficiary[];
@@ -129,6 +130,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [isAdvancedCreateModalOpen, setIsAdvancedCreateModalOpen] = useState(false);
   const [isBeneficiaryStatsModalOpen, setIsBeneficiaryStatsModalOpen] = useState(false);
   const [editingDist, setEditingDist] = useState<AidDistribution | null>(null);
+  const [distToPrint, setDistToPrint] = useState<AidDistribution | null>(null);
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
   const [isAddBenModalOpen, setIsAddBenModalOpen] = useState(false);
@@ -1193,12 +1195,12 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
 
                           <button
                             type="button"
-                            onClick={() => window.print()}
+                            onClick={() => setDistToPrint(dist)}
                             className="px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                            title="طباعة كشف التوزيع"
+                            title="طباعة كشف التوزيع الرسمي"
                           >
                             <Printer className="w-3.5 h-3.5 text-neutral-500" />
-                            <span>طباعة</span>
+                            <span>طباعة رسمية</span>
                           </button>
 
                           <button
@@ -2467,6 +2469,92 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           currentUser={currentUser}
           lang={lang}
         />
+      )}
+      {/* ========================================================================= */}
+      {/* MODAL: OFFICIAL LETTERHEAD DISTRIBUTION MANIFEST (Requirement 2) */}
+      {/* ========================================================================= */}
+      {distToPrint && (
+        <OfficialLetterheadTemplate
+          documentTitle="كشف ومحضر توزيع المساعدات الإنسانية والسلل الغذائية"
+          documentNumber={`DIST-MANIFEST-${distToPrint.id.substring(0, 8)}`}
+          gregorianDate={distToPrint.distributionDate || new Date().toISOString().split('T')[0]}
+          subject={`كشف توزيع وصرف: ${distToPrint.title} (${distToPrint.aidTypeLabel || 'سلال ومساعدات عينية'})`}
+          recipientTitle="إدارة الرعاية الاجتماعية وفريق التوزيع والخدمات المساندة المحترمين"
+          signatoryName="أ. محمد بن عبد الله الزهراني"
+          signatoryTitle="نائب رئيس مجلس الإدارة"
+          signatoryDepartment="إدارة الرعاية والخدمات الاجتماعية"
+          onClose={() => setDistToPrint(null)}
+          isModal={true}
+          orientation="landscape"
+        >
+          <div className="space-y-5 text-xs text-neutral-900" dir="rtl">
+            {/* Campaign Summary Strip */}
+            <div className="grid grid-cols-4 gap-3 p-3.5 bg-neutral-50 rounded-xl border border-neutral-300">
+              <div>
+                <span className="text-[10px] text-neutral-500 block">عنوان الحملة / التوزيع:</span>
+                <strong className="text-sm font-black text-neutral-900">{distToPrint.title}</strong>
+              </div>
+              <div>
+                <span className="text-[10px] text-neutral-500 block">نوع الصنف والمادة:</span>
+                <strong className="text-emerald-800">{distToPrint.aidTypeLabel || 'سلة غذائية متكاملة'}</strong>
+              </div>
+              <div>
+                <span className="text-[10px] text-neutral-500 block">إجمالي الكمية المعتمدة:</span>
+                <strong className="font-mono text-neutral-900">{distToPrint.allocatedQuantity || distToPrint.reservedStock || 100} {distToPrint.unit || 'طرد'}</strong>
+              </div>
+              <div>
+                <span className="text-[10px] text-neutral-500 block">تاريخ التوزيع المعتمد:</span>
+                <strong className="font-mono text-neutral-900">{distToPrint.distributionDate}</strong>
+              </div>
+            </div>
+
+            {/* Beneficiaries Signature Manifest Table */}
+            <div>
+              <div className="font-bold text-xs text-neutral-800 mb-2 flex items-center justify-between">
+                <span>كشف المستفيدين المعتمدين للتسليم الميداني والتوثيق:</span>
+                <span className="text-[11px] text-neutral-500 font-normal">يتعين التوقيع أو البصمة أمام كل مستفيد عند استلام الطرد</span>
+              </div>
+              <div className="border border-neutral-300 rounded-xl overflow-hidden">
+                <table className="w-full text-right text-[11px]">
+                  <thead className="bg-neutral-100 font-bold border-b border-neutral-300">
+                    <tr>
+                      <th className="p-2 w-8">م</th>
+                      <th className="p-2">اسم المستفيد الكامل</th>
+                      <th className="p-2">رقم الهوية / الإقامة</th>
+                      <th className="p-2">الحي / العنوان</th>
+                      <th className="p-2 text-center">أفراد الأسرة</th>
+                      <th className="p-2 text-center">الكمية المستحقة</th>
+                      <th className="p-2 text-center w-28">توقيع / بصمة المستلم</th>
+                      <th className="p-2 text-center w-20">كود التحقق</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {(distToPrint.targetBeneficiaryIds && distToPrint.targetBeneficiaryIds.length > 0 
+                      ? beneficiaries.filter(b => distToPrint.targetBeneficiaryIds?.includes(b.id)).slice(0, 15)
+                      : beneficiaries.slice(0, 15)
+                    ).map((b, idx) => (
+                      <tr key={b.id} className="break-inside-avoid">
+                        <td className="p-2 font-mono text-neutral-500">{idx + 1}</td>
+                        <td className="p-2 font-black text-neutral-900">{b.name}</td>
+                        <td className="p-2 font-mono text-neutral-600">{b.nationalId || '-'}</td>
+                        <td className="p-2 text-neutral-600">{b.district || 'العسيلة'}</td>
+                        <td className="p-2 text-center font-mono">{b.familySize || 1}</td>
+                        <td className="p-2 text-center font-mono font-bold text-emerald-800">1 {distToPrint.unit || 'طرد'}</td>
+                        <td className="p-2 text-center border-x border-neutral-200 bg-neutral-50/50"></td>
+                        <td className="p-2 text-center font-mono text-[9px] text-neutral-400">BEN-{b.id.substring(0, 4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Field Handover Pledge */}
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-[10px] text-neutral-600 leading-relaxed">
+              إقرار المشرف الميداني: أشهد أنا المشرف على حملة التوزيع بأنه تم صرف المواد الموضحة أعلاه لمستحقيها الفعليين بعد التحقق من الهويات الشخصية ومطابقة كود الاستحقاق المعتمد لدى الجمعية.
+            </div>
+          </div>
+        </OfficialLetterheadTemplate>
       )}
     </div>
   );
