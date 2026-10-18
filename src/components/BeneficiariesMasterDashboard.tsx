@@ -2434,6 +2434,8 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           onClose={() => setHistoryBeneficiary(null)}
           lang={lang}
         />
+      )}
+
       {/* ========================================================================= */}
       {/* MODAL: ADVANCED CREATE AID DISTRIBUTION (Requirements 2, 3, 4, 5) */}
       {/* ========================================================================= */}

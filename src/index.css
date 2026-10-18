@@ -289,28 +289,68 @@ html:not(.dark) .text-slate-600 {
 /* Custom print stylesheet for beautiful membership cards and reports */
 @media print {
   @page {
-    size: A4 landscape;
-    margin: 8mm;
+    size: A4 portrait;
+    margin: 10mm 12mm 12mm 12mm;
   }
-  .no-print {
+  
+  /* Hide all app chrome, sidebars, navbars, buttons, floating widgets, and toolbars */
+  nav, 
+  aside, 
+  header:not(.official-document-sheet header), 
+  .sidebar, 
+  .app-sidebar, 
+  .no-print, 
+  button:not(.print-allow), 
+  .floating-widget, 
+  .toast, 
+  .dropdown-menu-floating,
+  [role="navigation"] {
     display: none !important;
   }
+
   .print-only {
     display: block !important;
   }
-  body {
-    background: white !important;
-    color: black !important;
+
+  html, body {
+    background: #ffffff !important;
+    color: #171717 !important;
+    font-size: 12pt !important;
+    direction: rtl !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+
+  /* Full text searchability & clean vector selection */
+  .official-document-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: transparent !important;
+  }
+
+  /* Prevent awkward page breaks */
+  tr, 
+  .print-row, 
+  .signature-block, 
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  thead, 
   .print-table-header {
     display: table-header-group !important;
   }
-  .print-row {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+
+  tfoot, 
+  .print-table-footer {
+    display: table-footer-group !important;
   }
+
   /* When printing the report modal, make sure only the report is visible */
   .printable-report-modal {
     position: static !important;

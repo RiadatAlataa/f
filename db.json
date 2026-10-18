@@ -4279,7 +4279,176 @@
       "animationSpeed": "normal",
       "showDescription": true
     },
-    "orgMembers": [],
+    "orgMembers": [
+      {
+        "id": "org-board-1",
+        "name": "د. عبد العزيز بن إبراهيم الصالح",
+        "roleTitle": "رئيس مجلس الإدارة",
+        "level": 1,
+        "levelName": "مجلس الإدارة",
+        "order": 1,
+        "isActive": true,
+        "department": "مجلس الإدارة",
+        "imageUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-board-2",
+        "name": "أ. محمد بن عبد الله الزهراني",
+        "roleTitle": "نائب رئيس مجلس الإدارة",
+        "level": 1,
+        "levelName": "مجلس الإدارة",
+        "order": 2,
+        "isActive": true,
+        "department": "مجلس الإدارة",
+        "imageUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-board-3",
+        "name": "أ. فهد بن ناصر العتيبي",
+        "roleTitle": "المشرف المالي وعضو مجلس الإدارة",
+        "level": 1,
+        "levelName": "مجلس الإدارة",
+        "order": 3,
+        "isActive": true,
+        "department": "مجلس الإدارة",
+        "imageUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-board-4",
+        "name": "د. خالد بن سعود القرشي",
+        "roleTitle": "عضو مجلس الإدارة",
+        "level": 1,
+        "levelName": "مجلس الإدارة",
+        "order": 4,
+        "isActive": true,
+        "department": "مجلس الإدارة",
+        "imageUrl": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-board-5",
+        "name": "أ. إبراهيم بن صالح الغامدي",
+        "roleTitle": "عضو مجلس الإدارة",
+        "level": 1,
+        "levelName": "مجلس الإدارة",
+        "order": 5,
+        "isActive": true,
+        "department": "مجلس الإدارة",
+        "imageUrl": "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-exec-1",
+        "name": "أ. عبد الرحمن السليمان",
+        "roleTitle": "المدير التنفيذي",
+        "level": 2,
+        "levelName": "الإدارة التنفيذية",
+        "order": 6,
+        "isActive": true,
+        "department": "الإدارة التنفيذية",
+        "imageUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-exec-2",
+        "name": "أ. ياسر الغامدي",
+        "roleTitle": "مستشار الإدارة التنفيذية",
+        "level": 2,
+        "levelName": "الإدارة التنفيذية",
+        "order": 7,
+        "isActive": true,
+        "department": "الإدارة التنفيذية",
+        "imageUrl": "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-1",
+        "name": "أ. عبد الله العتيبي",
+        "roleTitle": "مدير الإدارة المالية",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 8,
+        "isActive": true,
+        "department": "الإدارة المالية",
+        "imageUrl": "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-2",
+        "name": "أ. فيصل الأحمدي",
+        "roleTitle": "مدير إدارة البرامج والمشاريع",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 9,
+        "isActive": true,
+        "department": "إدارة البرامج والمشاريع",
+        "imageUrl": "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-3",
+        "name": "أ. مريم الغامدي",
+        "roleTitle": "مديرة إدارة المستفيدين",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 10,
+        "isActive": true,
+        "department": "إدارة المستفيدين",
+        "imageUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-4",
+        "name": "أ. منيرة القحطاني",
+        "roleTitle": "مديرة إدارة التطوع",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 11,
+        "isActive": true,
+        "department": "إدارة التطوع",
+        "imageUrl": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-5",
+        "name": "أ. ماجد الدوسري",
+        "roleTitle": "مدير إدارة تنمية الموارد والشراكات",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 12,
+        "isActive": true,
+        "department": "إدارة تنمية الموارد المالية والشراكات",
+        "imageUrl": "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-6",
+        "name": "أ. سعود الحربي",
+        "roleTitle": "مدير إدارة الخدمات المساندة والمستودع",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 13,
+        "isActive": true,
+        "department": "إدارة الخدمات المساندة",
+        "imageUrl": "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      },
+      {
+        "id": "org-dep-7",
+        "name": "أ. نورة بنت فهد الشريف",
+        "roleTitle": "مديرة إدارة الموارد البشرية",
+        "level": 3,
+        "levelName": "الإدارات والأقسام",
+        "order": 14,
+        "isActive": true,
+        "department": "إدارة الموارد البشرية",
+        "imageUrl": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop&crop=faces",
+        "createdAt": "2026-10-18T16:51:18.251Z"
+      }
+    ],
     "heroSlides": [
       {
         "id": "slide-default",
@@ -14508,7 +14677,176 @@
       "createdAt": "2026-09-12T10:30:00Z"
     }
   ],
-  "orgMembers": [],
+  "orgMembers": [
+    {
+      "id": "org-board-1",
+      "name": "د. عبد العزيز بن إبراهيم الصالح",
+      "roleTitle": "رئيس مجلس الإدارة",
+      "level": 1,
+      "levelName": "مجلس الإدارة",
+      "order": 1,
+      "isActive": true,
+      "department": "مجلس الإدارة",
+      "imageUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-board-2",
+      "name": "أ. محمد بن عبد الله الزهراني",
+      "roleTitle": "نائب رئيس مجلس الإدارة",
+      "level": 1,
+      "levelName": "مجلس الإدارة",
+      "order": 2,
+      "isActive": true,
+      "department": "مجلس الإدارة",
+      "imageUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-board-3",
+      "name": "أ. فهد بن ناصر العتيبي",
+      "roleTitle": "المشرف المالي وعضو مجلس الإدارة",
+      "level": 1,
+      "levelName": "مجلس الإدارة",
+      "order": 3,
+      "isActive": true,
+      "department": "مجلس الإدارة",
+      "imageUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-board-4",
+      "name": "د. خالد بن سعود القرشي",
+      "roleTitle": "عضو مجلس الإدارة",
+      "level": 1,
+      "levelName": "مجلس الإدارة",
+      "order": 4,
+      "isActive": true,
+      "department": "مجلس الإدارة",
+      "imageUrl": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-board-5",
+      "name": "أ. إبراهيم بن صالح الغامدي",
+      "roleTitle": "عضو مجلس الإدارة",
+      "level": 1,
+      "levelName": "مجلس الإدارة",
+      "order": 5,
+      "isActive": true,
+      "department": "مجلس الإدارة",
+      "imageUrl": "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-exec-1",
+      "name": "أ. عبد الرحمن السليمان",
+      "roleTitle": "المدير التنفيذي",
+      "level": 2,
+      "levelName": "الإدارة التنفيذية",
+      "order": 6,
+      "isActive": true,
+      "department": "الإدارة التنفيذية",
+      "imageUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-exec-2",
+      "name": "أ. ياسر الغامدي",
+      "roleTitle": "مستشار الإدارة التنفيذية",
+      "level": 2,
+      "levelName": "الإدارة التنفيذية",
+      "order": 7,
+      "isActive": true,
+      "department": "الإدارة التنفيذية",
+      "imageUrl": "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-1",
+      "name": "أ. عبد الله العتيبي",
+      "roleTitle": "مدير الإدارة المالية",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 8,
+      "isActive": true,
+      "department": "الإدارة المالية",
+      "imageUrl": "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-2",
+      "name": "أ. فيصل الأحمدي",
+      "roleTitle": "مدير إدارة البرامج والمشاريع",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 9,
+      "isActive": true,
+      "department": "إدارة البرامج والمشاريع",
+      "imageUrl": "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-3",
+      "name": "أ. مريم الغامدي",
+      "roleTitle": "مديرة إدارة المستفيدين",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 10,
+      "isActive": true,
+      "department": "إدارة المستفيدين",
+      "imageUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-4",
+      "name": "أ. منيرة القحطاني",
+      "roleTitle": "مديرة إدارة التطوع",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 11,
+      "isActive": true,
+      "department": "إدارة التطوع",
+      "imageUrl": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-5",
+      "name": "أ. ماجد الدوسري",
+      "roleTitle": "مدير إدارة تنمية الموارد والشراكات",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 12,
+      "isActive": true,
+      "department": "إدارة تنمية الموارد المالية والشراكات",
+      "imageUrl": "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-6",
+      "name": "أ. سعود الحربي",
+      "roleTitle": "مدير إدارة الخدمات المساندة والمستودع",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 13,
+      "isActive": true,
+      "department": "إدارة الخدمات المساندة",
+      "imageUrl": "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    },
+    {
+      "id": "org-dep-7",
+      "name": "أ. نورة بنت فهد الشريف",
+      "roleTitle": "مديرة إدارة الموارد البشرية",
+      "level": 3,
+      "levelName": "الإدارات والأقسام",
+      "order": 14,
+      "isActive": true,
+      "department": "إدارة الموارد البشرية",
+      "imageUrl": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop&crop=faces",
+      "createdAt": "2026-10-18T16:51:18.251Z"
+    }
+  ],
   "heroSlides": [
     {
       "id": "slide-default",
@@ -15602,8 +15940,8 @@
       "reviewerNotes": "تم التحقق من هوية المتطوع وإرسال رمز التحقق الآمن المؤقت"
     }
   ],
-  "_version": 732,
-  "_lastModified": "2026-10-16T17:45:05.585Z",
+  "_version": 733,
+  "_lastModified": "2026-10-18T16:51:18.251Z",
   "_deletedRecordIds": [],
   "_deletedTombstones": {}
 }

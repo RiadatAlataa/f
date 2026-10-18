@@ -5,6 +5,7 @@ import {
   Trash2, Printer, Check, X, Tag, Shield, Calendar, ArrowUpRight
 } from "lucide-react";
 import { OfficialLetter } from "../types";
+import { OfficialLetterheadTemplate } from "./OfficialLetterheadTemplate";
 
 export interface AdminLettersManagerProps {
   letters: OfficialLetter[];
@@ -23,6 +24,7 @@ export const AdminLettersManager: React.FC<AdminLettersManagerProps> = ({
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedLetter, setSelectedLetter] = useState<OfficialLetter | null>(null);
+  const [isOfficialPrintOpen, setIsOfficialPrintOpen] = useState(false);
   const [reviewNotes, setReviewNotes] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<OfficialLetter['status']>('under_review');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -120,7 +122,7 @@ export const AdminLettersManager: React.FC<AdminLettersManagerProps> = ({
   };
 
   const handlePrint = () => {
-    window.print();
+    setIsOfficialPrintOpen(true);
   };
 
   const getStatusBadge = (status: OfficialLetter['status'], isRead: boolean) => {
@@ -818,6 +820,59 @@ export const AdminLettersManager: React.FC<AdminLettersManagerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* OFFICIAL LETTERHEAD PRINT MODAL (Requirement 2) */}
+      {isOfficialPrintOpen && selectedLetter && (
+        <OfficialLetterheadTemplate
+          documentTitle="خطاب رسمي وارد"
+          documentNumber={selectedLetter.letterNumber}
+          gregorianDate={new Date(selectedLetter.createdAt).toISOString().split('T')[0]}
+          subject={selectedLetter.subject || "خطاب رسمي"}
+          recipientTitle="سعادة رئيس مجلس الإدارة / المدير التنفيذي لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة المحترمين"
+          signatoryName={selectedLetter.senderName}
+          signatoryTitle={selectedLetter.senderOrganization || selectedLetter.senderType || "مرسل الخطاب"}
+          signatoryDepartment={selectedLetter.senderPhone ? `هاتف: ${selectedLetter.senderPhone}` : undefined}
+          onClose={() => setIsOfficialPrintOpen(false)}
+        >
+          <div className="space-y-4 text-justify">
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 mb-4 text-xs font-bold text-neutral-700">
+              <span className="text-neutral-500 font-normal">جهة الإرسال: </span>
+              {selectedLetter.senderName} ({selectedLetter.senderOrganization || selectedLetter.senderType})
+              {selectedLetter.senderPhone && ` | هاتف: ${selectedLetter.senderPhone}`}
+              {selectedLetter.senderEmail && ` | بريد: ${selectedLetter.senderEmail}`}
+            </div>
+
+            <div className="text-sm font-medium leading-relaxed whitespace-pre-line text-neutral-800">
+              {selectedLetter.message}
+            </div>
+
+            {selectedLetter.partnershipDetails && (selectedLetter.partnershipDetails.whatYouOffer || selectedLetter.partnershipDetails.whatYouWant) && (
+              <div className="mt-6 p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 space-y-3">
+                <h5 className="font-bold text-emerald-900 text-xs">تفاصيل الشراكة والمبادرة المقترحة:</h5>
+                {selectedLetter.partnershipDetails.whatYouOffer && (
+                  <p className="text-xs text-neutral-700">
+                    <span className="font-bold text-emerald-800">ما يمكن تقديمه: </span>
+                    {selectedLetter.partnershipDetails.whatYouOffer}
+                  </p>
+                )}
+                {selectedLetter.partnershipDetails.whatYouWant && (
+                  <p className="text-xs text-neutral-700">
+                    <span className="font-bold text-emerald-800">المطلوب من الجمعية: </span>
+                    {selectedLetter.partnershipDetails.whatYouWant}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {selectedLetter.adminNotes && (
+              <div className="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <span className="font-bold text-slate-800 block mb-0.5">توجيه وقرار الإدارة العليا:</span>
+                <p className="text-slate-600">{selectedLetter.adminNotes}</p>
+              </div>
+            )}
+          </div>
+        </OfficialLetterheadTemplate>
       )}
     </div>
   );

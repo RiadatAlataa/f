@@ -15460,8 +15460,25 @@
       "nationalId": "",
       "teamId": "",
       "createdAt": 1792172705548,
-      "lastActive": 1792172705548,
+      "lastActive": 1792172705578,
       "expiresAt": 1792777505548
+    },
+    {
+      "token": "sess_1792172705585_uvnqu42eb4k0jk",
+      "userId": "vol-999",
+      "role": "volunteer",
+      "user": {
+        "id": "vol-999",
+        "role": "volunteer",
+        "name": "سعيد المتطوع"
+      },
+      "userName": "سعيد المتطوع",
+      "departmentId": "",
+      "nationalId": "",
+      "teamId": "",
+      "createdAt": 1792172705585,
+      "lastActive": 1792172705585,
+      "expiresAt": 1792777505585
     }
   ],
   "passwordResetOtps": [
@@ -15585,8 +15602,8 @@
       "reviewerNotes": "تم التحقق من هوية المتطوع وإرسال رمز التحقق الآمن المؤقت"
     }
   ],
-  "_version": 731,
-  "_lastModified": "2026-10-16T17:45:05.548Z",
+  "_version": 732,
+  "_lastModified": "2026-10-16T17:45:05.585Z",
   "_deletedRecordIds": [],
   "_deletedTombstones": {}
 }

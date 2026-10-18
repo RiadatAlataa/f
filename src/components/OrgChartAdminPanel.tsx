@@ -31,6 +31,7 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
   const [levelFilter, setLevelFilter] = useState<number | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<OrgMember | null>(null);
+  const [memberToDelete, setMemberToDelete] = useState<OrgMember | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -527,13 +528,9 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm(lang === "ar" ? `هل أنت متأكد من حذف ${member.name} من الهيكل الإداري؟` : `Delete ${member.name}?`)) {
-                                onDeleteMember(member.id);
-                              }
-                            }}
+                            onClick={() => setMemberToDelete(member)}
                             className="p-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-700 hover:bg-rose-50 hover:text-rose-600 text-neutral-600 dark:text-neutral-300 transition-colors cursor-pointer"
-                            title={lang === "ar" ? "حذف الشخص" : "Delete"}
+                            title={lang === "ar" ? "حذف العضو بعد التأكيد" : "Delete member"}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -763,6 +760,64 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Confirmation Modal for Member Deletion */}
+      {memberToDelete && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
+          onClick={() => setMemberToDelete(null)}
+          dir={lang === "ar" ? "rtl" : "ltr"}
+        >
+          <div 
+            className="w-full max-w-sm bg-white dark:bg-neutral-850 rounded-2xl p-6 shadow-2xl border border-neutral-200 dark:border-neutral-700 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/50">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-neutral-900 dark:text-white">
+                  {lang === "ar" ? "تأكيد حذف العضو" : "Confirm Member Deletion"}
+                </h3>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  {lang === "ar" ? "هذا الإجراء لا يمكن التراجع عنه" : "This action cannot be undone"}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed bg-neutral-50 dark:bg-neutral-800 p-3 rounded-xl border border-neutral-100 dark:border-neutral-750">
+              {lang === "ar" ? (
+                <>هل أنت متأكد من رغبتك في حذف العضو <strong className="text-neutral-950 dark:text-white">«{memberToDelete.name}»</strong> ({memberToDelete.roleTitle}) من الهيكل الإداري؟</>
+              ) : (
+                <>Are you sure you want to delete <strong className="text-neutral-950 dark:text-white">{memberToDelete.name}</strong> ({memberToDelete.roleTitle})?</>
+              )}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setMemberToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 text-xs font-bold cursor-pointer"
+              >
+                {lang === "ar" ? "إلغاء" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = memberToDelete.id;
+                  setMemberToDelete(null);
+                  await onDeleteMember(id);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{lang === "ar" ? "تأكيد الحذف" : "Confirm Delete"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

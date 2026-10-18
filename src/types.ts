@@ -845,6 +845,33 @@ export interface HomeSettings {
   }>;
   heroSlides?: HeroSlide[];
   orgMembers?: OrgMember[];
+  officialLetterhead?: {
+    logoUrl?: string;
+    associationNameAr?: string;
+    licenseNumber?: string;
+    headerSubtitleAr?: string;
+    headerRightAr?: string;
+    headerLeftAr?: string;
+    footerAddressAr?: string;
+    footerContactAr?: string;
+    footerBankInfoAr?: string;
+    officialStampUrl?: string;
+    officialSignatureUrl?: string;
+    signatoryNameAr?: string;
+    signatoryTitleAr?: string;
+    showStamp?: boolean;
+    showSignature?: boolean;
+    authorizedSignatories?: {
+      id: string;
+      name: string;
+      title: string;
+      department?: string;
+      signatureUrl?: string;
+      stampUrl?: string;
+      isDefault?: boolean;
+      canIssueOfficialLetters?: boolean;
+    }[];
+  };
   sectionVisibility: {
     about: boolean;
     orgChart?: boolean;

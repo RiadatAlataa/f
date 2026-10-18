@@ -1693,12 +1693,13 @@ export function OfficialHomePage({
         </div>
       </section>
 
-      {/* 5.1 Organizational Structure Section (الهيكل الإداري للجمعية) */}
+      {/* 5.1 Organizational Structure Section (الهيكل الإداري الاحترافي) */}
       {settings?.sectionVisibility?.orgChart !== false && (
         <OrgChartSection
           members={orgMembers && orgMembers.length > 0 ? orgMembers : (settings?.orgMembers || [])}
           lang={lang}
           associationName={lang === "ar" ? settings?.associationNameAr : settings?.associationNameEn}
+          licenseNumber="1000888600"
         />
       )}
 
