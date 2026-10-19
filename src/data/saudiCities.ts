@@ -62,6 +62,9 @@ export const VOLUNTEER_DOMAINS_AND_SERVICES = [
 ];
 
 export const TEAM_COLOR_PRESETS = [
+  { label: "أزرق ريادة العطاء (الملكي)", value: "#0754C7", border: "#071C43" },
+  { label: "كحلي ريادة العطاء (العميق)", value: "#071C43", border: "#081426" },
+  { label: "أزرق زاهي", value: "#0875E1", border: "#0754C7" },
   { label: "زمردي العطاء", value: "#059669", border: "#047857" },
   { label: "أزرق ملكي", value: "#2563eb", border: "#1d4ed8" },
   { label: "كحلي بحري", value: "#0284c7", border: "#0369a1" },

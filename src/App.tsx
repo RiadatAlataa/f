@@ -1749,7 +1749,7 @@ export default function App() {
   );
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`} dir="rtl">
+    <div className={`min-h-screen ${isDark ? 'bg-[#081426] text-slate-100' : 'bg-[#f8fafc] text-[#071c43]'}`} dir="rtl">
       
       {/* INTERNAL PORTAL HEADER (Shown only when in management portal AND authenticated, and never for blocked users during maintenance) */}
       {currentRole !== 'public' && authenticatedUser && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
@@ -1757,7 +1757,7 @@ export default function App() {
           style={{
             paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
           }}
-          className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-[999] no-print max-w-full box-border"
+          className="bg-white dark:bg-[#0e213d] border-b border-slate-200 dark:border-[#1e3a66] shadow-xs sticky top-0 z-[999] no-print max-w-full box-border"
         >
           <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-2.5">
             {/* Main Header Bar */}
@@ -1765,8 +1765,8 @@ export default function App() {
               
               {/* Right Side: Association Identity & Return to Public Site (Desktop) */}
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-xs shrink-0 font-black text-xs sm:text-sm">
-                  ر
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white border border-slate-200 dark:border-[#1e3a66] flex items-center justify-center p-0.5 shadow-xs shrink-0 overflow-hidden">
+                  <img src="/logo.png" alt="شعار جمعية ريادة العطاء" className="w-full h-full object-contain" />
                 </div>
                 <div className="text-right min-w-0">
                   <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[150px] min-[390px]:max-w-[210px] sm:max-w-none">
@@ -1779,7 +1779,7 @@ export default function App() {
 
                 <button 
                   onClick={handleNavigateToPublicHome}
-                  className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-800 transition-all cursor-pointer shrink-0"
+                  className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200/60 dark:border-blue-800 transition-all cursor-pointer shrink-0"
                   title="العودة إلى الصفحة الرئيسية للجمعية مع الحفاظ على تسجيل الدخول"
                 >
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -2294,9 +2294,8 @@ export default function App() {
                     contactLocationAr: "مكة المكرمة - مخطط العسيلة",
                     contactLocationEn: "Mecca - Al-Asilah Scheme",
                     contactHoursAr: "الأحد - الخميس",
-                    contactHoursEn: "Sunday - Thursday",
-                    themePrimary: "#059669",
-                    themeSecondary: "#0d9488",
+                    themePrimary: "#0754C7",
+                    themeSecondary: "#071C43",
                     fontFamily: "Inter",
                     sectionVisibility: {
                       about: true,

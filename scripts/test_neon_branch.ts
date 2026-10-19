@@ -354,6 +354,74 @@ export async function runStagingBranchTests(connectionString: string): Promise<S
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS attendance (
+          id VARCHAR(100) PRIMARY KEY,
+          initiative_id VARCHAR(100) NOT NULL REFERENCES initiatives(id) ON DELETE CASCADE,
+          volunteer_id VARCHAR(100) NOT NULL REFERENCES volunteers(id) ON DELETE CASCADE,
+          date DATE DEFAULT CURRENT_DATE,
+          status VARCHAR(50) DEFAULT 'present',
+          check_in_time VARCHAR(20),
+          check_out_time VARCHAR(20),
+          hours_awarded NUMERIC(6, 2) DEFAULT 0,
+          verified_by VARCHAR(100),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT uq_initiative_volunteer_date_staging UNIQUE (initiative_id, volunteer_id, date)
+      );
+
+      CREATE TABLE IF NOT EXISTS evaluations (
+          id VARCHAR(100) PRIMARY KEY,
+          initiative_id VARCHAR(100) NOT NULL REFERENCES initiatives(id) ON DELETE CASCADE,
+          volunteer_id VARCHAR(100) NOT NULL REFERENCES volunteers(id) ON DELETE CASCADE,
+          score INT CHECK (score >= 1 AND score <= 100),
+          feedback TEXT,
+          evaluated_by VARCHAR(100),
+          evaluation_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS official_letters (
+          id VARCHAR(100) PRIMARY KEY,
+          letter_number VARCHAR(100) UNIQUE,
+          subject VARCHAR(255) NOT NULL,
+          recipient VARCHAR(255) NOT NULL,
+          content TEXT,
+          department_id VARCHAR(50) REFERENCES departments(id) ON DELETE SET NULL,
+          issued_date DATE DEFAULT CURRENT_DATE,
+          hijri_date VARCHAR(50),
+          signatory_name VARCHAR(255),
+          signatory_title VARCHAR(255),
+          license_number VARCHAR(50) DEFAULT '1000888600',
+          status VARCHAR(50) DEFAULT 'issued',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS financial_accounts (
+          id VARCHAR(50) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          account_number VARCHAR(100) UNIQUE,
+          bank_name VARCHAR(255),
+          type VARCHAR(50) DEFAULT 'bank',
+          balance NUMERIC(15, 2) DEFAULT 0,
+          currency VARCHAR(10) DEFAULT 'SAR',
+          status VARCHAR(50) DEFAULT 'active',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS financial_transactions (
+          id VARCHAR(100) PRIMARY KEY,
+          type VARCHAR(50) NOT NULL,
+          account_id VARCHAR(50) REFERENCES financial_accounts(id) ON DELETE RESTRICT,
+          amount NUMERIC(15, 2) NOT NULL,
+          category VARCHAR(100),
+          description TEXT,
+          reference_number VARCHAR(100),
+          date DATE DEFAULT CURRENT_DATE,
+          status VARCHAR(50) DEFAULT 'approved',
+          created_by VARCHAR(100),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `;
 
     await client.query("BEGIN;");

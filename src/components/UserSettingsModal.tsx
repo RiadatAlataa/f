@@ -506,7 +506,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                        {isDark ? <Moon className="w-4 h-4 text-indigo-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                        {isDark ? <Moon className="w-4 h-4 text-blue-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
                       </div>
                       <div>
                         <strong className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
@@ -526,7 +526,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       aria-checked={isDark}
                       onClick={onToggleDark}
                       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        isDark ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
+                        isDark ? 'bg-[#0754c7]' : 'bg-slate-300 dark:bg-slate-700'
                       }`}
                     >
                       <span

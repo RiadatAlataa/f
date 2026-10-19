@@ -166,9 +166,9 @@ export function OfficialHomePage({
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
   
-  // Customization Colors Injection
-  const primaryColor = settings?.themePrimary || "#059669";
-  const secondaryColor = settings?.themeSecondary || "#0d9488";
+  // Customization Colors Injection (Official Logo Identity: Royal Blue #0754C7 & Deep Navy #071C43)
+  const primaryColor = (settings?.themePrimary && settings.themePrimary !== "#059669") ? settings.themePrimary : "#0754C7";
+  const secondaryColor = (settings?.themeSecondary && settings.themeSecondary !== "#0d9488") ? settings.themeSecondary : "#071C43";
   
   // Modals state
   const [currentPublicPage, setCurrentPublicPage] = useState<"home" | "opportunities" | "gallery">("home");
@@ -788,7 +788,7 @@ export function OfficialHomePage({
 
   return (
     <div 
-      className={`min-h-screen flex flex-col font-sans antialiased text-right overflow-x-hidden ${isDark ? "bg-neutral-900 text-neutral-100" : "bg-neutral-900 text-neutral-900"}`} 
+      className={`min-h-screen flex flex-col font-sans antialiased text-right overflow-x-hidden ${isDark ? "bg-[#081426] text-slate-100" : "bg-[#f8fafc] text-[#071c43]"}`} 
       dir={lang === "ar" ? "rtl" : "ltr"}
     >
       {/* Dynamic Styling Injection */}
@@ -815,7 +815,7 @@ export function OfficialHomePage({
 
       {/* 0. Active Session Banner (شريط تنبيهي للجلسة النشطة وزر العودة التلقائي حسب الدور) */}
       {authenticatedUser && onReturnToDashboard && returnBtnDetails && (
-        <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 text-white px-3 sm:px-6 py-2 border-b border-emerald-500/40 shadow-sm relative z-50 text-xs">
+        <div className="bg-gradient-to-r from-[#071c43] via-[#092b66] to-[#0754c7] text-white px-3 sm:px-6 py-2 border-b border-blue-400/30 shadow-sm relative z-50 text-xs">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
             <div className="flex items-center gap-2 text-right">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
@@ -1489,10 +1489,10 @@ export function OfficialHomePage({
       ) : (
         <>
           {/* Main Content (البنية الدلالية لهيكل الصفحة) */}
-          <main id="main-content" className={`flex-1 w-full ${isDark ? "bg-neutral-900 text-neutral-100" : "bg-white text-neutral-900"}`}>
+          <main id="main-content" className={`flex-1 w-full ${isDark ? "bg-[#081426] text-slate-100" : "bg-[#f8fafc] text-[#071c43]"}`}>
 
       {/* 2. Hero Section (معرض صور متحرك في أعلى الصفحة الرئيسية) */}
-      <section className="relative w-full min-h-[360px] sm:min-h-[500px] lg:min-h-[580px] bg-gradient-to-b from-slate-900 via-emerald-950 to-neutral-900 text-white text-center overflow-hidden flex flex-col">
+      <section className="relative w-full min-h-[360px] sm:min-h-[500px] lg:min-h-[580px] bg-gradient-to-b from-[#071C43] via-[#0B2554] to-[#081426] text-white text-center overflow-hidden flex flex-col">
         <HeroSlider
           slides={heroSlides && heroSlides.length > 0 ? heroSlides : (settings?.heroSlides || [])}
           fallbackImageUrl={settings?.videoCoverUrl || ""}
@@ -1505,11 +1505,11 @@ export function OfficialHomePage({
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8 }}
-              src={settings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"} 
-              alt="شعار ريادة العطاء" 
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shadow-2xl mb-3 sm:mb-4 border border-white/20"
+              src={settings?.logoUrl || "/logo.png"} 
+              alt="شعار جمعية ريادة العطاء" 
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shadow-2xl mb-3 sm:mb-4 border border-white/20 bg-white"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop";
+                (e.target as HTMLImageElement).src = "/logo.png";
               }}
             />
 

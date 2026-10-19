@@ -84,8 +84,8 @@ const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   contactLocationEn: "Mecca - Al-Asilah Scheme",
   contactHoursAr: "الأحد - الخميس",
   contactHoursEn: "Sunday - Thursday",
-  themePrimary: "#059669",
-  themeSecondary: "#0d9488",
+  themePrimary: "#0754C7",
+  themeSecondary: "#071C43",
   fontFamily: "Inter",
   sectionVisibility: {
     about: true,

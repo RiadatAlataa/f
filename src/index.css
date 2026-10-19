@@ -57,7 +57,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-lyon: "Lyon Arabic", "Amiri", "Traditional Arabic", "Scheherazade New", serif;
 
-  /* Redefine neutral palette to slate values for the "Professional Polish" theme */
+  /* Redefine neutral palette to slate values for crisp contrast */
   --color-neutral-50: #f8fafc;
   --color-neutral-100: #f1f5f9;
   --color-neutral-200: #e2e8f0;
@@ -70,62 +70,109 @@
   --color-neutral-900: #0f172a;
   --color-neutral-950: #020617;
 
-  /* Professional Polish brand emerald override */
-  --color-emerald-50: #f0fdf4;
-  --color-emerald-100: #dcfce7;
-  --color-emerald-200: #bbf7d0;
-  --color-emerald-300: #86efac;
-  --color-emerald-400: #4ade80;
-  --color-emerald-500: #10b981;
-  --color-emerald-600: #059669;
-  --color-emerald-700: #047857;
-  --color-emerald-800: #065f46;
-  --color-emerald-900: #064e3b;
+  /*
+   * Official Logo Palette: Royal Blue & Deep Navy
+   * Mapped directly to primary and emerald utility classes so all components reflect the official identity
+   */
+  --color-primary-50: #eaf3ff;
+  --color-primary-100: #d8e9fe;
+  --color-primary-200: #b8d8fd;
+  --color-primary-300: #8cc0fc;
+  --color-primary-400: #4a9df7;
+  --color-primary-500: #0875e1; /* الأزرق الزاهي */
+  --color-primary-600: #0754c7; /* الأزرق الملكي */
+  --color-primary-700: #0644a3;
+  --color-primary-800: #053279;
+  --color-primary-900: #071c43; /* الكحلي العميق */
+  --color-primary-950: #081426; /* الكحلي الليلي */
 
-  /* Professional Polish brand indigo override */
-  --color-indigo-50: #f5f3ff;
-  --color-indigo-100: #ede9fe;
-  --color-indigo-200: #ddd6fe;
-  --color-indigo-300: #c4b5fd;
-  --color-indigo-400: #a78bfa;
-  --color-indigo-500: #6366f1;
-  --color-indigo-600: #4f46e5;
-  --color-indigo-700: #4338ca;
-  --color-indigo-800: #3730a3;
-  --color-indigo-900: #312e81;
+  /* Emerald aliases mapped to Royal Blue / Navy for seamless visual unification */
+  --color-emerald-50: #eaf3ff;
+  --color-emerald-100: #d8e9fe;
+  --color-emerald-200: #b8d8fd;
+  --color-emerald-300: #8cc0fc;
+  --color-emerald-400: #4a9df7;
+  --color-emerald-500: #0875e1;
+  --color-emerald-600: #0754c7;
+  --color-emerald-700: #0644a3;
+  --color-emerald-800: #053279;
+  --color-emerald-900: #071c43;
+  --color-emerald-950: #081426;
 
-  --color-primary-50: #f0fdf4;
-  --color-primary-100: #dcfce7;
-  --color-primary-500: #10b981;
-  --color-primary-600: #059669;
-  --color-primary-700: #047857;
-  
+  /* Official Deep Navy palette */
+  --color-navy-50: #f0f4f9;
+  --color-navy-100: #e0e9f3;
+  --color-navy-200: #c2d3e7;
+  --color-navy-300: #9cb8d7;
+  --color-navy-400: #6f96c3;
+  --color-navy-500: #4a74a8;
+  --color-navy-600: #335587;
+  --color-navy-700: #233c64;
+  --color-navy-800: #142542;
+  --color-navy-900: #071c43;
+  --color-navy-950: #081426;
+
   --color-accent-gold: #d4af37;
   --color-accent-amber: #f59e0b;
 }
 
-/* Centralized CSS Variables for Light & Dark Mode */
+/* 
+ * ============================================================================
+ * Centralized Design Tokens (Light Mode & Dark Mode)
+ * Conforms with standard design token architecture and the official logo guide
+ * ============================================================================
+ */
 :root {
   color-scheme: light;
-  --bg-page: #f8fafc;
+
+  /* Standard CSS Design Tokens (Requested in Section 5) */
+  --background: #f8fafc;
+  --foreground: #071c43; /* الكحلي العميق */
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --card-subtle: #f0f7ff;
+  --primary: #0754c7; /* الأزرق الملكي */
+  --primary-hover: #0644a3;
+  --primary-foreground: #ffffff;
+  --secondary: #eaf3ff; /* الأزرق الفاتح */
+  --secondary-foreground: #0754c7;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b; /* الرمادي الهادئ */
+  --border: #e2e8f0;
+  --input: #ffffff;
+  --input-foreground: #0f172a;
+  --ring: #0754c7;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --sidebar: #071c43;
+  --sidebar-foreground: #ffffff;
+  --success: #10b981;
+  --success-foreground: #ffffff;
+  --warning: #f59e0b;
+  --warning-foreground: #ffffff;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  /* Semantic UI mappings */
+  --bg-page: var(--background);
   --bg-surface: #ffffff;
-  --bg-card: #ffffff;
-  --bg-card-subtle: #f1f5f9;
-  --bg-input: #ffffff;
+  --bg-card: var(--card);
+  --bg-card-subtle: #f0f7ff;
+  --bg-input: var(--input);
   --bg-hover: #f1f5f9;
   --text-main: #0f172a;
   --text-secondary: #334155;
   --text-muted: #64748b;
   --border-subtle: #e2e8f0;
   --border-strong: #cbd5e1;
-  --border-focus: #10b981;
-  --ring-color: rgba(16, 185, 129, 0.2);
-  --header-bg: rgba(255, 255, 255, 0.9);
-  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+  --border-focus: #0754c7;
+  --ring-color: rgba(7, 84, 199, 0.22);
+  --header-bg: rgba(255, 255, 255, 0.95);
+  --card-shadow: 0 1px 3px 0 rgba(7, 28, 67, 0.06), 0 1px 2px -1px rgba(7, 28, 67, 0.04);
 
   /* Semantic table & modal variables */
   --th-bg: #f8fafc;
-  --th-text: #475569;
+  --th-text: #071c43;
   --td-border: #f1f5f9;
   --input-border: #cbd5e1;
   --input-placeholder: #94a3b8;
@@ -133,27 +180,57 @@
 
 .dark {
   color-scheme: dark;
-  --bg-page: #090d16;
-  --bg-surface: #0f172a;
-  --bg-card: #0f172a;
-  --bg-card-subtle: #1e293b;
-  --bg-input: #1e293b;
-  --bg-hover: #1e293b;
+
+  /* Standard CSS Design Tokens (Dark Mode) */
+  --background: #081426; /* الكحلي الليلي */
+  --foreground: #f8fafc;
+  --card: #0e213d; /* بطاقات بدرجة أفتح قليلًا من الخلفية */
+  --card-foreground: #f8fafc;
+  --card-subtle: #142d50;
+  --primary: #0754c7; /* الأزرق الملكي */
+  --primary-hover: #0861e6;
+  --primary-foreground: #ffffff;
+  --secondary: #142d50;
+  --secondary-foreground: #93c5fd;
+  --muted: #142d50;
+  --muted-foreground: #94a3b8; /* نصوص ثانوية بلون فاتح واضح */
+  --border: #1e3a66; /* حدود واضحة كحلية */
+  --input: #0b1b33;
+  --input-foreground: #f8fafc;
+  --ring: #3b82f6;
+  --popover: #0e213d;
+  --popover-foreground: #f8fafc;
+  --sidebar: #06101f;
+  --sidebar-foreground: #f8fafc;
+  --success: #10b981;
+  --success-foreground: #ffffff;
+  --warning: #f59e0b;
+  --warning-foreground: #ffffff;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  /* Semantic UI mappings (Dark Mode) */
+  --bg-page: var(--background);
+  --bg-surface: #0e213d;
+  --bg-card: var(--card);
+  --bg-card-subtle: #142d50;
+  --bg-input: var(--input);
+  --bg-hover: #162e52;
   --text-main: #f8fafc;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
-  --border-subtle: #334155;
-  --border-strong: #475569;
-  --border-focus: #34d399;
-  --ring-color: rgba(52, 211, 153, 0.25);
-  --header-bg: rgba(15, 23, 42, 0.92);
-  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --border-subtle: #1a335a;
+  --border-strong: #244577;
+  --border-focus: #3b82f6;
+  --ring-color: rgba(59, 130, 246, 0.35);
+  --header-bg: rgba(8, 20, 38, 0.95);
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
 
   /* Semantic table & modal variables in dark */
-  --th-bg: #1e293b;
-  --th-text: #94a3b8;
-  --td-border: #1e293b;
-  --input-border: #334155;
+  --th-bg: #142d50;
+  --th-text: #e2e8f0;
+  --td-border: #1a335a;
+  --input-border: #224373;
   --input-placeholder: #64748b;
 }
 
@@ -164,13 +241,14 @@ html, body {
   -webkit-font-smoothing: antialiased;
   background-color: var(--bg-page);
   color: var(--text-main);
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   overflow-x: hidden;
 }
 
-/* Ensure inputs, textareas, and selects default to clean contrast in light mode */
+/* Ensure inputs, textareas, and selects default to clean contrast in light & dark mode */
 input, textarea, select {
   color: inherit;
+  font-family: inherit;
 }
 
 input::placeholder, textarea::placeholder {
@@ -180,8 +258,8 @@ input::placeholder, textarea::placeholder {
 /* System-wide card and surface classes */
 .app-card {
   background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-main);
+  border: 1px solid var(--border);
+  color: var(--card-foreground);
   box-shadow: var(--card-shadow);
 }
 
@@ -208,27 +286,49 @@ input::placeholder, textarea::placeholder {
 }
 
 /* 
- * Explicit Light Mode & Dark Mode Form and Text Rules 
- * Guarantees that all inputs, textareas, selects, and table elements
- * have high-contrast, WCAG AA compliant text in both light and dark modes.
+ * ============================================================================
+ * Comprehensive Text Contrast & Elimination of Disappearing Text
+ * Guarantees WCAG AA Compliance (4.5:1 text, 3:1 large/interactive) site-wide
+ * ============================================================================
  */
+
+/* Form controls contrast guarantees */
 input:not([type="checkbox"]):not([type="radio"]), 
 textarea, 
 select {
   background-color: var(--bg-input);
   color: var(--text-main);
-  border-color: var(--border-strong);
+  border-color: var(--input-border);
 }
 
 input:not([type="checkbox"]):not([type="radio"]):focus, 
 textarea:focus, 
 select:focus {
   border-color: var(--border-focus);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-color);
+}
+
+/* Native select dropdown options background and foreground */
+select option {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  padding: 8px 12px;
+}
+
+.dark select option {
+  background-color: #0e213d !important;
+  color: #f8fafc !important;
+}
+
+select option:checked {
+  background-color: #0754c7 !important;
+  color: #ffffff !important;
 }
 
 /* Light mode crisp contrast guarantee */
 html:not(.dark) {
-  --text-table-head: #334155;
+  --text-table-head: #071c43;
   --text-table-body: #0f172a;
   color-scheme: light;
 }
@@ -237,20 +337,89 @@ html.dark {
   color-scheme: dark;
 }
 
-/* Light mode table text guarantees */
+/* Table text guarantees */
 html:not(.dark) thead tr {
-  color: #334155;
+  color: #071c43;
+  background-color: #f8fafc;
 }
 
 html:not(.dark) tbody tr {
   color: #0f172a;
 }
 
-/* Make sure text-neutral-400 and text-slate-400 labels inside forms/cards are readable in light mode */
-html:not(.dark) label {
-  color: #334155;
+.dark thead tr {
+  color: #e2e8f0 !important;
+  background-color: #142d50 !important;
 }
 
+.dark tbody tr {
+  color: #f8fafc !important;
+}
+
+/* Form labels in both modes */
+html:not(.dark) label {
+  color: #071c43;
+  font-weight: 600;
+}
+
+.dark label {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+/* 
+ * Systematic Dark Mode Auto-Contrast Guard:
+ * Prevents hardcoded slate-900/neutral-900/black text from disappearing against dark backgrounds
+ */
+.dark :is(.text-slate-900, .text-neutral-900, .text-gray-900, .text-black):not(.text-on-light, .bg-white *, [data-theme="light"] *, .print-allow *) {
+  color: #f8fafc;
+}
+
+.dark :is(.text-slate-800, .text-neutral-800, .text-gray-800):not(.text-on-light, .bg-white *, [data-theme="light"] *, .print-allow *) {
+  color: #f1f5f9;
+}
+
+.dark :is(.text-slate-700, .text-neutral-700, .text-gray-700):not(.text-on-light, .bg-white *, [data-theme="light"] *, .print-allow *) {
+  color: #cbd5e1;
+}
+
+.dark :is(.text-slate-600, .text-neutral-600, .text-gray-600):not(.text-on-light, .bg-white *, [data-theme="light"] *, .print-allow *) {
+  color: #94a3b8;
+}
+
+.dark :is(.text-slate-500, .text-neutral-500, .text-gray-500):not(.text-on-light, .bg-white *, [data-theme="light"] *, .print-allow *) {
+  color: #94a3b8;
+}
+
+/* 
+ * Systematic Dark Mode Surface Unification:
+ * Converts generic dark slate/neutral/zinc cards and sidebars into the official Royal Navy theme
+ */
+.dark :is(.dark\:bg-slate-950, .dark\:bg-neutral-950, .dark\:bg-zinc-950, .dark\:bg-black) {
+  background-color: #081426 !important;
+}
+
+.dark :is(.dark\:bg-slate-900, .dark\:bg-neutral-900, .dark\:bg-zinc-900) {
+  background-color: #0e213d !important;
+}
+
+.dark :is(.dark\:bg-slate-850, .dark\:bg-slate-800, .dark\:bg-neutral-800, .dark\:bg-zinc-800) {
+  background-color: #142d50 !important;
+}
+
+.dark :is(.dark\:bg-slate-700, .dark\:bg-neutral-700) {
+  background-color: #19355e !important;
+}
+
+.dark :is(.dark\:border-slate-800, .dark\:border-neutral-800, .dark\:border-zinc-800, .dark\:border-slate-700) {
+  border-color: #1e3a66 !important;
+}
+
+.dark :is(.dark\:border-slate-600, .dark\:border-neutral-600) {
+  border-color: #264b82 !important;
+}
+
+/* Light mode secondary text clarity */
 html:not(.dark) .text-neutral-400,
 html:not(.dark) .text-slate-400 {
   color: #64748b;
@@ -261,7 +430,6 @@ html:not(.dark) .text-slate-500 {
   color: #475569;
 }
 
-/* Ensure secondary subtle text has high contrast in light mode */
 html:not(.dark) .text-neutral-600,
 html:not(.dark) .text-slate-600 {
   color: #334155;
@@ -280,10 +448,10 @@ html:not(.dark) .text-slate-600 {
   border-radius: 9999px;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #1e3a66;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #2a4c80;
 }
 
 /* Custom print stylesheet for beautiful membership cards and reports */
