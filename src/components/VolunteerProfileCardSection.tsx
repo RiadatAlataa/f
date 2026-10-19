@@ -117,7 +117,7 @@ export const VolunteerProfileCardSection: React.FC<VolunteerProfileCardSectionPr
     nationality: "سعودي",
     jobTitle: employee.jobTitle,
     titleAr: employee.jobTitle,
-    photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80"
+    photo: ""
   } : {
     id: "unknown",
     name: "متطوع",
@@ -138,7 +138,7 @@ export const VolunteerProfileCardSection: React.FC<VolunteerProfileCardSectionPr
     bloodType: "O+",
     nationality: "سعودي",
     jobTitle: "متطوع",
-    photo: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80"
+    photo: ""
   });
 
   const creationDate = effectiveVolunteer.issuedCard?.createdAt 

@@ -37,6 +37,7 @@ export const CardVerificationModal: React.FC<CardVerificationModalProps> = ({
 
   const NEUTRAL_USER_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='%23059669'%3E%3Ccircle cx='50' cy='35' r='18' opacity='0.8'/%3E%3Cpath d='M24 82c0-14.359 11.64-26 26-26s26 11.641 26 26' opacity='0.8'/%3E%3C/svg%3E";
 
+  const isFemale = volunteer.gender === 'female' || (volunteer.name && (volunteer.name.includes('سارة') || volunteer.name.includes('مريم') || volunteer.name.includes('فاطمة') || volunteer.name.includes('أنثى') || volunteer.name.includes('نورة')));
   const hasCustomPhoto = volunteer.photo && !volunteer.photo.includes("unsplash.com") && !volunteer.photo.includes("placeholder");
   const hasUnifiedPhoto = femaleUnifiedPhotoUrl && !femaleUnifiedPhotoUrl.includes("unsplash.com") && !femaleUnifiedPhotoUrl.includes("placeholder");
 

@@ -218,7 +218,7 @@ export const VolunteerCardTemplatesPanel: React.FC<VolunteerCardTemplatesPanelPr
   const [femaleUnifiedPhoto, setFemaleUnifiedPhoto] = useState<string>(
     initialFemaleUnifiedPhoto || 
     localStorage.getItem("reyadat_female_unified_photo") || 
-    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80"
+    ""
   );
   const [tempFemalePhotoInput, setTempFemalePhotoInput] = useState<string>(femaleUnifiedPhoto);
   const [femalePhotoSaveSuccess, setFemalePhotoSaveSuccess] = useState<boolean>(false);
@@ -297,7 +297,7 @@ export const VolunteerCardTemplatesPanel: React.FC<VolunteerCardTemplatesPanelPr
     name: "أحمد بن علي الغامدي",
     email: "ahmed.g@example.com",
     phone: "0551234567",
-    photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
+    photo: "",
     membershipNumber: "V-2026-0001",
     teamId: teams[0]?.id || "team-1",
     departmentId: departments[0]?.id || "dep-3",
@@ -321,7 +321,7 @@ export const VolunteerCardTemplatesPanel: React.FC<VolunteerCardTemplatesPanelPr
     name: "سارة بنت محمد العتيبي",
     email: "sara.o@example.com",
     phone: "0569876543",
-    photo: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop",
+    photo: "",
     membershipNumber: "V-2026-0002",
     teamId: teams[1]?.id || "team-2",
     departmentId: departments[1]?.id || "dep-2",
@@ -1889,16 +1889,16 @@ export const VolunteerCardTemplatesPanel: React.FC<VolunteerCardTemplatesPanelPr
               <div className="grid grid-cols-3 gap-3">
                 {[
                   {
-                    name: "رمز الظل الوقور",
-                    url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80"
+                    name: "شعار الجمعية الرسمي",
+                    url: "/logo.png"
                   },
                   {
-                    name: "شعار التطوع النسائي",
-                    url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80"
+                    name: "أيقونة الهوية الموحدة",
+                    url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='%239333ea'%3E%3Ccircle cx='50' cy='35' r='18' opacity='0.85'/%3E%3Cpath d='M24 82c0-14.359 11.64-26 26-26s26 11.641 26 26' opacity='0.85'/%3E%3C/svg%3E"
                   },
                   {
-                    name: "أيقونة الهوية الرسمية",
-                    url: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80"
+                    name: "شعار درع التطوع",
+                    url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='%23059669'%3E%3Ccircle cx='50' cy='50' r='40' opacity='0.85'/%3E%3Cpath d='M35 50l10 10 20-20' stroke='%23ffffff' stroke-width='8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
                   }
                 ].map((preset, idx) => (
                   <button

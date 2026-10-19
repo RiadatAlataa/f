@@ -12,14 +12,14 @@ interface HeroSliderProps {
 
 export const HeroSlider: React.FC<HeroSliderProps> = ({
   slides = [],
-  fallbackImageUrl = "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+  fallbackImageUrl = "",
   autoSlideInterval = 1000, // 1 second per user instruction
   children,
   lang = "ar"
 }) => {
   // Only active slides
   const activeSlides = React.useMemo(() => {
-    const list = (slides || []).filter(s => s.isActive !== false);
+    const list = (slides || []).filter(s => s.isActive !== false && s.imageUrl && !s.imageUrl.includes("unsplash.com"));
     if (list.length > 0) {
       return list.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
@@ -27,7 +27,7 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
     return [
       {
         id: "slide-default",
-        imageUrl: fallbackImageUrl,
+        imageUrl: fallbackImageUrl && !fallbackImageUrl.includes("unsplash.com") ? fallbackImageUrl : "",
         title: "",
         order: 1,
         isActive: true
@@ -128,15 +128,18 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
                 isActive ? "opacity-100 z-10 scale-100" : "opacity-0 z-0 scale-105"
               } transition-transform duration-1000`}
             >
-              <img
-                src={slide.imageUrl}
-                alt={slide.title || "عرض واجهة الجمعية"}
-                className="w-full h-full object-cover object-center"
-                onError={(e) => {
-                  // If slide image fails, fall back to fallbackImageUrl
-                  (e.target as HTMLImageElement).src = fallbackImageUrl;
-                }}
-              />
+              {slide.imageUrl && !slide.imageUrl.includes("unsplash.com") ? (
+                <img
+                  src={slide.imageUrl}
+                  alt={slide.title || "عرض واجهة الجمعية"}
+                  className="w-full h-full object-cover object-center"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-950 flex items-center justify-center opacity-90" />
+              )}
             </div>
           );
         })}

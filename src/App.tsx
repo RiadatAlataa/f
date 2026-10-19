@@ -718,7 +718,7 @@ export default function App() {
       points: vol.points ?? 0,
       membershipNumber: vol.membershipNumber || "VOL-" + Math.floor(100000 + Math.random() * 900000),
       barcode: vol.barcode || "" + Math.floor(1000000000 + Math.random() * 9000000000),
-      photo: vol.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop"
+      photo: vol.photo || ""
     };
     await syncWithServer("/api/db/volunteers/add", payload, "إضافة متطوع");
   };
@@ -2025,7 +2025,7 @@ export default function App() {
                 message={maintenanceMessage}
                 associationName={dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
                 licenseNumber={dbData?.homeSettings?.licenseNumber || "1000888600"}
-                logoUrl={dbData?.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"}
+                logoUrl={dbData?.homeSettings?.logoUrl || "/logo.png"}
                 onOpenLogin={() => {
                   setCurrentRole('admin');
                   setActiveMainTab('system');
@@ -2249,7 +2249,7 @@ export default function App() {
                   message={maintenanceMessage}
                   associationName={dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
                   licenseNumber={dbData?.homeSettings?.licenseNumber || "1000888600"}
-                  logoUrl={dbData?.homeSettings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"}
+                  logoUrl={dbData?.homeSettings?.logoUrl || "/logo.png"}
                   onOpenLogin={() => {
                     setCurrentRole('admin');
                     setActiveMainTab('system');
@@ -2268,12 +2268,12 @@ export default function App() {
               ) : (
                 <OfficialHomePage
                   settings={dbData.homeSettings || {
-                    logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+                    logoUrl: "/logo.png",
                     videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
-                    videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+                    videoCoverUrl: "",
                     associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
                     associationNameEn: "Reyadat Al-Ata Association",
-                    licenseNumber: "5081",
+                    licenseNumber: "1000888600",
                     heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
                     heroTitleEn: "Leadership in Giving",
                     heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي",

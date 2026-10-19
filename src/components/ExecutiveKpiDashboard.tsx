@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, HeartHandshake, Package, Boxes, 
   TrendingUp, RefreshCw, Trophy, Award, Clock, Activity, CheckCircle2, 
   AlertTriangle, ArrowUpRight, ShieldCheck, Sparkles, ChevronLeft, 
-  FileText, Star, Eye, Layers, BarChart3, PieChart, Filter
+  FileText, Star, Eye, Layers, BarChart3, PieChart, Filter, User
 } from "lucide-react";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, Beneficiary,
@@ -1002,14 +1002,17 @@ export const ExecutiveKpiDashboard: React.FC<ExecutiveKpiDashboardProps> = ({
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                        <img 
-                          src={vol.photo || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop"} 
-                          alt={vol.name} 
-                          className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/30 bg-white"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop";
-                          }}
-                        />
+                        {vol.photo && !vol.photo.includes("unsplash.com") && !vol.photo.includes("placeholder") ? (
+                          <img 
+                            src={vol.photo} 
+                            alt={vol.name} 
+                            className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/30 bg-white"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 ring-2 ring-emerald-500/30">
+                            <User className="w-5 h-5 opacity-70" />
+                          </div>
+                        )}
                         <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-600 text-white font-mono text-[9px] flex items-center justify-center font-bold">
                           {idx + 1}
                         </span>

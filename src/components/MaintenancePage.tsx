@@ -20,7 +20,7 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({
   message = "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
   associationName = "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
   licenseNumber = "1000888600",
-  logoUrl = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+  logoUrl = "/logo.png",
   onOpenLogin,
   onRefresh,
   isDark = false,

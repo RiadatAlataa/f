@@ -35,7 +35,7 @@ export const VolunteerMonthlyReportModal: React.FC<VolunteerMonthlyReportModalPr
   evaluations = [],
   teams = [],
   departments = [],
-  logoUrl = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=160&h=160&fit=crop"
+  logoUrl = "/logo.png"
 }) => {
   const reportRef = useRef<HTMLDivElement>(null);
   const currentDate = new Date();

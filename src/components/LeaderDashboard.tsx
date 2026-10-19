@@ -255,7 +255,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   const [oppGoal2, setOppGoal2] = useState("");
   const [oppGoal3, setOppGoal3] = useState("");
   const [oppDescription, setOppDescription] = useState("");
-  const [oppImageUrl, setOppImageUrl] = useState("https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&fit=crop");
+  const [oppImageUrl, setOppImageUrl] = useState("");
   const [oppSuccessMsg, setOppSuccessMsg] = useState("");
 
   const handleOpenCreateOppModal = () => {
@@ -269,7 +269,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
     setOppGoal2("");
     setOppGoal3("");
     setOppDescription("");
-    setOppImageUrl("https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&fit=crop");
+    setOppImageUrl("");
     setOppModalError(null);
     setShowAddOppModal(true);
   };
@@ -285,7 +285,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
     setOppGoal2(opp.goals?.[1] || "");
     setOppGoal3(opp.goals?.[2] || "");
     setOppDescription(opp.description || "");
-    setOppImageUrl(opp.imageUrl || "https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&fit=crop");
+    setOppImageUrl((opp.imageUrl && !opp.imageUrl.includes("unsplash.com")) ? opp.imageUrl : "");
     setOppModalError(null);
     setShowAddOppModal(true);
   };
@@ -1522,7 +1522,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                   nationality: "سعودي",
                   jobTitle: `قائد فريق ${currentTeam.nameAr}`,
                   titleAr: `قائد فريق ${currentTeam.nameAr}`,
-                  photo: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=300&q=80"
+                  photo: ""
                 }}
                 category="leader"
                 teams={[currentTeam]}
@@ -1738,12 +1738,18 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                             className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50 hover:bg-white hover:border-emerald-300 transition-all flex flex-col justify-between space-y-3 shadow-2xs"
                           >
                             <div className="flex items-center gap-3">
-                              <img
-                                src={member.photo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop"}
-                                alt={member.name}
-                                className="w-12 h-12 rounded-full object-cover border border-neutral-200 shrink-0"
-                                referrerPolicy="no-referrer"
-                              />
+                              {member.photo && !member.photo.includes("unsplash.com") && !member.photo.includes("placeholder") ? (
+                                <img
+                                  src={member.photo}
+                                  alt={member.name}
+                                  className="w-12 h-12 rounded-full object-cover border border-neutral-200 shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-neutral-500 border border-neutral-200 shrink-0">
+                                  <User className="w-6 h-6 opacity-70" />
+                                </div>
+                              )}
                               <div className="min-w-0 flex-1">
                                 <h5 className="text-xs font-black text-neutral-900 truncate">{member.name}</h5>
                                 <div className="text-[11px] text-neutral-500 flex items-center gap-2 mt-0.5">

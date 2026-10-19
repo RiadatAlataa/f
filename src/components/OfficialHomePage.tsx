@@ -1495,7 +1495,7 @@ export function OfficialHomePage({
       <section className="relative w-full min-h-[360px] sm:min-h-[500px] lg:min-h-[580px] bg-gradient-to-b from-slate-900 via-emerald-950 to-neutral-900 text-white text-center overflow-hidden flex flex-col">
         <HeroSlider
           slides={heroSlides && heroSlides.length > 0 ? heroSlides : (settings?.heroSlides || [])}
-          fallbackImageUrl={settings?.videoCoverUrl || "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop"}
+          fallbackImageUrl={settings?.videoCoverUrl || ""}
           autoSlideInterval={1000}
           lang={lang}
         >

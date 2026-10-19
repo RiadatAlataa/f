@@ -3,7 +3,7 @@ import {
   Globe, Plus, Edit3, Trash2, ArrowUp, ArrowDown, Eye, EyeOff,
   Star, ExternalLink, Image as ImageIcon, Upload, CheckCircle2,
   AlertTriangle, Search, Filter, ShieldCheck, RefreshCw, X,
-  Layers, Award, HeartHandshake, Sparkles, Link2, GripVertical
+  Layers, Award, HeartHandshake, Sparkles, Link2, GripVertical, Building2
 } from "lucide-react";
 import { PartnerItem } from "../types";
 import { getCategoryBadgeStyle } from "./PartnersSlider";
@@ -517,14 +517,23 @@ export const PartnersManagementPanel: React.FC<PartnersManagementPanelProps> = (
                 {/* Partner Logo & Information */}
                 <div className="space-y-3">
                   <div className="w-full h-28 bg-slate-50 dark:bg-slate-950 rounded-2xl p-3 flex items-center justify-center border border-slate-100 dark:border-slate-800/80 shadow-inner overflow-hidden">
-                    <img
-                      src={partner.logo}
-                      alt={partner.nameAr}
-                      className="max-h-full max-w-full object-contain filter drop-shadow-2xs"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=200&h=200&fit=crop";
-                      }}
-                    />
+                    {partner.logo && !partner.logo.includes("unsplash.com") && !partner.logo.includes("placeholder") ? (
+                      <img
+                        src={partner.logo}
+                        alt={partner.nameAr}
+                        className="max-h-full max-w-full object-contain filter drop-shadow-2xs"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                          const fb = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                          if (fb) fb.style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+                    <div className={`items-center justify-center text-slate-400 ${
+                      partner.logo && !partner.logo.includes("unsplash.com") && !partner.logo.includes("placeholder") ? "hidden" : "flex"
+                    }`}>
+                      <Building2 className="w-8 h-8 opacity-60" />
+                    </div>
                   </div>
 
                   <div>

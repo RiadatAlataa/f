@@ -57,9 +57,9 @@ import { SiteStatusManager } from "./SiteStatusManager";
 import { AdminStaffManager } from "./AdminStaffManager";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
-  logoUrl: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+  logoUrl: "/logo.png",
   videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
-  videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+  videoCoverUrl: "",
   associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
   associationNameEn: "Reyadat Al-Ata Association",
   licenseNumber: "1000888600",
@@ -1253,7 +1253,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 id: "admin-1",
                 name: "المدير التنفيذي",
                 role: "الإدارة العليا",
-                avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&h=120&fit=crop"
+                avatar: ""
               }}
               teams={data.teams}
               volunteers={data.volunteers}
