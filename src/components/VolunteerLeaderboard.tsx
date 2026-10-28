@@ -1,283 +1,505 @@
-import React, { useState } from "react";
-import { Award, Trophy, Medal, Star, Flame, Users, Sparkles, Clock, CheckCircle2, Shield, User } from "lucide-react";
-import { Volunteer, VolunteerTeam, Department, AttendanceRecord } from "../types";
-
-const isRealPhoto = (url?: string): boolean => {
-  if (!url || typeof url !== 'string') return false;
-  const trimmed = url.trim();
-  return trimmed !== '' && !trimmed.includes('unsplash.com') && !trimmed.includes('placeholder') && !trimmed.includes('via.placeholder');
-};
+import React, { useState, useMemo } from "react";
+import { 
+  Trophy, 
+  Medal, 
+  Award, 
+  Users, 
+  Sparkles, 
+  Clock, 
+  CheckCircle2, 
+  Shield, 
+  User,
+  Flame,
+  Star,
+  ChevronDown,
+  Building2
+} from "lucide-react";
+import { Volunteer, VolunteerTeam, Department, AttendanceRecord, Initiative } from "../types";
 
 interface VolunteerLeaderboardProps {
   volunteers: Volunteer[];
   teams?: VolunteerTeam[];
   departments?: Department[];
   attendanceRecords?: AttendanceRecord[];
+  initiatives?: Initiative[];
   title?: string;
   subtitle?: string;
   compact?: boolean;
 }
 
 export const VolunteerLeaderboard: React.FC<VolunteerLeaderboardProps> = ({
-  volunteers,
+  volunteers = [],
   teams = [],
   departments = [],
   attendanceRecords = [],
-  title = "صدارة المتطوعين - لوحة الشرف والعطاء",
-  subtitle = "تكريم المتطوعين الأكثر إنجازاً وعطاءً في جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+  initiatives = [],
+  title = "لوحة الصدارة والتميز الميداني",
+  subtitle = "تكريم المتطوعين والفرق الأكثر عطاءً وإنجازاً في جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
   compact = false
 }) => {
-  const [filterPeriod, setFilterPeriod] = useState<'all' | 'hours' | 'points'>('hours');
+  const [activeTab, setActiveTab] = useState<'volunteers' | 'teams'>('volunteers');
+  const [metricFilter, setMetricFilter] = useState<'points' | 'hours'>('points');
 
-  // Calculate stats per volunteer
-  const processedVolunteers = volunteers.map(v => {
-    const vAttendance = attendanceRecords.filter(a => a.volunteerId === v.id && (a.status === 'full' || a.status === 'late'));
-    const totalHours = v.volunteerHours || (vAttendance.length * 4) || (v.points * 2);
-    const completedInits = v.completedInitiativesCount || vAttendance.length || Math.floor(v.points / 3);
-    const team = teams.find(t => t.id === v.teamId);
-    const dept = departments.find(d => d.id === v.departmentId);
+  // 1. Process Volunteers with Strict Attendance-Based Points Engine
+  const processedVolunteers = useMemo(() => {
+    return volunteers.map((v) => {
+      // Find all unique attendance records for this volunteer (deduplicate by initiativeId)
+      const vRecords = attendanceRecords.filter((a) => a.volunteerId === v.id);
+      const uniqueInitiativesSeen = new Set<string>();
+      let attendanceCalculatedPoints = 0;
+      let validAttendanceCount = 0;
 
-    return {
-      ...v,
-      totalHours,
-      completedInits,
-      teamName: team ? team.nameAr : "فريق عام",
-      deptName: dept ? dept.nameAr : "إدارة التطوع"
-    };
-  });
+      vRecords.forEach((rec) => {
+        const initKey = rec.initiativeId || rec.id;
+        if (!uniqueInitiativesSeen.has(initKey)) {
+          uniqueInitiativesSeen.add(initKey);
 
-  // Sort based on period/metric
-  const sortedVolunteers = [...processedVolunteers].sort((a, b) => {
-    if (filterPeriod === 'hours') {
-      return b.totalHours - a.totalHours;
-    }
-    return b.points - a.points;
-  });
+          // Points policy:
+          // حاضر (full / present): 3 points
+          // متأخر (late): 2 points
+          // بعذر (excused): 1 point
+          // غائب / ملغى (absent / cancelled): 0 points
+          if (rec.status === 'full' || (rec.status as any) === 'present') {
+            attendanceCalculatedPoints += 3;
+            validAttendanceCount += 1;
+          } else if (rec.status === 'late') {
+            attendanceCalculatedPoints += 2;
+            validAttendanceCount += 1;
+          } else if (rec.status === 'excused') {
+            attendanceCalculatedPoints += 1;
+          }
+        }
+      });
 
-  const top3 = sortedVolunteers.slice(0, 3);
-  const rest = sortedVolunteers.slice(3, 15);
+      // Maintain established base points if greater (or add calculated)
+      const finalPoints = Math.max(Number(v.points) || 0, attendanceCalculatedPoints);
+      const totalHours = Number(v.hours) || Number(v.volunteerHours) || (validAttendanceCount * 4) || (finalPoints * 2);
+      const team = teams.find((t) => t.id === v.teamId);
+      const dept = departments.find((d) => d.id === v.departmentId);
+
+      return {
+        ...v,
+        effectivePoints: finalPoints,
+        effectiveHours: totalHours,
+        initiativesAttendedCount: uniqueInitiativesSeen.size || Number(v.initiativesCount) || Math.floor(finalPoints / 3),
+        teamName: team ? team.nameAr : "مستقل",
+        teamLogo: team?.logoUrl,
+        deptName: dept ? dept.nameAr : "إدارة التطوع"
+      };
+    });
+  }, [volunteers, attendanceRecords, teams, departments]);
+
+  // Sort Volunteers
+  const sortedVolunteers = useMemo(() => {
+    return [...processedVolunteers].sort((a, b) => {
+      if (metricFilter === 'hours') {
+        return b.effectiveHours - a.effectiveHours;
+      }
+      return b.effectivePoints - a.effectivePoints;
+    });
+  }, [processedVolunteers, metricFilter]);
+
+  const top3Volunteers = sortedVolunteers.slice(0, 3);
+  const restVolunteers = sortedVolunteers.slice(3, 20);
+
+  // 2. Process Teams
+  const processedTeams = useMemo(() => {
+    return teams.map((team) => {
+      // Find members of this team
+      const teamVolunteers = processedVolunteers.filter((v) => v.teamId === team.id);
+      const memberCount = teamVolunteers.length;
+      
+      // Calculate team initiatives count
+      const teamInitiatives = initiatives.filter((i) => i.teamId === team.id);
+      const initsCount = teamInitiatives.length || Number(team.initiativesCount) || 5;
+
+      // Sum points from members + team initiatives
+      const membersPointsSum = teamVolunteers.reduce((sum, v) => sum + v.effectivePoints, 0);
+      const baseTeamPoints = Number(team.points) || 0;
+      const totalTeamPoints = Math.max(baseTeamPoints, membersPointsSum);
+
+      return {
+        ...team,
+        memberCount,
+        initiativesCount: initsCount,
+        totalPoints: totalTeamPoints,
+        leaderName: team.leaderName || "قائد الفريق"
+      };
+    });
+  }, [teams, processedVolunteers, initiatives]);
+
+  const sortedTeams = useMemo(() => {
+    return [...processedTeams].sort((a, b) => b.totalPoints - a.totalPoints);
+  }, [processedTeams]);
+
+  const top3Teams = sortedTeams.slice(0, 3);
+  const restTeams = sortedTeams.slice(3);
 
   return (
     <div className="space-y-6 text-right" dir="rtl">
-      {/* Header Banner */}
+      {/* 1. Header Banner */}
       {!compact && (
-        <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-emerald-700 p-6 rounded-3xl text-white shadow-lg relative overflow-hidden">
-          <div className="absolute left-0 bottom-0 top-0 w-1/2 bg-white/5 -skew-x-12 pointer-events-none" />
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 relative z-10">
+        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-6 rounded-3xl text-white shadow-xl relative overflow-hidden border border-blue-900/40">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
             <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 bg-white/15 px-3 py-1 rounded-full text-[11px] font-bold backdrop-blur-md border border-white/10">
-                <Trophy className="w-4 h-4 text-amber-200" />
-                <span>لوحة الشرف والتميز الميداني</span>
+              <div className="inline-flex items-center gap-2 bg-blue-500/20 text-blue-300 border border-blue-400/30 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>لوحة الشرف والتنافس الميداني</span>
               </div>
-              <h2 className="text-xl font-black">{title}</h2>
-              <p className="text-xs text-amber-100 max-w-xl leading-relaxed">{subtitle}</p>
+              <h2 className="text-xl md:text-2xl font-black">{title}</h2>
+              <p className="text-xs text-slate-300 max-w-xl leading-relaxed">{subtitle}</p>
             </div>
 
-            {/* Filter Pills */}
-            <div className="flex bg-black/20 p-1 rounded-2xl backdrop-blur-md border border-white/10">
+            {/* Navigation Tabs (صدارة المتطوعين / صدارة الفرق) */}
+            <div className="flex bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 shadow-inner">
               <button
-                onClick={() => setFilterPeriod('hours')}
-                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterPeriod === 'hours' ? 'bg-white text-amber-900 shadow-sm' : 'text-white/80 hover:text-white'}`}
+                type="button"
+                onClick={() => setActiveTab('volunteers')}
+                className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  activeTab === 'volunteers'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 font-black'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
-                حسب الساعات التطوعية
+                <User className="w-3.5 h-3.5" />
+                <span>صدارة المتطوعين</span>
               </button>
+
               <button
-                onClick={() => setFilterPeriod('points')}
-                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterPeriod === 'points' ? 'bg-white text-amber-900 shadow-sm' : 'text-white/80 hover:text-white'}`}
+                type="button"
+                onClick={() => setActiveTab('teams')}
+                className={`px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  activeTab === 'teams'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 font-black'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
-                حسب نقاط التميز
+                <Users className="w-3.5 h-3.5" />
+                <span>صدارة الفرق</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Podium for Top 3 Winners */}
-      {top3.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-2">
-          
-          {/* 🥈 Rank #2 Silver */}
-          {top3[1] && (
-            <div className="bg-gradient-to-b from-slate-50 to-slate-100/90 dark:from-slate-900 dark:to-slate-950 p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md text-center space-y-3 relative order-2 md:order-1">
-              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-slate-400 text-white font-black text-xs px-3 py-0.5 rounded-full shadow-xs flex items-center gap-1">
-                <Medal className="w-3.5 h-3.5 text-slate-100" />
-                <span>المركز الثاني 🥈</span>
-              </div>
+      {/* 2. Metric Selector Bar (For Volunteers) */}
+      {activeTab === 'volunteers' && (
+        <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>نظام النقاط المعتمد: (حاضر: 3 نقاط • متأخر: نقطتان • بعذر: نقطة واحدة)</span>
+          </div>
 
-              <div className="pt-2">
-                {isRealPhoto(top3[1].photo) ? (
-                  <img
-                    src={top3[1].photo}
-                    alt={top3[1].name}
-                    className="w-16 h-16 rounded-full object-cover mx-auto border-3 border-slate-300 shadow-sm"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 mx-auto border-3 border-slate-300 shadow-sm">
-                    <User className="w-8 h-8 opacity-75" />
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-xs font-black text-neutral-800 dark:text-neutral-100">{top3[1].name}</h3>
-                <p className="text-[10px] text-neutral-500">{top3[1].teamName} • {top3[1].titleAr || "متطوع فاعل"}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-center">
-                <div className="bg-white dark:bg-slate-800 p-2 rounded-xl">
-                  <span className="text-[9px] text-neutral-400 block font-bold">الساعات</span>
-                  <strong className="text-xs font-black text-slate-700 dark:text-slate-200 font-mono">{top3[1].totalHours} ساعة</strong>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-2 rounded-xl">
-                  <span className="text-[9px] text-neutral-400 block font-bold">النقاط</span>
-                  <strong className="text-xs font-black text-amber-600 font-mono">{top3[1].points} pt</strong>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 🥇 Rank #1 Gold (Highest Podium) */}
-          {top3[0] && (
-            <div className="bg-gradient-to-b from-amber-50 via-amber-100/40 to-amber-50 dark:from-amber-950/60 dark:to-neutral-900 p-6 rounded-3xl border-3 border-amber-400 shadow-xl text-center space-y-3.5 relative order-1 md:order-2 transform md:-translate-y-2">
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-white font-black text-xs px-4 py-1 rounded-full shadow-md flex items-center gap-1.5 animate-pulse">
-                <Trophy className="w-4 h-4 text-amber-200" />
-                <span>فرس الرهان - المركز الأول 🥇</span>
-              </div>
-
-              <div className="pt-2">
-                <div className="relative inline-block">
-                  {isRealPhoto(top3[0].photo) ? (
-                    <img
-                      src={top3[0].photo}
-                      alt={top3[0].name}
-                      className="w-20 h-20 rounded-full object-cover mx-auto border-4 border-amber-400 shadow-md"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-950 flex items-center justify-center text-amber-700 dark:text-amber-400 mx-auto border-4 border-amber-400 shadow-md">
-                      <User className="w-10 h-10 opacity-75" />
-                    </div>
-                  )}
-                  <span className="absolute -bottom-1 -right-1 bg-amber-500 text-white text-xs p-1 rounded-full shadow-xs">
-                    👑
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-black text-amber-950 dark:text-amber-100">{top3[0].name}</h3>
-                <p className="text-[11px] text-amber-800/80 dark:text-amber-300 font-bold">{top3[0].teamName} • {top3[0].titleAr || "قائد عطاء متميز"}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-amber-200/60 dark:border-amber-800 text-center">
-                <div className="bg-white/80 dark:bg-neutral-800 p-2.5 rounded-xl border border-amber-200/50">
-                  <span className="text-[9.5px] text-amber-700 dark:text-amber-300 block font-bold">إجمالي الساعات</span>
-                  <strong className="text-sm font-black text-emerald-700 dark:text-emerald-400 font-mono">{top3[0].totalHours} ساعة</strong>
-                </div>
-                <div className="bg-white/80 dark:bg-neutral-800 p-2.5 rounded-xl border border-amber-200/50">
-                  <span className="text-[9.5px] text-amber-700 dark:text-amber-300 block font-bold">نقاط العضوية</span>
-                  <strong className="text-sm font-black text-amber-600 font-mono">{top3[0].points} pt</strong>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 🥉 Rank #3 Bronze */}
-          {top3[2] && (
-            <div className="bg-gradient-to-b from-amber-900/5 to-amber-900/10 dark:from-neutral-900 dark:to-neutral-950 p-5 rounded-2xl border-2 border-amber-700/40 shadow-md text-center space-y-3 relative order-3">
-              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-700 text-white font-black text-xs px-3 py-0.5 rounded-full shadow-xs flex items-center gap-1">
-                <Medal className="w-3.5 h-3.5 text-amber-200" />
-                <span>المركز الثالث 🥉</span>
-              </div>
-
-              <div className="pt-2">
-                {isRealPhoto(top3[2].photo) ? (
-                  <img
-                    src={top3[2].photo}
-                    alt={top3[2].name}
-                    className="w-16 h-16 rounded-full object-cover mx-auto border-3 border-amber-700/50 shadow-sm"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-full bg-amber-100/60 dark:bg-neutral-800 flex items-center justify-center text-amber-800 dark:text-amber-300 mx-auto border-3 border-amber-700/50 shadow-sm">
-                    <User className="w-8 h-8 opacity-75" />
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-xs font-black text-neutral-800 dark:text-neutral-100">{top3[2].name}</h3>
-                <p className="text-[10px] text-neutral-500">{top3[2].teamName} • {top3[2].titleAr || "متطوع نشط"}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-amber-200 dark:border-neutral-800 text-center">
-                <div className="bg-white dark:bg-neutral-800 p-2 rounded-xl">
-                  <span className="text-[9px] text-neutral-400 block font-bold">الساعات</span>
-                  <strong className="text-xs font-black text-neutral-700 dark:text-neutral-200 font-mono">{top3[2].totalHours} ساعة</strong>
-                </div>
-                <div className="bg-white dark:bg-neutral-800 p-2 rounded-xl">
-                  <span className="text-[9px] text-neutral-400 block font-bold">النقاط</span>
-                  <strong className="text-xs font-black text-amber-600 font-mono">{top3[2].points} pt</strong>
-                </div>
-              </div>
-            </div>
-          )}
-
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setMetricFilter('points')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                metricFilter === 'points'
+                  ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+              }`}
+            >
+              الترتيب بالنقاط
+            </button>
+            <button
+              onClick={() => setMetricFilter('hours')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                metricFilter === 'hours'
+                  ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+              }`}
+            >
+              الترتيب بالساعات
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Rest of Ranked Volunteers Table / List */}
-      {rest.length > 0 && (
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-150 dark:border-neutral-800 p-4 shadow-2xs space-y-3">
-          <h3 className="text-xs font-black text-neutral-700 dark:text-neutral-200 flex items-center gap-1.5 pb-2 border-b border-neutral-100 dark:border-neutral-800">
-            <Flame className="w-4 h-4 text-amber-500" />
-            <span>نخبة المتطوعين والمتطوعات الأكثر فاعلية:</span>
-          </h3>
+      {/* ------------------------------------------------------------- */}
+      {/* SECTION A: VOLUNTEERS LEADERBOARD */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'volunteers' && (
+        <div className="space-y-6">
+          {/* Top 3 Podium Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-4">
+            
+            {/* 🥈 Rank #2 Silver */}
+            {top3Volunteers[1] && (
+              <div className="order-2 md:order-1 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-3xl p-5 shadow-lg relative flex flex-col items-center text-center hover:scale-[1.02] transition-transform">
+                <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black text-sm flex items-center justify-center border-2 border-slate-300 absolute -top-4 shadow-sm">
+                  🥈 2
+                </div>
 
-          <div className="space-y-2">
-            {rest.map((v, idx) => (
-              <div
-                key={v.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 hover:bg-emerald-50/50 transition-all border border-neutral-100 dark:border-neutral-700"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="w-7 h-7 bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 font-mono font-bold text-xs rounded-full flex items-center justify-center shrink-0">
-                    #{idx + 4}
-                  </span>
-
-                  {isRealPhoto(v.photo) ? (
-                    <img
-                      src={v.photo}
-                      alt={v.name}
-                      className="w-10 h-10 rounded-full object-cover border border-neutral-200 dark:border-neutral-700"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-neutral-500 border border-neutral-200 dark:border-neutral-700">
-                      <User className="w-5 h-5 opacity-70" />
-                    </div>
-                  )}
-
-                  <div>
-                    <h4 className="text-xs font-black text-neutral-800 dark:text-neutral-100">{v.name}</h4>
-                    <p className="text-[10px] text-neutral-500">{v.teamName} • {v.titleAr || "متطوع متميز"}</p>
+                <div className="relative mt-2 mb-3">
+                  <div className="w-20 h-20 rounded-full border-4 border-slate-300 dark:border-slate-700 overflow-hidden shadow-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    {top3Volunteers[1].profileImage || top3Volunteers[1].photo ? (
+                      <img
+                        src={top3Volunteers[1].profileImage || top3Volunteers[1].photo}
+                        alt={top3Volunteers[1].name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-2xl font-black text-slate-500">
+                        {top3Volunteers[1].name.charAt(0)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-left">
+                <h4 className="font-bold text-slate-900 dark:text-white text-sm line-clamp-1">{top3Volunteers[1].name}</h4>
+                <span className="text-xs text-blue-600 dark:text-blue-400 font-bold block mt-0.5">{top3Volunteers[1].teamName}</span>
+
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 w-full flex justify-around text-xs">
                   <div>
-                    <span className="text-[9.5px] text-neutral-400 block font-bold">الساعات</span>
-                    <strong className="text-xs font-black text-emerald-700 dark:text-emerald-400 font-mono">{v.totalHours} س</strong>
+                    <span className="text-[10px] text-slate-400 block">النقاط</span>
+                    <strong className="font-mono text-slate-900 dark:text-white text-sm">{top3Volunteers[1].effectivePoints}</strong>
                   </div>
                   <div>
-                    <span className="text-[9.5px] text-neutral-400 block font-bold">النقاط</span>
-                    <strong className="text-xs font-black text-amber-600 font-mono">{v.points} pt</strong>
+                    <span className="text-[10px] text-slate-400 block">الساعات</span>
+                    <strong className="font-mono text-slate-900 dark:text-white text-sm">{top3Volunteers[1].effectiveHours} س</strong>
                   </div>
                 </div>
               </div>
-            ))}
+            )}
+
+            {/* 🥇 Rank #1 Gold (Elevated Center) */}
+            {top3Volunteers[0] && (
+              <div className="order-1 md:order-2 bg-gradient-to-b from-amber-50 to-white dark:from-slate-800 dark:to-slate-900 border-2 border-amber-400 dark:border-amber-500 rounded-3xl p-6 shadow-xl relative flex flex-col items-center text-center -translate-y-2 hover:scale-[1.02] transition-transform">
+                <div className="w-11 h-11 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-black text-base flex items-center justify-center border-2 border-amber-300 absolute -top-5 shadow-md">
+                  🥇 1
+                </div>
+
+                <div className="relative mt-2 mb-3">
+                  <div className="w-24 h-24 rounded-full border-4 border-amber-400 shadow-xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    {top3Volunteers[0].profileImage || top3Volunteers[0].photo ? (
+                      <img
+                        src={top3Volunteers[0].profileImage || top3Volunteers[0].photo}
+                        alt={top3Volunteers[0].name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-3xl font-black text-amber-600">
+                        {top3Volunteers[0].name.charAt(0)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 bg-amber-500 text-white rounded-full p-1 shadow-sm">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <span className="text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-950/80 px-2.5 py-0.5 rounded-full mb-1">
+                  فارس الميدان المتصدر
+                </span>
+                <h4 className="font-black text-slate-900 dark:text-white text-base line-clamp-1">{top3Volunteers[0].name}</h4>
+                <span className="text-xs text-blue-600 dark:text-blue-400 font-bold block mt-0.5">{top3Volunteers[0].teamName}</span>
+
+                <div className="mt-4 pt-3 border-t border-amber-100 dark:border-slate-800 w-full flex justify-around text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">مجموع النقاط</span>
+                    <strong className="font-mono text-amber-600 dark:text-amber-400 text-base font-black">{top3Volunteers[0].effectivePoints}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">الساعات المعتمدة</span>
+                    <strong className="font-mono text-slate-900 dark:text-white text-base font-black">{top3Volunteers[0].effectiveHours} س</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 🥉 Rank #3 Bronze */}
+            {top3Volunteers[2] && (
+              <div className="order-3 md:order-3 bg-white dark:bg-slate-900 border-2 border-amber-700/40 dark:border-amber-700/60 rounded-3xl p-5 shadow-lg relative flex flex-col items-center text-center hover:scale-[1.02] transition-transform">
+                <div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-300 font-black text-sm flex items-center justify-center border-2 border-amber-700/40 absolute -top-4 shadow-sm">
+                  🥉 3
+                </div>
+
+                <div className="relative mt-2 mb-3">
+                  <div className="w-20 h-20 rounded-full border-4 border-amber-700/40 overflow-hidden shadow-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    {top3Volunteers[2].profileImage || top3Volunteers[2].photo ? (
+                      <img
+                        src={top3Volunteers[2].profileImage || top3Volunteers[2].photo}
+                        alt={top3Volunteers[2].name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-2xl font-black text-slate-500">
+                        {top3Volunteers[2].name.charAt(0)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <h4 className="font-bold text-slate-900 dark:text-white text-sm line-clamp-1">{top3Volunteers[2].name}</h4>
+                <span className="text-xs text-blue-600 dark:text-blue-400 font-bold block mt-0.5">{top3Volunteers[2].teamName}</span>
+
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 w-full flex justify-around text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">النقاط</span>
+                    <strong className="font-mono text-slate-900 dark:text-white text-sm">{top3Volunteers[2].effectivePoints}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">الساعات</span>
+                    <strong className="font-mono text-slate-900 dark:text-white text-sm">{top3Volunteers[2].effectiveHours} س</strong>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Rest of the Ranks Table */}
+          {restVolunteers.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-900 dark:text-white">بقية ترتيب المتطوعين في لوحة الشرف</h4>
+                <span className="text-[11px] text-slate-400 font-mono">المراكز من 4 حتى {restVolunteers.length + 3}</span>
+              </div>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {restVolunteers.map((vol, index) => {
+                  const rank = index + 4;
+                  return (
+                    <div key={vol.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <span className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                          {rank}
+                        </span>
+
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0">
+                          {vol.profileImage || vol.photo ? (
+                            <img src={vol.profileImage || vol.photo} alt={vol.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-500">
+                              {vol.name.charAt(0)}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <strong className="text-xs font-bold text-slate-900 dark:text-white block">{vol.name}</strong>
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">{vol.teamName}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-6 text-xs">
+                        <div className="text-left">
+                          <span className="text-[10px] text-slate-400 block">الساعات</span>
+                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{vol.effectiveHours} س</span>
+                        </div>
+                        <div className="text-left min-w-16">
+                          <span className="text-[10px] text-slate-400 block">النقاط</span>
+                          <strong className="font-mono text-sm font-black text-indigo-600 dark:text-indigo-400">{vol.effectivePoints}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* SECTION B: TEAMS LEADERBOARD */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'teams' && (
+        <div className="space-y-6">
+          {/* Top 3 Teams Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            {top3Teams.map((team, idx) => {
+              const medals = ['🥇 المركز الأول', '🥈 المركز الثاني', '🥉 المركز الثالث'];
+              const borders = ['border-amber-400 dark:border-amber-500', 'border-slate-300 dark:border-slate-700', 'border-amber-700/50'];
+              return (
+                <div
+                  key={team.id}
+                  className={`bg-white dark:bg-slate-900 border-2 ${borders[idx]} rounded-3xl p-5 shadow-lg relative flex flex-col justify-between hover:scale-[1.01] transition-transform`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm bg-slate-50 dark:bg-slate-800 shrink-0">
+                          {team.logoUrl ? (
+                            <img src={team.logoUrl} alt={team.nameAr} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center font-black text-blue-600 text-lg">
+                              {team.nameAr.charAt(0)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-amber-600 block">{medals[idx]}</span>
+                          <h4 className="font-black text-slate-900 dark:text-white text-base">{team.nameAr}</h4>
+                          <span className="text-xs text-slate-500">القائد: {team.leaderName}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl text-center text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">مجموع النقاط</span>
+                        <strong className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{team.totalPoints}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">المبادرات</span>
+                        <strong className="font-mono text-sm font-bold text-slate-700 dark:text-slate-300">{team.initiativesCount}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">الأعضاء</span>
+                        <strong className="font-mono text-sm font-bold text-slate-700 dark:text-slate-300">{team.memberCount}</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Rest of the Teams List */}
+          {restTeams.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-900 dark:text-white">بقية الفرق التطوعية</h4>
+                <span className="text-[11px] text-slate-400">ترتيب الفرق حسب مجموع النقاط والنشاط</span>
+              </div>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {restTeams.map((team, idx) => (
+                  <div key={team.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <span className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                        {idx + 4}
+                      </span>
+                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0">
+                        {team.logoUrl ? (
+                          <img src={team.logoUrl} alt={team.nameAr} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-500">
+                            {team.nameAr.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <strong className="text-xs font-bold text-slate-900 dark:text-white block">{team.nameAr}</strong>
+                        <span className="text-[11px] text-slate-500">القائد: {team.leaderName}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-6 text-xs">
+                      <div className="text-left">
+                        <span className="text-[10px] text-slate-400 block">المبادرات</span>
+                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{team.initiativesCount}</span>
+                      </div>
+                      <div className="text-left min-w-16">
+                        <span className="text-[10px] text-slate-400 block">مجموع النقاط</span>
+                        <strong className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{team.totalPoints}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

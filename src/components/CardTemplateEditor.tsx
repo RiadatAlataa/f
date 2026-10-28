@@ -69,6 +69,60 @@ const FONT_PRESETS = [
   { label: "آي بي إم (IBM Plex)", value: "IBM Plex Sans Arabic" }
 ];
 
+const DEFAULT_BACK_ELEMENTS: CardElementConfig[] = [
+  {
+    id: "back-qr",
+    type: "qrCode",
+    labelAr: "رمز QR للموقع والتحقق",
+    x: 50,
+    y: 34,
+    qrSize: 105,
+    visible: true
+  },
+  {
+    id: "back-team-name",
+    type: "teamName",
+    labelAr: "اسم الفريق التطوعي",
+    x: 50,
+    y: 63,
+    fontSize: 16,
+    fontWeight: "bold",
+    fontFamily: "Cairo",
+    color: "#0f172a",
+    textAlign: "center",
+    visible: true
+  },
+  {
+    id: "back-membership",
+    type: "membershipNumber",
+    labelAr: "رقم الملف والعضوية",
+    x: 50,
+    y: 74,
+    fontSize: 13,
+    fontWeight: "bold",
+    fontFamily: "Cairo",
+    color: "#0754C7",
+    textAlign: "center",
+    showLabelPrefix: true,
+    labelPrefix: "رقم الملف:",
+    visible: true
+  },
+  {
+    id: "back-terms",
+    type: "customText",
+    labelAr: "تعليمات واستخدام البطاقة",
+    customTextValue: "هذه البطاقة وثيقة رسمية صادرة عن جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص 1000888600. يرجى إبرازها عند الطلب.",
+    x: 50,
+    y: 86,
+    fontSize: 10,
+    fontWeight: "normal",
+    fontFamily: "Cairo",
+    color: "#475569",
+    textAlign: "center",
+    visible: true
+  }
+];
+
 const DraggableComponent = Draggable as any;
 
 // Helper to create safe DOM node ref for each draggable item to satisfy React 18/19 without findDOMNode
@@ -264,8 +318,17 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
 }) => {
   const [template, setTemplate] = useState<VolunteerCardTemplate>(() => {
     // Clone template deeply to prevent direct mutations
-    return JSON.parse(JSON.stringify(initialTemplate));
+    const cloned = JSON.parse(JSON.stringify(initialTemplate));
+    if (!cloned.backElements || cloned.backElements.length === 0) {
+      cloned.backElements = JSON.parse(JSON.stringify(DEFAULT_BACK_ELEMENTS));
+    }
+    if (cloned.enableBackFace === undefined) {
+      cloned.enableBackFace = true;
+    }
+    return cloned;
   });
+
+  const [faceMode, setFaceMode] = useState<'front' | 'back'>('front');
 
   const [selectedElementId, setSelectedElementId] = useState<string | null>(() => {
     return initialTemplate.elements?.[0]?.id || null;
@@ -298,9 +361,9 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
-  // Generate sample QR code
+  // Generate sample QR code pointing to official website
   useEffect(() => {
-    QRCode.toDataURL("https://reyadat-alata.org.sa/verify-card?sample=1", {
+    QRCode.toDataURL("https://www.riadataleata.com", {
       width: 200,
       margin: 1,
       color: { dark: "#0f172a", light: "#ffffff" }
@@ -318,47 +381,104 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
   const displayWidth = Math.min(containerWidth, 856);
   const displayHeight = Math.round(displayWidth * aspectRatio);
 
+  // Active elements and background based on faceMode
+  const activeElements = faceMode === 'front'
+    ? (template.elements || [])
+    : (template.backElements && template.backElements.length > 0 ? template.backElements : DEFAULT_BACK_ELEMENTS);
+
+  const currentBgUrl = faceMode === 'front'
+    ? template.backgroundUrl
+    : (template.backBackgroundUrl || template.backgroundUrl);
+
   // Selected element helper
-  const selectedElement = template.elements.find((e) => e.id === selectedElementId) || null;
+  const selectedElement = activeElements.find((e) => e.id === selectedElementId) || null;
 
   // Update specific element properties
   const updateSelectedElement = (updates: Partial<CardElementConfig>) => {
     if (!selectedElementId) return;
-    setTemplate((prev) => ({
-      ...prev,
-      elements: prev.elements.map((el) => {
-        if (el.id === selectedElementId) {
-          return { ...el, ...updates };
-        }
-        return el;
-      })
-    }));
+    setTemplate((prev) => {
+      if (faceMode === 'front') {
+        return {
+          ...prev,
+          elements: (prev.elements || []).map((el) => {
+            if (el.id === selectedElementId) {
+              return { ...el, ...updates };
+            }
+            return el;
+          })
+        };
+      } else {
+        const base = prev.backElements && prev.backElements.length > 0 ? prev.backElements : DEFAULT_BACK_ELEMENTS;
+        return {
+          ...prev,
+          enableBackFace: true,
+          backElements: base.map((el) => {
+            if (el.id === selectedElementId) {
+              return { ...el, ...updates };
+            }
+            return el;
+          })
+        };
+      }
+    });
   };
 
   // Toggle element visibility
   const toggleElementVisibility = (elementId: string) => {
-    setTemplate((prev) => ({
-      ...prev,
-      elements: prev.elements.map((el) => {
-        if (el.id === elementId) {
-          return { ...el, visible: !el.visible };
-        }
-        return el;
-      })
-    }));
+    setTemplate((prev) => {
+      if (faceMode === 'front') {
+        return {
+          ...prev,
+          elements: (prev.elements || []).map((el) => {
+            if (el.id === elementId) {
+              return { ...el, visible: !el.visible };
+            }
+            return el;
+          })
+        };
+      } else {
+        const base = prev.backElements && prev.backElements.length > 0 ? prev.backElements : DEFAULT_BACK_ELEMENTS;
+        return {
+          ...prev,
+          enableBackFace: true,
+          backElements: base.map((el) => {
+            if (el.id === elementId) {
+              return { ...el, visible: !el.visible };
+            }
+            return el;
+          })
+        };
+      }
+    });
   };
 
   // Position update callback from Draggable (receives 0-100% relative coordinates)
   const handlePositionChange = (elementId: string, newXPercent: number, newYPercent: number) => {
-    setTemplate((prev) => ({
-      ...prev,
-      elements: prev.elements.map((el) => {
-        if (el.id === elementId) {
-          return { ...el, x: newXPercent, y: newYPercent };
-        }
-        return el;
-      })
-    }));
+    setTemplate((prev) => {
+      if (faceMode === 'front') {
+        return {
+          ...prev,
+          elements: (prev.elements || []).map((el) => {
+            if (el.id === elementId) {
+              return { ...el, x: newXPercent, y: newYPercent };
+            }
+            return el;
+          })
+        };
+      } else {
+        const base = prev.backElements && prev.backElements.length > 0 ? prev.backElements : DEFAULT_BACK_ELEMENTS;
+        return {
+          ...prev,
+          enableBackFace: true,
+          backElements: base.map((el) => {
+            if (el.id === elementId) {
+              return { ...el, x: newXPercent, y: newYPercent };
+            }
+            return el;
+          })
+        };
+      }
+    });
   };
 
   // Image Upload handler: strictly from device file (Phone/PC)
@@ -403,25 +523,45 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
             const storedUrl = data?.url || base64String;
 
             // 3. Update template with real dimensions and stored image path
-            setTemplate((prev) => ({
-              ...prev,
-              backgroundUrl: storedUrl,
-              width: naturalWidth,
-              height: naturalHeight,
-              orientation: isLandscape ? "landscape" : "portrait"
-            }));
+            setTemplate((prev) => {
+              if (faceMode === 'front') {
+                return {
+                  ...prev,
+                  backgroundUrl: storedUrl,
+                  width: naturalWidth,
+                  height: naturalHeight,
+                  orientation: isLandscape ? "landscape" : "portrait"
+                };
+              } else {
+                return {
+                  ...prev,
+                  backBackgroundUrl: storedUrl,
+                  enableBackFace: true
+                };
+              }
+            });
 
             setIsUploadingImage(false);
           } catch (uploadErr) {
             console.warn("Server upload failed, using local Data URL fallback:", uploadErr);
             // Fallback to base64 if network glitch
-            setTemplate((prev) => ({
-              ...prev,
-              backgroundUrl: base64String,
-              width: naturalWidth,
-              height: naturalHeight,
-              orientation: isLandscape ? "landscape" : "portrait"
-            }));
+            setTemplate((prev) => {
+              if (faceMode === 'front') {
+                return {
+                  ...prev,
+                  backgroundUrl: base64String,
+                  width: naturalWidth,
+                  height: naturalHeight,
+                  orientation: isLandscape ? "landscape" : "portrait"
+                };
+              } else {
+                return {
+                  ...prev,
+                  backBackgroundUrl: base64String,
+                  enableBackFace: true
+                };
+              }
+            });
             setIsUploadingImage(false);
           }
         };
@@ -617,33 +757,73 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
           {/* Canvas Card */}
           <div className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-6">
             
-            {/* Canvas Header Toolbar */}
+            {/* Canvas Header Toolbar with Face Switcher */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-neutral-100">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-bold text-neutral-700">منطقة التصميم التفاعلية المباشرة:</span>
+                <span className="text-xs font-bold text-neutral-700">منطقة التصميم التفاعلية:</span>
                 <span className="text-[11px] font-mono text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-md">
                   {originalWidth} × {originalHeight} px
                 </span>
               </div>
 
-              {/* Upload Image Button (No URL box!) */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingImage}
-                className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-xs flex items-center gap-2 cursor-pointer self-start sm:self-auto"
-              >
-                <Camera className="w-4 h-4" />
-                <span>{isUploadingImage ? "جارٍ رفع الصورة وقراءتها..." : "📷 رفع صورة القالب من جهازك"}</span>
-              </button>
+              {/* Face Switcher & Upload Image Button */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-neutral-100 p-0.5 rounded-xl border border-neutral-200 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFaceMode('front');
+                      setSelectedElementId(template.elements?.[0]?.id || null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      faceMode === 'front'
+                        ? "bg-white text-emerald-800 shadow-xs font-black"
+                        : "text-neutral-500 hover:text-neutral-800"
+                    }`}
+                  >
+                    الوجه الأمامي (Front)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFaceMode('back');
+                      const backEls = template.backElements && template.backElements.length > 0 ? template.backElements : DEFAULT_BACK_ELEMENTS;
+                      setSelectedElementId(backEls[0]?.id || null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      faceMode === 'back'
+                        ? "bg-white text-indigo-800 shadow-xs font-black"
+                        : "text-neutral-500 hover:text-neutral-800"
+                    }`}
+                  >
+                    الوجه الخلفي (Back)
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingImage}
+                  className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  title="رفع صورة الخلفية للوجه الحالي"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>{isUploadingImage ? "جارٍ الرفع..." : faceMode === 'front' ? "خلفية الأمام" : "خلفية الخلف"}</span>
+                </button>
+              </div>
             </div>
 
             {/* Hint Notice */}
-            <div className="mb-3 p-2.5 bg-emerald-50/70 border border-emerald-200/60 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
-              <Info className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>
-                <strong>طريقة العمل:</strong> انقر أو المس أي عنصر في البطاقة لتحديده، ثم اسحبه مباشرة إلى المكان المطلوب (يدعم اللمس على الجوال والماوس).
+            <div className="mb-3 p-2.5 bg-emerald-50/70 border border-emerald-200/60 rounded-xl text-[11px] text-emerald-900 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>أنت تعدّل حالياً:</strong> {faceMode === 'front' ? "الوجه الأمامي (بيانات المتطوع والصورة والباركود)" : "الوجه الخلفي (رمز QR لموقع الجمعية، اسم الفريق، والشروط)"}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                {faceMode === 'front' ? "وجه 1 / 2" : "وجه 2 / 2"}
               </span>
             </div>
 
@@ -654,7 +834,7 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
                 style={{
                   width: `${displayWidth}px`,
                   height: `${displayHeight}px`,
-                  backgroundImage: template.backgroundUrl ? `url(${template.backgroundUrl})` : undefined,
+                  backgroundImage: currentBgUrl ? `url(${currentBgUrl})` : undefined,
                   backgroundSize: "100% 100%",
                   backgroundPosition: "center",
                   backgroundRepeat: "no-repeat"
@@ -662,10 +842,10 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
                 className="relative rounded-2xl border-2 border-dashed border-emerald-400/80 shadow-md bg-neutral-100 overflow-hidden select-none"
               >
                 {/* Fallback pattern if no background image */}
-                {!template.backgroundUrl && (
+                {!currentBgUrl && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-400 p-6 text-center">
                     <Upload className="w-10 h-10 mb-2 text-neutral-300 animate-bounce" />
-                    <p className="text-xs font-bold">لا توجد صورة قالب مرفوعة حالياً</p>
+                    <p className="text-xs font-bold">لا توجد صورة خلفية لـ {faceMode === 'front' ? 'الوجه الأمامي' : 'الوجه الخلفي'}</p>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -677,7 +857,7 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
                 )}
 
                 {/* Render Visible Draggable Elements */}
-                {template.elements.map((elem) => {
+                {activeElements.map((elem) => {
                   if (!elem.visible) return null;
                   return (
                     <DraggableElementItem
@@ -701,7 +881,7 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
             <div className="mt-4 pt-3 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between text-[11px] text-neutral-500 gap-2">
               <span className="flex items-center gap-1.5 text-emerald-800 font-bold">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>أبعاد القالب متطابقة 100% مع أبعاد الصورة المرفوعة دون أي تشويه أو اقتصاص</span>
+                <span>أبعاد القالب متطابقة 100% مع أبعاد الصورة المرفوعة (CR80 القياسية)</span>
               </span>
               <span className="font-mono bg-neutral-100 px-2 py-0.5 rounded text-neutral-600">
                 نسبة العرض للارتفاع: {(originalWidth / originalHeight).toFixed(2)} : 1
@@ -713,12 +893,12 @@ export const CardTemplateEditor: React.FC<CardTemplateEditorProps> = ({
           {/* Quick Visibility Elements Chips Bar */}
           <div className="bg-white rounded-3xl border border-neutral-200 shadow-sm p-4">
             <h4 className="text-xs font-black text-neutral-800 mb-2 flex items-center justify-between">
-              <span>إظهار / إخفاء عناصر البطاقة:</span>
+              <span>إظهار / إخفاء عناصر {faceMode === 'front' ? "الوجه الأمامي" : "الوجه الخلفي"}:</span>
               <span className="text-[10px] text-neutral-400 font-normal">(انقر على العنصر لتفعيله أو إلغائه)</span>
             </h4>
             
             <div className="flex flex-wrap gap-2">
-              {template.elements.map((el) => {
+              {activeElements.map((el) => {
                 const isSelected = selectedElementId === el.id;
                 return (
                   <button

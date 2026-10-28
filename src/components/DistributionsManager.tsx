@@ -143,7 +143,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
     setFormDescription(dist.description || '');
     setFormDate(dist.distributionDate);
     setFormQty(dist.quantityPerBeneficiary);
-    setFormTargetAudience(dist.targetAudience);
+    setFormTargetAudience((dist.targetAudience as any) || 'all');
     setFormLocation(dist.location || 'مقر الجمعية الرئيسي بالعسيلة');
     setFormStatus(dist.status);
     setFormNotes(dist.notes || '');

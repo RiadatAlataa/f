@@ -4,6 +4,9 @@ import { Lock, ShieldAlert, ArrowRight, ArrowLeft } from "lucide-react";
 interface AccessDeniedCardProps {
   pageTitle?: string;
   departmentName?: string;
+  requiredPermission?: string;
+  userPermissions?: any;
+  allowedWorkspaces?: any;
   allowedPages?: { id: string; label: string }[];
   onNavigateToAllowed?: (pageId: string) => void;
   onGoBack?: () => void;

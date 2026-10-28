@@ -60,10 +60,12 @@ export interface FinancialAccount {
   bankName?: string;     // اسم البنك
   iban?: string;         // الآيبان
   openingBalance: number;// الرصيد الافتتاحي
+  initialBalance?: number; // alias for opening balance
   currentBalance: number;// الرصيد الحالي
   currency: string;      // SAR
   status: 'active' | 'inactive';
   notes?: string;
+  user?: any;
   createdAt: string;
   updatedAt: string;
 }
@@ -111,6 +113,7 @@ export interface FinancialIncome {
   status: FinancialApprovalStatus;
   createdById: string;
   createdByName: string;
+  user?: any;
   createdAt: string;
 }
 
@@ -148,6 +151,7 @@ export interface FinancialExpense {
   invoiceAttachmentUrl?: string;
   documentAttachmentUrl?: string;
   status: FinancialApprovalStatus;
+  user?: any;
   
   // مراحل دورة الصرف
   createdById: string;
@@ -182,6 +186,8 @@ export interface FinancialBudget {
   budgetCode: string;      // BUD-2026-001
   name: string;            // اسم الميزانية
   year: number;            // 2026
+  category?: string;
+  period?: BudgetPeriod | string;
   projectId?: string;
   projectName?: string;
   initiativeId?: string;
@@ -190,12 +196,14 @@ export interface FinancialBudget {
   departmentName?: string;
   approvedAmount: number;  // المبلغ المعتمد
   spentAmount: number;     // المصروف الفعلي
+  remainingAmount?: number;
   startDate: string;
   endDate: string;
   allowOverdraft: boolean; // السماح بالتجاوز فقط بصلاحية المدير المالي
   status: 'active' | 'closed' | 'exceeded';
   notes?: string;
   createdById: string;
+  user?: any;
   createdAt: string;
   updatedAt: string;
 }
@@ -204,13 +212,17 @@ export interface FinancialDonor {
   id: string;
   name: string;
   type: 'individual' | 'corporate' | 'government' | 'charity';
+  category?: string;
   phone?: string;
   email?: string;
   organization?: string;
   totalDonated: number;
+  totalDonations?: number; // alias
   donationsCount: number;
   lastDonationDate?: string;
   notes?: string;
+  status?: string;
+  user?: any;
   createdAt: string;
 }
 
@@ -218,6 +230,9 @@ export interface FinancialSupplier {
   id: string;
   name: string;
   businessType: string;    // نوع النشاط (توريدات غذائية، مواد مكتبية، صيانة، ...)
+  category?: string;       // تصنيف المورد
+  commercialRegister?: string;
+  vatNumber?: string;
   phone: string;
   email?: string;
   address?: string;
@@ -225,31 +240,41 @@ export interface FinancialSupplier {
   iban?: string;
   taxNumber?: string;      // الرقم الضريبي
   totalInvoiced: number;   // إجمالي الفواتير
+  totalPurchases?: number; // إجمالي التعاملات
   totalPaid: number;       // إجمالي المدفوع
   balanceDue: number;      // المتبقي المستحق
+  pendingBalance?: number;
+  rating?: number;
+  status?: 'active' | 'inactive';
+  user?: any;
   notes?: string;
   createdAt: string;
 }
 
 export interface PurchaseItem {
-  id: string;
-  itemName: string;
+  id?: string;
+  itemName?: string;
+  name?: string;           // alias
   description?: string;
   quantity: number;
-  unit: string;
+  unit?: string;
   unitPrice: number;
-  taxRate: number;         // e.g. 15%
-  totalPrice: number;
+  taxRate?: number;         // e.g. 15%
+  totalPrice?: number;
+  total?: number;          // alias
   inventoryItemId?: string;// في حال الرغبة في ربطه بصنف مستودع
 }
 
 export interface FinancialPurchase {
   id: string;
   purchaseNumber: string;  // PO-2026-0001
+  orderNumber?: string;    // alias
+  orderDate?: string;      // alias
   requestedById: string;
   requestedByName: string;
   supplierId: string;
   supplierName: string;
+  departmentName?: string;
   items: PurchaseItem[];
   subtotal: number;
   taxAmount: number;
@@ -260,10 +285,11 @@ export interface FinancialPurchase {
   budgetName?: string;
   quotationUrl?: string;
   invoiceUrl?: string;
-  status: 'quote' | 'under_review' | 'approved' | 'po_issued' | 'received' | 'invoiced' | 'paid' | 'cancelled';
+  status: 'quote' | 'under_review' | 'approved' | 'po_issued' | 'received' | 'invoiced' | 'paid' | 'cancelled' | 'pending';
   addToInventoryOnReceive: boolean; // إضافة الأصناف للمستودع تلقائياً بعد استلامها
   isReceivedToInventory?: boolean;
   notes?: string;
+  user?: any;
   createdAt: string;
   receivedAt?: string;
   paidAt?: string;
@@ -273,6 +299,9 @@ export interface FinancialPayable {
   id: string;
   payableNumber: string;   // PAY-2026-0001
   beneficiaryName: string; // مورد، موظف، جهة خدمية
+  creditorName?: string;   // alias
+  description?: string;    // alias
+  invoiceNumber?: string;  // alias
   category: 'supplier' | 'employee' | 'service' | 'utility' | 'other';
   amount: number;
   dueDate: string;         // تاريخ الاستحقاق
@@ -332,7 +361,7 @@ export interface FinancialReceipt {
   accountName: string;
   projectId?: string;
   projectName?: string;
-  paymentMethod: 'bank_transfer' | 'cash' | 'check' | 'card';
+  paymentMethod: 'bank_transfer' | 'cash' | 'check' | 'card' | 'online_gateway';
   referenceNumber?: string;
   issuedById: string;
   issuedByName: string;
@@ -378,7 +407,7 @@ export interface FinancialAuditLog {
 export type FinancialPurchaseOrder = FinancialPurchase;
 export type FinancialPayrollMonth = FinancialPayroll;
 export type FinancialAccountType = AccountType;
-export type BudgetPeriod = 'yearly' | 'quarterly' | 'monthly' | 'project';
+export type BudgetPeriod = 'yearly' | 'annual' | 'quarterly' | 'monthly' | 'project' | string;
 export type DonorCategory = 'individual' | 'corporate' | 'government' | 'charity';
 
 export interface FinancialSettings {

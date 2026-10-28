@@ -654,7 +654,8 @@ export default function App() {
           checked: true,
           active: isMActive,
           message: msg,
-          loading: false
+          loading: false,
+          error: ""
         });
 
         if (resJson.db) {
@@ -1323,7 +1324,7 @@ export default function App() {
 
   const handleMarkNotificationRead = async (notificationId?: string, markAll?: boolean) => {
     try {
-      const userId = authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : currentRole === 'supervisor' ? 'supervisor' : currentRole === 'support' ? 'support' : 'all');
+      const userId = authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : (currentRole as string) === 'supervisor' ? 'supervisor' : (currentRole as string) === 'support' ? 'support' : 'all');
       const res = await fetch(buildApiUrl("/api/db/notifications/mark-read"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1342,7 +1343,7 @@ export default function App() {
 
   const handleDeleteNotification = async (notificationId?: string, clearAll?: boolean) => {
     try {
-      const userId = authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : currentRole === 'supervisor' ? 'supervisor' : currentRole === 'support' ? 'support' : 'all');
+      const userId = authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : (currentRole as string) === 'supervisor' ? 'supervisor' : (currentRole as string) === 'support' ? 'support' : 'all');
       const res = await fetch(buildApiUrl("/api/db/notifications/delete"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1819,7 +1820,7 @@ export default function App() {
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <NotificationBell
                   notifications={dbData?.notifications || []}
-                  currentUserId={authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : currentRole === 'supervisor' ? 'supervisor' : currentRole === 'support' ? 'support' : 'all')}
+                  currentUserId={authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : (currentRole as string) === 'supervisor' ? 'supervisor' : (currentRole as string) === 'support' ? 'support' : 'all')}
                   currentUserRole={currentRole}
                   onMarkRead={handleMarkNotificationRead}
                   onDelete={handleDeleteNotification}
@@ -2135,7 +2136,7 @@ export default function App() {
                         dbData?.departments?.find(d => d.id === authenticatedUser?.departmentId) || 
                         (currentRole === 'storekeeper' ? dbData?.departments?.find(d => d.id === 'dep-8') : undefined) || 
                         dbData?.departments?.[0] ||
-                        { id: authenticatedUser?.departmentId || 'dep-1', nameAr: authenticatedUser?.departmentName || 'إدارة الجمعية' }
+                        ({ id: authenticatedUser?.departmentId || 'dep-1', nameAr: authenticatedUser?.departmentName || 'إدارة الجمعية', nameEn: 'Association Administration', directorName: 'مدير الإدارة' } as Department)
                       }
                       currentUser={authenticatedUser}
                       userRole={currentRole}
@@ -2146,18 +2147,18 @@ export default function App() {
                       initiatives={dbData.initiatives || []}
                       requests={dbData.requests || []}
                       onUpdateDirectiveStatus={handleUpdateDirectiveStatus}
-                      onActionRequest={handleActionRequest}
+                      onActionRequest={(id: any, action: any) => handleActionRequest(id, action === 'approved' ? 'accepted' : action)}
                       beneficiaries={dbData.beneficiaries || []}
                       onUpdateBeneficiaryStatus={handleUpdateBeneficiaryStatus}
                       homeSettings={dbData.homeSettings}
                       employees={dbData.employees || []}
                       employeeRequests={dbData.employeeRequests || []}
                       onSubmitEmployeeRequest={handleSubmitEmployeeRequest}
-                      onUpdateEmployeeRequest={handleUpdateEmployeeRequest}
+                      onUpdateEmployeeRequest={async (req: any) => handleUpdateEmployeeRequest(req.id || '', req)}
                       onSubmitOfficialLetter={handleSendOfficialLetter}
                       distributions={dbData.distributions || []}
                       distributionHandovers={dbData.distributionHandovers || []}
-                      inventoryItems={dbData.inventoryItems || []}
+                      inventoryItems={(dbData as any).inventoryItems || []}
                       notifications={dbData.notifications || []}
                       financialTransactions={(dbData as any).financialTransactions || []}
                       storeDonations={(dbData as any).storeDonations || []}
@@ -2173,7 +2174,7 @@ export default function App() {
                       onHandoverSubmit={handleHandoverSubmit}
                       onCancelHandover={handleCancelHandover}
                       onAddBeneficiary={handleAddBeneficiary}
-                      onAddInitiative={handleAddInitiative}
+                      onAddInitiative={async (init) => { await handleAddInitiative(init); return true; }}
                       onCopyInitiative={handleCopyInitiative}
                       onAddExpense={handleAddExpense}
                       onAddProject={handleAddStoreProject}
@@ -2194,7 +2195,7 @@ export default function App() {
             {currentRole === 'leader' && activeLeaderTeam && (
               <LeaderDashboard 
                 currentTeam={activeLeaderTeam}
-                currentDepartment={activeLeaderDept}
+                currentDepartment={activeLeaderDept as Department}
                 volunteers={dbData.volunteers || []}
                 initiatives={dbData.initiatives || []}
                 requests={dbData.requests || []}
@@ -2267,7 +2268,7 @@ export default function App() {
                 />
               ) : (
                 <OfficialHomePage
-                  settings={dbData.homeSettings || {
+                  settings={(dbData.homeSettings as HomeSettings) || ({
                     logoUrl: "/logo.png",
                     videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
                     videoCoverUrl: "",
@@ -2307,7 +2308,7 @@ export default function App() {
                       gallery: true,
                       contact: true
                     }
-                  }}
+                  })}
                   newsList={dbData.news || []}
                   partnersList={dbData.partners || []}
                   galleryList={dbData.gallery || []}

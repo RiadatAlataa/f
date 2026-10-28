@@ -2,14 +2,16 @@
  * Permanent Attachments Storage Service (Cloudflare R2 / S3-Compatible & Local Sandbox)
  * Project: جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
  * 
- * Provides:
- * 1. Cloudflare R2 integration via @aws-sdk/client-s3 with local sandbox fallback.
- * 2. Cryptographic unique key generation avoiding user-supplied file names.
- * 3. MIME type whitelisting and strict payload size limits.
- * 4. Path-traversal attack prevention (anti-ZipSlip and directory escape).
- * 5. Private attachment access authorization with streaming and signed token generation.
- * 6. Audit scanner for orphaned files and missing database attachments without premature deletion.
- * 7. Transactional upload & cleanup on failures.
+ * Features:
+ * 1. Cloudflare R2 integration via @aws-sdk/client-s3 with zero-silent-fallback protection.
+ * 2. Strict anti-silent fallback: Blocks writing to ephemeral disk when R2 is required or configured.
+ * 3. Cryptographic unique key generation avoiding user-supplied file names.
+ * 4. MIME type whitelisting and strict payload size limits (Images, Logos, Cards, PDF, Docs).
+ * 5. Path-traversal attack prevention (anti-ZipSlip, null byte, directory escape).
+ * 6. Private attachment access authorization with streaming proxy (volunteers, beneficiaries, financial).
+ * 7. Custom domain / Public CDN support for public assets (logos, announcements, public templates).
+ * 8. Audit scanner for orphaned files and missing database attachments without premature deletion.
+ * 9. Non-destructive connection health check and diagnostics.
  */
 
 import fs from "fs";
@@ -21,13 +23,28 @@ import {
   GetObjectCommand, 
   DeleteObjectCommand, 
   ListObjectsV2Command,
-  HeadObjectCommand
+  HeadBucketCommand
 } from "@aws-sdk/client-s3";
+
+export type EntityType = 
+  | 'volunteers' 
+  | 'beneficiaries' 
+  | 'licenses' 
+  | 'cards' 
+  | 'logos' 
+  | 'slider' 
+  | 'initiatives' 
+  | 'partners' 
+  | 'deliveries' 
+  | 'financial' 
+  | 'letters' 
+  | 'news' 
+  | 'general';
 
 export interface AttachmentUploadOptions {
   originalFilename: string;
   mimeType: string;
-  entityType: 'volunteers' | 'beneficiaries' | 'licenses' | 'cards' | 'news' | 'general';
+  entityType: EntityType;
   entityId: string;
   fieldName?: string;
   isPrivate?: boolean;
@@ -64,17 +81,34 @@ export interface AttachmentAuditReport {
   missingAttachments: Array<{ recordId: string; fileKey: string; entityType: string; entityId: string }>;
 }
 
+export interface StorageStatusReport {
+  provider: 'r2' | 'local';
+  isR2Configured: boolean;
+  strictR2Mode: boolean;
+  bucketName: string;
+  accountIdMasked?: string;
+  customDomainConfigured: boolean;
+  customDomain?: string;
+  localBaseDir: string;
+  allowedMimesCount: number;
+  maxSizeBytes: number;
+}
+
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/svg+xml',
   'image/gif',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'image/bmp',
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain'
 ]);
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 Megabytes
@@ -82,20 +116,43 @@ const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 Megabytes
 export class AttachmentStorageService {
   private s3Client: S3Client | null = null;
   private bucketName: string;
+  private customDomain: string | null = null;
   private localBaseDir: string;
+  private strictR2Mode: boolean = false;
   private attachmentRegistry: Map<string, AttachmentRecord> = new Map();
 
   constructor(customLocalDir?: string) {
     this.bucketName = process.env.R2_BUCKET_NAME || "riadataleata-attachments";
+    this.customDomain = process.env.R2_CUSTOM_DOMAIN || process.env.R2_PUBLIC_URL || null;
     this.localBaseDir = customLocalDir || path.join(process.cwd(), "public", "uploads");
+
+    // Strict Mode: When REQUIRE_R2_STORAGE is true or STORAGE_PROVIDER is r2,
+    // prevent silent fallback to ephemeral local disk to protect files from loss.
+    const envRequireR2 = process.env.REQUIRE_R2_STORAGE === "true" || 
+                         process.env.STORAGE_PROVIDER === "r2" ||
+                         (process.env.NODE_ENV === "production" && Boolean(process.env.R2_BUCKET_NAME));
+    this.strictR2Mode = Boolean(envRequireR2);
+
     this.initR2Client();
     this.ensureLocalDirectories();
   }
 
-  private initR2Client(): void {
-    const accountId = process.env.R2_ACCOUNT_ID;
-    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  public initR2Client(configOverride?: {
+    accountId?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    bucketName?: string;
+    customDomain?: string;
+  }): void {
+    const accountId = configOverride?.accountId || process.env.R2_ACCOUNT_ID;
+    const accessKeyId = configOverride?.accessKeyId || process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = configOverride?.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY;
+    if (configOverride?.bucketName) {
+      this.bucketName = configOverride.bucketName;
+    }
+    if (configOverride?.customDomain) {
+      this.customDomain = configOverride.customDomain;
+    }
 
     if (accountId && accessKeyId && secretAccessKey) {
       this.s3Client = new S3Client({
@@ -106,21 +163,91 @@ export class AttachmentStorageService {
           secretAccessKey
         }
       });
+    } else {
+      this.s3Client = null;
     }
   }
 
+  public setStrictR2Mode(strict: boolean): void {
+    this.strictR2Mode = strict;
+  }
+
+  public getStrictR2Mode(): boolean {
+    return this.strictR2Mode;
+  }
+
   private ensureLocalDirectories(): void {
-    const subdirs = ['volunteers', 'beneficiaries', 'licenses', 'cards', 'news', 'general'];
+    const subdirs = [
+      'volunteers', 'beneficiaries', 'licenses', 'cards', 
+      'logos', 'slider', 'initiatives', 'partners', 
+      'deliveries', 'financial', 'letters', 'news', 'general'
+    ];
     for (const sub of subdirs) {
       const full = path.join(this.localBaseDir, sub);
       if (!fs.existsSync(full)) {
-        fs.mkdirSync(full, { recursive: true });
+        try {
+          fs.mkdirSync(full, { recursive: true });
+        } catch {
+          // May be read-only in some execution runtimes
+        }
       }
     }
   }
 
   public isR2Configured(): boolean {
     return this.s3Client !== null;
+  }
+
+  public getStatus(): StorageStatusReport {
+    const accountId = process.env.R2_ACCOUNT_ID || "";
+    const maskedAccount = accountId.length > 8 
+      ? `${accountId.substring(0, 4)}...${accountId.substring(accountId.length - 4)}` 
+      : (accountId ? "****" : undefined);
+
+    return {
+      provider: this.s3Client ? 'r2' : 'local',
+      isR2Configured: this.s3Client !== null,
+      strictR2Mode: this.strictR2Mode,
+      bucketName: this.bucketName,
+      accountIdMasked: maskedAccount,
+      customDomainConfigured: Boolean(this.customDomain),
+      customDomain: this.customDomain || undefined,
+      localBaseDir: this.localBaseDir,
+      allowedMimesCount: ALLOWED_MIME_TYPES.size,
+      maxSizeBytes: MAX_FILE_SIZE_BYTES
+    };
+  }
+
+  /**
+   * Performs an isolated, non-destructive connection probe against Cloudflare R2
+   */
+  public async testConnection(): Promise<{ success: boolean; message: string; latencyMs?: number }> {
+    if (!this.s3Client) {
+      return {
+        success: false,
+        message: "عميل Cloudflare R2 غير مهيأ (متغيرات R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY ناقصة)."
+      };
+    }
+
+    const start = Date.now();
+    try {
+      // ListObjects with max 1 key to verify authenticated connection safely without altering data
+      await this.s3Client.send(new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        MaxKeys: 1
+      }));
+      const latency = Date.now() - start;
+      return {
+        success: true,
+        message: `تم التحقق بنجاح من اتصال Cloudflare R2 بالحاوية [${this.bucketName}] (${latency}ms).`,
+        latencyMs: latency
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `فشل فحص اتصال Cloudflare R2: ${err.message || 'خطأ غير معروف'}`
+      };
+    }
   }
 
   /**
@@ -148,6 +275,7 @@ export class AttachmentStorageService {
 
   /**
    * Uploads an attachment either to Cloudflare R2 or local storage
+   * Enforces zero silent fallback when strict mode is active.
    */
   public async uploadAttachment(
     fileBuffer: Buffer,
@@ -162,17 +290,27 @@ export class AttachmentStorageService {
     }
 
     // 2. Validate MIME type
-    if (!ALLOWED_MIME_TYPES.has(options.mimeType.toLowerCase())) {
-      throw new Error(`نوع الملف غير مدعوم (${options.mimeType}). الأنواع المسموحة تشمل الصور والمستندات الرسمية PDF و Word.`);
+    const mimeLower = (options.mimeType || '').toLowerCase().trim();
+    if (!ALLOWED_MIME_TYPES.has(mimeLower)) {
+      throw new Error(`نوع الملف غير مدعوم (${options.mimeType}). الأنواع المسموحة تشمل الصور (JPG, PNG, WebP, SVG, GIF) والمستندات الرسمية (PDF, Word, Excel).`);
     }
 
-    // 3. Compute SHA-256 Checksum
+    // 3. Compute SHA-256 Checksum for integrity validation
     const checksum = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-    // 4. Generate secure file key
+    // 4. Generate secure collision-resistant file key
     const fileKey = this.generateSecureKey(options.entityType, options.originalFilename);
 
-    // 5. Upload to target destination
+    // 5. Strict Mode Guard: Prevent silent fallback to ephemeral disk
+    if (this.strictR2Mode && !this.s3Client) {
+      throw new Error(
+        "خطأ أمان التخزين: تم تفعيل وضع التخزين الدائم الإلزامي (Strict R2 Mode)، ولكن بيانات اتصال Cloudflare R2 " +
+        "(R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) غير مكتملة. " +
+        "تم رفض الرجوع التلقائي للتخزين المحلي المؤقت منعاً لفقدان الملفات عند إعادة تشغيل الخادم."
+      );
+    }
+
+    // 6. Upload to target destination
     let provider: 'r2' | 'local' = 'local';
     let publicUrl = '';
 
@@ -182,7 +320,7 @@ export class AttachmentStorageService {
           Bucket: this.bucketName,
           Key: fileKey,
           Body: fileBuffer,
-          ContentType: options.mimeType,
+          ContentType: mimeLower,
           Metadata: {
             "entity-type": options.entityType,
             "entity-id": options.entityId,
@@ -191,12 +329,26 @@ export class AttachmentStorageService {
           }
         }));
         provider = 'r2';
-        publicUrl = options.isPrivate ? `/api/attachments/download/${encodeURIComponent(fileKey)}` : `https://${this.bucketName}.r2.cloudflarestorage.com/${fileKey}`;
+
+        // URL Strategy:
+        // - Private files (volunteers, beneficiaries, financial) MUST ALWAYS route via authenticated API proxy
+        // - Public files (logos, templates, news) use custom domain CDN if configured, or stream via download endpoint
+        const isFilePrivate = this.isPrivateKey(fileKey, { isPrivate: options.isPrivate } as any);
+        if (isFilePrivate) {
+          publicUrl = `/api/attachments/download/${encodeURIComponent(fileKey)}`;
+        } else if (this.customDomain) {
+          const cleanDomain = this.customDomain.replace(/\/+$/, '');
+          publicUrl = `${cleanDomain}/${fileKey}`;
+        } else {
+          // Without custom domain, serve via API endpoint to avoid S3 SigV4 403 error on browser direct access
+          publicUrl = `/api/attachments/download/${encodeURIComponent(fileKey)}`;
+        }
       } catch (err: any) {
+        // NEVER fall back to local disk if R2 was attempted and failed!
         throw new Error(`فشل رفع المرفق إلى Cloudflare R2: ${err.message}`);
       }
     } else {
-      // Local Sandboxed File System Fallback
+      // Local Sandboxed File System Fallback (Only allowed in local development without strict mode)
       const destPath = path.join(this.localBaseDir, fileKey);
       const destDir = path.dirname(destPath);
       
@@ -212,25 +364,28 @@ export class AttachmentStorageService {
 
       fs.writeFileSync(destPath, fileBuffer);
       provider = 'local';
-      publicUrl = (options.isPrivate ?? true)
+
+      const isFilePrivate = this.isPrivateKey(fileKey, { isPrivate: options.isPrivate } as any);
+      publicUrl = isFilePrivate
         ? `/api/attachments/download/${encodeURIComponent(fileKey)}`
         : `/uploads/${fileKey}`;
     }
 
-    // 6. Register Metadata
+    // 7. Register Metadata in Memory Index
+    const isFilePrivate = this.isPrivateKey(fileKey, { isPrivate: options.isPrivate } as any);
     const record: AttachmentRecord = {
       id: "att-" + crypto.randomUUID(),
       fileKey,
       originalName: options.originalFilename,
       sanitizedName: path.basename(fileKey),
-      mimeType: options.mimeType,
+      mimeType: mimeLower,
       fileSize: fileBuffer.length,
       storageProvider: provider,
       entityType: options.entityType,
       entityId: options.entityId,
       fieldName: options.fieldName,
-      isPrivate: options.isPrivate ?? true,
-      accessRole: options.accessRole || 'admin',
+      isPrivate: isFilePrivate,
+      accessRole: options.accessRole || (isFilePrivate ? 'admin' : 'public'),
       checksumSha256: checksum,
       uploadedBy: options.uploadedBy,
       uploadedAt: new Date().toISOString(),
@@ -244,21 +399,54 @@ export class AttachmentStorageService {
 
   /**
    * Evaluates whether a fileKey represents a private attachment
-   * Implements secure default-deny classification
+   * Implements strict default-deny classification:
+   * Only explicit public folders (logos, cards, slider, public, license) are public.
+   * All beneficiary, volunteer, financial, delivery, identity, letter, and report files are PRIVATE.
    */
   public isPrivateKey(fileKey: string, record?: AttachmentRecord): boolean {
-    if (record) {
-      return Boolean(record.isPrivate);
+    if (record && typeof record.isPrivate === 'boolean') {
+      return record.isPrivate;
     }
     const clean = fileKey.replace(/^[\\/]+/, '').toLowerCase();
     const top = clean.split(/[\\/]/)[0];
-    if (top === 'license' || top === 'licenses' || top === 'card_templates' || top === 'cards' || clean.startsWith('license_official')) {
+
+    // Explicit Public Whitelist
+    const publicCategories = new Set([
+      'license',
+      'licenses',
+      'card_templates',
+      'cards',
+      'logos',
+      'slider',
+      'initiatives',
+      'partners',
+      'news',
+      'public',
+      'branding'
+    ]);
+
+    if (publicCategories.has(top) || clean.startsWith('license_official')) {
       return false;
     }
-    if (['volunteers', 'beneficiaries', 'financial', 'reports', 'identities', 'confidential'].includes(top)) {
+
+    // Explicit Private Categories
+    const privateCategories = new Set([
+      'volunteers',
+      'beneficiaries',
+      'financial',
+      'deliveries',
+      'letters',
+      'reports',
+      'identities',
+      'confidential'
+    ]);
+
+    if (privateCategories.has(top)) {
       return true;
     }
-    return true; // Default-deny: assume private unless explicitly public
+
+    // Default-deny: Any unrecognized category is treated as PRIVATE
+    return true;
   }
 
   /**
@@ -275,6 +463,7 @@ export class AttachmentStorageService {
 
     const record = this.attachmentRegistry.get(fileKey);
     const isPrivate = this.isPrivateKey(fileKey, record);
+
     if (isPrivate) {
       const role = userContext?.role || 'guest';
       const isAuthorized = role === 'admin' || role === 'operations_manager' || 
@@ -293,14 +482,14 @@ export class AttachmentStorageService {
           Key: fileKey
         }));
         const byteArray = await response.Body?.transformToByteArray();
-        if (!byteArray) throw new Error("تعذر استرجاع محتوى الملف من R2.");
+        if (!byteArray) throw new Error("تعذر استرجاع محتوى الملف من Cloudflare R2.");
         return {
           buffer: Buffer.from(byteArray),
           record,
           mimeType: response.ContentType || record?.mimeType || 'application/octet-stream'
         };
       } catch (err: any) {
-        throw new Error(`تعذر قراءة الملف من R2: ${err.message}`);
+        throw new Error(`تعذر قراءة الملف من Cloudflare R2: ${err.message}`);
       }
     } else {
       const localPath = path.join(this.localBaseDir, fileKey);
@@ -322,7 +511,7 @@ export class AttachmentStorageService {
   }
 
   /**
-   * Safe deletion
+   * Safe deletion from Cloudflare R2 or local storage
    */
   public async deleteAttachment(fileKey: string): Promise<boolean> {
     if (this.s3Client) {
@@ -338,7 +527,11 @@ export class AttachmentStorageService {
     } else {
       const localPath = path.join(this.localBaseDir, fileKey);
       if (fs.existsSync(localPath)) {
-        fs.unlinkSync(localPath);
+        try {
+          fs.unlinkSync(localPath);
+        } catch {
+          return false;
+        }
       }
     }
 

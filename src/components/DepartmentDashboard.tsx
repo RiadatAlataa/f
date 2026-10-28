@@ -75,6 +75,7 @@ import { PasswordResetRequestsManager } from './PasswordResetRequestsManager';
 import { TeamSupportManager } from './TeamSupportManager';
 import { DashboardErrorBoundary } from './DashboardErrorBoundary';
 import { AccessDeniedCard } from './AccessDeniedCard';
+import { HRDashboard } from './HRDashboard';
 
 export interface DepartmentDashboardProps {
   currentUser?: any;
@@ -294,7 +295,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
       tabs.push({ id: 'password_resets', label: 'طلبات تغيير كلمات المرور (العمليات)' });
     }
     if (isBeneficiaryDept) tabs.push({ id: 'beneficiaries', label: 'إدارة المستفيدين والتوزيعات' });
-    if (isHRDept) tabs.push({ id: 'hr_staff', label: 'سجل الكوادر والموظفين' });
+    if (isHRDept) tabs.push({ id: 'hr_staff', label: 'إدارة الموارد البشرية والكوادر (15 نظامًا)' });
     if (isFinanceDept) tabs.push({ id: 'finance_ledger', label: 'المعاملات وسندات الصرف والقبض' });
     if (isProjectsDept) tabs.push({ id: 'projects_list', label: 'المشاريع والبرامج التنموية' });
     if (isMediaDept) {
@@ -1488,68 +1489,25 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
         {/* 5. HR STAFF & RECRUITMENT TAB */}
         {activeTab === 'hr_staff' && (
           <div className="space-y-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-xl font-black text-white flex items-center gap-2">
-                    <Users className="w-6 h-6 text-emerald-400" />
-                    سجل الكوادر والموظفين بالجمعية ({employees.length})
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-1">
-                    استعراض الموظفين، الإدارات، المسميات الوظيفية، والبطاقات التعريفية الرقمية.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {employees.map((emp) => (
-                  <div key={emp.id} className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between hover:border-emerald-600/40 transition-all">
-                    <div>
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-800 flex items-center justify-center text-white font-black text-base shrink-0">
-                          {emp.name?.charAt(0) || 'م'}
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-white text-sm">{emp.name}</h4>
-                          <span className="text-xs text-emerald-400">{emp.jobTitle || 'موظف'}</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5 text-xs text-slate-300 bg-slate-900/60 p-3 rounded-xl mb-3">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">الإدارة:</span>
-                          <span className="font-semibold">{emp.departmentName || currentDept.nameAr}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">رقم الهوية:</span>
-                          <span className="font-mono">{emp.nationalId}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">رقم الموظف:</span>
-                          <span className="font-mono text-emerald-400">{emp.employeeNumber || emp.id}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800">
-                      <span className="text-slate-400">{emp.phone}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px]">
-                        {emp.status === 'active' ? 'على رأس العمل' : 'معلق'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Recruitment requests */}
-            <DepartmentStaffManager
-              currentDepartment={currentDept}
-              employees={employees}
-              employeeRequests={employeeRequests}
-              onSubmitRequest={onSubmitEmployeeRequest || (async () => false)}
-              onUpdateRequest={onUpdateEmployeeRequest || (async () => false)}
-            />
+            {isHRDept ? (
+              <HRDashboard
+                departments={departments || []}
+                employees={employees || []}
+                employeeRequests={employeeRequests || []}
+                onApproveRequest={onApproveEmployeeRequest ? async (id) => onApproveEmployeeRequest(id) : undefined}
+                onRejectRequest={onRejectEmployeeRequest ? async (id) => onRejectEmployeeRequest(id) : undefined}
+                currentUser={currentUser}
+                onRefreshGlobalData={onRefreshGlobalData}
+              />
+            ) : (
+              <DepartmentStaffManager
+                currentDepartment={currentDept}
+                employees={employees}
+                employeeRequests={employeeRequests}
+                onSubmitRequest={onSubmitEmployeeRequest || (async () => false)}
+                onUpdateRequest={onUpdateEmployeeRequest || (async () => false)}
+              />
+            )}
           </div>
         )}
 

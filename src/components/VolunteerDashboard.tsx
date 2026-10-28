@@ -1,10 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Award, Calendar, Clock, Inbox, ShieldCheck, Heart, ArrowLeft, ArrowUpRight, ArrowRight,
-  CheckCircle, Smartphone, User, FileText, Bot, LogOut, CheckCircle2, MapPin, Send, HelpCircle, Star, BadgeAlert, Trophy, Lock, LockOpen, Globe
+  CheckCircle, Smartphone, User, FileText, Bot, LogOut, CheckCircle2, MapPin, Send, HelpCircle, 
+  Star, BadgeAlert, Trophy, Lock, LockOpen, Globe, Camera, Edit3, AlertCircle, Sparkles, 
+  RefreshCw, Share2, Users, Flame, Medal, Eye, ChevronLeft, Check, Trash2
 } from "lucide-react";
 import { SmartCard } from "./SmartCard";
 import { VolunteerProfileCardSection } from "./VolunteerProfileCardSection";
+import { CardRenderer } from "./CardRenderer";
+import { ProfilePhotoCropModal } from "./ProfilePhotoCropModal";
 import { AiChatAssistant } from "./AiChatAssistant";
 import { CertificateViewer } from "./CertificateViewer";
 import { VolunteerLeaderboard } from "./VolunteerLeaderboard";
@@ -12,7 +16,7 @@ import { InitiativeRatingModal } from "./InitiativeRatingModal";
 import { VolunteerMonthlyReportModal } from "./VolunteerMonthlyReportModal";
 import { VolunteerKnightsModal } from "./VolunteerKnights";
 import { TeamSupportManager } from "./TeamSupportManager";
-import { Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, Department, VolunteerTeam, IssuedCertificate, CertificateTemplate, InitiativeRating } from "../types";
+import { Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, Department, VolunteerTeam, IssuedCertificate, CertificateTemplate, InitiativeRating, VolunteerCardTemplate } from "../types";
 
 interface VolunteerDashboardProps {
   currentVolunteer: Volunteer;
@@ -59,8 +63,66 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     return 'home';
   });
 
+  // Local synced volunteer state to allow immediate UI reflection of profile updates
+  const [volunteerState, setVolunteerState] = useState<Volunteer>(currentVolunteer);
+  useEffect(() => {
+    setVolunteerState(currentVolunteer);
+  }, [currentVolunteer]);
+
+  // WhatsApp Profile Photo Cropper Modal State
+  const [showProfileCropModal, setShowProfileCropModal] = useState(false);
+
+  // Official Data Change Request Modal State
+  const [showDataChangeModal, setShowDataChangeModal] = useState(false);
+  const [changeRequestField, setChangeRequestField] = useState<string>("name");
+  const [changeRequestNewValue, setChangeRequestNewValue] = useState<string>("");
+  const [changeRequestReason, setChangeRequestReason] = useState<string>("");
+  const [changeRequestSubmitting, setChangeRequestSubmitting] = useState(false);
+  const [changeRequestSuccess, setChangeRequestSuccess] = useState<string | null>(null);
+  const [changeRequestError, setChangeRequestError] = useState<string | null>(null);
+
+  // Editable Profile Fields State
+  const [editPhone, setEditPhone] = useState(volunteerState.phone || "");
+  const [editEmail, setEditEmail] = useState(volunteerState.email || "");
+  const [editCity, setEditCity] = useState(volunteerState.city || "مكة المكرمة");
+  const [editDistrict, setEditDistrict] = useState(volunteerState.district || "العسيلة");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSaveFeedback, setProfileSaveFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Card Template for 3D flip renderer
+  const [cardTemplate, setCardTemplate] = useState<VolunteerCardTemplate | null>(null);
+  useEffect(() => {
+    let isMounted = true;
+    const loadTemplate = async () => {
+      try {
+        if (volunteerState.teamId) {
+          const teamRes = await fetch(`/api/db/team-card-template/${volunteerState.teamId}`);
+          if (teamRes.ok) {
+            const teamData = await teamRes.json();
+            if (isMounted && teamData?.template) {
+              setCardTemplate(teamData.template);
+              return;
+            }
+          }
+        }
+        const res = await fetch("/api/db/card-templates");
+        if (res.ok) {
+          const data = await res.json();
+          const activeTpl = data?.templates?.find((t: any) => t.status === "active") || data?.templates?.[0];
+          if (isMounted && activeTpl) {
+            setCardTemplate(activeTpl);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not load card template:", e);
+      }
+    };
+    loadTemplate();
+    return () => { isMounted = false; };
+  }, [volunteerState.teamId]);
+
   const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
-  const [resetTokenInput, setResetTokenInput] = useState(currentVolunteer.passwordResetToken || '');
+  const [resetTokenInput, setResetTokenInput] = useState(volunteerState.passwordResetToken || '');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [resetFeedback, setResetFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -72,7 +134,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   }, [activeTab]);
 
   const [showKnightsModal, setShowKnightsModal] = useState(false);
-  const [cardDisplayMode, setCardDisplayMode] = useState<'official' | 'smart'>('official');
+  const [cardDisplayMode, setCardDisplayMode] = useState<'3d' | 'smart'>('3d');
   const [appliedSuccess, setAppliedSuccess] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -83,38 +145,52 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   const [ratingTarget, setRatingTarget] = useState<{ initiative: { id?: string; name: string }; certificate?: IssuedCertificate } | null>(null);
 
   // Find current volunteer's team and department
-  const myTeam = teams.find(t => t.id === currentVolunteer.teamId);
-  const myDept = departments.find(d => d.id === currentVolunteer.departmentId);
+  const myTeam = teams.find(t => t.id === volunteerState.teamId);
+  const myDept = departments.find(d => d.id === volunteerState.departmentId);
 
   // My requests
-  const myRequests = requests.filter(r => r.volunteerId === currentVolunteer.id);
+  const myRequests = requests.filter(r => r.volunteerId === volunteerState.id);
 
   // My attendance logs
-  const myAttendance = attendanceRecords.filter(a => a.volunteerId === currentVolunteer.id);
+  const myAttendance = attendanceRecords.filter(a => a.volunteerId === volunteerState.id);
+  const validAttendanceCount = myAttendance.filter(a => a.status === 'full' || (a.status as any) === 'present' || a.status === 'late').length;
+
+  // Monthly points calculation (attendance during current month)
+  const currentMonthStr = new Date().toISOString().substring(0, 7);
+  const thisMonthAttendance = myAttendance.filter(a => (a.date || "").startsWith(currentMonthStr));
+  const currentMonthPoints = Number(volunteerState.monthlyPoints) || (thisMonthAttendance.length * 3);
 
   // My issued certificates
-  const myCertificates = issuedCertificates.filter(c => c.volunteerId === currentVolunteer.id);
+  const myCertificates = issuedCertificates.filter(c => c.volunteerId === volunteerState.id);
 
   // Check if there are locked certificates that require rating
   const lockedCertificates = myCertificates.filter(c => c.status === 'locked_unrated');
 
   // My performance evaluations
-  const myEvals = evaluations.filter(e => e.volunteerId === currentVolunteer.id);
+  const myEvals = evaluations.filter(e => e.volunteerId === volunteerState.id);
 
   // My team leader broadcasts
   const myBroadcasts = myTeam ? myTeam.broadcasts || [] : [];
 
   // Rank calculations
-  const sortedVolunteersAll = [...volunteers].sort((a, b) => b.points - a.points);
-  const associationRank = sortedVolunteersAll.findIndex(v => v.id === currentVolunteer.id) + 1;
+  const sortedVolunteersAll = [...volunteers].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
+  const associationRank = sortedVolunteersAll.findIndex(v => v.id === volunteerState.id) + 1;
   
-  const teamVolunteers = volunteers.filter(v => v.teamId === currentVolunteer.teamId);
-  const sortedVolunteersTeam = [...teamVolunteers].sort((a, b) => b.points - a.points);
-  const teamRank = sortedVolunteersTeam.findIndex(v => v.id === currentVolunteer.id) + 1;
+  const teamVolunteers = volunteers.filter(v => v.teamId === volunteerState.teamId);
+  const sortedVolunteersTeam = [...teamVolunteers].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
+  const teamRank = sortedVolunteersTeam.findIndex(v => v.id === volunteerState.id) + 1;
+
+  // Team Leaderboard calculation
+  const teamScores = teams.map(t => {
+    const tMembers = volunteers.filter(v => v.teamId === t.id);
+    const totalPts = tMembers.reduce((acc, m) => acc + (Number(m.points) || 0), 0);
+    return { id: t.id, nameAr: t.nameAr, totalPts, membersCount: tMembers.length };
+  }).sort((a, b) => b.totalPts - a.totalPts);
+  const teamLeaderboardPos = teamScores.findIndex(t => t.id === volunteerState.teamId) + 1;
 
   // Find active checked-in initiative (present in attendance with NO checkoutTimestamp)
   const activeCheckinRecord = attendanceRecords.find(
-    a => a.volunteerId === currentVolunteer.id && !a.checkoutTimestamp
+    a => a.volunteerId === volunteerState.id && !a.checkoutTimestamp
   );
   const activeCheckinInitiative = activeCheckinRecord 
     ? initiatives.find(i => i.id === activeCheckinRecord.initiativeId)
@@ -130,7 +206,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     if (!activeCheckinRecord || !onCheckoutInitiative) return;
     setCheckoutLoading(true);
     try {
-      await onCheckoutInitiative(activeCheckinRecord.initiativeId, currentVolunteer.id);
+      await onCheckoutInitiative(activeCheckinRecord.initiativeId, volunteerState.id);
       setCheckoutSuccess(true);
       setTimeout(() => setCheckoutSuccess(false), 5000);
     } catch (e) {
@@ -140,53 +216,161 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     }
   };
 
+  // Safe personal info save handler
+  const handleSavePersonalInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+    setProfileSaveFeedback(null);
+    try {
+      const res = await fetch("/api/db/volunteers/update-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          volunteerId: volunteerState.id,
+          phone: editPhone.trim(),
+          email: editEmail.trim(),
+          city: editCity.trim(),
+          district: editDistrict.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setVolunteerState(data.volunteer);
+        setProfileSaveFeedback({ type: 'success', text: 'تم تحديث بيانات التواصل الخاصة بك بنجاح ومزامنتها مع النظام!' });
+        setTimeout(() => setProfileSaveFeedback(null), 4000);
+      } else {
+        setProfileSaveFeedback({ type: 'error', text: data.error || 'حدث خطأ أثناء حفظ التعديلات.' });
+      }
+    } catch (err: any) {
+      setProfileSaveFeedback({ type: 'error', text: 'تعذر الاتصال بالخادم لحفظ التعديلات.' });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // Official locked data change request submission
+  const handleSubmitDataChangeRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!changeRequestNewValue.trim()) return;
+    setChangeRequestSubmitting(true);
+    setChangeRequestError(null);
+    setChangeRequestSuccess(null);
+    try {
+      const res = await fetch("/api/db/volunteers/request-data-change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          volunteerId: volunteerState.id,
+          fieldName: changeRequestField,
+          requestedValue: changeRequestNewValue.trim(),
+          reason: changeRequestReason.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setChangeRequestSuccess("تم رفع طلب تعديل البيانات الرسمية إلى إدارة الموارد البشرية والعمليات للمراجعة والاعتماد.");
+        setTimeout(() => {
+          setShowDataChangeModal(false);
+          setChangeRequestSuccess(null);
+          setChangeRequestNewValue("");
+          setChangeRequestReason("");
+        }, 2500);
+      } else {
+        setChangeRequestError(data.error || "فشل إرسال طلب التعديل.");
+      }
+    } catch (err: any) {
+      setChangeRequestError("تعذر الاتصال بالخادم لإرسال الطلب.");
+    } finally {
+      setChangeRequestSubmitting(false);
+    }
+  };
+
+  // WhatsApp-style Profile Photo display helper
+  const displayAvatarUrl = volunteerState.profileImage || volunteerState.profile_image || volunteerState.photo;
+
   return (
     <div className="space-y-6">
-      {/* Top Welcome Card */}
-      <div className="bg-linear-to-r from-emerald-600 to-emerald-700 p-6 rounded-2xl text-white text-right shadow-md relative overflow-hidden" dir="rtl">
+      {/* Top Welcome Card - Official Brand Theme: Navy Blue (#071C43) to Royal Blue (#0754C7) */}
+      <div 
+        style={{
+          background: "linear-gradient(135deg, #071C43 0%, #0B2C6E 50%, #0754C7 100%)"
+        }}
+        className="p-6 sm:p-7 rounded-3xl text-white text-right shadow-xl relative overflow-hidden border border-blue-900/50" 
+        dir="rtl"
+      >
         <div className="absolute left-0 bottom-0 top-0 w-1/3 bg-white/5 -skew-x-12 pointer-events-none" />
+        <div className="absolute -top-16 -left-16 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
         
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <img 
-              src={currentVolunteer.photo} 
-              alt={currentVolunteer.name} 
-              className="w-14 h-14 rounded-full object-cover border-2 border-white/20 shadow-md"
-              referrerPolicy="no-referrer"
-            />
-            <div className="space-y-1">
-              <span className="bg-white/15 text-[9.5px] px-2.5 py-0.5 rounded-full font-bold inline-block border border-white/5">المتطوع الفاعل</span>
-              <h2 className="text-md font-black">{currentVolunteer.name}</h2>
-              <p className="text-xs text-emerald-100">
-                رقم العضوية: <b>{currentVolunteer.membershipNumber}</b> • رقم الملف: <b className="font-mono text-white bg-white/20 px-2 py-0.5 rounded-md">{currentVolunteer.fileNumber || currentVolunteer.file_number || "غير مسجل"}</b> • {myTeam ? myTeam.nameAr : "بانتظار التعيين"}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
+          <div className="flex items-center gap-4 sm:gap-5">
+            {/* WhatsApp-Style Circular Avatar with Camera Icon Overlay */}
+            <div className="relative group cursor-pointer" onClick={() => setShowProfileCropModal(true)}>
+              <img 
+                src={displayAvatarUrl} 
+                alt={volunteerState.name} 
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-white/30 shadow-lg group-hover:brightness-90 transition-all"
+                referrerPolicy="no-referrer"
+              />
+              <button
+                type="button"
+                className="absolute bottom-0 -right-1 bg-[#0754C7] hover:bg-blue-600 text-white p-1.5 rounded-full shadow-md border-2 border-white transition-all transform group-hover:scale-110 cursor-pointer"
+                title="تحديث صورة الحساب الشخصي (واتساب)"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 text-[10px] px-2.5 py-0.5 rounded-full font-black flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{volunteerState.status === 'inactive' ? 'غير نشط' : 'متطوع نشط وفاعل'}</span>
+                </span>
+                <span className="bg-white/15 text-blue-100 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  {myTeam ? myTeam.nameAr : "بانتظار التعيين"}
+                </span>
+              </div>
+
+              <h2 className="text-lg sm:text-xl font-black text-white">{volunteerState.name}</h2>
+              
+              <p className="text-xs text-blue-100/90 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>رقم العضوية: <strong className="font-mono text-white">{volunteerState.membershipNumber}</strong></span>
+                <span>•</span>
+                <span>رقم الملف: <strong className="font-mono text-white bg-white/20 px-2 py-0.5 rounded-md">{volunteerState.fileNumber || volunteerState.file_number || "غير مسجل"}</strong></span>
+                {volunteerState.city && (
+                  <>
+                    <span>•</span>
+                    <span>{volunteerState.city} - {volunteerState.district || "العسيلة"}</span>
+                  </>
+                )}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-center bg-white/10 backdrop-blur-xs px-3.5 py-1.5 rounded-xl border border-white/10">
-              <strong className="text-sm font-black block font-mono">{currentVolunteer.points}</strong>
-              <span className="text-[9px] text-emerald-100 font-medium block">النقاط التطوعية</span>
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <div className="text-center bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/15 min-w-[75px]">
+              <strong className="text-base font-black block font-mono text-amber-300">{volunteerState.points}</strong>
+              <span className="text-[10px] text-blue-100 font-bold block">مجموع النقاط</span>
             </div>
-            <div className="text-center bg-white/10 backdrop-blur-xs px-3.5 py-1.5 rounded-xl border border-white/10">
-              <strong className="text-sm font-black block font-mono">
-                {currentVolunteer.points >= 150 ? 'ذهبي' : currentVolunteer.points >= 80 ? 'فضي' : 'برونزي'}
+            <div className="text-center bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/15 min-w-[75px]">
+              <strong className="text-base font-black block font-mono text-white">
+                {volunteerState.points >= 150 ? '🥇 ذهبي' : volunteerState.points >= 80 ? '🥈 فضي' : '🥉 برونزي'}
               </strong>
-              <span className="text-[9px] text-emerald-100 font-medium block">تصنيف العضوية</span>
+              <span className="text-[10px] text-blue-100 font-bold block">التصنيف</span>
             </div>
-            <div className="text-center bg-white/10 backdrop-blur-xs px-3.5 py-1.5 rounded-xl border border-white/10">
-              <strong className="text-sm font-black block font-mono">#{associationRank}</strong>
-              <span className="text-[9px] text-emerald-100 font-medium block">ترتيب الجمعية</span>
+            <div className="text-center bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/15 min-w-[75px]">
+              <strong className="text-base font-black block font-mono text-emerald-300">#{associationRank || 1}</strong>
+              <span className="text-[10px] text-blue-100 font-bold block">ترتيب الجمعية</span>
             </div>
             
             {/* Quick Export Monthly Achievement Report Button */}
             <button
               onClick={() => setShowMonthlyReportModal(true)}
-              className="bg-white hover:bg-emerald-50 text-emerald-800 font-black text-xs px-3.5 py-2.5 rounded-xl shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
+              className="bg-white hover:bg-blue-50 text-[#071C43] font-black text-xs px-3.5 py-2.5 rounded-2xl shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
               title="تصدير تقرير الإنجاز الشهري وساعات التطوع المعتمدة إلى PDF"
             >
-              <FileText className="w-4 h-4 text-emerald-700" />
-              <span>تقرير الإنجاز الشهري (PDF)</span>
+              <FileText className="w-4 h-4 text-[#0754C7]" />
+              <span>تقرير الإنجاز (PDF)</span>
             </button>
 
             {/* Return to Homepage Button */}
@@ -195,36 +379,70 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                 type="button"
                 id="volunteer-back-to-home-btn"
                 onClick={onBackToHome}
-                className="bg-white/20 hover:bg-white/30 text-white font-black text-xs px-3.5 py-2.5 rounded-xl border border-white/20 shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
+                className="bg-white/15 hover:bg-white/25 text-white font-black text-xs px-3.5 py-2.5 rounded-2xl border border-white/20 shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
                 title="العودة إلى الصفحة التعريفية الرئيسية للموقع"
               >
                 <ArrowRight className="w-4 h-4" />
-                <span>العودة إلى الصفحة الرئيسية</span>
+                <span>الرئيسية</span>
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Navigation tabs */}
-      <div className="flex border-b border-neutral-100 gap-1 overflow-x-auto whitespace-nowrap pb-1" dir="rtl">
+      {/* Navigation tabs - Royal Blue theme (#0754C7) */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 overflow-x-auto whitespace-nowrap pb-1" dir="rtl">
         <button
           onClick={() => setActiveTab('home')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'home' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'home' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
           <Smartphone className="w-4 h-4" />
           <span>الرئيسية</span>
         </button>
         <button
-          onClick={() => setShowMonthlyReportModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 border-transparent text-emerald-700 bg-emerald-50/60 hover:bg-emerald-100/80 rounded-t-xl"
+          onClick={() => setActiveTab('profile')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'profile' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
-          <FileText className="w-4 h-4 text-emerald-600" />
-          <span>تصدير تقرير الإنجاز (PDF)</span>
+          <User className="w-4 h-4" />
+          <span>حسابي</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('leaderboard')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'leaderboard' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Trophy className="w-4 h-4 text-amber-500" />
+          <span>صدارة المتطوعين والفرق</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('initiatives')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'initiatives' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>الفرص والمبادرات</span>
         </button>
         <button
           onClick={() => setActiveTab('certificates')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'certificates' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'certificates' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
           <Award className="w-4 h-4 text-emerald-600" />
           <span>خزينة الشهادات ({myCertificates.length})</span>
@@ -235,53 +453,44 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           )}
         </button>
         <button
-          onClick={() => setActiveTab('leaderboard')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'leaderboard' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
-        >
-          <Trophy className="w-4 h-4 text-amber-500" />
-          <span>صدارة المتطوعين</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('initiatives')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'initiatives' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>مبادراتي</span>
-        </button>
-        <button
           onClick={() => setActiveTab('notifications')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'notifications' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'notifications' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
           <Inbox className="w-4 h-4" />
-          <span>الإشعارات ({myBroadcasts.length})</span>
+          <span>الإشعارات ({myBroadcasts.length + (activeCheckinInitiative ? 1 : 0)})</span>
         </button>
         <button
           onClick={() => setActiveTab('assistant')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'assistant' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'assistant' 
+              ? 'border-[#0754C7] text-[#0754C7] dark:text-blue-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
-          <Bot className="w-4 h-4 text-emerald-600 animate-pulse" />
+          <Bot className="w-4 h-4 text-[#0754C7] animate-pulse" />
           <span>المساعد الذكي</span>
         </button>
         <button
-          onClick={() => setActiveTab('profile')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'profile' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
-        >
-          <User className="w-4 h-4" />
-          <span>حسابي</span>
-        </button>
-        <button
           onClick={() => setActiveTab('support')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${activeTab === 'support' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'support' 
+              ? 'border-[#0754C7] text-[#0754C7] bg-blue-50/50 dark:bg-blue-950/30' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
-          <HelpCircle className="w-4 h-4 text-emerald-600" />
-          <span>الدعم الفني لفريقي</span>
+          <HelpCircle className="w-4 h-4 text-[#0754C7]" />
+          <span>الدعم الفني للفريق</span>
         </button>
       </div>
 
       {/* Main Tab content frame */}
       <div className="bg-white p-5 rounded-2xl border border-neutral-100 shadow-2xs text-right" dir="rtl">
         
-        {/* 1. HOME VIEW */}
+        {/* 1. HOME VIEW: 6 Distinctive Brand Sections */}
         {activeTab === 'home' && (
           <div className="space-y-6">
             
@@ -313,16 +522,16 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
               </div>
             )}
             
-            {/* Active Checkout Notification Banner */}
+            {/* Active Field Checkout Notification Banner */}
             {activeCheckinInitiative && (
-              <div className="bg-linear-to-br from-amber-50 to-amber-100/40 border border-amber-200 p-5 rounded-2xl space-y-3 shadow-2xs">
+              <div className="bg-linear-to-br from-amber-50 to-amber-100/40 dark:from-amber-950/40 dark:to-amber-900/30 border border-amber-200 dark:border-amber-700/60 p-5 rounded-3xl space-y-3 shadow-sm">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 bg-amber-500/10 text-amber-700 rounded-full flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-full flex items-center justify-center shrink-0">
                     <BadgeAlert className="w-5 h-5 animate-bounce" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-xs font-black text-amber-950">أنت مسجل حضور ميداني نشط حالياً!</h4>
-                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                    <h4 className="text-xs font-black text-amber-950 dark:text-amber-200">أنت مسجل حضور ميداني نشط حالياً!</h4>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
                       أنت متواجد حالياً بمبادرة: <strong>{activeCheckinInitiative.name}</strong> ({activeCheckinInitiative.place}). يرجى تأكيد انصرافك عند مغادرة الموقع لتوثيق الساعات بدقة.
                     </p>
                   </div>
@@ -332,7 +541,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                   <button
                     onClick={handleSelfCheckout}
                     disabled={checkoutLoading}
-                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-5 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-2 cursor-pointer disabled:bg-neutral-300"
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-xs inline-flex items-center gap-2 cursor-pointer disabled:bg-neutral-300"
                   >
                     {checkoutLoading ? (
                       <>
@@ -351,101 +560,360 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             )}
 
             {checkoutSuccess && (
-              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2">
+              <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-4 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
                 <span>تم تسجيل انصرافك بنجاح وحساب مدة العمل الميداني! شكراً لعطائك المتميز اليوم. ✓</span>
               </div>
             )}
 
-            {/* Smart Digital Membership Card and Overview */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Top Grid: Section 1 (Welcome Card), Section 2 (Points Card), Section 3 (Team Card) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               
-              {/* Digital Card column */}
-              <div className="lg:col-span-5 flex flex-col items-center justify-center py-2 space-y-3">
-                <div className="text-center space-y-2 mb-2 w-full">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-black text-neutral-800 text-right">بطاقة العضوية المعتمدة</h3>
-                      <p className="text-[10.5px] text-neutral-500 text-right">بطاقة التطوع الرسمية بجمعية ريادة العطاء لخدمة الإنسان بالعسيلة</p>
+              {/* SECTION 1: بطاقة الترحيب (Welcome Card) */}
+              <div className="bg-white dark:bg-slate-800/80 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#0754C7]" />
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white">1. بطاقة الترحيب والهوية</h3>
+                  </div>
+                  <span className="text-[10px] bg-blue-50 dark:bg-blue-950/60 text-[#0754C7] dark:text-blue-300 px-2.5 py-0.5 rounded-full font-bold">
+                    حساب المتطوع
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3.5">
+                  <div className="relative group cursor-pointer" onClick={() => setShowProfileCropModal(true)}>
+                    <img 
+                      src={displayAvatarUrl} 
+                      alt={volunteerState.name} 
+                      className="w-16 h-16 rounded-full object-cover border-2 border-[#0754C7] shadow-sm"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                      <Camera className="w-4 h-4" />
                     </div>
-                    {/* View Switcher */}
-                    <div className="bg-neutral-100 p-0.5 rounded-xl flex items-center border border-neutral-200 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => setCardDisplayMode('official')}
-                        className={`px-2.5 py-1 rounded-lg font-black transition-all cursor-pointer ${
-                          cardDisplayMode === 'official' ? 'bg-white text-emerald-800 shadow-2xs font-bold' : 'text-neutral-500 hover:text-neutral-900'
-                        }`}
-                      >
-                        بطاقة الفريق
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCardDisplayMode('smart')}
-                        className={`px-2.5 py-1 rounded-lg font-black transition-all cursor-pointer ${
-                          cardDisplayMode === 'smart' ? 'bg-white text-emerald-800 shadow-2xs font-bold' : 'text-neutral-500 hover:text-neutral-900'
-                        }`}
-                      >
-                        النمط الذكي
-                      </button>
-                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">{volunteerState.name}</h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      رقم الملف: <strong className="font-mono text-slate-800 dark:text-slate-200">{volunteerState.fileNumber || volunteerState.file_number || "غير مسجل"}</strong>
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      الفريق: <strong className="text-[#0754C7] dark:text-blue-400">{myTeam ? myTeam.nameAr : "غير مخصص"}</strong>
+                    </p>
                   </div>
                 </div>
 
-                {cardDisplayMode === 'official' ? (
-                  <VolunteerProfileCardSection
-                    volunteer={currentVolunteer}
-                    teams={teams}
-                    departments={departments}
-                    title="بطاقة المتطوع الرسمية"
-                    onReissue={() => onReissueCard(currentVolunteer.id)}
-                  />
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 text-[11px]">حالة الحساب:</span>
+                  <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>{volunteerState.status === 'inactive' ? 'غير نشط' : 'نشط ومعتمد'}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* SECTION 2: بطاقة النقاط ومؤشرات الإنجاز (Points & Metric Card) */}
+              <div className="bg-white dark:bg-slate-800/80 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-amber-500" />
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white">2. بطاقة النقاط والأداء</h3>
+                  </div>
+                  <span className="text-[10px] bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                    نظام النقاط
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-500 block">مجموع النقاط</span>
+                    <strong className="text-base font-black text-amber-600 dark:text-amber-400 font-mono">{volunteerState.points}</strong>
+                  </div>
+                  <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-500 block">نقاط الشهر الحالي</span>
+                    <strong className="text-base font-black text-blue-600 dark:text-blue-400 font-mono">+{currentMonthPoints}</strong>
+                  </div>
+                  <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-500 block">المبادرات المشارك بها</span>
+                    <strong className="text-sm font-bold text-slate-800 dark:text-slate-200 font-mono">{myAttendance.length}</strong>
+                  </div>
+                  <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60">
+                    <span className="text-[10px] text-slate-500 block">مرات الحضور المعتمد</span>
+                    <strong className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">{validAttendanceCount}</strong>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 text-[11px]">الترتيب بين المتطوعين:</span>
+                  <span className="font-mono font-black text-[#0754C7] dark:text-blue-300 bg-blue-50 dark:bg-blue-950 px-2.5 py-0.5 rounded-md">
+                    المركز #{associationRank || 1}
+                  </span>
+                </div>
+              </div>
+
+              {/* SECTION 3: بطاقة الفريق والقائد (Team Card) */}
+              <div className="bg-white dark:bg-slate-800/80 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#0754C7]" />
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white">3. بطاقة الفريق والقائد</h3>
+                  </div>
+                  <span className="text-[10px] bg-blue-50 dark:bg-blue-950/60 text-[#0754C7] dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">
+                    المركز #{teamLeaderboardPos || 1} بالصدارة
+                  </span>
+                </div>
+
+                {myTeam ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={myTeam.logoUrl || "/logo.png"} 
+                        alt={myTeam.nameAr} 
+                        className="w-12 h-12 rounded-xl object-contain p-1 border border-slate-200 dark:border-slate-700 bg-white"
+                      />
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900 dark:text-white">{myTeam.nameAr}</h4>
+                        <p className="text-[10px] text-slate-500">
+                          عدد الأعضاء: <strong className="font-mono text-slate-700 dark:text-slate-300">{teamVolunteers.length} متطوع</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-[#0754C7] text-white flex items-center justify-center font-bold text-xs">
+                          {myTeam.leaderName ? myTeam.leaderName.charAt(0) : "ق"}
+                        </div>
+                        <div>
+                          <span className="text-[9.5px] text-slate-400 block">قائد الفريق:</span>
+                          <strong className="text-slate-800 dark:text-slate-200 text-xs block">{myTeam.leaderName || "غير محدد"}</strong>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-[#0754C7] dark:text-blue-400 font-bold">معتمد ✓</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-400">لم يتم تعيين فريق لك بعد. تواصل مع إدارة التطوع.</div>
+                )}
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 text-[11px]">موقع الفريق بالصدارة:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    المركز {teamLeaderboardPos} من {teams.length} فرق
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Middle Grid: Section 4 (Opportunities) & Section 5 (3D Double-Sided Card Widget) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              {/* SECTION 5: البطاقة التطوعية الذكية ذات الوجهين (3D Flip Card Widget) */}
+              <div className="lg:col-span-5 bg-white dark:bg-slate-800/80 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <span>5. البطاقة التطوعية الذكية (3D Flip)</span>
+                    </h3>
+                    <p className="text-[10.5px] text-slate-500">بطاقة ذات وجهين قابلة للقلب والتحقق المباشر</p>
+                  </div>
+
+                  <div className="bg-slate-100 dark:bg-slate-700 p-0.5 rounded-xl flex items-center text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setCardDisplayMode('3d')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        cardDisplayMode === '3d' 
+                          ? 'bg-white dark:bg-slate-900 text-[#0754C7] dark:text-blue-300 shadow-xs' 
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      بطاقة الفريق 3D
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCardDisplayMode('smart')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        cardDisplayMode === 'smart' 
+                          ? 'bg-white dark:bg-slate-900 text-[#0754C7] dark:text-blue-300 shadow-xs' 
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      النمط السريع
+                    </button>
+                  </div>
+                </div>
+
+                {cardDisplayMode === '3d' && cardTemplate ? (
+                  <div className="flex flex-col items-center justify-center">
+                    <CardRenderer
+                      template={cardTemplate}
+                      volunteer={volunteerState}
+                      departments={departments}
+                      teams={teams}
+                      scale={0.52}
+                      showActions={true}
+                      showControls={true}
+                      onReissue={() => onReissueCard(volunteerState.id)}
+                    />
+                  </div>
                 ) : (
                   <SmartCard 
-                    volunteer={currentVolunteer}
+                    volunteer={volunteerState}
                     departments={departments}
                     teams={teams}
                     onReissue={onReissueCard}
                   />
                 )}
-              </div>
 
-              {/* Quick Stats overview & Guidelines */}
-              <div className="lg:col-span-7 space-y-5">
-                <div className="bg-neutral-50/50 p-5 rounded-2xl border border-neutral-100 space-y-4">
-                  <h4 className="text-xs font-black text-neutral-800 pb-2 border-b border-neutral-100">مؤشرات الأداء وصحيفة التقييم:</h4>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white p-3 rounded-xl border border-neutral-100 space-y-1">
-                      <span className="text-[10px] text-neutral-400 font-bold block">مجموع المشاركات</span>
-                      <strong className="text-sm font-bold text-neutral-800 font-mono">{myAttendance.length} مبادرات</strong>
-                    </div>
-                    <div className="bg-white p-3 rounded-xl border border-neutral-100 space-y-1">
-                      <span className="text-[10px] text-neutral-400 font-bold block">متوسط تقييم القادة</span>
-                      <strong className="text-sm font-bold text-amber-600 font-mono">
-                        ★ {myEvals.length > 0 
-                          ? (myEvals.reduce((acc, ev) => acc + ((ev.commitment + ev.ethics + ev.cooperation + ev.discipline + ev.interaction) / 5), 0) / myEvals.length).toFixed(1)
-                          : "5.0"}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="text-[11px] text-neutral-500 leading-relaxed bg-emerald-50/30 p-3 rounded-xl border border-emerald-100/30">
-                    💡 <strong>قاعدة النقاط:</strong> الحضور الكامل يمنحك <b>+3 نقاط</b>، والالتزام بالزي الرسمي والسديري يمنحك <b>+2 نقاط إضافية</b> تلقائياً! بينما الغياب بدون عذر يخصم <b>-2 نقاط</b> من صحيفتك.
-                  </div>
-                </div>
-
-                {/* Print guidelines */}
-                <div className="border border-neutral-150 p-4 rounded-xl bg-neutral-50/30 text-xs space-y-2">
-                  <h4 className="font-black text-neutral-700">دليل استخدام البطاقة في الميدان:</h4>
-                  <p className="text-[11px] text-neutral-500 leading-relaxed">
-                    1. احتفظ بنسخة من بطاقتك على جوالك أو قم بطباعتها لتسهيل الفحص الميداني بواسطة قائد فريقك.<br />
-                    2. يرجى توجيه الباركود أو الـ QR الخاص بالبطاقة نحو ماسح قائد الفريق لتسجيل الحضور المباشر.<br />
-                    3. يمكنك تسجيل انصرافك ذاتياً من خلال زر "تم الانصراف" المتوفر بالرئيسية عند انتهاء فترة المبادرة.
-                  </p>
+                <div className="text-[10.5px] text-slate-500 leading-relaxed bg-blue-50/50 dark:bg-blue-950/30 p-3 rounded-2xl border border-blue-100 dark:border-blue-900/40">
+                  💡 <strong>ميزة الوجهين:</strong> انقر على زر "قلب البطاقة" لمعاينة الوجه الخلفي المشتمل على رمز الاستجابة السريعة (QR) الذي يفتح الموقع الرسمي للجمعية: <span className="font-mono text-[#0754C7] dark:text-blue-300">https://www.riadataleata.com</span>.
                 </div>
               </div>
 
+              {/* SECTION 4: الفرص والمبادرات التطوعية (Volunteer Opportunities Card) */}
+              <div className="lg:col-span-7 bg-white dark:bg-slate-800/80 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-[#0754C7]" />
+                      <span>4. الفرص والمبادرات التطوعية</span>
+                    </h3>
+                    <p className="text-[10.5px] text-slate-500">الفرص المتاحة للتسجيل وسجل المشاركات الميدانية</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-[#0754C7] dark:text-blue-300">
+                      المقبولة: {myRequests.filter(r => r.status === 'accepted').length}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                      المتاحة: {initiatives.filter(i => i.registrationStatus === 'open').length}
+                    </span>
+                  </div>
+                </div>
+
+                {appliedSuccess && (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>تم تسجيل طلبك للمبادرة بنجاح وبانتظار اعتماد قائد الفريق! ✓</span>
+                  </div>
+                )}
+
+                {/* Open Opportunities List */}
+                <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                  {initiatives.filter(i => i.registrationStatus === 'open').map(i => {
+                    const team = teams.find(t => t.id === i.teamId);
+                    const hasApplied = myRequests.some(r => r.initiativeId === i.id);
+                    return (
+                      <div key={i.id} className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 hover:border-[#0754C7] transition-all flex flex-col justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-start">
+                            <strong className="text-xs font-black text-slate-900 dark:text-white block">{i.name}</strong>
+                            <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold">متاح للتسجيل</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 line-clamp-2">{i.description}</p>
+                          <div className="text-[10px] text-slate-500 flex flex-wrap gap-x-3 gap-y-1 pt-1 font-medium">
+                            <span>📍 {i.place}</span>
+                            <span>📅 {i.date} ({i.startTime} - {i.endTime})</span>
+                            <span className="text-[#0754C7] font-bold">👥 {team ? team.nameAr : "مستقل"}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                          {i.nationalPlatformUrl ? (
+                            <a
+                              href={i.nationalPlatformUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10.5px] font-bold text-[#0754C7] dark:text-blue-400 hover:underline flex items-center gap-1"
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                              <span>المنصة الوطنية</span>
+                              <ArrowUpRight className="w-3 h-3" />
+                            </a>
+                          ) : <div />}
+
+                          <button
+                            onClick={() => handleApply(i.id)}
+                            disabled={hasApplied}
+                            className={`text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                              hasApplied 
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed' 
+                                : 'bg-[#0754C7] hover:bg-blue-700 text-white shadow-xs'
+                            }`}
+                          >
+                            {hasApplied ? "تم التقديم مسبقاً ✓" : "انضمام للفرصة"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+            </div>
+
+            {/* SECTION 6: صندوق الإشعارات والتنبيهات الميدانية (Notifications Feed) */}
+            <div className="bg-white dark:bg-slate-800/80 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                <div className="flex items-center gap-2">
+                  <Inbox className="w-4 h-4 text-[#0754C7]" />
+                  <h3 className="text-xs font-black text-slate-800 dark:text-white">6. الإشعارات والتعاميم الميدانية</h3>
+                </div>
+                <span className="text-[10px] text-slate-400">تحديثات فورية من القائد والإدارة</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Team broadcasts */}
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-bold text-slate-700 dark:text-slate-300">📢 تعاميم قائد الفريق:</h4>
+                  {myBroadcasts.length > 0 ? (
+                    myBroadcasts.slice(0, 3).map((bc: any, idx: number) => (
+                      <div key={idx} className="p-3 rounded-2xl bg-blue-50/40 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-xs text-slate-800 dark:text-slate-200 space-y-1">
+                        <div className="flex justify-between items-center text-[10px] text-slate-400">
+                          <span>قائد الفريق:</span>
+                          <span className="font-mono">{bc.timestamp ? new Date(bc.timestamp).toLocaleDateString("ar-SA") : "اليوم"}</span>
+                        </div>
+                        <p className="leading-relaxed">{bc.message || bc}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                      لا توجد تعاميم جديدة من قائد الفريق حالياً.
+                    </div>
+                  )}
+                </div>
+
+                {/* System activity & points notices */}
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-bold text-slate-700 dark:text-slate-300">🔔 إشعارات القبول والنقاط:</h4>
+                  <div className="space-y-2">
+                    {myRequests.slice(0, 2).map((r) => (
+                      <div key={r.id} className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700/60 text-xs flex justify-between items-center">
+                        <div>
+                          <strong className="block text-slate-800 dark:text-slate-200 text-xs">{r.initiativeName}</strong>
+                          <span className="text-[10px] text-slate-400 font-mono">تاريخ التقديم: {r.date || r.requestDate}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                          r.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' :
+                          r.status === 'rejected' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {r.status === 'accepted' ? 'مقبول بالفرصة ✓' : r.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                        </span>
+                      </div>
+                    ))}
+
+                    <div className="p-3 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 text-xs flex items-center justify-between text-amber-900 dark:text-amber-200">
+                      <span>💎 رصيد نقاطك النشط:</span>
+                      <strong className="font-mono font-black">{volunteerState.points} نقطة</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -571,6 +1039,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
 
             {showKnightsModal && (
               <VolunteerKnightsModal
+                isOpen={showKnightsModal}
                 volunteers={volunteers}
                 teams={teams}
                 initiatives={initiatives}
@@ -755,101 +1224,340 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           </div>
         )}
 
-        {/* 5. PROFILE & ACCOUNT SETTINGS */}
+        {/* 5. PROFILE & ACCOUNT SETTINGS (صفحة «حسابي» المستقلة) */}
         {activeTab === 'profile' && (
           <div className="space-y-6">
-            <div>
-              <h3 className="text-xs font-black text-neutral-800 uppercase tracking-wider">الملف الشخصي والبيانات الرسمية</h3>
-              <p className="text-[11px] text-neutral-500">تفاصيل حسابك المعتمد بجمعية ريادة العطاء لخدمة الإنسان بالعسيلة وتاريخ الحضور والالتزام</p>
+            <div className="border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <User className="w-5 h-5 text-[#0754C7]" />
+                  <span>صفحة «حسابي» والبيانات الرسمية للمتطوع</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  إدارة البيانات الشخصية، تحديث صورة الحساب، ومعاينة بياناتك المعتمدة بجمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDataChangeModal(true)}
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>طلب تعديل بيانات رسمية</span>
+                </button>
+              </div>
             </div>
 
-            {/* بطاقة المتطوع داخل ملف المتطوع (Requirements 14, 15, 16) */}
-            <VolunteerProfileCardSection 
-              volunteer={currentVolunteer}
-              teams={teams}
-              departments={departments}
-              title="قسم: بطاقة المتطوع الرسمية"
-              onReissue={() => onReissueCard(currentVolunteer.id)}
-            />
+            {/* DUAL PHOTOS DISPLAY: WhatsApp Profile Photo VS Official Card Photo */}
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-5 rounded-3xl border border-slate-200 dark:border-slate-700/80 space-y-4">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-[#0754C7]" />
+                <h4 className="text-xs font-black text-slate-800 dark:text-white">الصور المعتمدة: صورة الحساب الشخصي (واتساب) مقابل صورة البطاقة الرسمية</h4>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Profile details */}
-              <div className="bg-neutral-50/50 p-5 rounded-xl border border-neutral-100 space-y-3">
-                <h4 className="text-xs font-black text-neutral-800 border-b border-neutral-150 pb-2">تفاصيل الحساب:</h4>
-                <div className="space-y-2 text-xs font-medium text-neutral-600">
-                  <div className="flex justify-between">
-                    <span>الاسم الكامل:</span>
-                    <strong className="text-neutral-900">{currentVolunteer.name}</strong>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
+                {/* 1. Personal WhatsApp Profile Photo */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center gap-4 justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="relative">
+                      <img 
+                        src={displayAvatarUrl} 
+                        alt={volunteerState.name} 
+                        className="w-20 h-20 rounded-full object-cover border-3 border-[#0754C7] shadow-md"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute -bottom-1 -left-1 bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                        نشطة
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 text-right">
+                      <strong className="text-xs font-black text-slate-900 dark:text-white block">صورة الحساب الشخصي (واتساب)</strong>
+                      <p className="text-[10.5px] text-slate-500 leading-snug">
+                        تظهر في لوحة التحكم، وأعلى الصفحة، والتواصل. قابلة للتعديل والقص والتدوير في أي وقت.
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>رقم الجوال:</span>
-                    <strong className="text-neutral-900 font-mono">{currentVolunteer.phone}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>البريد الإلكتروني:</span>
-                    <strong className="text-neutral-900 font-mono">{currentVolunteer.email}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>اللقب التطوعي:</span>
-                    <strong className="text-neutral-900">{currentVolunteer.titleAr}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>رقم الملف الرسمي:</span>
-                    <strong className="text-emerald-700 font-mono bg-emerald-50 px-2 py-0.5 rounded-md font-bold">{currentVolunteer.fileNumber || currentVolunteer.file_number || "غير مسجل"}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>رقم العضوية:</span>
-                    <strong className="text-neutral-900 font-mono">{currentVolunteer.membershipNumber}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>الإدارية التابعة:</span>
-                    <strong className="text-emerald-700">{myDept ? myDept.nameAr : "غير معينة"}</strong>
-                  </div>
-                  {currentVolunteer.passwordResetToken && (
-                    <div className="pt-2 border-t border-neutral-200">
+
+                  <div className="flex sm:flex-col gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setShowProfileCropModal(true)}
+                      className="flex-1 sm:flex-initial bg-[#0754C7] hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>تغيير الصورة 📷</span>
+                    </button>
+                    {(volunteerState.profileImage || volunteerState.profile_image) && (
                       <button
                         type="button"
-                        onClick={() => setShowPasswordResetModal(true)}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        onClick={async () => {
+                          if (confirm("هل تريد حذف صورة الحساب الشخصية والرجوع للصورة الرسمية؟")) {
+                            try {
+                              const res = await fetch("/api/db/volunteers/profile-image", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ volunteerId: volunteerState.id, remove: true })
+                              });
+                              const data = await res.json();
+                              if (res.ok && data.ok) {
+                                setVolunteerState(data.volunteer);
+                              }
+                            } catch (e) {
+                              console.error(e);
+                            }
+                          }
+                        }}
+                        className="flex-1 sm:flex-initial bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs px-3.5 py-2 rounded-xl transition-all border border-rose-200 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>تعيين كلمة المرور الجديدة (طلب معتمد)</span>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>حذف 🗑️</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Attendance and points summary */}
-              <div className="bg-neutral-50/50 p-5 rounded-xl border border-neutral-100 space-y-3">
-                <h4 className="text-xs font-black text-neutral-800 border-b border-neutral-150 pb-2">سجل الحضور والغياب:</h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {myAttendance.length > 0 ? (
-                    myAttendance.map((a, idx) => {
-                      const init = initiatives.find(i => i.id === a.initiativeId);
-                      return (
-                        <div key={idx} className="bg-white p-2 rounded-lg border border-neutral-100 text-[10.5px] flex justify-between items-center">
-                          <div>
-                            <span className="font-bold text-neutral-800 block">{init ? init.name : "مبادرة تطوعية"}</span>
-                            <span className="text-[9.5px] text-neutral-400 block font-mono">{a.date}</span>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded-sm font-bold text-[8.5px] ${
-                            a.status === 'full' ? 'bg-emerald-100 text-emerald-800' :
-                            a.status === 'late' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
-                          }`}>
-                            {a.status === 'full' ? 'حضور كامل' :
-                             a.status === 'late' ? 'حضور متأخر' :
-                             a.status === 'excused' ? 'عذر مقبول' : 'غياب بدون عذر'}
-                          </span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="p-6 text-center text-neutral-400 text-[11px]">لم تسجل حضور في أي مبادرة بعد.</div>
-                  )}
+                {/* 2. Official Card Photo (Strictly Locked) */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-4 justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="relative">
+                      <img 
+                        src={volunteerState.photo} 
+                        alt="صورة البطاقة الرسمية" 
+                        className="w-20 h-20 rounded-2xl object-cover border-2 border-slate-300 dark:border-slate-600 shadow-md"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute -bottom-1 -left-1 bg-amber-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> رسمية
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 text-right">
+                      <div className="flex items-center gap-1.5">
+                        <strong className="text-xs font-black text-slate-900 dark:text-white">صورة البطاقة المعتمدة</strong>
+                        <Lock className="w-3 h-3 text-amber-500" />
+                      </div>
+                      <p className="text-[10.5px] text-slate-500 leading-snug">
+                        الصورة الرسمية المطبوعة على بطاقة التطوع الذكية. محمية ضد التعديل المباشر ولا تتأثر بتغيير صورة الحساب الشخصي.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChangeRequestField("photo");
+                      setShowDataChangeModal(true);
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap shrink-0"
+                    title="طلب تعديل الصورة الرسمية للبطاقة من الإدارة"
+                  >
+                    طلب تغيير 🔒
+                  </button>
                 </div>
               </div>
             </div>
+
+            {/* EDITABLE PERSONAL DETAILS FORM */}
+            <form onSubmit={handleSavePersonalInfo} className="bg-white dark:bg-slate-800/80 p-5 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                <div className="flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-emerald-600" />
+                  <h4 className="text-xs font-black text-slate-800 dark:text-white">البيانات الشخصية وبيانات التواصل (مسموح بتحديثها مباشرة):</h4>
+                </div>
+                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full">
+                  تحديث فوري
+                </span>
+              </div>
+
+              {profileSaveFeedback && (
+                <div className={`p-3 rounded-2xl text-xs font-bold flex items-center gap-2 ${
+                  profileSaveFeedback.type === 'success' 
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                    : 'bg-rose-50 text-rose-800 border border-rose-200'
+                }`}>
+                  {profileSaveFeedback.type === 'success' ? <Check className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                  <span>{profileSaveFeedback.text}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block">رقم الجوال:</label>
+                  <input
+                    type="tel"
+                    required
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="05XXXXXXXX"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-mono text-left text-xs text-slate-900 dark:text-white"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block">البريد الإلكتروني:</label>
+                  <input
+                    type="email"
+                    required
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="example@domain.com"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-mono text-left text-xs text-slate-900 dark:text-white"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block">المدينة:</label>
+                  <input
+                    type="text"
+                    value={editCity}
+                    onChange={(e) => setEditCity(e.target.value)}
+                    placeholder="مكة المكرمة"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block">الحي السكني:</label>
+                  <input
+                    type="text"
+                    value={editDistrict}
+                    onChange={(e) => setEditDistrict(e.target.value)}
+                    placeholder="مخطط العسيلة"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingProfile}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-2 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSavingProfile ? "جاري حفظ التعديلات..." : "حفظ تعديلات بيانات التواصل"}</span>
+                </button>
+              </div>
+            </form>
+
+            {/* LOCKED OFFICIAL DATA & ADMINISTRATIVE PARTICULARS */}
+            <div className="bg-white dark:bg-slate-800/80 p-5 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-amber-500" />
+                  <h4 className="text-xs font-black text-slate-800 dark:text-white">البيانات الرسمية المعتمدة (تخضع لرقابة واعتماد الإدارة):</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDataChangeModal(true)}
+                  className="text-xs text-[#0754C7] dark:text-blue-400 hover:underline font-bold flex items-center gap-1"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>تقديم طلب تعديل رسمي</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">الاسم المعتمد:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white text-xs">{volunteerState.name}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">رقم الهوية الوطنية / الإقامة:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white font-mono text-xs">{volunteerState.nationalId || "10********"}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">رقم الملف الرسمي:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-[#0754C7] dark:text-blue-400 font-mono text-xs font-bold">{volunteerState.fileNumber || volunteerState.file_number || "غير مسجل"}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">رقم العضوية التطوعية:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white font-mono text-xs">{volunteerState.membershipNumber}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">الفريق التطوعي الملحق به:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white text-xs">{myTeam ? myTeam.nameAr : "غير معين"}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">قائد الفريق المعتمد:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white text-xs">{myTeam ? myTeam.leaderName : "غير محدد"}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">اللقب والمنصب التطوعي:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white text-xs">{volunteerState.titleAr || "متطوع فاعل"}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">إجمالي النقاط المعتمدة:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-amber-600 dark:text-amber-400 font-mono text-xs">{volunteerState.points} نقطة</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 space-y-1">
+                  <span className="text-[10px] text-slate-400 block">تاريخ الانضمام الموثق:</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white font-mono text-xs">{volunteerState.joinDate || "1446-01-01"}</strong>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                </div>
+              </div>
+
+              {volunteerState.passwordResetToken && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordResetModal(true)}
+                    className="w-full bg-[#0754C7] hover:bg-blue-700 text-white font-bold py-2.5 rounded-2xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>تعيين كلمة المرور الجديدة لحسابك (طلب معتمد)</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* بطاقة المتطوع الرسمية ذات الوجهين */}
+            <VolunteerProfileCardSection 
+              volunteer={volunteerState}
+              teams={teams}
+              departments={departments}
+              title="قسم: بطاقة المتطوع الرسمية (المعاينة والطباعة)"
+              onReissue={() => onReissueCard(volunteerState.id)}
+            />
           </div>
         )}
 
@@ -1014,6 +1722,135 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
           teams={teams}
           departments={departments}
         />
+      )}
+
+      {/* Profile Photo WhatsApp-style Circular Crop Modal */}
+      {showProfileCropModal && (
+        <ProfilePhotoCropModal
+          isOpen={showProfileCropModal}
+          currentPhoto={displayAvatarUrl}
+          volunteerId={volunteerState.id}
+          volunteerName={volunteerState.name}
+          onClose={() => setShowProfileCropModal(false)}
+          onSaveSuccess={(newUrl) => {
+            setVolunteerState(prev => ({
+              ...prev,
+              profileImage: newUrl,
+              profile_image: newUrl
+            }));
+            setShowProfileCropModal(false);
+          }}
+        />
+      )}
+
+      {/* Official Data Change Request Modal */}
+      {showDataChangeModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in no-print">
+          <form
+            onSubmit={handleSubmitDataChangeRequest}
+            className="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 text-right animate-scale-up"
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-amber-500" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  تقديم طلب تعديل بيانات رسمية معتمدة
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDataChangeModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              البيانات الرسمية (مثل الاسم المعتمد، رقم الهوية، رقم الملف، الفريق، والنقاط) تخضع لمراجعة إدارة الموارد البشرية والعمليات قبل تعديلها في النظام.
+            </p>
+
+            {changeRequestSuccess && (
+              <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{changeRequestSuccess}</span>
+              </div>
+            )}
+
+            {changeRequestError && (
+              <div className="p-3 bg-rose-50 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{changeRequestError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                الحقل المطلوب تعديله:
+              </label>
+              <select
+                value={changeRequestField}
+                onChange={e => setChangeRequestField(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs text-slate-800 dark:text-white"
+              >
+                <option value="name">الاسم الكامل المعتمد</option>
+                <option value="nationalId">رقم الهوية الوطنية / الإقامة</option>
+                <option value="fileNumber">رقم الملف الرسمي</option>
+                <option value="team">الفريق التطوعي</option>
+                <option value="titleAr">المنصب واللقب التطوعي</option>
+                <option value="photo">صورة البطاقة الرسمية المعتمدة</option>
+                <option value="points">مراجعة رصيد النقاط</option>
+                <option value="other">بيان رسمي آخر</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                القيمة أو البيان الجديد المطلوب اعتماده:
+              </label>
+              <input
+                type="text"
+                required
+                value={changeRequestNewValue}
+                onChange={e => setChangeRequestNewValue(e.target.value)}
+                placeholder="أدخل البيان الصحيح الجديد..."
+                className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs text-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                مبرر التعديل وملاحظات إضافية:
+              </label>
+              <textarea
+                rows={3}
+                value={changeRequestReason}
+                onChange={e => setChangeRequestReason(e.target.value)}
+                placeholder="اشرح سبب طلب التعديل (مثل: تصحيح إملائي، نقل فريق، تجديد هوية)..."
+                className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs text-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="submit"
+                disabled={changeRequestSubmitting}
+                className="flex-1 bg-[#0754C7] hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{changeRequestSubmitting ? 'جاري الإرسال...' : 'رفع الطلب للإدارة للمراجعة'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDataChangeModal(false)}
+                className="px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
     </div>

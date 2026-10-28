@@ -264,7 +264,7 @@ export const ExecutiveKpiDashboard: React.FC<ExecutiveKpiDashboardProps> = ({
       if (a.status === 'full') full++;
       else if (a.status === 'late') late++;
       else if (a.status === 'excused') excused++;
-      else if (a.status === 'absent') absent++;
+      else if (a.status === 'unexcused' || (a.status as string) === 'absent') absent++;
       else full++;
     });
 

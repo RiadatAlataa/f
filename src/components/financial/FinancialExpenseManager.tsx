@@ -121,6 +121,7 @@ export const FinancialExpenseManager: React.FC<FinancialExpenseManagerProps> = (
         paymentMethod: 'bank_transfer',
         invoiceNumber: '',
         supplierId: '',
+        invoiceAttachmentUrl: '',
         notes: ''
       });
     } catch (err: any) {

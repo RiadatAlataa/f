@@ -1,11 +1,13 @@
 /**
- * Read-Only Pre-flight Probe for Neon Staging Branch
- * Endpoint: ep-tiny-hat-b4hpkghm
+ * Safe Read-Only Pre-flight Probe for Neon PostgreSQL Staging
+ * Project: جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+ * Database: neondb
  * 
- * STRICT SAFEGUARD:
- * 1. Read-only query execution (SELECT only).
- * 2. Absolutely NO schema creation or table modification.
- * 3. Hides credentials and secrets from output.
+ * STRICT SAFEGUARDS:
+ * 1. Read-only query execution (SELECT current_database(), current_user, version() ONLY).
+ * 2. Absolutely NO schema creation, table modification, insertion, or deletion.
+ * 3. Hides credentials, password, and secrets from output.
+ * 4. Dedicated connection timeout (10 seconds).
  */
 
 import pg from "pg";
@@ -16,47 +18,51 @@ async function probeStaging() {
   if (!url) {
     console.log(JSON.stringify({
       status: "MISSING_ENV_VAR",
-      message: "لم يتم العثور على المتغير TEST_DATABASE_URL في بيئة التشغيل بعد."
-    }, null, 2));
-    process.exit(0);
-  }
-
-  const cleanUrl = url.trim();
-  const EXPECTED_ENDPOINT = "ep-tiny-hat-b4hpkghm";
-
-  // 1. Strict Endpoint Match Assertion
-  if (!cleanUrl.includes(EXPECTED_ENDPOINT)) {
-    console.error(JSON.stringify({
-      status: "SECURITY_BLOCKED",
-      error: `الحظر الأمني نشط: الرابط لا يطابق نقطة الاتصال التجريبية المعتمدة (${EXPECTED_ENDPOINT}).`
+      message: "لم يتم العثور على المتغير السري TEST_DATABASE_URL في بيئة تشغيل الخادم."
     }, null, 2));
     process.exit(1);
   }
 
-  // Extract host safely without revealing password or username
+  const cleanUrl = url.trim();
+
+  // Extract host and database safely without revealing password or username
   let hostSafe = "unknown";
+  let dbSafe = "unknown";
   try {
     const parsed = new URL(cleanUrl);
     hostSafe = parsed.host;
+    dbSafe = (parsed.pathname || "").replace(/^\//, "");
+    if (!hostSafe.includes("neon.tech")) {
+      console.error(JSON.stringify({
+        status: "SECURITY_BLOCKED",
+        error: "الحظر الأمني: رابط الاتصال لا يشير إلى مزود Neon PostgreSQL (neon.tech)."
+      }, null, 2));
+      process.exit(1);
+    }
   } catch {
-    const match = cleanUrl.match(/@([^/:?]+)/);
-    if (match) hostSafe = match[1];
+    console.error(JSON.stringify({
+      status: "INVALID_URL_FORMAT",
+      error: "صيغة رابط الاتصال في TEST_DATABASE_URL غير صالحة."
+    }, null, 2));
+    process.exit(1);
   }
 
   const pool = new Pool({
     connectionString: cleanUrl,
-    ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: true },
     connectionTimeoutMillis: 10000
   });
 
-  const client = await pool.connect();
+  let client: any = null;
   try {
     const t0 = Date.now();
+    client = await pool.connect();
+
     // READ-ONLY probe
     const res = await client.query(`
       SELECT 
         current_database() AS database,
-        current_user AS role,
+        current_user AS user,
         version() AS version;
     `);
     const latencyMs = Date.now() - t0;
@@ -64,16 +70,16 @@ async function probeStaging() {
     const row = res.rows[0];
     console.log(JSON.stringify({
       status: "SUCCESS_CONNECTED",
-      endpointMatched: hostSafe.includes(EXPECTED_ENDPOINT),
-      host: hostSafe,
+      neonHost: hostSafe,
       database: row.database,
-      role: row.role,
+      currentUser: row.user,
       pgVersionSummary: (row.version || "").split(" on ")[0],
       latencyMs,
-      readOnlyVerified: true
+      readOnlyVerified: true,
+      modifiedData: false
     }, null, 2));
   } finally {
-    client.release();
+    if (client) client.release();
     await pool.end();
   }
 }

@@ -176,6 +176,9 @@ interface AdminDashboardProps {
   onDeleteDepartmentDirective?: (id: string) => void;
   onUpdateBeneficiaryStatus?: (id: string, status: "approved" | "pending" | "rejected") => Promise<boolean>;
   onUpdateBenefitRequestStatus?: (id: string, status: "pending" | "approved" | "in_progress" | "completed" | "rejected", notes: string) => Promise<boolean>;
+  onAddCertificateTemplate?: (template: any) => Promise<boolean>;
+  onDeleteCertificateTemplate?: (id: string) => Promise<boolean>;
+  onIssueCertificates?: (data: any) => Promise<boolean>;
   onAcceptVolunteerApplication?: (applicationId: string, teamId: string) => Promise<boolean>;
   onRejectVolunteerApplication?: (applicationId: string, rejectionReason: string) => Promise<boolean>;
   onAcceptTeamApplication?: (applicationId: string, departmentId: string, reviewerNotes?: string) => Promise<boolean>;
@@ -1076,7 +1079,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-                    {(currentCat.items || []).map((subItem) => {
+                    {(currentCat.items || []).map((subItem: any) => {
                       const SubIcon = subItem.icon;
                       const isSubActive = activeSubTab === subItem.id;
                       return (
@@ -1221,7 +1224,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB: OFFICIAL IDENTITY & LETTERHEAD SETTINGS (الهوية الرسمية والخطابات) */}
           {activeSubTab === 'official_identity' && (
             <OfficialIdentitySettingsPanel
-              homeSettings={data.homeSettings || {}}
+              homeSettings={(data.homeSettings as HomeSettings) || ({} as HomeSettings)}
               onSaveHomeSettings={onUpdateHomeSettings || (async () => false)}
               currentUser={authenticatedUser}
             />
@@ -2245,7 +2248,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onOpenDepartment={(deptId) => {
                     setActiveSubTab('deps');
                   }}
-                  onRefreshDatabase={onRefreshGlobalData}
+                  onRefreshDatabase={async () => { onRefreshGlobalData?.(); }}
                 />
               </DashboardErrorBoundary>
             );
@@ -3076,6 +3079,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 {showKnightsModal && (
                   <VolunteerKnightsModal
+                    isOpen={showKnightsModal}
                     volunteers={data.volunteers}
                     teams={data.teams}
                     initiatives={data.initiatives}

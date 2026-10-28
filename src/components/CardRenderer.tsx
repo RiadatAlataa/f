@@ -10,7 +10,10 @@ import {
   ShieldCheck, 
   Eye, 
   Sparkles,
-  Camera
+  Camera,
+  RotateCw,
+  Building2,
+  Globe
 } from "lucide-react";
 import QRCode from "qrcode";
 import { 
@@ -21,7 +24,7 @@ import {
   VolunteerTeam 
 } from "../types";
 
-interface CardRendererProps {
+export interface CardRendererProps {
   template: VolunteerCardTemplate;
   volunteer: Volunteer;
   departments?: Department[];
@@ -30,6 +33,7 @@ interface CardRendererProps {
   onReissue?: (volunteerId: string) => void;
   scale?: number;
   showActions?: boolean;
+  showControls?: boolean;
   onOpenVerification?: (volunteer: Volunteer) => void;
   className?: string;
   isPrintMode?: boolean;
@@ -37,6 +41,8 @@ interface CardRendererProps {
   selectedElementId?: string | null;
   onSelectElement?: (elementId: string) => void;
   onUpdateElementPosition?: (elementId: string, newX: number, newY: number) => void;
+  initialFace?: 'front' | 'back';
+  forceFace?: 'front' | 'back';
 }
 
 export const CardRenderer: React.FC<CardRendererProps> = ({
@@ -48,17 +54,31 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
   onReissue,
   scale = 1,
   showActions = true,
+  showControls = true,
   onOpenVerification,
   className = "",
   isPrintMode = false,
   interactive = false,
   selectedElementId = null,
   onSelectElement,
-  onUpdateElementPosition
+  onUpdateElementPosition,
+  initialFace = 'front',
+  forceFace
 }) => {
-  const cardContainerRef = useRef<HTMLDivElement>(null);
-  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const frontCardRef = useRef<HTMLDivElement>(null);
+  const backCardRef = useRef<HTMLDivElement>(null);
+
+  const [isFlipped, setIsFlipped] = useState<boolean>(initialFace === 'back');
+  const [frontQrDataUrl, setFrontQrDataUrl] = useState<string>("");
+  const [officialSiteQrDataUrl, setOfficialSiteQrDataUrl] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
+
+  // Sync with forceFace if provided
+  useEffect(() => {
+    if (forceFace) {
+      setIsFlipped(forceFace === 'back');
+    }
+  }, [forceFace]);
 
   const team = teams.find((t) => t.id === volunteer.teamId);
   const dept = departments.find((d) => d.id === volunteer.departmentId);
@@ -106,53 +126,47 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
 
   const NEUTRAL_USER_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='%23059669'%3E%3Ccircle cx='50' cy='35' r='18' opacity='0.8'/%3E%3Cpath d='M24 82c0-14.359 11.64-26 26-26s26 11.641 26 26' opacity='0.8'/%3E%3C/svg%3E";
 
-  // Photo to use
+  // Official Card Photo logic (strictly separated from profileImage)
+  const officialCardPhoto = volunteer.cardImage || volunteer.photo;
   const shouldUseUnifiedPhoto = isFemale && template.useFemaleUnifiedPhoto;
-  const hasCustomPhoto = volunteer.photo && !volunteer.photo.includes("unsplash.com") && !volunteer.photo.includes("placeholder");
+  const hasCustomCardPhoto = officialCardPhoto && !officialCardPhoto.includes("unsplash.com") && !officialCardPhoto.includes("placeholder");
   const hasUnifiedPhoto = femaleUnifiedPhotoUrl && !femaleUnifiedPhotoUrl.includes("unsplash.com") && !femaleUnifiedPhotoUrl.includes("placeholder");
 
-  const effectivePhotoUrl = shouldUseUnifiedPhoto
+  const effectiveCardPhotoUrl = shouldUseUnifiedPhoto
     ? (hasUnifiedPhoto ? femaleUnifiedPhotoUrl : NEUTRAL_USER_SVG)
-    : (hasCustomPhoto ? volunteer.photo! : NEUTRAL_USER_SVG);
+    : (hasCustomCardPhoto ? officialCardPhoto : NEUTRAL_USER_SVG);
 
-  // Mask sensitive national ID: e.g. 10****8901
-  const maskNationalId = (id?: string) => {
-    if (!id) return "10********";
-    if (id.length <= 4) return id;
-    const start = id.slice(0, 2);
-    const end = id.slice(-2);
-    return `${start}${"*".repeat(Math.max(4, id.length - 4))}${end}`;
-  };
-
-  // Verification URL for QR code
+  // Verification URL for Front QR code
   const verificationUrl = typeof window !== "undefined"
     ? `${window.location.origin}?verifyCard=${encodeURIComponent(volunteer.membershipNumber || volunteer.id)}`
-    : `https://riadataleata.org.sa/verify?card=${volunteer.membershipNumber}`;
+    : `https://www.riadataleata.com/verify?card=${volunteer.membershipNumber}`;
 
-  // Generate QR Code data URL
+  // Official Association Website for Back QR code (Strictly required: https://www.riadataleata.com)
+  const officialWebsiteUrl = "https://www.riadataleata.com";
+
+  // Generate QR Code data URLs
   useEffect(() => {
     let isMounted = true;
     QRCode.toDataURL(
       verificationUrl,
-      {
-        width: 250,
-        margin: 1,
-        color: {
-          dark: "#0f172a",
-          light: "#ffffff"
-        },
-        errorCorrectionLevel: "M"
-      },
+      { width: 250, margin: 1, color: { dark: "#0f172a", light: "#ffffff" }, errorCorrectionLevel: "M" },
       (err, url) => {
-        if (!err && isMounted && url) {
-          setQrDataUrl(url);
-        }
+        if (!err && isMounted && url) setFrontQrDataUrl(url);
       }
     );
+
+    QRCode.toDataURL(
+      officialWebsiteUrl,
+      { width: 280, margin: 1, color: { dark: "#071C43", light: "#ffffff" }, errorCorrectionLevel: "H" },
+      (err, url) => {
+        if (!err && isMounted && url) setOfficialSiteQrDataUrl(url);
+      }
+    );
+
     return () => {
       isMounted = false;
     };
-  }, [verificationUrl]);
+  }, [verificationUrl, officialWebsiteUrl]);
 
   // Dimensions & Orientation
   const cardWidth = template.width || 856;
@@ -170,16 +184,17 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
         rawValue = volunteer.nationalId || "1098765432";
         break;
       case 'membershipNumber':
-        rawValue = volunteer.membershipNumber || "V-2026-0001";
+      case 'fileNumber':
+        rawValue = volunteer.fileNumber || volunteer.file_number || volunteer.membershipNumber || "V-2026-0001";
         break;
       case 'jobTitle':
         rawValue = volunteer.titleAr || "متطوع تنظيمي ميداني";
         break;
       case 'teamName':
-        rawValue = team ? team.nameAr : "فريق التنظيم العام";
+        rawValue = team ? team.nameAr : "فريق ريادة العطاء";
         break;
       case 'departmentName':
-        rawValue = dept ? dept.nameAr : "إدارة التشغيل والمرافق";
+        rawValue = dept ? dept.nameAr : "إدارة التطوع";
         break;
       case 'gender':
         rawValue = isFemale ? "أنثى" : "ذكر";
@@ -194,31 +209,19 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
         rawValue = volunteer.bloodType || "O+";
         break;
       case 'joinDate':
-        rawValue = volunteer.issueDate || "2026-01-15";
+        rawValue = volunteer.issueDate || volunteer.joinDate || "2026-01-15";
         break;
       case 'expiryDate':
         rawValue = volunteer.expiryDate || "2027-01-15";
         break;
       case 'points':
-        rawValue = `${volunteer.points || 25} نقطة`;
+        rawValue = `${volunteer.points || 0} نقطة`;
         break;
       case 'customText':
-        rawValue = elem.customTextValue || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
+        rawValue = elem.customTextValue || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 1000888600";
         break;
       case 'employeeNumber':
-        rawValue = (volunteer as any).employeeNumber || (volunteer as any).fileNumber || volunteer.membershipNumber || "EMP-2026-001";
-        break;
-      case 'leaderNumber':
-        rawValue = (volunteer as any).leaderNumber || volunteer.membershipNumber || "LDR-2026-001";
-        break;
-      case 'leadershipTitle':
-        rawValue = (volunteer as any).leadershipTitle || volunteer.titleAr || "قائد الفريق التطوعي";
-        break;
-      case 'commissionDate':
-        rawValue = (volunteer as any).commissionDate || volunteer.issueDate || "2026-01-15";
-        break;
-      case 'hireDate':
-        rawValue = (volunteer as any).hireDate || volunteer.issueDate || "2025-09-01";
+        rawValue = (volunteer as any).employeeNumber || volunteer.fileNumber || volunteer.membershipNumber || "EMP-2026-001";
         break;
       default:
         rawValue = "";
@@ -230,216 +233,53 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
     return rawValue;
   };
 
-  // Render Barcode simulation
-  const renderSimulatedBarcode = (code: string) => {
-    const bars = [];
-    for (let i = 0; i < 48; i++) {
-      const width = i % 4 === 0 ? "2.5px" : i % 3 === 0 ? "1px" : "1.5px";
-      const opacity = i % 7 === 0 ? "0.4" : "1";
-      bars.push(
-        <div 
-          key={i} 
-          style={{ 
-            backgroundColor: "#1e293b", 
-            height: "26px", 
-            width, 
-            opacity 
-          }} 
-        />
-      );
-    }
-    return (
-      <div className="flex flex-col items-center bg-white/95 backdrop-blur-xs p-1.5 rounded-md border border-neutral-300 shadow-2xs">
-        <div className="flex justify-between w-full h-[26px] items-end px-1">{bars}</div>
-        <span className="text-[10px] font-mono mt-0.5 text-neutral-700 font-bold tracking-widest">{code}</span>
-      </div>
-    );
-  };
-
-  // Export card as PNG or JPG using HTML5 Canvas
-  const exportCardAsImage = async (format: 'png' | 'jpeg') => {
-    if (!cardContainerRef.current) return;
+  // Export card as high-res PNG / JPEG
+  const exportCardAsImage = async (format: "png" | "jpeg" = "png", faceToExport: 'current' | 'front' | 'back' = 'current') => {
     setIsExporting(true);
-
     try {
-      const cardEl = cardContainerRef.current;
-      const targetW = cardWidth;
-      const targetH = cardHeight;
+      const targetFace = faceToExport === 'current' ? (isFlipped ? 'back' : 'front') : faceToExport;
+      const targetRef = targetFace === 'back' ? backCardRef.current : frontCardRef.current;
+      
+      if (!targetRef) return;
 
-      // Create offscreen canvas matching the EXACT dimensions of the card template (e.g. 1000x600)
       const canvas = document.createElement("canvas");
-      canvas.width = targetW;
-      canvas.height = targetH;
+      canvas.width = cardWidth;
+      canvas.height = cardHeight;
       const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-      if (!ctx) {
-        alert("تعذر الوصول لمحرك الرسم بالمتصفح");
-        setIsExporting(false);
-        return;
-      }
+      // Draw background
+      const bgImgUrl = targetFace === 'back' 
+        ? (template.backBackgroundUrl || "https://images.unsplash.com/photo-1557683316-973673baf926?w=856&h=540&fit=crop")
+        : template.backgroundUrl;
 
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-
-      // 1. Draw background image matching exact template dimensions
-      if (template.backgroundUrl) {
+      if (bgImgUrl) {
         try {
           const bgImg = new Image();
           bgImg.crossOrigin = "anonymous";
-          await new Promise((resolve) => {
-            bgImg.onload = resolve;
-            bgImg.onerror = () => resolve(null); // soft fallback
-            bgImg.src = template.backgroundUrl;
+          await new Promise<void>((resolve, reject) => {
+            bgImg.onload = () => resolve();
+            bgImg.onerror = () => resolve(); // fallback on error
+            bgImg.src = bgImgUrl;
           });
-          if (bgImg.width) {
-            ctx.drawImage(bgImg, 0, 0, targetW, targetH);
+          if (bgImg.complete && bgImg.naturalWidth > 0) {
+            ctx.drawImage(bgImg, 0, 0, cardWidth, cardHeight);
           } else {
-            drawFallbackBackground(ctx, targetW, targetH);
+            drawFallbackBackground(ctx, cardWidth, cardHeight, targetFace);
           }
         } catch {
-          drawFallbackBackground(ctx, targetW, targetH);
+          drawFallbackBackground(ctx, cardWidth, cardHeight, targetFace);
         }
       } else {
-        drawFallbackBackground(ctx, targetW, targetH);
-        // Only draw subtle header decorative gradient and border for fallback default
-        const headGrad = ctx.createLinearGradient(0, 0, targetW, 80);
-        headGrad.addColorStop(0, "rgba(5, 150, 105, 0.15)");
-        headGrad.addColorStop(1, "rgba(245, 158, 11, 0.15)");
-        ctx.fillStyle = headGrad;
-        ctx.fillRect(0, 0, targetW, 80);
-
-        ctx.strokeStyle = "#059669";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(2, 2, targetW - 4, targetH - 4);
-      }
-
-      // Draw all configured visible elements
-      for (const elem of template.elements) {
-        if (!elem.visible) continue;
-
-        const posX = (elem.x / 100) * targetW;
-        const posY = (elem.y / 100) * targetH;
-
-        if (elem.type === 'photo') {
-          // Render photo
-          try {
-            const photoImg = new Image();
-            photoImg.crossOrigin = "anonymous";
-            await new Promise((resolve) => {
-              photoImg.onload = resolve;
-              photoImg.onerror = () => resolve(null);
-              photoImg.src = effectivePhotoUrl;
-            });
-
-            const pSize = elem.width || 120;
-            const pH = elem.height || pSize;
-
-            ctx.save();
-            ctx.beginPath();
-            if (elem.photoShape === 'circle') {
-              ctx.arc(posX + pSize / 2, posY + pH / 2, pSize / 2, 0, Math.PI * 2);
-            } else {
-              ctx.rect(posX, posY, pSize, pH);
-            }
-            ctx.clip();
-            if (photoImg.width) {
-              ctx.drawImage(photoImg, posX, posY, pSize, pH);
-            } else {
-              ctx.fillStyle = "#e2e8f0";
-              ctx.fillRect(posX, posY, pSize, pH);
-            }
-            ctx.restore();
-
-            // Border
-            ctx.save();
-            ctx.beginPath();
-            if (elem.photoShape === 'circle') {
-              ctx.arc(posX + pSize / 2, posY + pH / 2, pSize / 2, 0, Math.PI * 2);
-            } else {
-              ctx.rect(posX, posY, pSize, pH);
-            }
-            ctx.strokeStyle = elem.borderColor || "#f59e0b";
-            ctx.lineWidth = elem.borderWidth || 3;
-            ctx.stroke();
-            ctx.restore();
-          } catch (e) {
-            console.warn("Photo render error:", e);
-          }
-        } else if (elem.type === 'qrCode') {
-          // Render QR Code
-          if (qrDataUrl) {
-            try {
-              const qrImg = new Image();
-              await new Promise((resolve) => {
-                qrImg.onload = resolve;
-                qrImg.src = qrDataUrl;
-              });
-              const qSize = elem.qrSize || 90;
-              ctx.fillStyle = "#ffffff";
-              ctx.fillRect(posX, posY, qSize, qSize);
-              ctx.drawImage(qrImg, posX, posY, qSize, qSize);
-              ctx.strokeStyle = "#cbd5e1";
-              ctx.lineWidth = 1;
-              ctx.strokeRect(posX, posY, qSize, qSize);
-            } catch (e) {
-              console.warn("QR render error:", e);
-            }
-          }
-        } else if (elem.type === 'barcode') {
-          // Render barcode text
-          const bCode = volunteer.barcode || volunteer.membershipNumber || "100088868001";
-          ctx.font = "bold 12px monospace";
-          ctx.fillStyle = elem.color || "#0f172a";
-          ctx.textAlign = "center";
-          ctx.fillText(`|||| | ||||| |||| || ${bCode}`, posX + 60, posY + 20);
-        } else if (elem.type === 'associationLogo') {
-          // Association Logo circle
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(posX + 24, posY + 24, 24, 0, Math.PI * 2);
-          ctx.fillStyle = "#059669";
-          ctx.fill();
-          ctx.font = "bold 18px Cairo, sans-serif";
-          ctx.fillStyle = "#ffffff";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("ر", posX + 24, posY + 24);
-          ctx.restore();
-        } else if (elem.type === 'teamLogo' && team?.logoUrl) {
-          try {
-            const teamImg = new Image();
-            teamImg.crossOrigin = "anonymous";
-            await new Promise((resolve) => {
-              teamImg.onload = resolve;
-              teamImg.onerror = () => resolve(null);
-              teamImg.src = team.logoUrl || "";
-            });
-            if (teamImg.width) {
-              ctx.drawImage(teamImg, posX, posY, 48, 48);
-            }
-          } catch (e) {
-            // ignore
-          }
-        } else {
-          // Text Element
-          const text = getElementValue(elem);
-          const fSize = elem.fontSize || 14;
-          const fWeight = elem.fontWeight || "bold";
-          const fFamily = elem.fontFamily || "Cairo";
-
-          ctx.font = `${fWeight} ${fSize}px '${fFamily}', sans-serif`;
-          ctx.fillStyle = elem.color || "#1e293b";
-          ctx.textAlign = elem.textAlign === "center" ? "center" : elem.textAlign === "left" ? "left" : "right";
-          ctx.direction = elem.direction || "rtl";
-          ctx.fillText(text, posX, posY + fSize);
-        }
+        drawFallbackBackground(ctx, cardWidth, cardHeight, targetFace);
       }
 
       // Download file
       const dataUrl = canvas.toDataURL(format === "png" ? "image/png" : "image/jpeg", 0.95);
       const link = document.createElement("a");
       const safeName = (volunteer.name || "volunteer").replace(/\s+/g, "_");
-      link.download = `بطاقة_متطوع_${safeName}_${volunteer.membershipNumber || "2026"}.${format}`;
+      const faceName = targetFace === 'back' ? "الوجه_الخلفي" : "الوجه_الأمامي";
+      link.download = `بطاقة_متطوع_${safeName}_${faceName}_${volunteer.membershipNumber || "2026"}.${format}`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
@@ -452,23 +292,22 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
     }
   };
 
-  const drawFallbackBackground = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-    // Beautiful gradient fallback matching the association's brand identity
+  const drawFallbackBackground = (ctx: CanvasRenderingContext2D, w: number, h: number, face: 'front' | 'back') => {
     const grad = ctx.createLinearGradient(0, 0, w, h);
-    if (template.targetGender === 'female') {
-      grad.addColorStop(0, "#ffffff");
-      grad.addColorStop(0.5, "#fdf4ff");
-      grad.addColorStop(1, "#f5f3ff");
+    if (face === 'back') {
+      grad.addColorStop(0, "#071C43");
+      grad.addColorStop(0.5, "#0A2558");
+      grad.addColorStop(1, "#07142E");
     } else {
       grad.addColorStop(0, "#ffffff");
-      grad.addColorStop(0.5, "#f0fdf4");
-      grad.addColorStop(1, "#fefce8");
+      grad.addColorStop(0.5, "#F0F6FE");
+      grad.addColorStop(1, "#EBF3FE");
     }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
   };
 
-  // Handle Print Action
+  // Handle Print Action (Both Front & Back Faces side by side with CR80 dimensions)
   const handlePrint = () => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -476,7 +315,8 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
       return;
     }
 
-    const cardHtml = cardContainerRef.current?.outerHTML || "";
+    const frontHtml = frontCardRef.current?.outerHTML || "";
+    const backHtml = backCardRef.current?.outerHTML || "";
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -487,8 +327,8 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
           <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
           <style>
             @page {
-              size: auto;
-              margin: 10mm;
+              size: A4 portrait;
+              margin: 15mm;
             }
             body {
               margin: 0;
@@ -500,38 +340,59 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
               align-items: center;
               justify-content: center;
               direction: rtl;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
-            .print-wrapper {
+            .print-container {
               display: flex;
               flex-direction: column;
               align-items: center;
-              gap: 20px;
+              gap: 30px;
+            }
+            .card-face-wrapper {
+              page-break-inside: avoid;
+              border: 1px dashed #cbd5e1;
+              padding: 6px;
+              border-radius: 18px;
             }
             .print-notes {
-              font-size: 12px;
-              color: #64748b;
+              font-size: 11px;
+              color: #475569;
               text-align: center;
               margin-top: 15px;
               border-top: 1px dashed #cbd5e1;
               padding-top: 10px;
               width: 100%;
-              max-width: 500px;
+              max-width: 600px;
             }
-            /* Reset absolute scaling inside print window */
-            #card-root {
+            #front-card-root, #back-card-root {
               transform: none !important;
-              box-shadow: 0 4px 14px rgba(0,0,0,0.15) !important;
-              border: 2px solid #059669 !important;
+              box-shadow: none !important;
               margin: 0 auto;
             }
           </style>
         </head>
         <body>
-          <div class="print-wrapper">
-            ${cardHtml}
+          <div class="print-container">
+            <div style="text-align: center; margin-bottom: 10px;">
+              <h3 style="margin: 0; color: #071C43; font-size: 16px; font-weight: 900;">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h3>
+              <p style="margin: 3px 0 0; color: #64748b; font-size: 12px;">بطاقة العضوية التطوعية الرسمية المعتمدة (الوجه الأمامي والخلفي)</p>
+            </div>
+
+            <!-- Front Face -->
+            <div class="card-face-wrapper">
+              ${frontHtml}
+            </div>
+
+            <!-- Back Face -->
+            <div class="card-face-wrapper">
+              ${backHtml}
+            </div>
+
             <div class="print-notes">
-              <strong>جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - بطاقة عضوية رسمية معتمدة</strong><br />
-              الرقم الموحد: 100088868 | الترخيص: 5081 | تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')}
+              <strong>ترخيص المركز الوطني لتنمية القطاع غير الربحي: 1000888600</strong> • 
+              الموقع الرسمي: https://www.riadataleata.com • 
+              تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')}
             </div>
           </div>
           <script>
@@ -548,12 +409,51 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
 
   return (
     <div className={`flex flex-col items-center select-none ${className}`} dir="rtl">
-      {/* Outer Scaled Viewport Container */}
+      {/* 1. Face Switcher Controls (Front / Back / 3D Flip) */}
+      {showControls && (
+        <div className="flex items-center gap-2 mb-3 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+          <button
+            type="button"
+            onClick={() => setIsFlipped(false)}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              !isFlipped
+                ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <span>الوجه الأمامي (Front)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsFlipped(true)}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              isFlipped
+                ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <span>الوجه الخلفي (Back)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsFlipped(!isFlipped)}
+            className="p-1.5 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-900 transition-all cursor-pointer"
+            title="قلب البطاقة 3D"
+          >
+            <RotateCw className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* 2. Outer Scaled Viewport Container with 3D Flip Perspective */}
       <div 
-        className="relative overflow-hidden rounded-2xl shadow-md transition-all hover:shadow-xl border border-neutral-200 bg-neutral-100 flex items-center justify-center p-2"
+        className="relative rounded-2xl shadow-md transition-all hover:shadow-xl border border-neutral-200 dark:border-slate-800 bg-neutral-100 dark:bg-slate-950 flex items-center justify-center p-2"
         style={{
-          width: isLandscape ? `${Math.min(cardWidth * scale + 16, cardWidth)}px` : `${Math.min(cardWidth * scale + 16, cardWidth)}px`,
-          maxWidth: "100%"
+          width: `${Math.min(cardWidth * scale + 16, cardWidth)}px`,
+          maxWidth: "100%",
+          perspective: "1200px"
         }}
       >
         {/* Scaled Wrapper for CSS transforms */}
@@ -564,336 +464,332 @@ export const CardRenderer: React.FC<CardRendererProps> = ({
             transform: `scale(${scale})`,
             transformOrigin: "top center",
             margin: "0 auto",
-            marginBottom: scale < 1 ? `-${cardHeight * (1 - scale)}px` : "0px"
+            marginBottom: scale < 1 ? `-${cardHeight * (1 - scale)}px` : "0px",
+            position: "relative"
           }}
         >
-          {/* Real Card DOM node */}
+          {/* 3D Flipper Box */}
           <div
-            ref={cardContainerRef}
-            id="card-root"
-            className="relative overflow-hidden rounded-2xl border-2 border-emerald-600/80 shadow-lg text-neutral-800"
             style={{
-              width: `${cardWidth}px`,
-              height: `${cardHeight}px`,
-              backgroundColor: "#ffffff",
-              backgroundImage: template.backgroundUrl ? `url("${template.backgroundUrl}")` : undefined,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              fontFamily: "Cairo, sans-serif"
+              width: "100%",
+              height: "100%",
+              position: "relative",
+              transformStyle: "preserve-3d",
+              transition: "transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)",
+              transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
             }}
           >
-            {/* Ambient Background Overlay if NO background image exists */}
-            {!template.backgroundUrl && (
-              <>
-                <div className={`absolute inset-0 bg-gradient-to-br ${template.targetGender === 'female' ? 'from-white via-purple-50/50 to-amber-50/40' : 'from-white via-emerald-50/60 to-amber-50/40'} pointer-events-none`} />
-                <div className="absolute top-0 right-0 w-36 h-36 bg-gradient-to-br from-emerald-600/15 via-amber-500/10 to-transparent rounded-bl-full pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-36 h-36 bg-gradient-to-tr from-teal-600/15 via-emerald-500/10 to-transparent rounded-tr-full pointer-events-none" />
-              </>
-            )}
+            {/* ------------------------------------------------------------- */}
+            {/* FRONT FACE */}
+            {/* ------------------------------------------------------------- */}
+            <div
+              ref={frontCardRef}
+              id="front-card-root"
+              className="absolute inset-0 overflow-hidden rounded-2xl border-2 border-blue-600/80 shadow-lg text-neutral-800 select-none"
+              style={{
+                width: `${cardWidth}px`,
+                height: `${cardHeight}px`,
+                backgroundColor: "#ffffff",
+                backgroundImage: template.backgroundUrl ? `url("${template.backgroundUrl}")` : undefined,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                fontFamily: "Cairo, sans-serif",
+                backfaceVisibility: "hidden",
+                WebkitBackfaceVisibility: "hidden"
+              }}
+            >
+              {/* Ambient Background Overlay if NO background image exists */}
+              {!template.backgroundUrl && (
+                <>
+                  <div className={`absolute inset-0 bg-gradient-to-br ${template.targetGender === 'female' ? 'from-white via-purple-50/50 to-blue-50/40' : 'from-white via-blue-50/60 to-slate-50/40'} pointer-events-none`} />
+                  <div className="absolute top-0 right-0 w-36 h-36 bg-gradient-to-br from-blue-600/15 via-blue-500/10 to-transparent rounded-bl-full pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-36 h-36 bg-gradient-to-tr from-slate-600/15 via-blue-500/10 to-transparent rounded-tr-full pointer-events-none" />
+                </>
+              )}
 
-            {/* Render Configured Elements */}
-            {template.elements.map((elem) => {
-              if (!elem.visible) return null;
+              {/* Render Front Elements */}
+              {template.elements.map((elem) => {
+                if (!elem.visible) return null;
 
-              const transformParts: string[] = [];
-              if (elem.rotation) transformParts.push(`rotate(${elem.rotation}deg)`);
+                const transformParts: string[] = [];
+                if (elem.rotation) transformParts.push(`rotate(${elem.rotation}deg)`);
 
-              const style: React.CSSProperties = {
-                position: "absolute",
-                top: `${elem.y}%`,
-                left: `${elem.x}%`,
-                zIndex: elem.zIndex || 10,
-                transform: transformParts.length > 0 ? transformParts.join(" ") : undefined,
-                fontFamily: elem.fontFamily || "Cairo, sans-serif",
-                fontSize: `${elem.fontSize || 14}px`,
-                fontWeight: elem.fontWeight === "bold" ? 700 : elem.fontWeight === "900" ? 900 : elem.fontWeight === "500" ? 500 : 400,
-                color: elem.color || "#1e293b",
-                textAlign: elem.textAlign || "right",
-                direction: elem.direction || "rtl",
-                whiteSpace: "nowrap"
-              };
+                const style: React.CSSProperties = {
+                  position: "absolute",
+                  top: `${elem.y}%`,
+                  left: `${elem.x}%`,
+                  transform: transformParts.length > 0 ? transformParts.join(" ") : undefined,
+                  fontFamily: elem.fontFamily || "Cairo, sans-serif",
+                  fontSize: elem.fontSize ? `${elem.fontSize}px` : "14px",
+                  fontWeight: elem.fontWeight || "bold",
+                  color: elem.color || "#071C43",
+                  textAlign: elem.textAlign || "right",
+                  zIndex: elem.zIndex || 10
+                };
 
-              // 1. Photo Element
-              if (elem.type === 'photo') {
-                const pW = elem.width || 120;
-                const pH = elem.height || pW;
-                const shapeClass = elem.photoShape === 'circle' 
-                  ? 'rounded-full' 
-                  : elem.photoShape === 'square' 
-                    ? 'rounded-none' 
-                    : elem.photoShape === 'rectangle'
-                      ? 'rounded-md'
-                      : elem.photoShape === 'rounded' 
-                        ? 'rounded-2xl' 
-                        : 'rounded-xl';
-
-                return (
-                  <div
-                    key={elem.id}
-                    id={`elem-${elem.id}`}
-                    onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
-                    onClick={(e) => {
-                      if (interactive) {
-                        e.stopPropagation();
-                        onSelectElement?.(elem.id);
-                      }
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: `${elem.y}%`,
-                      left: `${elem.x}%`,
-                      width: `${pW}px`,
-                      height: `${pH}px`,
-                      zIndex: elem.zIndex || 15,
-                      transform: elem.rotation ? `rotate(${elem.rotation}deg)` : undefined
-                    }}
-                    className={`flex flex-col items-center select-none ${
-                      interactive ? 'cursor-move hover:ring-2 hover:ring-emerald-400 hover:ring-dashed' : ''
-                    } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}
-                  >
-                    <div 
-                      className={`relative overflow-hidden bg-white shadow-md ${shapeClass}`}
-                      style={{
-                        width: `${pW}px`,
-                        height: `${pH}px`,
-                        border: `${elem.borderWidth || 3}px solid ${elem.borderColor || "#f59e0b"}`
+                // Photo Element
+                if (elem.type === "photo") {
+                  const pWidth = elem.width || 130;
+                  const pHeight = elem.height || 130;
+                  const shapeClass = elem.photoShape === 'circle' ? 'rounded-full' : elem.photoShape === 'square' ? 'rounded-none' : 'rounded-2xl';
+                  return (
+                    <div
+                      key={elem.id}
+                      id={`elem-${elem.id}`}
+                      onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
+                      onClick={(e) => {
+                        if (interactive) {
+                          e.stopPropagation();
+                          onSelectElement?.(elem.id);
+                        }
                       }}
+                      style={{
+                        position: "absolute",
+                        top: `${elem.y}%`,
+                        left: `${elem.x}%`,
+                        width: `${pWidth}px`,
+                        height: `${pHeight}px`,
+                        borderWidth: `${elem.borderWidth || 3}px`,
+                        borderColor: elem.borderColor || "#0754C7",
+                        zIndex: elem.zIndex || 20
+                      }}
+                      className={`overflow-hidden shadow-md bg-neutral-100 ${shapeClass} select-none ${
+                        interactive ? 'cursor-move hover:ring-2 hover:ring-blue-400' : ''
+                      } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-blue-600' : ''}`}
                     >
                       <img
-                        src={effectivePhotoUrl}
-                        alt={volunteer.name}
+                        src={effectiveCardPhotoUrl}
+                        alt="صورة البطاقة الرسمية"
                         className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
                       />
                     </div>
-                    {shouldUseUnifiedPhoto && (
-                      <span className="mt-1 text-[9px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full border border-purple-300 shadow-2xs whitespace-nowrap">
-                        صورة موحدة للمتطوعات
-                      </span>
-                    )}
-                  </div>
-                );
-              }
+                  );
+                }
 
-              // 2. QR Code Element
-              if (elem.type === 'qrCode') {
-                const qSize = elem.qrSize || 85;
-                return (
-                  <div
-                    key={elem.id}
-                    id={`elem-${elem.id}`}
-                    onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
-                    onClick={(e) => {
-                      if (interactive) {
-                        e.stopPropagation();
-                        onSelectElement?.(elem.id);
-                      } else if (onOpenVerification) {
-                        onOpenVerification(volunteer);
-                      }
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: `${elem.y}%`,
-                      left: `${elem.x}%`,
-                      zIndex: elem.zIndex || 15
-                    }}
-                    className={`flex flex-col items-center select-none ${
-                      interactive ? 'cursor-move hover:ring-2 hover:ring-emerald-400 hover:ring-dashed' : 'cursor-pointer group'
-                    } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}
-                    title="رمز التحقق من العضوية"
-                  >
-                    <div 
-                      className="bg-white p-1 rounded-xl shadow-xs border border-neutral-200 transition-all group-hover:scale-105 group-hover:border-emerald-500"
-                      style={{ width: `${qSize}px`, height: `${qSize}px` }}
+                // Association Logo
+                if (elem.type === "associationLogo") {
+                  return (
+                    <div
+                      key={elem.id}
+                      id={`elem-${elem.id}`}
+                      onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
+                      onClick={(e) => {
+                        if (interactive) {
+                          e.stopPropagation();
+                          onSelectElement?.(elem.id);
+                        }
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: `${elem.y}%`,
+                        left: `${elem.x}%`,
+                        zIndex: elem.zIndex || 20
+                      }}
+                      className="select-none"
                     >
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR Code" className="w-full h-full object-contain" />
+                      <img src="/logo.png" alt="جمعية ريادة العطاء" className="h-14 w-auto object-contain" />
+                    </div>
+                  );
+                }
+
+                // Front QR Code (Smart Verification)
+                if (elem.type === "qrCode") {
+                  const qrSize = elem.qrSize || 90;
+                  return (
+                    <div
+                      key={elem.id}
+                      id={`elem-${elem.id}`}
+                      onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
+                      style={{
+                        position: "absolute",
+                        top: `${elem.y}%`,
+                        left: `${elem.x}%`,
+                        width: `${qrSize}px`,
+                        height: `${qrSize}px`,
+                        zIndex: elem.zIndex || 20
+                      }}
+                      className="bg-white p-1 rounded-xl shadow-xs border border-slate-200 select-none"
+                    >
+                      {frontQrDataUrl ? (
+                        <img src={frontQrDataUrl} alt="QR Code" className="w-full h-full object-contain" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-neutral-400">
-                          <QrCode className="w-6 h-6" />
-                        </div>
+                        <QrCode className="w-full h-full text-slate-800" />
                       )}
                     </div>
-                    <span className="text-[8px] font-bold text-neutral-500 mt-0.5 group-hover:text-emerald-700">
-                      مسح للتحقق ✓
+                  );
+                }
+
+                // Text Element
+                const displayText = getElementValue(elem);
+                return (
+                  <div
+                    key={elem.id}
+                    id={`elem-${elem.id}`}
+                    onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
+                    onClick={(e) => {
+                      if (interactive) {
+                        e.stopPropagation();
+                        onSelectElement?.(elem.id);
+                      }
+                    }}
+                    style={style}
+                    className={`whitespace-nowrap leading-tight select-none ${
+                      interactive ? 'cursor-move hover:ring-2 hover:ring-blue-400' : ''
+                    }`}
+                  >
+                    {displayText}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ------------------------------------------------------------- */}
+            {/* BACK FACE */}
+            {/* ------------------------------------------------------------- */}
+            <div
+              ref={backCardRef}
+              id="back-card-root"
+              className="absolute inset-0 overflow-hidden rounded-2xl border-2 border-blue-900 shadow-xl text-white select-none flex flex-col justify-between p-6"
+              style={{
+                width: `${cardWidth}px`,
+                height: `${cardHeight}px`,
+                backgroundColor: "#071C43",
+                backgroundImage: template.backBackgroundUrl ? `url("${template.backBackgroundUrl}")` : undefined,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                fontFamily: "Cairo, sans-serif",
+                backfaceVisibility: "hidden",
+                WebkitBackfaceVisibility: "hidden",
+                transform: "rotateY(180deg)"
+              }}
+            >
+              {/* Ambient Background Gradient for Back if NO image */}
+              {!template.backBackgroundUrl && (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 pointer-events-none" />
+                  <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+                </>
+              )}
+
+              {/* Back Face Top Header: Team Info & Association Branding */}
+              <div className="relative z-10 flex items-center justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 p-1 flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
+                    {team?.logoUrl ? (
+                      <img src={team.logoUrl} alt={team.nameAr} className="w-full h-full object-cover rounded-xl" />
+                    ) : (
+                      <Building2 className="w-7 h-7 text-blue-300" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">{team ? team.nameAr : "فريق ريادة العطاء"}</h3>
+                    <span className="text-xs text-blue-300 font-bold block">
+                      القائد المعتمد: {team?.leaderName || "سعود الحربي"}
                     </span>
                   </div>
-                );
-              }
-
-              // 3. Barcode Element
-              if (elem.type === 'barcode') {
-                return (
-                  <div
-                    key={elem.id}
-                    id={`elem-${elem.id}`}
-                    onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
-                    onClick={(e) => {
-                      if (interactive) {
-                        e.stopPropagation();
-                        onSelectElement?.(elem.id);
-                      }
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: `${elem.y}%`,
-                      left: `${elem.x}%`,
-                      zIndex: elem.zIndex || 15,
-                      width: elem.width ? `${elem.width}px` : "200px"
-                    }}
-                    className={`select-none ${
-                      interactive ? 'cursor-move hover:ring-2 hover:ring-emerald-400 hover:ring-dashed' : ''
-                    } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}
-                  >
-                    {renderSimulatedBarcode(volunteer.barcode || volunteer.membershipNumber || "100088868001")}
-                  </div>
-                );
-              }
-
-              // 4. Association Logo Element
-              if (elem.type === 'associationLogo') {
-                return (
-                  <div
-                    key={elem.id}
-                    id={`elem-${elem.id}`}
-                    onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
-                    onClick={(e) => {
-                      if (interactive) {
-                        e.stopPropagation();
-                        onSelectElement?.(elem.id);
-                      }
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: `${elem.y}%`,
-                      left: `${elem.x}%`,
-                      zIndex: elem.zIndex || 15
-                    }}
-                    className={`flex items-center gap-2 select-none ${
-                      interactive ? 'cursor-move hover:ring-2 hover:ring-emerald-400 hover:ring-dashed' : ''
-                    } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}
-                  >
-                    <div className="w-11 h-11 rounded-full bg-emerald-600 flex items-center justify-center text-white font-black text-lg shadow-xs border-2 border-amber-400">
-                      ر
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black text-emerald-900 leading-tight">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h4>
-                      <p className="text-[9.5px] text-neutral-500 font-bold leading-none">بمكة المكرمة</p>
-                    </div>
-                  </div>
-                );
-              }
-
-              // 5. Team Logo Element
-              if (elem.type === 'teamLogo') {
-                if (!team?.logoUrl) return null;
-                return (
-                  <div
-                    key={elem.id}
-                    id={`elem-${elem.id}`}
-                    onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
-                    onClick={(e) => {
-                      if (interactive) {
-                        e.stopPropagation();
-                        onSelectElement?.(elem.id);
-                      }
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: `${elem.y}%`,
-                      left: `${elem.x}%`,
-                      zIndex: elem.zIndex || 15
-                    }}
-                    className={`select-none ${
-                      interactive ? 'cursor-move hover:ring-2 hover:ring-emerald-400 hover:ring-dashed' : ''
-                    } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}
-                  >
-                    <img
-                      src={team.logoUrl}
-                      alt={team.nameAr}
-                      className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shadow-xs"
-                    />
-                  </div>
-                );
-              }
-
-              // Standard Text Element
-              const displayText = getElementValue(elem);
-              return (
-                <div
-                  key={elem.id}
-                  id={`elem-${elem.id}`}
-                  onMouseDown={(e) => handleElementMouseDown(e, elem.id, elem.x, elem.y)}
-                  onClick={(e) => {
-                    if (interactive) {
-                      e.stopPropagation();
-                      onSelectElement?.(elem.id);
-                    }
-                  }}
-                  style={style}
-                  className={`whitespace-nowrap leading-tight select-none ${
-                    interactive ? 'cursor-move hover:ring-2 hover:ring-emerald-400 hover:ring-dashed' : ''
-                  } ${interactive && selectedElementId === elem.id ? 'ring-2 ring-emerald-600 ring-offset-2 bg-emerald-500/10 rounded-sm' : ''}`}
-                >
-                  {displayText}
                 </div>
-              );
-            })}
+
+                <div className="text-left">
+                  <img src="/logo.png" alt="شعار الجمعية" className="h-12 w-auto object-contain brightness-0 invert" />
+                  <span className="text-[10px] text-blue-200 block font-mono">ترخيص: 1000888600</span>
+                </div>
+              </div>
+
+              {/* Back Face Center: Official Scannable Website QR Code */}
+              <div className="relative z-10 flex items-center justify-between gap-6 my-auto px-4">
+                <div className="space-y-2 max-w-sm text-right">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold border border-blue-400/30">
+                    <Globe className="w-3 h-3" />
+                    <span>امسح الرمز لزيارة البوابة الرسمية</span>
+                  </span>
+                  <h4 className="text-sm font-bold text-white">
+                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                  </h4>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    هذه البطاقة وثيقة تطوعية رسمية معتمدة مخصصة للمهام الميدانية والمبادرات الإنسانية والتنموية بمكة المكرمة.
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-mono">
+                    https://www.riadataleata.com
+                  </p>
+                </div>
+
+                {/* Scannable Website QR Box */}
+                <div className="bg-white p-2.5 rounded-2xl shadow-xl flex flex-col items-center justify-center shrink-0 border-2 border-white/80">
+                  {officialSiteQrDataUrl ? (
+                    <img src={officialSiteQrDataUrl} alt="رابط الجمعية" className="w-28 h-28 object-contain" />
+                  ) : (
+                    <QrCode className="w-28 h-28 text-slate-900" />
+                  )}
+                  <span className="text-[9px] font-bold text-slate-800 font-mono mt-1">riadataleata.com</span>
+                </div>
+              </div>
+
+              {/* Back Face Footer: Barcode & Guidelines */}
+              <div className="relative z-10 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-slate-400">
+                <span>في حال العثور على البطاقة يُرجى التواصل: info@riadataleata.org.sa</span>
+                <span className="font-mono text-blue-300 font-bold">{volunteer.barcode || `MEM-${volunteer.membershipNumber || '2026'}`}</span>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
 
-      {/* Action Buttons Bar */}
+      {/* 3. Action Buttons Bar (Download Front / Download Back / Print Both) */}
       {showActions && !isPrintMode && (
         <div className="w-full flex flex-wrap items-center justify-center gap-2 mt-4" dir="rtl">
           {onOpenVerification && (
             <button
-              id={`btn-verify-${volunteer.id}`}
               onClick={() => onOpenVerification(volunteer)}
-              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              className="bg-blue-50 dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-slate-700 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-slate-700 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
               <span>معاينة التحقق الذكي</span>
             </button>
           )}
 
           <button
-            id={`btn-dl-png-${volunteer.id}`}
-            onClick={() => exportCardAsImage("png")}
-            disabled={isExporting}
-            className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+            onClick={() => setIsFlipped(!isFlipped)}
+            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{isExporting ? "جاري التصدير..." : "تحميل PNG"}</span>
+            <RotateCw className="w-3.5 h-3.5 text-blue-600" />
+            <span>{isFlipped ? "عرض الوجه الأمامي" : "عرض الوجه الخلفي (3D)"}</span>
           </button>
 
           <button
-            id={`btn-dl-jpg-${volunteer.id}`}
-            onClick={() => exportCardAsImage("jpeg")}
+            onClick={() => exportCardAsImage("png", "front")}
             disabled={isExporting}
-            className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
           >
-            <Download className="w-3.5 h-3.5 text-amber-600" />
-            <span>تحميل JPG</span>
+            <Download className="w-3.5 h-3.5 text-blue-600" />
+            <span>تحميل الوجه الأمامي</span>
           </button>
 
           <button
-            id={`btn-print-card-${volunteer.id}`}
+            onClick={() => exportCardAsImage("png", "back")}
+            disabled={isExporting}
+            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-600" />
+            <span>تحميل الوجه الخلفي</span>
+          </button>
+
+          <button
             onClick={handlePrint}
-            className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-blue-600/30"
           >
-            <Printer className="w-3.5 h-3.5 text-blue-600" />
-            <span>طباعة البطاقة</span>
+            <Printer className="w-3.5 h-3.5" />
+            <span>طباعة الوجهين للبطاقة (CR80)</span>
           </button>
 
           {onReissue && (
             <button
-              id={`btn-reissue-card-${volunteer.id}`}
               onClick={() => onReissue(volunteer.id)}
-              className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
-              <span>إعادة إنشاء البطاقة</span>
+              <span>إعادة إصدار البطاقة</span>
             </button>
           )}
         </div>

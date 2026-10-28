@@ -28,11 +28,7 @@ function sanitizeErrorData(text: string | null | undefined): string | null {
     .replace(/("sessionToken"\s*:\s*)"[^"]+"/gi, '$1"[REDACTED]"');
 }
 
-export class DashboardErrorBoundary extends (React.Component as any) {
-  public declare props: DashboardErrorBoundaryProps;
-  public declare state: DashboardErrorBoundaryState;
-  public declare setState: (state: Partial<DashboardErrorBoundaryState> | ((prevState: DashboardErrorBoundaryState) => Partial<DashboardErrorBoundaryState>), callback?: () => void) => void;
-
+export class DashboardErrorBoundary extends React.Component<DashboardErrorBoundaryProps, DashboardErrorBoundaryState> {
   constructor(props: DashboardErrorBoundaryProps) {
     super(props);
     this.state = {

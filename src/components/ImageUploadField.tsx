@@ -12,6 +12,7 @@ export interface ImageUploadFieldProps {
   className?: string;
   previewAspect?: "square" | "video" | "banner" | "circle" | "auto";
   allowUrlFallback?: boolean;
+  compact?: boolean;
 }
 
 export const ImageUploadField: React.FC<ImageUploadFieldProps> = ({

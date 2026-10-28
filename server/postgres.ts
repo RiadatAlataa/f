@@ -45,7 +45,7 @@ export function getPostgresPool(): pg.Pool | null {
     const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
     pool = new Pool({
       connectionString,
-      ssl: isLocalhost ? false : { rejectUnauthorized: false },
+      ssl: isLocalhost ? false : { rejectUnauthorized: true },
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,

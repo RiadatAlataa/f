@@ -7,4 +7,9 @@ coverage/
 .env*
 !.env.example
 backups/
-*.bak
+*.enc.json
+*.key
+db.json
+.tmp*
+test-*
+

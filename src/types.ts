@@ -7,6 +7,7 @@ export interface Department {
   id: string;
   nameAr: string;
   nameEn: string;
+  name?: string; // alias for nameAr
   directorName: string;
   nationalId?: string;
   password?: string;
@@ -32,6 +33,7 @@ export interface DepartmentDirective {
   createdBy: string; // e.g. "مجلس الإدارة"
   completionNotes?: string;
   attachmentUrl?: string;
+  assignedToDirectorId?: string;
 }
 
 export interface TeamAttachment {
@@ -146,6 +148,7 @@ export interface VolunteerTeam {
   id: string;
   nameAr: string;
   nameEn: string;
+  name?: string; // alias for nameAr
   departmentId: string;
   leaderId?: string;
   leaderName: string;
@@ -155,6 +158,8 @@ export interface VolunteerTeam {
   establishedDate?: string;
   membersCount?: number;
   initiativesCount?: number;
+  pastInitiativesCount?: number;
+  broadcasts?: any[];
   color?: string;
   leaderPhone?: string;
   leaderEmail?: string;
@@ -210,11 +215,11 @@ export interface Volunteer {
   file_number?: string;
   teamId: string;
   departmentId: string;
-  titleAr: string;
-  titleEn: string;
+  titleAr?: string;
+  titleEn?: string;
   status: 'active' | 'inactive' | 'suspended';
   points: number;
-  qrCode: string; // text representation
+  qrCode?: string; // text representation
   barcode: string; // text representation
   issueDate: string;
   expiryDate: string;
@@ -229,10 +234,22 @@ export interface Volunteer {
   birthDate?: string;
   bloodType?: string;
   volunteerHours?: number;
+  hours?: number; // alias
   completedInitiativesCount?: number;
+  initiativesCount?: number; // alias
   issuedCardId?: string;
   issuedCard?: IssuedVolunteerCard;
   teamHistory?: VolunteerTeamHistoryRecord[];
+  joinDate?: string;
+  jobTitle?: string;
+  profileImage?: string;
+  profile_image?: string; // alias
+  cardImage?: string;
+  card_image?: string; // alias
+  city?: string;
+  district?: string;
+  monthlyPoints?: number;
+  attendanceCount?: number;
 }
 
 // -------------------------------------------------------------
@@ -308,10 +325,13 @@ export interface VolunteerCardTemplate {
   isDefaultMale?: boolean;
   isDefaultFemale?: boolean;
   backgroundUrl: string;
+  backBackgroundUrl?: string;
   width: number; // e.g. 856
   height: number; // e.g. 540
   orientation: 'landscape' | 'portrait';
   elements: CardElementConfig[];
+  backElements?: CardElementConfig[];
+  enableBackFace?: boolean;
   teamId?: string;
   teamName?: string;
   sourceType?: 'system' | 'team' | 'employee' | 'leader';
@@ -445,6 +465,7 @@ export interface IssuedCertificate {
 export interface Initiative {
   id: string;
   name: string;
+  title?: string; // alias
   description: string;
   place: string;
   date: string;
@@ -458,6 +479,7 @@ export interface Initiative {
   acceptedCount: number;
   waitlistCount: number;
   registrationStatus: 'open' | 'closed' | 'archived' | 'full';
+  status?: 'open' | 'closed' | 'archived' | 'full' | string; // alias
   acceptedVolunteerIds: string[];
   waitlistVolunteerIds: string[];
   applicantVolunteerIds: string[];
@@ -491,6 +513,15 @@ export interface Initiative {
   evaluationNotes?: string;
   volunteerRatingsCount?: number;
   averageVolunteerRating?: number;
+  category?: string;
+  hours?: number;
+  requiredVolunteers?: number;
+  location?: string;
+  teamName?: string;
+  time?: string;
+  points?: number;
+  currentVolunteersCount?: number; // alias for acceptedCount
+  createdBy?: string;
 }
 
 export interface OpportunityReviewLog {
@@ -499,8 +530,11 @@ export interface OpportunityReviewLog {
   action: 'created' | 'submitted' | 'returned' | 'resubmitted' | 'accepted' | 'rejected' | 'code_assigned' | 'draft_saved' | 'url_generated' | 'status_changed' | 'volunteer_registered';
   actorName: string;
   actorRole: string; // e.g. "قائد الفريق" | "إدارة التطوع" | "الإدارة العليا"
+  performedByName?: string; // alias
+  performedByRole?: string; // alias
   notes?: string;
   opportunityCode?: string;
+  opportunityCodeAssigned?: string; // alias
   registrationUrl?: string;
 }
 
@@ -557,6 +591,7 @@ export interface JoinRequest {
   initiativeName: string;
   status: 'pending' | 'accepted' | 'rejected' | 'waitlist';
   date: string;
+  requestDate?: string; // alias
 }
 
 export interface AttendanceRecord {
@@ -574,6 +609,8 @@ export interface AttendanceRecord {
   badgePresent?: boolean;
   method?: 'barcode' | 'manual' | 'qr';
   notes?: string;
+  initiativeTitle?: string;
+  hours?: number;
 }
 
 export interface Evaluation {
@@ -588,6 +625,8 @@ export interface Evaluation {
   wearingVest: boolean;
   taskExecution: number; // 1-5
   comments: string;
+  date?: string;
+  rating?: number;
 }
 
 export interface OperationLog {
@@ -605,6 +644,7 @@ export interface Notification {
   recipientType?: 'all' | 'volunteers' | 'beneficiaries' | 'admins' | 'supervisors' | 'support' | 'team_members' | 'custom' | string;
   recipientIds?: string[];
   targetRole?: string;
+  targetDepartmentId?: string;
   teamId?: string;
   titleAr: string;
   titleEn?: string;
@@ -636,6 +676,13 @@ export interface SystemStats {
   requestsCount: number;
   acceptedCount: number;
   rejectedCount: number;
+  totalVolunteers?: number;
+  totalHours?: number;
+  totalInitiatives?: number;
+  economicValue?: number;
+  partnershipsCount?: number;
+  beneficiarySatisfaction?: number;
+  monthlyHours?: number;
 }
 
 export interface SystemSettings {
@@ -774,6 +821,7 @@ export interface SystemSettings {
 
 export interface HomeSettings {
   logoUrl: string;
+  siteNameAr?: string; // alias
   videoUrl: string;
   videoCoverUrl: string;
   associationNameAr: string;
@@ -799,7 +847,7 @@ export interface HomeSettings {
   contactLocationAr: string;
   contactLocationEn: string;
   contactHoursAr: string;
-  contactHoursEn: string;
+  contactHoursEn?: string;
   socialTwitter?: string;
   socialInstagram?: string;
   socialYoutube?: string;
@@ -994,6 +1042,8 @@ export interface Employee {
     fileSize?: string;
   }[];
   basicSalary?: number;
+  salary?: number; // alias
+  department?: string; // alias for departmentName / departmentId
   housingAllowance?: number;
   transportAllowance?: number;
   otherAllowance?: number;
@@ -1088,6 +1138,7 @@ export interface EmployeeRequest {
   requestedBy: string; // اسم مدير الإدارة
   requestedByPhone?: string;
   createdAt: string;
+  date?: string; // alias for createdAt
   updatedAt?: string;
   status: 'pending' | 'approved' | 'rejected' | 'needs_modification';
   
@@ -1268,6 +1319,7 @@ export interface AidDistribution {
   quantityPerBeneficiary: string; // e.g. "1 سلة غذائية متكاملة"
   targetAudience: 'all' | 'approved_only' | 'orphans' | 'widows' | 'large_families' | 'custom' | string;
   targetedBeneficiaryIds?: string[];
+  targetBeneficiaryIds?: string[]; // alias
   excludedBeneficiaryIds?: string[];
   status: 'active' | 'planned' | 'completed' | 'archived'; // Legacy compat
   workflowStatus?: DistributionWorkflowStatus; // 8 workflow stages
@@ -1474,7 +1526,10 @@ export interface SupportTicket {
   requesterName: string;
   requesterEmail?: string;
   requesterPhone?: string;
+  requesterContact?: string; // alias
   requesterRole: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'public' | string;
+  requesterType?: string; // alias for requesterRole
+  volunteerName?: string; // alias for requesterName
   departmentId?: string;
   departmentName?: string;
   subject: string;
@@ -1814,6 +1869,13 @@ export interface OfficialLetterPartnership {
 export interface OfficialLetter {
   id: string;
   letterNumber: string; // e.g. LTR-2026-0001
+  referenceNumber?: string; // alias
+  title?: string; // alias for subject/topic
+  departmentName?: string;
+  targetDepartmentId?: string;
+  senderId?: string;
+  targetDirectorId?: string;
+  message?: string;
   submissionType: 'ready_file' | 'custom_letter'; // "خطاب جاهز" أو "خطاب مخصص"
 
   // معلومات المرسل - البيانات الأساسية

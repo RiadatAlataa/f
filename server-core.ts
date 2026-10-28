@@ -362,6 +362,83 @@ app.get("/api/attachments/download/*", async (req, res) => {
   }
 });
 
+// Storage Diagnostic and Status Endpoint
+app.get("/api/attachments/status", (req, res) => {
+  const authContext = getUserAccessContext(req);
+  if (!authContext.isAuthenticated || (!authContext.isSuperAdmin && authContext.role !== 'admin' && authContext.role !== 'operations_manager')) {
+    return res.status(403).json({ ok: false, error: "غير مصرح لك بالاطلاع على تشخيصات التخزين." });
+  }
+  const status = attachmentStorage.getStatus();
+  return res.json({ ok: true, status });
+});
+
+// Storage Connection Test Probe Endpoint (Isolated and Non-Destructive)
+app.post("/api/attachments/test-connection", async (req, res) => {
+  const authContext = getUserAccessContext(req);
+  if (!authContext.isAuthenticated || (!authContext.isSuperAdmin && authContext.role !== 'admin' && authContext.role !== 'operations_manager')) {
+    return res.status(403).json({ ok: false, error: "غير مصرح لك باختبار اتصال التخزين." });
+  }
+  const probe = await attachmentStorage.testConnection();
+  return res.json({ ok: probe.success, result: probe });
+});
+
+// Dedicated Secure Attachment Upload Endpoint
+app.post("/api/attachments/upload", async (req, res) => {
+  try {
+    const authContext = getUserAccessContext(req);
+    if (!authContext.isAuthenticated) {
+      return res.status(401).json({
+        ok: false,
+        error: "يجب تسجيل الدخول لرفع المرفقات.",
+        code: "UNAUTHORIZED"
+      });
+    }
+
+    const { 
+      fileBase64, 
+      originalFilename, 
+      mimeType, 
+      entityType, 
+      entityId, 
+      isPrivate, 
+      fieldName 
+    } = req.body;
+
+    if (!fileBase64 || typeof fileBase64 !== "string") {
+      return res.status(400).json({ ok: false, error: "محتوى الملف بصيغة Base64 مطلوب (fileBase64)." });
+    }
+    if (!originalFilename || typeof originalFilename !== "string") {
+      return res.status(400).json({ ok: false, error: "اسم الملف الأصلي مطلوب (originalFilename)." });
+    }
+
+    // Clean Base64 data header if present
+    const base64Data = fileBase64.replace(/^data:[^;]+;base64,/, "");
+    const fileBuffer = Buffer.from(base64Data, "base64");
+
+    const record = await attachmentStorage.uploadAttachment(fileBuffer, {
+      originalFilename,
+      mimeType: mimeType || "application/octet-stream",
+      entityType: entityType || "general",
+      entityId: entityId || authContext.userId || "general",
+      fieldName,
+      isPrivate: isPrivate !== undefined ? Boolean(isPrivate) : undefined,
+      accessRole: authContext.role,
+      uploadedBy: authContext.userId
+    });
+
+    return res.json({
+      ok: true,
+      status: "success",
+      attachment: record
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      ok: false,
+      error: err?.message || "فشل رفع المرفق"
+    });
+  }
+});
+
 const DB_FILE_ROOT = path.join(process.cwd(), "db.json");
 const DB_FILE_TMP = path.join("/tmp", "db.json");
 
@@ -4532,7 +4609,7 @@ export interface ServerSession {
 const activeSessions = new Map<string, ServerSession>();
 
 export function createServerSession(user: any, role: string): ServerSession {
-  const token = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 8)}`;
+  const token = `sess_${Date.now()}_${crypto.randomBytes(32).toString("hex")}`;
   const now = Date.now();
   const session: ServerSession = {
     token,
@@ -4684,8 +4761,8 @@ function getUserAccessContext(req: any) {
 
   // PRIVILEGE ESCALATION SHIELD:
   // Client headers (x-user-role, x-user-id) MUST NEVER grant privileged roles without an active verified session!
-  // Only internal tests with req.isInternalTest flag are permitted to pass simulated context.
-  if (!hasValidSession && !req.isInternalTest) {
+  // No backdoor flags or simulated test exceptions are permitted in core authorization logic.
+  if (!hasValidSession) {
     return {
       isAuthenticated: false,
       isSuperAdmin: false,
@@ -4701,11 +4778,101 @@ function getUserAccessContext(req: any) {
     };
   }
 
-  const userId = hasValidSession ? activeSession!.userId : req.headers['x-user-id'];
-  const userRole = hasValidSession ? activeSession!.role : req.headers['x-user-role'];
-  const departmentId = hasValidSession ? activeSession!.departmentId : req.headers['x-department-id'];
-  const nationalId = hasValidSession ? activeSession!.nationalId : req.headers['x-national-id'];
-  const teamId = hasValidSession ? activeSession!.teamId : req.headers['x-team-id'];
+  // Identity and role are derived SOLELY from the validated server session
+  const userId = activeSession!.userId;
+  let userRole = activeSession!.role;
+  let departmentId = activeSession!.departmentId;
+  const nationalId = activeSession!.nationalId;
+  let teamId = activeSession!.teamId;
+
+  // Real-time Account Status and Role Dynamic Verification Check
+  // If user account was suspended, deactivated, or permissions revoked, revoke session immediately!
+  if (db.userDepartmentAccess && Array.isArray(db.userDepartmentAccess)) {
+    const userAcc = db.userDepartmentAccess.find((u: any) => 
+      u && (u.userId === userId || u.id === userId || (nationalId && u.nationalId === nationalId))
+    );
+    if (userAcc) {
+      if (userAcc.status === 'suspended' || userAcc.status === 'inactive' || userAcc.status === 'banned' || userAcc.status === 'rejected' || userAcc.loginDisabled === true || userAcc.hasLoginAccount === false) {
+        destroyServerSession(sessionToken);
+        return {
+          isAuthenticated: false,
+          isSuperAdmin: false,
+          role: 'public',
+          userId: 'public',
+          userName: 'حساب موقوف',
+          jobTitle: 'حساب معطل',
+          primaryDepartmentId: '',
+          primaryDepartmentName: '',
+          additionalDepartmentIds: [],
+          allowedDepartmentIds: [],
+          permissions: []
+        };
+      }
+      // Dynamically sync latest role and department configuration
+      if (userAcc.role) userRole = userAcc.role;
+      if (userAcc.primaryDepartmentId) departmentId = userAcc.primaryDepartmentId;
+    }
+  }
+
+  if (db.employees && Array.isArray(db.employees)) {
+    const emp = db.employees.find((e: any) => e && (e.id === userId || (nationalId && e.nationalId === nationalId)));
+    if (emp && (emp.status === 'suspended' || emp.status === 'inactive' || emp.loginDisabled === true || emp.hasLoginAccount === false)) {
+      destroyServerSession(sessionToken);
+      return {
+        isAuthenticated: false,
+        isSuperAdmin: false,
+        role: 'public',
+        userId: 'public',
+        userName: 'حساب موقوف',
+        jobTitle: 'حساب معطل',
+        primaryDepartmentId: '',
+        primaryDepartmentName: '',
+        additionalDepartmentIds: [],
+        allowedDepartmentIds: [],
+        permissions: []
+      };
+    }
+  }
+
+  if (db.volunteers && Array.isArray(db.volunteers)) {
+    const vol = db.volunteers.find((v: any) => v && (v.id === userId || (nationalId && v.nationalId === nationalId)));
+    if (vol && (vol.status === 'suspended' || vol.status === 'inactive' || vol.loginDisabled === true)) {
+      destroyServerSession(sessionToken);
+      return {
+        isAuthenticated: false,
+        isSuperAdmin: false,
+        role: 'public',
+        userId: 'public',
+        userName: 'حساب موقوف',
+        jobTitle: 'حساب معطل',
+        primaryDepartmentId: '',
+        primaryDepartmentName: '',
+        additionalDepartmentIds: [],
+        allowedDepartmentIds: [],
+        permissions: []
+      };
+    }
+  }
+
+  if (db.beneficiaries && Array.isArray(db.beneficiaries)) {
+    const ben = db.beneficiaries.find((b: any) => b && (b.id === userId || (nationalId && b.nationalId === nationalId)));
+    if (ben && (ben.status === 'suspended' || ben.status === 'rejected' || ben.loginDisabled === true)) {
+      destroyServerSession(sessionToken);
+      return {
+        isAuthenticated: false,
+        isSuperAdmin: false,
+        role: 'public',
+        userId: 'public',
+        userName: 'حساب موقوف',
+        jobTitle: 'حساب معطل',
+        primaryDepartmentId: '',
+        primaryDepartmentName: '',
+        additionalDepartmentIds: [],
+        allowedDepartmentIds: [],
+        permissions: []
+      };
+    }
+  }
 
   // Super Admin (Executive Director / Board of Directors / Administrator mosa)
   if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user' || userId === 'mosa' || nationalId === '1000000000' || nationalId === '1000000099') {
@@ -4901,6 +5068,84 @@ function getUserAccessContext(req: any) {
   };
 }
 
+/**
+ * USER_UPDATE_PRIVILEGE_GUARD
+ * Strict anti-privilege-escalation and top management account guard.
+ * Prevents non-super-admins from:
+ * 1. Elevating their own or any user's role to 'admin', 'super_admin', or 'operations_manager'.
+ * 2. Granting critical administrative permissions ('super_admin', 'all_permissions', 'manage_permissions', 'all').
+ * 3. Modifying, disabling, or resetting credentials of Top Management (mosa, admin-user, ops-manager).
+ * 4. Managing staff across departments without cross_department_access.
+ */
+export const USER_UPDATE_PRIVILEGE_GUARD = {
+  validateUpdate: (
+    callerContext: any,
+    targetUserId: string,
+    updateData: any,
+    res?: any
+  ): { allowed: boolean; error?: string; code?: string } => {
+    if (!callerContext || !callerContext.isAuthenticated) {
+      const err = "غير مصرح: يلزم تسجيل الدخول بجلسة موثقة لتعديل أو إدارة المستخدمين.";
+      if (res) res.status(401).json({ error: err, code: "UNAUTHORIZED" });
+      return { allowed: false, error: err, code: "UNAUTHORIZED" };
+    }
+
+    const isSuper = Boolean(callerContext.isSuperAdmin || callerContext.role === 'admin');
+    const isOps = Boolean(callerContext.isOperationsManager || callerContext.role === 'operations_manager');
+    const callerPerms: string[] = callerContext.permissions || [];
+    const hasManageStaff = callerPerms.includes('manage_staff') || callerPerms.includes('all_permissions') || isSuper || isOps;
+
+    if (!hasManageStaff) {
+      const err = "مرفوض: ليس لديك صلاحية إدارة الموظفين والمستخدمين (manage_staff).";
+      if (res) res.status(403).json({ error: err, code: "FORBIDDEN_MANAGE_STAFF" });
+      return { allowed: false, error: err, code: "FORBIDDEN_MANAGE_STAFF" };
+    }
+
+    // Top Management Accounts protection
+    const topManagementIds = ['mosa', 'admin-user', 'admin', 'ops-manager', 'operations_manager', '1000000000', '1000000099', '1020000000'];
+    const cleanTarget = String(targetUserId || '').toLowerCase().trim();
+    const isTargetTopMgmt = topManagementIds.includes(cleanTarget);
+
+    if (isTargetTopMgmt && !isSuper) {
+      const err = "حظر أمني صارم: لا يمكن تعديل أو تعطيل أو تغيير صلاحيات حسابات الإدارة العليا إلا من قبل مسؤول النظام الأعلى (Super Admin).";
+      if (res) res.status(403).json({ error: err, code: "FORBIDDEN_TOP_MANAGEMENT_PROTECTION" });
+      return { allowed: false, error: err, code: "FORBIDDEN_TOP_MANAGEMENT_PROTECTION" };
+    }
+
+    // Role Escalation Check
+    const requestedRole = String(updateData?.role || '').toLowerCase().trim();
+    if (['admin', 'super_admin', 'operations_manager'].includes(requestedRole) && !isSuper) {
+      const err = "حظر تصعيد الصلاحيات: لا يمكن منح دور المدير العام أو مدير العمليات إلا بواسطة الإدارة العليا حصراً.";
+      if (res) res.status(403).json({ error: err, code: "PRIVILEGE_ESCALATION_BLOCKED" });
+      return { allowed: false, error: err, code: "PRIVILEGE_ESCALATION_BLOCKED" };
+    }
+
+    // Permission Escalation Check
+    const requestedPerms = Array.isArray(updateData?.permissions) ? updateData.permissions : [];
+    const hasEscalatedPerm = requestedPerms.some((p: string) => 
+      ['super_admin', 'all_permissions', 'manage_permissions', 'operations_manager', 'all'].includes(p)
+    );
+    if (hasEscalatedPerm && !isSuper) {
+      const err = "حظر تصعيد الصلاحيات: لا يمكن منح صلاحية الإدارة العليا (super_admin) أو الصلاحيات الشاملة إلا من قبل الإدارة العليا حصراً.";
+      if (res) res.status(403).json({ error: err, code: "PRIVILEGE_ESCALATION_BLOCKED" });
+      return { allowed: false, error: err, code: "PRIVILEGE_ESCALATION_BLOCKED" };
+    }
+
+    // Department Isolation Check for Department Managers with manage_staff
+    if (!isSuper && !isOps && !callerPerms.includes('cross_department_access')) {
+      const targetDept = updateData?.departmentId || updateData?.primaryDepartmentId;
+      const allowedDepts = callerContext.allowedDepartmentIds || (callerContext.primaryDepartmentId ? [callerContext.primaryDepartmentId] : []);
+      if (targetDept && !allowedDepts.includes(targetDept)) {
+        const err = `مرفوض: لا يمكنك إدارة أو نقل موظفين خارج نطاق إدارتك المعتمدة (${callerContext.primaryDepartmentId}).`;
+        if (res) res.status(403).json({ error: err, code: "FORBIDDEN_CROSS_DEPARTMENT" });
+        return { allowed: false, error: err, code: "FORBIDDEN_CROSS_DEPARTMENT" };
+      }
+    }
+
+    return { allowed: true };
+  }
+};
+
 // 2. Authorization Check & Audit Logging Middleware/Helper
 function checkDepartmentPermission(
   req: any,
@@ -5046,22 +5291,52 @@ function checkDepartmentPermission(
 // 3. Database Isolation Filter (Enforces Data Segregation at DB level)
 function filterDatabaseForUser(db: any, context: any) {
   const sanitizedEmail = getSanitizedEmailConfig(db);
+  const { activeSessions, ...safeDb } = db || {};
 
-  // Super Admin receives all records with sanitized secrets
+  // Super Admin receives all records with sanitized secrets (activeSessions never sent over wire)
   if (context.isSuperAdmin) {
     return {
-      ...db,
+      ...safeDb,
       emailSettings: sanitizedEmail,
-      currentUserContext: context
+      currentUserContext: context,
+      activeSessions: undefined
     };
   }
 
-  // Public visitor receives general website and public initiative records
+  // Public visitor receives strictly public website content and initiatives (Never sensitive tables!)
   if (!context.isAuthenticated || context.role === 'public') {
     return {
-      ...db,
-      emailSettings: sanitizedEmail,
+      systemSettings: {
+        societyName: db.systemSettings?.societyName || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+        logoUrl: db.systemSettings?.logoUrl || "/logo.png",
+        maintenanceMode: Boolean(db.systemSettings?.maintenanceMode || db.systemSettings?.maintenance_mode === 1),
+        maintenanceMessage: db.systemSettings?.maintenanceMessage || db.systemSettings?.maintenance_message || ""
+      },
+      websiteContent: db.websiteContent || {},
+      departments: (db.departments || []).map((d: any) => ({
+        id: d.id,
+        nameAr: d.nameAr,
+        nameEn: d.nameEn,
+        description: d.description,
+        icon: d.icon
+      })),
+      initiatives: (db.initiatives || []).filter((i: any) => i.isPublic !== false),
+      news: db.news || [],
+      mediaAlbum: db.mediaAlbum || [],
+      partners: db.partners || [],
+      faqs: db.faqs || [],
+      contactInfo: db.contactInfo || {},
       currentUserContext: context,
+      beneficiaries: [],
+      benefitRequests: [],
+      distributions: [],
+      distributionHandovers: [],
+      employees: [],
+      employeeRequests: [],
+      financialTransactions: [],
+      storeDonations: [],
+      volunteers: [],
+      teams: (db.teams || []).map((t: any) => ({ id: t.id, nameAr: t.nameAr, field: t.field })),
       userDepartmentAccess: [],
       permissionChangeLogs: [],
       accessAuditLogs: []
@@ -5075,9 +5350,10 @@ function filterDatabaseForUser(db: any, context: any) {
   const isLeader = context.role === 'leader';
   const teamId = context.teamId;
 
-  // Filter and segregate every data entity according to the user's allowed department scope
+  // Filter and segregate every data entity according to the user's verified department scope
   const filtered = {
-    ...db,
+    ...safeDb,
+    activeSessions: undefined,
     currentUserContext: context,
     emailSettings: sanitizedEmail,
 
@@ -5086,21 +5362,27 @@ function filterDatabaseForUser(db: any, context: any) {
       ? (db.departments || [])
       : (db.departments || []).filter((d: any) => allowedDepts.includes(d.id)),
 
-    // Employees: isolated strictly to employees in the user's allowed department(s)
-    employees: (db.employees || []).filter((e: any) => allowedDepts.includes(e.departmentId)),
+    // Employees: isolated strictly to employees in the user's allowed department(s) (None for volunteer or beneficiary)
+    employees: (context.role === 'volunteer' || context.role === 'beneficiary')
+      ? []
+      : (db.employees || []).filter((e: any) => allowedDepts.includes(e.departmentId)),
 
     // Employee hiring / recruitment requests: isolated to allowed department(s)
-    employeeRequests: (db.employeeRequests || []).filter((r: any) => allowedDepts.includes(r.departmentId)),
+    employeeRequests: (context.role === 'volunteer' || context.role === 'beneficiary')
+      ? []
+      : (db.employeeRequests || []).filter((r: any) => allowedDepts.includes(r.departmentId)),
 
     // Directives & circulars: only directives for allowed departments or universal 'all'
     departmentDirectives: (db.departmentDirectives || []).filter((d: any) => d.departmentId === 'all' || allowedDepts.includes(d.departmentId)),
 
     // Official letters: only where sender or recipient is within user's allowed departments
-    letters: (db.letters || []).filter((l: any) => 
-      allowedDepts.includes(l.departmentId) || 
-      allowedDepts.includes(l.recipientDepartmentId) || 
-      l.recipientDepartmentId === 'all'
-    ),
+    letters: (context.role === 'volunteer' || context.role === 'beneficiary')
+      ? []
+      : (db.letters || []).filter((l: any) => 
+          allowedDepts.includes(l.departmentId) || 
+          allowedDepts.includes(l.recipientDepartmentId) || 
+          l.recipientDepartmentId === 'all'
+        ),
 
     // Notifications: filtered to this user, allowed department, or universal
     notifications: (db.notifications || []).filter((n: any) => 
@@ -5110,35 +5392,52 @@ function filterDatabaseForUser(db: any, context: any) {
     ),
 
     // Financial ledger & transactions: strictly available to dep-2 (Finance) and dep-7 (Fundraising & Partnerships)
-    financialTransactions: (allowedDepts.includes('dep-2') || allowedDepts.includes('dep-7'))
+    financialTransactions: (allowedDepts.includes('dep-2') || allowedDepts.includes('dep-7') || context.isSuperAdmin)
       ? (db.financialTransactions || [])
       : [],
-    storeDonations: (allowedDepts.includes('dep-2') || allowedDepts.includes('dep-7'))
+    storeDonations: (allowedDepts.includes('dep-2') || allowedDepts.includes('dep-7') || context.isSuperAdmin)
       ? (db.storeDonations || [])
       : [],
 
     // Beneficiaries & aid distributions: available to dep-4 (Beneficiary Care) and authenticated beneficiaries
-    beneficiaries: (allowedDepts.includes('dep-4') || context.role === 'beneficiary' || context.isSuperAdmin)
+    // STRICT IDOR PREVENTION: Beneficiaries only receive THEIR OWN record!
+    beneficiaries: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
       ? (db.beneficiaries || [])
-      : [],
-    benefitRequests: (allowedDepts.includes('dep-4') || context.role === 'beneficiary' || context.isSuperAdmin)
+      : (context.role === 'beneficiary'
+        ? (db.beneficiaries || []).filter((b: any) => b.id === context.userId || (context.nationalId && b.nationalId === context.nationalId))
+        : []),
+    benefitRequests: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
       ? (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : (db.benefitRequests || []))
-      : [],
-    distributions: (allowedDepts.includes('dep-4') || context.role === 'beneficiary' || context.isSuperAdmin)
-      ? (db.distributions || [])
-      : [],
-    distributionHandovers: (allowedDepts.includes('dep-4') || context.role === 'beneficiary' || context.isSuperAdmin)
+      : (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : []),
+    distributions: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
+      ? (context.role === 'beneficiary' ? (db.distributions || []).filter((d: any) => d.beneficiaryId === context.userId) : (db.distributions || []))
+      : (context.role === 'beneficiary' ? (db.distributions || []).filter((d: any) => d.beneficiaryId === context.userId) : []),
+    distributionHandovers: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
       ? (context.role === 'beneficiary' ? (db.distributionHandovers || []).filter((h: any) => h.beneficiaryId === context.userId) : (db.distributionHandovers || []))
-      : [],
+      : (context.role === 'beneficiary' ? (db.distributionHandovers || []).filter((h: any) => h.beneficiaryId === context.userId) : []),
+
     // Inventory Items: available to dep-8 (Warehouse), dep-4 (Beneficiary linking), and storekeeper
     inventoryItems: (allowedDepts.includes('dep-8') || allowedDepts.includes('dep-4') || context.role === 'storekeeper' || context.isSuperAdmin)
       ? (db.inventoryItems || [])
-      : (db.inventoryItems || []),
+      : [],
 
-    // Volunteers & teams: needed for Volunteer Portal, Leader Portal, and Volunteer Knights Leaderboard
-    volunteers: (isLeader && teamId)
-      ? (db.volunteers || []).filter((v: any) => v.teamId === teamId)
-      : (db.volunteers || []),
+    // Volunteers & teams:
+    // Volunteers only see sanitized volunteer knight leaderboard (no private phones/nationalIds of others)
+    volunteers: (context.role === 'volunteer')
+      ? (db.volunteers || []).map((v: any) => ({
+          id: v.id,
+          name: v.name,
+          points: v.points || 0,
+          badge: v.badge || '',
+          titleAr: v.titleAr || 'فارس تطوعي',
+          teamId: v.teamId,
+          ...(v.id === context.userId ? { phone: v.phone, email: v.email, nationalId: v.nationalId, fileNumber: v.fileNumber || v.file_number } : {})
+        }))
+      : (isLeader && teamId)
+        ? (db.volunteers || []).filter((v: any) => v.teamId === teamId)
+        : (allowedDepts.includes('dep-5') || context.isSuperAdmin)
+          ? (db.volunteers || [])
+          : [],
     teams: (db.teams || []),
     initiatives: (context.role === 'volunteer')
       ? (db.initiatives || [])
@@ -5149,10 +5448,14 @@ function filterDatabaseForUser(db: any, context: any) {
       ? (db.attendance || []).filter((a: any) => a.volunteerId === context.userId)
       : (isLeader && teamId)
         ? (db.attendance || []).filter((a: any) => a.teamId === teamId)
-        : (db.attendance || []),
+        : (allowedDepts.includes('dep-5') || context.isSuperAdmin)
+          ? (db.attendance || [])
+          : [],
     teamStaffAssignments: isLeader && teamId
       ? (db.teamStaffAssignments || []).filter((tsa: any) => tsa.teamId === teamId)
-      : (db.teamStaffAssignments || []),
+      : (context.isSuperAdmin || allowedDepts.includes('dep-5'))
+        ? (db.teamStaffAssignments || [])
+        : [],
     teamPoints: (allowedDepts.includes('dep-5') || isLeader || context.isSuperAdmin)
       ? (db.teamPoints || [])
       : (db.teamPoints || []),
@@ -5161,9 +5464,15 @@ function filterDatabaseForUser(db: any, context: any) {
       : (db.initiativeRatings || []),
 
     // Permissions and audit logs: non-admins only see their own profile and logs
-    userDepartmentAccess: (db.userDepartmentAccess || []).filter((u: any) => u.userId === context.userId),
-    permissionChangeLogs: (db.permissionChangeLogs || []).filter((l: any) => l.targetUserId === context.userId),
-    accessAuditLogs: (db.accessAuditLogs || []).filter((l: any) => l.userId === context.userId)
+    userDepartmentAccess: (context.isSuperAdmin || context.isOperationsManager)
+      ? (db.userDepartmentAccess || [])
+      : (db.userDepartmentAccess || []).filter((u: any) => u.userId === context.userId),
+    permissionChangeLogs: (context.isSuperAdmin || context.isOperationsManager)
+      ? (db.permissionChangeLogs || [])
+      : (db.permissionChangeLogs || []).filter((l: any) => l.targetUserId === context.userId),
+    accessAuditLogs: (context.isSuperAdmin || context.isOperationsManager)
+      ? (db.accessAuditLogs || [])
+      : (db.accessAuditLogs || []).filter((l: any) => l.userId === context.userId)
   };
 
   return filtered;
@@ -5326,10 +5635,10 @@ app.get("/api/db", async (req, res) => {
   } catch (err: any) {
     console.error("Error in /api/db endpoint:", err);
     try {
-      const fallbackDb = readDb() || defaultDb;
-      return res.status(200).json(fallbackDb);
+      const publicFallback = filterDatabaseForUser(readDb() || defaultDb, { isAuthenticated: false, role: 'public' });
+      return res.status(200).json(publicFallback);
     } catch {
-      return res.status(200).json(defaultDb);
+      return res.status(200).json(filterDatabaseForUser(defaultDb, { isAuthenticated: false, role: 'public' }));
     }
   }
 });
@@ -5340,7 +5649,7 @@ app.get("/api/db/scoped", async (req, res) => {
   try {
     const db = readDb();
     if (!db) {
-      return res.status(200).json(defaultDb);
+      return res.status(200).json(filterDatabaseForUser(defaultDb, { isAuthenticated: false, role: 'public' }));
     }
 
     // Overlay live PostgreSQL maintenance status if available
@@ -5364,10 +5673,10 @@ app.get("/api/db/scoped", async (req, res) => {
   } catch (err: any) {
     console.error("Error in /api/db/scoped endpoint:", err);
     try {
-      const fallbackDb = readDb() || defaultDb;
-      return res.status(200).json(fallbackDb);
+      const publicFallback = filterDatabaseForUser(readDb() || defaultDb, { isAuthenticated: false, role: 'public' });
+      return res.status(200).json(publicFallback);
     } catch {
-      return res.status(200).json(defaultDb);
+      return res.status(200).json(filterDatabaseForUser(defaultDb, { isAuthenticated: false, role: 'public' }));
     }
   }
 });
@@ -5777,6 +6086,10 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
 app.post(["/api/db/users/create", "/api/users/create"], (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'إنشاء مستخدم جديد');
   if (!auth.allowed) return;
+
+  const guard = USER_UPDATE_PRIVILEGE_GUARD.validateUpdate(auth.context, 'new_user', req.body, res);
+  if (!guard.allowed) return;
+
   const db = readDb();
   
   const {
@@ -5898,7 +6211,6 @@ app.post(["/api/db/users/create", "/api/users/create"], (req, res) => {
 app.post(["/api/db/users/update", "/api/users/update"], (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'تعديل بيانات المستخدم');
   if (!auth.allowed) return;
-  const db = readDb();
 
   const {
     userId,
@@ -5920,6 +6232,11 @@ app.post(["/api/db/users/update", "/api/users/update"], (req, res) => {
   if (!userId) {
     return res.status(400).json({ error: "معرف المستخدم مطلوب." });
   }
+
+  const guard = USER_UPDATE_PRIVILEGE_GUARD.validateUpdate(auth.context, userId, req.body, res);
+  if (!guard.allowed) return;
+
+  const db = readDb();
 
   if (!db.userDepartmentAccess) db.userDepartmentAccess = [];
   let userIdx = db.userDepartmentAccess.findIndex((u: any) => u.userId === userId || u.id === userId || (nationalId && u.nationalId === nationalId));
@@ -6066,6 +6383,12 @@ app.post(["/api/db/users/update", "/api/users/update"], (req, res) => {
   });
 
   writeDb(db);
+
+  // Invalidate any active sessions if permissions, status, or role changed
+  if (status || role || permissions) {
+    invalidateUserSessions(userId);
+  }
+
   res.json({
     status: "success",
     message: "تم تحديث بيانات المستخدم بنجاح."
@@ -6076,12 +6399,16 @@ app.post(["/api/db/users/update", "/api/users/update"], (req, res) => {
 app.post("/api/db/users/reset-password", (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'إعادة تعيين كلمة مرور مستخدم');
   if (!auth.allowed) return;
-  const db = readDb();
 
   const { userId, newPassword, mustChangePassword } = req.body || {};
   if (!userId || !newPassword || typeof newPassword !== 'string') {
     return res.status(400).json({ error: "معرف المستخدم وكلمة المرور الجديدة مطلوبان." });
   }
+
+  const guard = USER_UPDATE_PRIVILEGE_GUARD.validateUpdate(auth.context, userId, {}, res);
+  if (!guard.allowed) return;
+
+  const db = readDb();
 
   const pwdCheck = validatePasswordStrength(newPassword.trim());
   if (!pwdCheck.isValid) {
@@ -6153,6 +6480,9 @@ app.post("/api/db/users/reset-password", (req, res) => {
   });
 
   writeDb(db);
+  // Terminate any active sessions on password reset
+  invalidateUserSessions(userId);
+
   res.json({
     status: "success",
     message: "تمت إعادة تعيين كلمة المرور وتشفيرها بنجاح."
@@ -6163,12 +6493,16 @@ app.post("/api/db/users/reset-password", (req, res) => {
 app.post("/api/db/users/toggle-status", (req, res) => {
   const auth = checkDepartmentPermission(req, res, undefined, 'manage_staff', 'تغيير حالة حساب المستخدم');
   if (!auth.allowed) return;
-  const db = readDb();
 
   const { userId, status, reason } = req.body || {};
   if (!userId || !status) {
     return res.status(400).json({ error: "معرف المستخدم والحالة مطلوبان." });
   }
+
+  const guard = USER_UPDATE_PRIVILEGE_GUARD.validateUpdate(auth.context, userId, { status }, res);
+  if (!guard.allowed) return;
+
+  const db = readDb();
 
   if (!db.userDepartmentAccess) db.userDepartmentAccess = [];
   let userEntry = db.userDepartmentAccess.find((u: any) => u.userId === userId || u.id === userId);
@@ -6255,6 +6589,12 @@ app.post("/api/db/users/toggle-status", (req, res) => {
   });
 
   writeDb(db);
+
+  // Terminate active sessions immediately when account is suspended or disabled
+  if (status === 'suspended' || status === 'inactive' || status === 'rejected') {
+    invalidateUserSessions(userId);
+  }
+
   res.json({
     status: "success",
     message: `تم تحديث حالة المستخدم إلى (${status === 'active' ? 'نشط' : status === 'suspended' ? 'موقوف' : status === 'rejected' ? 'مرفوض' : status === 'pending' ? 'بانتظار المراجعة' : 'غير مفعل'}) بنجاح.`
@@ -6966,6 +7306,9 @@ app.post("/api/db/permissions/update", (req, res) => {
     return res.status(400).json({ error: "معرف المستخدم مطلوب لتحديث الصلاحيات." });
   }
 
+  const guard = USER_UPDATE_PRIVILEGE_GUARD.validateUpdate(auth.context, userId, req.body, res);
+  if (!guard.allowed) return;
+
   if (!db.userDepartmentAccess) db.userDepartmentAccess = [];
   const idx = db.userDepartmentAccess.findIndex((u: any) => u.userId === userId || u.id === userId || (nationalId && u.nationalId === nationalId));
 
@@ -7066,6 +7409,9 @@ app.post("/api/db/permissions/update", (req, res) => {
   });
 
   writeDb(db);
+  // Terminate any active sessions so the user must authenticate with new permissions
+  invalidateUserSessions(userId);
+
   res.json({
     status: "success",
     message: `تم تحديث صلاحيات ونطاق الوصول للمستخدم (${targetUserName}) بنجاح`,
@@ -7914,6 +8260,167 @@ app.post("/api/db/volunteers/add", (req, res) => {
   });
   writeDb(db);
   res.json(db);
+});
+
+// 5.5 Volunteer Profile Picture (WhatsApp Style - Distinct from Card Image)
+app.post("/api/db/volunteers/profile-image", async (req, res) => {
+  try {
+    const authContext = getUserAccessContext(req);
+    const { volunteerId, imageBase64, action } = req.body;
+    const targetId = volunteerId || authContext.userId;
+
+    if (!targetId) {
+      return res.status(400).json({ ok: false, error: "معرف المتطوع مطلوب" });
+    }
+
+    // Permission check: Volunteer updating own photo OR authorized admin/leader
+    const isSelf = authContext.userId === targetId;
+    const isAdmin = authContext.role === 'admin' || authContext.role === 'super_admin' || authContext.role === 'operations_manager';
+    if (!isSelf && !isAdmin) {
+      const depAuth = checkDepartmentPermission(req, res, 'dep-5', 'edit_data', 'صورة الملف الشخصي');
+      if (!depAuth.allowed) return;
+    }
+
+    const db = readDb();
+    const index = db.volunteers.findIndex((v: any) => v.id === targetId);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, error: "سجل المتطوع غير موجود" });
+    }
+
+    if (action === 'delete') {
+      // Remove profile image only; NEVER touch the official card image (photo)
+      db.volunteers[index].profileImage = "";
+      db.volunteers[index].profile_image = "";
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: authContext.userName || db.volunteers[index].name,
+        action: `حذف صورة الحساب الشخصي للمتطوع (${db.volunteers[index].name})`,
+        ip: req.ip || "127.0.0.1",
+        device: "Volunteer Portal"
+      });
+      writeDb(db);
+      return res.json({ ok: true, volunteer: db.volunteers[index], db });
+    }
+
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ ok: false, error: "بيانات الصورة مطلوبة" });
+    }
+
+    // Upload to persistent attachment storage
+    const base64Clean = imageBase64.replace(/^data:[^;]+;base64,/, "");
+    const buffer = Buffer.from(base64Clean, "base64");
+    
+    // Save to permanent attachment storage
+    const record = await attachmentStorage.uploadAttachment(buffer, {
+      originalFilename: `profile_${targetId}_${Date.now()}.png`,
+      mimeType: "image/png",
+      entityType: "volunteers",
+      entityId: targetId,
+      fieldName: "profileImage",
+      isPrivate: false,
+      accessRole: "volunteer",
+      uploadedBy: authContext.userId || targetId
+    });
+
+    const permanentUrl = `/api/attachments/file/${record.fileKey}`;
+
+    // Update profileImage ONLY - strictly preserve official card photo
+    db.volunteers[index].profileImage = permanentUrl;
+    db.volunteers[index].profile_image = permanentUrl;
+
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: new Date().toISOString(),
+      user: authContext.userName || db.volunteers[index].name,
+      action: `تحديث صورة الحساب الشخصي (واتساب) للمتطوع: ${db.volunteers[index].name}`,
+      ip: req.ip || "127.0.0.1",
+      device: "Volunteer Portal"
+    });
+
+    writeDb(db);
+    return res.json({ ok: true, profileImageUrl: permanentUrl, volunteer: db.volunteers[index], db });
+  } catch (err: any) {
+    console.error("Error saving volunteer profile image:", err);
+    return res.status(500).json({ ok: false, error: "فشل حفظ صورة الملف الشخصي: " + err.message });
+  }
+});
+
+// 5.6 Volunteer Self-Profile Update (Editable vs Protected Fields)
+app.post("/api/db/volunteers/update-profile", async (req, res) => {
+  try {
+    const authContext = getUserAccessContext(req);
+    const { volunteerId, phone, email, city, district } = req.body;
+    const targetId = volunteerId || authContext.userId;
+
+    if (!targetId) {
+      return res.status(400).json({ ok: false, error: "معرف المتطوع مطلوب" });
+    }
+
+    const isSelf = authContext.userId === targetId;
+    const isAdmin = authContext.role === 'admin' || authContext.role === 'super_admin' || authContext.role === 'operations_manager';
+    if (!isSelf && !isAdmin) {
+      return res.status(403).json({ ok: false, error: "غير مصرح بتعديل هذا الحساب" });
+    }
+
+    const db = readDb();
+    const index = db.volunteers.findIndex((v: any) => v.id === targetId);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, error: "سجل المتطوع غير موجود" });
+    }
+
+    // Only allow safe personal fields
+    if (phone !== undefined) db.volunteers[index].phone = String(phone).trim();
+    if (email !== undefined) db.volunteers[index].email = String(email).trim();
+    if (city !== undefined) db.volunteers[index].city = String(city).trim();
+    if (district !== undefined) db.volunteers[index].district = String(district).trim();
+
+    db.logs.unshift({
+      id: "log-" + Date.now(),
+      timestamp: new Date().toISOString(),
+      user: authContext.userName || db.volunteers[index].name,
+      action: `تحديث بيانات التواصل لملف المتطوع: ${db.volunteers[index].name}`,
+      ip: req.ip || "127.0.0.1",
+      device: "Volunteer Portal"
+    });
+
+    writeDb(db);
+    return res.json({ ok: true, volunteer: db.volunteers[index], db });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 5.7 Volunteer Official Data Change Request (Submit to Admin)
+app.post("/api/db/volunteers/request-data-change", async (req, res) => {
+  try {
+    const authContext = getUserAccessContext(req);
+    const { volunteerId, requestedChanges, reason } = req.body;
+    const targetId = volunteerId || authContext.userId;
+
+    const db = readDb();
+    const vol = db.volunteers.find((v: any) => v.id === targetId);
+    if (!vol) return res.status(404).json({ ok: false, error: "المتطوع غير موجود" });
+
+    db.volunteerChangeRequests = db.volunteerChangeRequests || [];
+    const changeReq = {
+      id: "vcr-" + Date.now(),
+      volunteerId: vol.id,
+      volunteerName: vol.name,
+      membershipNumber: vol.membershipNumber || vol.fileNumber,
+      teamId: vol.teamId,
+      requestedChanges: requestedChanges || {},
+      reason: reason || "طلب مراجعة وتحديث بيانات رسمية",
+      status: "pending",
+      submittedAt: new Date().toISOString()
+    };
+
+    db.volunteerChangeRequests.unshift(changeReq);
+    writeDb(db);
+    return res.json({ ok: true, message: "تم رفع طلب تعديل البيانات الرسمية للإدارة بنجاح", request: changeReq, db });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // 6. Volunteers Delete
@@ -9270,76 +9777,60 @@ app.get("/api/db/auth/session", (req, res) => {
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
     req.cookies?.['reyadat_session'];
   
+  if (!sessionToken) {
+    return res.json({ status: "unauthenticated" });
+  }
+
   const activeSession = getServerSession(sessionToken);
-  if (activeSession) {
-    return res.json({
-      status: "success",
-      sessionToken: activeSession.token,
-      role: activeSession.role,
-      user: activeSession.user
-    });
+  if (!activeSession) {
+    return res.json({ status: "unauthenticated" });
   }
 
-  // Header-based fallback check (e.g. from local storage session re-hydration)
-  const userId = req.headers['x-user-id'] as string;
-  const userRole = req.headers['x-user-role'] as string;
-  if (userId && userRole && userRole !== 'public') {
-    const db = readDb();
-    let foundUser: any = null;
-    if (userId === 'mosa' || (userId && userId.toLowerCase() === 'mosa')) {
-      const mosaEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'mosa' || u.username === 'mosa');
-      const allDeptIds = (db.departments || []).map((d: any) => d.id);
-      foundUser = {
-        id: "mosa",
-        userId: "mosa",
-        username: "mosa",
-        name: mosaEntry?.userName || "موسى (مسؤول النظام Administrator)",
-        email: mosaEntry?.userEmail || "mosa@riadataleata.org.sa",
-        role: "admin",
-        jobTitle: mosaEntry?.jobTitle || "مسؤول النظام (Administrator)",
-        primaryDepartmentId: "dep-1",
-        primaryDepartmentName: "الإدارة التنفيذية",
-        allowedDepartmentIds: allDeptIds,
-        permissions: [
-          "super_admin", "view_department", "create_data", "edit_data", 
-          "delete_data", "export_pdf", "export_excel", "manage_staff", 
-          "manage_tasks", "view_reports", "cross_department_access", "all_permissions"
-        ],
-        status: "active"
-      };
-    } else if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user') {
-      foundUser = {
-        id: "admin-user",
-        name: "مجلس الجمعية والمدير التنفيذي",
-        email: "admin@riadataleata.org.sa",
-        role: "admin",
-        permissions: ["super_admin", "all"],
-        status: "active"
-      };
-    } else if (userRole === 'volunteer') {
-      foundUser = (db.volunteers || []).find((v: any) => v.id === userId || v.nationalId === userId);
-    } else if (userRole === 'beneficiary') {
-      foundUser = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId);
-    } else if (userRole === 'leader') {
-      const team = (db.teams || []).find((t: any) => t.id === userId || t.leaderName === userId);
-      foundUser = { id: userId, name: team?.leaderName || 'قائد الفريق', role: 'leader', teamId: team?.id };
-    } else if (userRole === 'department_admin') {
-      const dept = (db.departments || []).find((d: any) => d.id === userId || `depadmin-${d.id}` === userId);
-      foundUser = { id: userId, name: dept?.directorName || 'مدير الإدارة', role: 'department_admin', departmentId: dept?.id };
-    }
+  // Real-time Database Account Status Verification
+  const db = readDb();
+  const userId = activeSession.userId;
+  const nationalId = activeSession.nationalId;
 
-    if (foundUser) {
-      const session = createServerSession(foundUser, userRole);
-      return res.json({
-        status: "success",
-        sessionToken: session.token,
-        role: userRole,
-        user: foundUser
-      });
+  if (db.userDepartmentAccess && Array.isArray(db.userDepartmentAccess)) {
+    const userAcc = db.userDepartmentAccess.find((u: any) => 
+      u && (u.userId === userId || u.id === userId || (nationalId && u.nationalId === nationalId))
+    );
+    if (userAcc && (userAcc.status === 'suspended' || userAcc.status === 'inactive' || userAcc.status === 'banned' || userAcc.status === 'rejected' || userAcc.loginDisabled === true || userAcc.hasLoginAccount === false)) {
+      destroyServerSession(sessionToken);
+      return res.json({ status: "unauthenticated", reason: "account_suspended" });
     }
   }
 
-  return res.json({ status: "unauthenticated" });
+  if (db.employees && Array.isArray(db.employees)) {
+    const emp = db.employees.find((e: any) => e && (e.id === userId || (nationalId && e.nationalId === nationalId)));
+    if (emp && (emp.status === 'suspended' || emp.status === 'inactive' || emp.loginDisabled === true || emp.hasLoginAccount === false)) {
+      destroyServerSession(sessionToken);
+      return res.json({ status: "unauthenticated", reason: "account_suspended" });
+    }
+  }
+
+  if (db.volunteers && Array.isArray(db.volunteers)) {
+    const vol = db.volunteers.find((v: any) => v && (v.id === userId || (nationalId && v.nationalId === nationalId)));
+    if (vol && (vol.status === 'suspended' || vol.status === 'inactive' || vol.loginDisabled === true)) {
+      destroyServerSession(sessionToken);
+      return res.json({ status: "unauthenticated", reason: "account_suspended" });
+    }
+  }
+
+  if (db.beneficiaries && Array.isArray(db.beneficiaries)) {
+    const ben = db.beneficiaries.find((b: any) => b && (b.id === userId || (nationalId && b.nationalId === nationalId)));
+    if (ben && (ben.status === 'suspended' || ben.status === 'rejected' || ben.loginDisabled === true)) {
+      destroyServerSession(sessionToken);
+      return res.json({ status: "unauthenticated", reason: "account_suspended" });
+    }
+  }
+
+  return res.json({
+    status: "success",
+    sessionToken: activeSession.token,
+    role: activeSession.role,
+    user: activeSession.user
+  });
 });
 
 // Logout endpoint
@@ -10031,8 +10522,11 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
 
   const cleanCred = credential.trim();
 
-  // 1. Support development / simulated test token for preview & dev verification before Google Cloud Console setup
+  // 1. Support development / simulated test token ONLY in non-production environments
   if (cleanCred.startsWith('dev_test_token:')) {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+      return { valid: false, error: "حظر أمني: رموز الاختبار التجريبية محظورة تماماً في بيئة الإنتاج." };
+    }
     try {
       const raw = cleanCred.replace('dev_test_token:', '');
       const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
@@ -10824,8 +11318,8 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     });
   }
 
-  // Generate 6-digit cryptographically random numeric OTP
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  // Generate 6-digit cryptographically secure random numeric OTP
+  const otpCode = crypto.randomInt(100000, 1000000).toString();
   // Hash OTP code before saving (Never stored in plain text!)
   const codeHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode).digest("hex");
 
@@ -10834,7 +11328,7 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   db.passwordResetOtps = db.passwordResetOtps.filter((o: any) => o && o.email !== userEmail?.toLowerCase());
 
   const otpRecord = {
-    id: `otp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    id: `otp-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     email: userEmail.toLowerCase(),
     userId: targetUserId,
     userName,
@@ -12489,76 +12983,14 @@ const toggleMaintenanceHandler = async (req: any, res: any) => {
     const db = readDb();
     const { enabled, message, performerName } = req.body || {};
 
-    // 1. Resolve full user access context from request (supports sessions, tokens, headers, cookies)
+    // 1. Resolve full user access context strictly from verified session
     const userContext = getUserAccessContext(req);
-    const sessionToken = (req.headers['x-session-token'] as string) || 
-      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null);
 
-    const reqRole = (req.headers['x-user-role'] || req.body?.userRole || req.body?.role || '').toString().toLowerCase();
-    const reqUserId = req.headers['x-user-id'] || req.body?.userId || userContext.userId;
-
-    let isAuthorized = false;
-
-    // Check A: Super Admin or Operations Manager from context
-    if (userContext.isSuperAdmin || userContext.isOperationsManager) {
-      isAuthorized = true;
-    }
-
-    // Check B: Direct role check
-    if (userContext.role === 'admin' || userContext.role === 'operations_manager' || 
-        reqRole === 'admin' || reqRole === 'operations_manager' || reqRole === 'operations' || reqRole === 'ops' || reqRole === 'general_manager') {
-      isAuthorized = true;
-    }
-
-    // Check C: Granular permissions
-    const permissions = userContext.permissions || [];
-    if (permissions.includes('super_admin') || 
-        permissions.includes('operations_manager') || 
-        permissions.includes('all_permissions') ||
-        permissions.includes('manage_tasks') ||
-        permissions.includes('support_manage_it') ||
-        permissions.includes('support_maintenance')) {
-      isAuthorized = true;
-    }
-
-    // Check D: Session validation directly from database activeSessions
-    if (sessionToken && Array.isArray(db.activeSessions)) {
-      const sess = db.activeSessions.find((s: any) => s && (s.token === sessionToken || s.id === sessionToken));
-      if (sess) {
-        const sRole = (sess.role || sess.user?.role || '').toLowerCase();
-        const sPerms = sess.user?.permissions || [];
-        if (sRole === 'admin' || sRole === 'operations_manager' || sPerms.includes('super_admin') || sPerms.includes('operations_manager')) {
-          isAuthorized = true;
-        }
-      }
-    }
-
-    // Check E: User validation directly from userDepartmentAccess or ops-manager identifier
-    if (reqUserId === 'ops-manager' || reqUserId === 'operations' || reqUserId === '1020000000' || reqUserId === 'admin-user' || reqUserId === 'mosa') {
-      isAuthorized = true;
-    } else if (reqUserId && Array.isArray(db.userDepartmentAccess)) {
-      const userAccess = db.userDepartmentAccess.find((u: any) => 
-        u && (u.userId === reqUserId || u.username === reqUserId || u.userEmail === reqUserId || u.nationalId === reqUserId)
-      );
-      if (userAccess) {
-        const uRole = (userAccess.role || '').toLowerCase();
-        const uPerms = userAccess.permissions || [];
-        if (uRole === 'admin' || uRole === 'operations_manager' || uPerms.includes('super_admin') || uPerms.includes('operations_manager')) {
-          isAuthorized = true;
-        }
-      }
-    }
-
-    // Check F: Admin context fallback
-    if (!reqRole || reqRole === 'admin') {
-      isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
+    if (!userContext.isAuthenticated || (!userContext.isSuperAdmin && !userContext.isOperationsManager && userContext.role !== 'admin' && userContext.role !== 'operations_manager')) {
       return res.status(403).json({ 
-        error: "غير مصرح لك بتغيير حالة وضع الصيانة. الصلاحية محصورة لمدير العمليات والإدارة العليا فقط.",
-        code: "FORBIDDEN_MAINTENANCE_TOGGLE",
-        userRole: userContext.role || reqRole
+        ok: false,
+        error: "غير مصرح لك بتغيير حالة وضع الصيانة. الصلاحية محصورة لمدير العمليات والإدارة العليا فقط عبر جلسة موثقة.",
+        code: "FORBIDDEN_MAINTENANCE_TOGGLE"
       });
     }
 
@@ -13286,11 +13718,12 @@ app.post("/api/db/hero-slides/toggle-active", (req, res) => {
 app.post("/api/db/beneficiaries/add", async (req, res) => {
   const isEdit = Boolean(req.body && req.body.id);
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  let isSelfBeneficiary = false;
 
   // If edit: strictly require authorized administrative session for dep-4 OR self-beneficiary updating own profile
   if (isEdit) {
     const userContext = getUserAccessContext(req);
-    const isSelfBeneficiary = userContext && userContext.role === 'beneficiary' && userContext.userId === req.body.id;
+    isSelfBeneficiary = Boolean(userContext && userContext.role === 'beneficiary' && userContext.userId === req.body.id);
     if (!isSelfBeneficiary) {
       const auth = checkDepartmentPermission(req, res, 'dep-4', 'edit_data', 'ملف المستفيد');
       if (!auth.allowed) return;
@@ -13437,22 +13870,37 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
         // Edit existing
         const idx = db.beneficiaries.findIndex((b: any) => b.id === ben.id);
         if (idx !== -1) {
+          const prev = db.beneficiaries[idx];
+          // If beneficiary editing own profile, strictly preserve sensitive administrative status and financials
+          const safeStatus = isSelfBeneficiary ? prev.status : (ben.status || prev.status);
+          const safeRole = isSelfBeneficiary ? (prev.role || "beneficiary") : (ben.role || prev.role || "beneficiary");
+          const safeCategory = isSelfBeneficiary ? prev.category : (ben.category || prev.category);
+          const safeApprovedBy = isSelfBeneficiary ? prev.approvedBy : (ben.approvedBy || prev.approvedBy);
+          const safeMonthlyIncome = isSelfBeneficiary ? prev.monthlyIncome : (ben.monthlyIncome !== undefined ? ben.monthlyIncome : prev.monthlyIncome);
+          const safeFamilySize = isSelfBeneficiary ? prev.familySize : (ben.familySize !== undefined ? ben.familySize : prev.familySize);
+
           db.beneficiaries[idx] = { 
-            ...db.beneficiaries[idx], 
+            ...prev, 
             ...ben, 
-            birthDate: cleanBirthDate || db.beneficiaries[idx].birthDate,
-            birthCalendarType: cleanBirthDateType || db.beneficiaries[idx].birthCalendarType,
-            birthDateHijri: cleanBirthDateHijri || db.beneficiaries[idx].birthDateHijri,
-            age: cleanAge > 0 ? cleanAge : db.beneficiaries[idx].age,
-            residencyStatus: cleanResidencyStatus || db.beneficiaries[idx].residencyStatus,
-            nationality: cleanNationality || db.beneficiaries[idx].nationality,
-            city: cleanCity || db.beneficiaries[idx].city,
-            district: cleanDistrict || db.beneficiaries[idx].district,
-            customDistrict: cleanCustomDistrict || db.beneficiaries[idx].customDistrict,
-            address: cleanAddress || db.beneficiaries[idx].address,
-            maritalStatus: cleanMaritalStatus || db.beneficiaries[idx].maritalStatus,
-            orphanStatus: cleanOrphanStatus || db.beneficiaries[idx].orphanStatus,
-            id: db.beneficiaries[idx].id, 
+            status: safeStatus,
+            role: safeRole,
+            category: safeCategory,
+            approvedBy: safeApprovedBy,
+            monthlyIncome: safeMonthlyIncome,
+            familySize: safeFamilySize,
+            birthDate: cleanBirthDate || prev.birthDate,
+            birthCalendarType: cleanBirthDateType || prev.birthCalendarType,
+            birthDateHijri: cleanBirthDateHijri || prev.birthDateHijri,
+            age: cleanAge > 0 ? cleanAge : prev.age,
+            residencyStatus: cleanResidencyStatus || prev.residencyStatus,
+            nationality: cleanNationality || prev.nationality,
+            city: cleanCity || prev.city,
+            district: cleanDistrict || prev.district,
+            customDistrict: cleanCustomDistrict || prev.customDistrict,
+            address: cleanAddress || prev.address,
+            maritalStatus: cleanMaritalStatus || prev.maritalStatus,
+            orphanStatus: cleanOrphanStatus || prev.orphanStatus,
+            id: prev.id, 
             updatedAt: new Date().toISOString() 
           };
         } else {
@@ -16433,8 +16881,10 @@ app.post("/api/db/volunteerTransfers/action", (req, res) => {
     userRole
   } = req.body;
 
-  const role = (req.headers['x-user-role'] || userRole || '') as string;
-  if (role === 'leader') {
+  const auth = checkDepartmentPermission(req, res, 'dep-5', 'edit_data', 'البت في طلبات نقل المتطوعين');
+  if (!auth.allowed) return;
+
+  if (auth.context.role === 'leader') {
     return res.status(403).json({ error: "غير مصرح: لا يملك قائد الفريق صلاحية البت في طلبات النقل، هذا الإجراء مخصص لإدارة التطوع فقط." });
   }
 
@@ -16699,8 +17149,10 @@ app.post("/api/db/passwordResetRequests/action", (req, res) => {
     adminName = "مدير العمليات"
   } = req.body;
 
-  const role = (req.headers['x-user-role'] || req.body.userRole || '') as string;
-  if (role === 'leader') {
+  const auth = checkDepartmentPermission(req, res, 'dep-5', 'edit_data', 'اعتماد طلبات إعادة تعيين كلمات المرور');
+  if (!auth.allowed) return;
+
+  if (auth.context.role === 'leader') {
     return res.status(403).json({ error: "غير مصرح: لا يملك قائد الفريق صلاحية اعتماد طلبات كلمات المرور." });
   }
 
@@ -16723,8 +17175,8 @@ app.post("/api/db/passwordResetRequests/action", (req, res) => {
     reqObj.reviewedBy = adminName;
     reqObj.reviewerNotes = notes || "قيد التحقق والمراجعة من قبل مدير العمليات";
   } else if (action === "send_reset_link" || action === "approve") {
-    // Generate secure temporary token (24-hour expiry)
-    const token = "RST-" + Math.random().toString(36).substring(2, 8).toUpperCase() + "-" + Date.now().toString(36).toUpperCase();
+    // Generate secure temporary token (24-hour expiry) using cryptographically secure random bytes
+    const token = "RST-" + crypto.randomBytes(6).toString("hex").toUpperCase() + "-" + Date.now().toString(36).toUpperCase();
     const expiry = Date.now() + 24 * 60 * 60 * 1000;
 
     if (vol) {
@@ -20093,6 +20545,123 @@ app.post("/api/db/hr/employees/save", (req, res) => {
 
   writeDb(db);
   res.json({ status: "success", employees: db.employees, db });
+});
+
+// 2.21.1 HR Leaves Management
+app.post("/api/db/hr/leaves/action", (req, res) => {
+  const db = readDb();
+  db.hrLeaves = db.hrLeaves || [];
+  const { leaveId, action, notes, newLeave } = req.body;
+
+  if (newLeave) {
+    const leave = {
+      id: "leave-" + Date.now(),
+      employeeId: newLeave.employeeId,
+      employeeName: newLeave.employeeName,
+      leaveType: newLeave.leaveType || "annual",
+      startDate: newLeave.startDate,
+      endDate: newLeave.endDate,
+      daysCount: Number(newLeave.daysCount) || 1,
+      reason: newLeave.reason || "طلب إجازة اعتيادية",
+      status: "pending",
+      requestedAt: new Date().toISOString()
+    };
+    db.hrLeaves.unshift(leave);
+    writeDb(db);
+    return res.json({ status: "success", leave, db });
+  }
+
+  const idx = db.hrLeaves.findIndex((l: any) => l.id === leaveId);
+  if (idx !== -1) {
+    db.hrLeaves[idx].status = action === 'approve' ? 'approved' : 'rejected';
+    db.hrLeaves[idx].reviewedAt = new Date().toISOString();
+    db.hrLeaves[idx].reviewNotes = notes || "";
+    writeDb(db);
+    return res.json({ status: "success", leave: db.hrLeaves[idx], db });
+  }
+
+  res.status(404).json({ error: "طلب الإجازة غير موجود" });
+});
+
+// 2.21.2 HR Attendance Logging
+app.post("/api/db/hr/attendance/log", (req, res) => {
+  const db = readDb();
+  db.hrAttendance = db.hrAttendance || [];
+  const record = {
+    id: "att-" + Date.now(),
+    employeeId: req.body.employeeId,
+    employeeName: req.body.employeeName,
+    date: req.body.date || new Date().toISOString().split('T')[0],
+    checkInTime: req.body.checkInTime || new Date().toLocaleTimeString('ar-SA'),
+    checkOutTime: req.body.checkOutTime,
+    status: req.body.status || "present",
+    notes: req.body.notes || ""
+  };
+  db.hrAttendance.unshift(record);
+  writeDb(db);
+  res.json({ status: "success", record, db });
+});
+
+// 2.21.3 HR Decisions & Assignments
+app.post("/api/db/hr/decisions/add", (req, res) => {
+  const db = readDb();
+  db.hrDecisions = db.hrDecisions || [];
+  const decision = {
+    id: "dec-" + Date.now(),
+    decisionNumber: req.body.decisionNumber || `HR-DEC-${new Date().getFullYear()}-${String(db.hrDecisions.length + 1).padStart(3, '0')}`,
+    type: req.body.type || "assignment",
+    title: req.body.title,
+    employeeId: req.body.employeeId,
+    employeeName: req.body.employeeName,
+    issueDate: req.body.issueDate || new Date().toISOString().split('T')[0],
+    content: req.body.content,
+    signedBy: req.body.signedBy || "إدارة الموارد البشرية - جمعية ريادة العطاء"
+  };
+  db.hrDecisions.unshift(decision);
+  writeDb(db);
+  res.json({ status: "success", decision, db });
+});
+
+// 2.21.4 HR Employee Evaluations (KPI Appraisals)
+app.post("/api/db/hr/evaluations/save", (req, res) => {
+  const db = readDb();
+  db.hrEvaluations = db.hrEvaluations || [];
+  const evaluation = {
+    id: "eval-" + Date.now(),
+    employeeId: req.body.employeeId,
+    employeeName: req.body.employeeName,
+    jobTitle: req.body.jobTitle,
+    period: req.body.period || "2026",
+    score: Number(req.body.score) || 90,
+    rating: req.body.rating || "ممتاز",
+    evaluatorName: req.body.evaluatorName || "مدير إدارة الموارد البشرية",
+    notes: req.body.notes || "",
+    evaluatedAt: new Date().toISOString()
+  };
+  db.hrEvaluations.unshift(evaluation);
+  writeDb(db);
+  res.json({ status: "success", evaluation, db });
+});
+
+// 2.21.5 HR Job Titles Catalog
+app.post("/api/db/hr/job-titles/save", (req, res) => {
+  const db = readDb();
+  db.hrJobTitles = db.hrJobTitles || [];
+  const item = {
+    id: req.body.id || "job-" + Date.now(),
+    titleAr: req.body.titleAr,
+    departmentId: req.body.departmentId || "dep-9",
+    grade: req.body.grade || "عام",
+    description: req.body.description || ""
+  };
+  const existingIdx = db.hrJobTitles.findIndex((j: any) => j.id === item.id);
+  if (existingIdx !== -1) {
+    db.hrJobTitles[existingIdx] = item;
+  } else {
+    db.hrJobTitles.push(item);
+  }
+  writeDb(db);
+  res.json({ status: "success", jobTitles: db.hrJobTitles, db });
 });
 
 // 2.3 Leader Action on Team Volunteer Join Request
