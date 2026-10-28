@@ -1,0 +1,4789 @@
+{
+  "departments": [
+    {
+      "id": "dep-1",
+      "nameAr": "الإدارة التنفيذية",
+      "nameEn": "Executive Management",
+      "directorName": "أ. عبد الرحمن السليمان",
+      "nationalId": "1010000001",
+      "password": "123",
+      "email": "exec@riadataleata.org.sa",
+      "phone": "0551000001",
+      "descriptionAr": "تنفيذ قرارات مجلس الإدارة والإشراف على كافة الإدارات والخطط التشغيلية ومؤشرات الجودة.",
+      "descriptionEn": "Executing board decisions, supervising all departments, operational plans, and quality metrics.",
+      "tasks": [
+        "تنفيذ قرارات مجلس الإدارة.",
+        "إعداد الخطط التشغيلية ومتابعة تنفيذها.",
+        "الإشراف على جميع الإدارات.",
+        "متابعة مؤشرات الأداء والجودة.",
+        "إعداد التقارير الدورية لمجلس الإدارة.",
+        "تمثيل الجمعية في الأعمال التنفيذية."
+      ]
+    },
+    {
+      "id": "dep-2",
+      "nameAr": "الإدارة المالية",
+      "nameEn": "Financial Management",
+      "directorName": "أ. عبد الله العتيبي",
+      "nationalId": "1010000002",
+      "password": "123",
+      "email": "finance@riadataleata.org.sa",
+      "phone": "0551000002",
+      "descriptionAr": "إدارة الميزانيات، الإيرادات والمصروفات، السجلات المحاسبية والمشتريات والرواتب.",
+      "descriptionEn": "Managing annual budgets, revenue/expenses, accounting ledgers, purchases, and compliance.",
+      "tasks": [
+        "إعداد الميزانية السنوية.",
+        "إدارة الإيرادات والمصروفات.",
+        "إعداد القيود والسجلات المحاسبية.",
+        "إعداد التقارير المالية.",
+        "متابعة العهد والمشتريات.",
+        "إعداد الرواتب والمستحقات.",
+        "ضمان الالتزام بالأنظمة المالية."
+      ]
+    },
+    {
+      "id": "dep-3",
+      "nameAr": "إدارة البرامج والمشاريع",
+      "nameEn": "Programs & Projects Management",
+      "directorName": "أ. فيصل الأحمدي",
+      "nationalId": "1010000003",
+      "password": "123",
+      "email": "projects@riadataleata.org.sa",
+      "phone": "0551000003",
+      "descriptionAr": "تخطيط وتنفيذ البرامج والمبادرات والمشاريع التنموية وقياس أثرها واقتراح مشاريع جديدة.",
+      "descriptionEn": "Planning and executing programs, initiatives, timeline plans, and measuring developmental impact.",
+      "tasks": [
+        "إعداد وتنفيذ البرامج والمبادرات.",
+        "إعداد الخطط الزمنية للمشاريع.",
+        "متابعة تنفيذ الأنشطة.",
+        "قياس أثر البرامج وتقييمها.",
+        "إعداد تقارير الإنجاز.",
+        "اقتراح مشاريع جديدة تحقق أهداف الجمعية."
+      ]
+    },
+    {
+      "id": "dep-4",
+      "nameAr": "إدارة المستفيدين",
+      "nameEn": "Beneficiaries Management",
+      "directorName": "أ. مريم الغامدي",
+      "nationalId": "1010000004",
+      "password": "123",
+      "email": "beneficiaries@riadataleata.org.sa",
+      "phone": "0551000004",
+      "descriptionAr": "استقبال وتوثيق طلبات المستفيدين، دراسة الحالات والتأكد من استحقاقها وقياس رضاهم.",
+      "descriptionEn": "Receiving beneficiary requests, registering data, studying eligibility, and measuring satisfaction.",
+      "tasks": [
+        "استقبال طلبات المستفيدين.",
+        "تسجيل بيانات المستفيدين.",
+        "دراسة الحالات والتأكد من استحقاقها.",
+        "متابعة تقديم الخدمات.",
+        "تحديث قاعدة بيانات المستفيدين.",
+        "قياس رضا المستفيدين."
+      ]
+    },
+    {
+      "id": "dep-5",
+      "nameAr": "إدارة التطوع",
+      "nameEn": "Volunteer Management",
+      "directorName": "أ. منيرة القحطاني",
+      "nationalId": "1010000005",
+      "password": "123",
+      "email": "volunteers@riadataleata.org.sa",
+      "phone": "0551000005",
+      "descriptionAr": "إدارة واستقطاب المتطوعين، الفرق التطوعية، اعتماد وإدارة الفرص التطوعية العامة والخاصة، الساعات والحضور والشهادات.",
+      "descriptionEn": "Volunteer recruitment, volunteer teams, approving and managing public and private opportunities, hours, attendance, and certificates.",
+      "tasks": [
+        "إدارة واستقطاب المتطوعين والفرق التطوعية.",
+        "مراجعة واعتماد الفرص التطوعية وتوليد معرفاتها وروابط التسجيل.",
+        "إدارة ومتابعة طلبات التسجيل والانضمام للفرص.",
+        "توثيق واحتساب الساعات التطوعية الميدانية.",
+        "إصدار شهادات التطوع وبطاقات العضوية المعتمدة.",
+        "متابعة مؤشرات وتقارير العمل التطوعي بالجمعية."
+      ]
+    },
+    {
+      "id": "dep-6",
+      "nameAr": "إدارة الإعلام والاتصال",
+      "nameEn": "Media & Communication Management",
+      "directorName": "أ. عبد العزيز الشمري",
+      "nationalId": "1010000006",
+      "password": "123",
+      "email": "media@riadataleata.org.sa",
+      "phone": "0551000006",
+      "descriptionAr": "إدارة وتوثيق المقاطع المرئية والفيديوهات، التغطيات الإعلامية، النشر والأرشفة، وإدارة المحتوى المرئي للجمعية.",
+      "descriptionEn": "Managing media videos and clips, press coverage, publishing and archiving, and digital media content.",
+      "tasks": [
+        "إدارة وتوثيق المقاطع المرئية والفيديوهات بالجمعية.",
+        "رفع ومعاينة وتحديث الفيديوهات على الموقع الرسمي.",
+        "جدولة ونشر وأرشفة المحتوى الإعلامي المرئي.",
+        "إعداد التغطيات المرئية وتوثيق الفعاليات والمبادرات.",
+        "التنسيق مع الفرق الإعلامية والتصوير.",
+        "متابعة مؤشرات وصول وتفاعل المشاهدين مع المحتوى."
+      ]
+    },
+    {
+      "id": "dep-7",
+      "nameAr": "إدارة تنمية الموارد المالية والشراكات",
+      "nameEn": "Fundraising & Partnerships Management",
+      "directorName": "أ. ماجد الدوسري",
+      "nationalId": "1010000007",
+      "password": "123",
+      "email": "partnerships@riadataleata.org.sa",
+      "phone": "0551000007",
+      "descriptionAr": "تنمية الاستدامة المالية، استقطاب الداعمين والرعاة، بناء الشراكات والحملات الداعمة.",
+      "descriptionEn": "Developing financial sustainability, attracting donors/sponsors, partnerships, and fundraising.",
+      "tasks": [
+        "إعداد خطط تنمية الموارد المالية.",
+        "استقطاب الداعمين والرعاة.",
+        "بناء الشراكات مع الجهات الحكومية والخاصة.",
+        "إعداد الحملات والمبادرات الداعمة.",
+        "متابعة المنح والتمويل.",
+        "تنمية الاستدامة المالية للجمعية."
+      ]
+    },
+    {
+      "id": "dep-8",
+      "nameAr": "إدارة الخدمات المساندة",
+      "nameEn": "Support Services Management",
+      "directorName": "أ. سعود الحربي",
+      "nationalId": "1010000008",
+      "password": "123",
+      "email": "support@riadataleata.org.sa",
+      "phone": "0551000008",
+      "descriptionAr": "إدارة تقنية المعلومات والأنظمة، المستودعات والعهد والصيانة والحركة والأمن والسلامة.",
+      "descriptionEn": "Managing IT systems, inventory, transportation, maintenance, general facilities, and security.",
+      "tasks": [
+        "إدارة تقنية المعلومات والأنظمة.",
+        "إدارة المستودعات والعهد.",
+        "الإشراف على النقل والحركة.",
+        "متابعة الصيانة الدورية.",
+        "إدارة الخدمات العامة والمرافق.",
+        "توفير الاحتياجات التشغيلية لجميع الإدارات.",
+        "متابعة الأمن والسلامة داخل مرافق الجمعية."
+      ]
+    },
+    {
+      "id": "dep-9",
+      "nameAr": "إدارة الموارد البشرية",
+      "nameEn": "Human Resources Management",
+      "directorName": "أ. نورة بنت فهد الشريف",
+      "nationalId": "1010000009",
+      "password": "123",
+      "email": "hr@riadataleata.org.sa",
+      "phone": "0551000009",
+      "descriptionAr": "إدارة شؤون الموظفين، العقود، مسيرات الرواتب والبدلات، الحضور والانصراف، الإجازات، والقرارات الإدارية للموظفين.",
+      "descriptionEn": "Managing employee affairs, contracts, payroll and allowances, attendance, leaves, and HR administrative decisions.",
+      "tasks": [
+        "إدارة ملفات وبيانات الموظفين والكوادر الوظيفية.",
+        "إعداد وتوثيق عقود العمل والاتفاقيات الوظيفية.",
+        "إدارة مسيرات الرواتب والمكافآت والبدلات والخصومات.",
+        "متابعة الحضور والانصراف وسجلات الدوام للموظفين.",
+        "إدارة أرصدة الإجازات والغياب والاستئذان.",
+        "تقييم أداء الموظفين وإعداد القرارات وخطابات التكليف والتوظيف."
+      ]
+    }
+  ],
+  "teams": [
+    {
+      "id": "team-1",
+      "nameAr": "فريق التنظيم",
+      "nameEn": "Organizing Team",
+      "departmentId": "dep-3",
+      "leaderName": "سعود الحربي",
+      "descriptionAr": "المسؤول الأول عن إدارة الحشود والمسارات في المبادرات الميدانية.",
+      "descriptionEn": "Responsible for crowd management and routing in field initiatives."
+    },
+    {
+      "id": "team-2",
+      "nameAr": "فريق الإعلام",
+      "nameEn": "Media Team",
+      "departmentId": "dep-2",
+      "leaderName": "عبد العزيز الشمري",
+      "descriptionAr": "توثيق وتصوير المبادرات وكتابة المحتوى الإعلامي للجمعية.",
+      "descriptionEn": "Documenting and photographing initiatives and writing media content for the association."
+    },
+    {
+      "id": "team-3",
+      "nameAr": "فريق الاستقبال",
+      "nameEn": "Reception Team",
+      "departmentId": "dep-4",
+      "leaderName": "ماجد الدوسري",
+      "descriptionAr": "استقبال كبار الشخصيات والزوار والترحيب بالمتطوعين الجدد.",
+      "descriptionEn": "Welcoming VIPs, visitors, and welcoming new volunteers."
+    },
+    {
+      "id": "team-4",
+      "nameAr": "فريق الإسعافات",
+      "nameEn": "First Aid Team",
+      "departmentId": "dep-1",
+      "leaderName": "د. هند العصيمي",
+      "descriptionAr": "تقديم الدعم الطبي الأولي في الفعاليات والنشاطات الكبيرة.",
+      "descriptionEn": "Providing primary medical support in large events and activities."
+    },
+    {
+      "id": "team-5",
+      "nameAr": "فريق التصوير",
+      "nameEn": "Photography Team",
+      "departmentId": "dep-2",
+      "leaderName": "خالد الشهري",
+      "descriptionAr": "التقاط الصور وإنتاج المقاطع المرئية الاحترافية للجمعية.",
+      "descriptionEn": "Capturing photos and producing professional videos for the association."
+    }
+  ],
+  "volunteers": [
+    {
+      "id": "vol-1",
+      "name": "أحمد بن علي الغامدي",
+      "email": "ahmed.ghamdi@example.com",
+      "phone": "0551234567",
+      "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
+      "membershipNumber": "V-2026-0001",
+      "teamId": "team-1",
+      "departmentId": "dep-3",
+      "titleAr": "متطوع تنظيمي",
+      "titleEn": "Organizing Volunteer",
+      "status": "active",
+      "points": 24,
+      "qrCode": "MEM-V-2026-0001",
+      "barcode": "100088868001",
+      "issueDate": "2026-01-15",
+      "expiryDate": "2027-01-15"
+    },
+    {
+      "id": "vol-2",
+      "name": "سارة بنت محمد العتيبي",
+      "email": "sara.otaibi@example.com",
+      "phone": "0569876543",
+      "photo": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop",
+      "membershipNumber": "V-2026-0002",
+      "teamId": "team-2",
+      "departmentId": "dep-2",
+      "titleAr": "مصممة جرافيك متطوعة",
+      "titleEn": "Graphic Designer Volunteer",
+      "status": "active",
+      "points": 30,
+      "qrCode": "MEM-V-2026-0002",
+      "barcode": "100088868002",
+      "issueDate": "2026-02-01",
+      "expiryDate": "2027-02-01"
+    },
+    {
+      "id": "vol-3",
+      "name": "خالد بن عبد الله الزهراني",
+      "email": "khaled.zahrani@example.com",
+      "phone": "0543210987",
+      "photo": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop",
+      "membershipNumber": "V-2026-0003",
+      "teamId": "team-3",
+      "departmentId": "dep-4",
+      "titleAr": "متطوع علاقات عامة",
+      "titleEn": "PR Volunteer",
+      "status": "active",
+      "points": 15,
+      "qrCode": "MEM-V-2026-0003",
+      "barcode": "100088868003",
+      "issueDate": "2026-03-10",
+      "expiryDate": "2027-03-10"
+    },
+    {
+      "id": "vol-4",
+      "name": "فاطمة بنت عادل المالكي",
+      "email": "fatima.malki@example.com",
+      "phone": "0502468135",
+      "photo": "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop",
+      "membershipNumber": "V-2026-0004",
+      "teamId": "team-4",
+      "departmentId": "dep-1",
+      "titleAr": "مسعف ميداني متطوع",
+      "titleEn": "Field Paramedic Volunteer",
+      "status": "active",
+      "points": 18,
+      "qrCode": "MEM-V-2026-0004",
+      "barcode": "100088868004",
+      "issueDate": "2026-02-20",
+      "expiryDate": "2027-02-20"
+    },
+    {
+      "id": "vol-5",
+      "name": "عمر بن سليمان الحربي",
+      "email": "omar.harbi@example.com",
+      "phone": "0535791357",
+      "photo": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop",
+      "membershipNumber": "V-2026-0005",
+      "teamId": "team-1",
+      "departmentId": "dep-3",
+      "titleAr": "متطوع مساند",
+      "titleEn": "Support Volunteer",
+      "status": "active",
+      "points": 9,
+      "qrCode": "MEM-V-2026-0005",
+      "barcode": "100088868005",
+      "issueDate": "2026-04-05",
+      "expiryDate": "2027-04-05"
+    }
+  ],
+  "initiatives": [
+    {
+      "id": "init-1",
+      "name": "مبادرة تنظيم إفطار صائم بالعسيلة",
+      "description": "تنظيم وتوزيع وجبات الإفطار الرمضانية للأسر المحتاجة وعابري السبيل بمخطط العسيلة.",
+      "place": "مخطط العسيلة - الساحة العامة بجانب جامع الرضوان",
+      "date": "2026-07-15",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 12,
+      "waitlistCount": 2,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1",
+        "vol-3",
+        "vol-5"
+      ],
+      "waitlistVolunteerIds": [
+        "vol-4"
+      ],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-3",
+        "vol-4",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-2",
+      "name": "الحملة الإعلامية لكسوة الشتاء 2026",
+      "description": "إنتاج وتغطية المواد المرئية والمسموعة ونشر المحتوى لحملة كسوة الشتاء.",
+      "place": "مقر الجمعية بالعسيلة وقنوات التواصل",
+      "date": "2026-07-25",
+      "startTime": "09:00",
+      "endTime": "14:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 5,
+      "acceptedCount": 3,
+      "waitlistCount": 1,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-3",
+      "name": "دورة أساسيات الإسعافات الأولية للفعاليات",
+      "description": "دورة توعوية وتأهيلية مكثفة للمتطوعين على إسعاف المصابين وإدارة المخاطر في التجمعات.",
+      "place": "قاعة ريادة التدريبية بمقر الجمعية",
+      "date": "2026-07-28",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 30,
+      "acceptedCount": 15,
+      "waitlistCount": 5,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4",
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [
+        "vol-5"
+      ],
+      "applicantVolunteerIds": [
+        "vol-4",
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-4",
+      "name": "ملتقى الشراكات المجتمعية الأول",
+      "description": "استقبال وتنظيم فعاليات الملتقى الذي يهدف لتعزيز سبل العطاء والشراكة في المجتمع.",
+      "place": "فندق حياة ريجنسي مكة - القاعة الكبرى",
+      "date": "2026-08-05",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 5,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-5",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في السور الخارجي للمستوصف العام بالعسيلة",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في السور الخارجي للمستوصف العام بالعسيلة لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "السور الخارجي للمستوصف العام بالعسيلة",
+      "date": "2026-07-06",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-6",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في وادي العسيلة - منازل الأسر المتعففة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ وادي العسيلة - منازل الأسر المتعففة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "وادي العسيلة - منازل الأسر المتعففة",
+      "date": "2026-08-07",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-7",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في مركز ريادة للفتيات بالعسيلة",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ مركز ريادة للفتيات بالعسيلة بالتعاون مع معلمين متطوعين.",
+      "place": "مركز ريادة للفتيات بالعسيلة",
+      "date": "2026-08-08",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-8",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في الساحة الرياضية الخاصة بالعسيلة",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في الساحة الرياضية الخاصة بالعسيلة، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "الساحة الرياضية الخاصة بالعسيلة",
+      "date": "2026-07-09",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-9",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في مقر الجمعية الرئيسي",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ مقر الجمعية الرئيسي قبيل أذان المغرب.",
+      "place": "مقر الجمعية الرئيسي",
+      "date": "2026-08-10",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-10",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في مستودع فرز وتعبئة الملابس بالعسيلة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ مستودع فرز وتعبئة الملابس بالعسيلة وتجنب الهدر المالي والغذائي.",
+      "place": "مستودع فرز وتعبئة الملابس بالعسيلة",
+      "date": "2026-08-11",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-11",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في مسرح الطفل بمقر جمعية ريادة العطاء",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ مسرح الطفل بمقر جمعية ريادة العطاء.",
+      "place": "مسرح الطفل بمقر جمعية ريادة العطاء",
+      "date": "2026-07-12",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-12",
+      "name": "تنظيم المصلين وتوجيه الحشود في جامع التقوى بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ جامع التقوى بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "جامع التقوى بالعسيلة",
+      "date": "2026-08-13",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-13",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في ديوانية العسيلة التطوعية",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في ديوانية العسيلة التطوعية وتسهيل تنقلهم.",
+      "place": "ديوانية العسيلة التطوعية",
+      "date": "2026-08-14",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-14",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في الساحة الكبرى بحي العسيلة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ الساحة الكبرى بحي العسيلة وتداولها إعلامياً.",
+      "place": "الساحة الكبرى بحي العسيلة",
+      "date": "2026-07-15",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-15",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في مركز صحي العسيلة النموذجي",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي مركز صحي العسيلة النموذجي على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "مركز صحي العسيلة النموذجي",
+      "date": "2026-08-16",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-16",
+      "name": "تنظيم استقبال الضيوف والداعمين في قاعة الاحتفالات العامة بمخطط العسيلة",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ قاعة الاحتفالات العامة بمخطط العسيلة وتحسين تجربة الزوار.",
+      "place": "قاعة الاحتفالات العامة بمخطط العسيلة",
+      "date": "2026-08-17",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-17",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في الحدائق المحاذية لجامع الرضوان",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في الحدائق المحاذية لجامع الرضوان لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "الحدائق المحاذية لجامع الرضوان",
+      "date": "2026-07-18",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-18",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في الجمعية الخيرية بالعسيلة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ الجمعية الخيرية بالعسيلة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "الجمعية الخيرية بالعسيلة",
+      "date": "2026-08-19",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-19",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في قاعة التدريب والتعليم المستمر بمقر الجمعية",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ قاعة التدريب والتعليم المستمر بمقر الجمعية بالتعاون مع معلمين متطوعين.",
+      "place": "قاعة التدريب والتعليم المستمر بمقر الجمعية",
+      "date": "2026-08-20",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-20",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في منازل ذوي الاحتياجات بمخطط العسيلة",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في منازل ذوي الاحتياجات بمخطط العسيلة، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "منازل ذوي الاحتياجات بمخطط العسيلة",
+      "date": "2026-07-01",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-21",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في قاعة المكتبة العامة بالعسيلة",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ قاعة المكتبة العامة بالعسيلة قبيل أذان المغرب.",
+      "place": "قاعة المكتبة العامة بالعسيلة",
+      "date": "2026-08-22",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-22",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في مستودع الأثاث المستعمل بالعسيلة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ مستودع الأثاث المستعمل بالعسيلة وتجنب الهدر المالي والغذائي.",
+      "place": "مستودع الأثاث المستعمل بالعسيلة",
+      "date": "2026-08-23",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-23",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في ملعب مخطط العسيلة الرياضي",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ ملعب مخطط العسيلة الرياضي.",
+      "place": "ملعب مخطط العسيلة الرياضي",
+      "date": "2026-07-04",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-24",
+      "name": "تنظيم المصلين وتوجيه الحشود في مسجد التوبة بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مسجد التوبة بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "مسجد التوبة بالعسيلة",
+      "date": "2026-08-25",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-25",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في مواقف محبس الجن",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في مواقف محبس الجن وتسهيل تنقلهم.",
+      "place": "مواقف محبس الجن",
+      "date": "2026-08-26",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-26",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في مركز التدريب بمقر الجمعية",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ مركز التدريب بمقر الجمعية وتداولها إعلامياً.",
+      "place": "مركز التدريب بمقر الجمعية",
+      "date": "2026-07-07",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-27",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في مركز الإشراف الرياضي بالعسيلة",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي مركز الإشراف الرياضي بالعسيلة على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "مركز الإشراف الرياضي بالعسيلة",
+      "date": "2026-08-28",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-28",
+      "name": "تنظيم استقبال الضيوف والداعمين في صالة كبار الزوار بمقر جمعية ريادة العطاء",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ صالة كبار الزوار بمقر جمعية ريادة العطاء وتحسين تجربة الزوار.",
+      "place": "صالة كبار الزوار بمقر جمعية ريادة العطاء",
+      "date": "2026-08-01",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-29",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في الشارع العام بمخطط العسيلة",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في الشارع العام بمخطط العسيلة لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "الشارع العام بمخطط العسيلة",
+      "date": "2026-07-10",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-30",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في منازل كبار السن بالحي الشرقي للعسيلة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ منازل كبار السن بالحي الشرقي للعسيلة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "منازل كبار السن بالحي الشرقي للعسيلة",
+      "date": "2026-08-03",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-31",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في قاعة ريادة الأعمال بالجمعية",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ قاعة ريادة الأعمال بالجمعية بالتعاون مع معلمين متطوعين.",
+      "place": "قاعة ريادة الأعمال بالجمعية",
+      "date": "2026-08-04",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-32",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في مستوصف العسيلة العام",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في مستوصف العسيلة العام، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "مستوصف العسيلة العام",
+      "date": "2026-07-13",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-33",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في قاعة التدريس الذكي بالجمعية",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ قاعة التدريس الذكي بالجمعية قبيل أذان المغرب.",
+      "place": "قاعة التدريس الذكي بالجمعية",
+      "date": "2026-08-06",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-34",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في مستودع حفظ النعمة بالعسيلة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ مستودع حفظ النعمة بالعسيلة وتجنب الهدر المالي والغذائي.",
+      "place": "مستودع حفظ النعمة بالعسيلة",
+      "date": "2026-08-07",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-35",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في ديوانية ريادة العطاء بالعسيلة",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ ديوانية ريادة العطاء بالعسيلة.",
+      "place": "ديوانية ريادة العطاء بالعسيلة",
+      "date": "2026-07-16",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-36",
+      "name": "تنظيم المصلين وتوجيه الحشود في جامع السلام بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ جامع السلام بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "جامع السلام بالعسيلة",
+      "date": "2026-08-09",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-37",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في تقاطع إشارة العسيلة الرئيسي",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في تقاطع إشارة العسيلة الرئيسي وتسهيل تنقلهم.",
+      "place": "تقاطع إشارة العسيلة الرئيسي",
+      "date": "2026-08-10",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-38",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في نقاط العمل الميداني بمكة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ نقاط العمل الميداني بمكة وتداولها إعلامياً.",
+      "place": "نقاط العمل الميداني بمكة",
+      "date": "2026-07-19",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-39",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في الصالة الرياضية المغلقة بالعسيلة",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي الصالة الرياضية المغلقة بالعسيلة على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "الصالة الرياضية المغلقة بالعسيلة",
+      "date": "2026-08-12",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-40",
+      "name": "تنظيم استقبال الضيوف والداعمين في فندق فيرمونت مكة",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ فندق فيرمونت مكة وتحسين تجربة الزوار.",
+      "place": "فندق فيرمونت مكة",
+      "date": "2026-08-13",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-41",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في وادي حي العسيلة الشرقي",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في وادي حي العسيلة الشرقي لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "وادي حي العسيلة الشرقي",
+      "date": "2026-07-02",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-42",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في مقر الجمعية الرئيسي",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ مقر الجمعية الرئيسي تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "مقر الجمعية الرئيسي",
+      "date": "2026-08-15",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-43",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في الصالة الثقافية بالعسيلة",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ الصالة الثقافية بالعسيلة بالتعاون مع معلمين متطوعين.",
+      "place": "الصالة الثقافية بالعسيلة",
+      "date": "2026-08-16",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-44",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في مركز العسيلة الثقافي",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في مركز العسيلة الثقافي، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "مركز العسيلة الثقافي",
+      "date": "2026-07-05",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-45",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في نادي العسيلة الصيفي",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ نادي العسيلة الصيفي قبيل أذان المغرب.",
+      "place": "نادي العسيلة الصيفي",
+      "date": "2026-08-18",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-46",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في المستودع الشمالي لكسوة الشتاء",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ المستودع الشمالي لكسوة الشتاء وتجنب الهدر المالي والغذائي.",
+      "place": "المستودع الشمالي لكسوة الشتاء",
+      "date": "2026-08-19",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-47",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في الساحة الاحتفالية لمخطط العسيلة",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ الساحة الاحتفالية لمخطط العسيلة.",
+      "place": "الساحة الاحتفالية لمخطط العسيلة",
+      "date": "2026-07-08",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-48",
+      "name": "تنظيم المصلين وتوجيه الحشود في مصلى العيد بمخطط العسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مصلى العيد بمخطط العسيلة لضمان الانسيابية والسلامة.",
+      "place": "مصلى العيد بمخطط العسيلة",
+      "date": "2026-08-21",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-49",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في مخرج طريق المدينة السريع بالعسيلة",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في مخرج طريق المدينة السريع بالعسيلة وتسهيل تنقلهم.",
+      "place": "مخرج طريق المدينة السريع بالعسيلة",
+      "date": "2026-08-22",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-50",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في مقر ديوانية العسيلة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ مقر ديوانية العسيلة وتداولها إعلامياً.",
+      "place": "مقر ديوانية العسيلة",
+      "date": "2026-07-11",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-51",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في مدرسة العسيلة الثانوية",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي مدرسة العسيلة الثانوية على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "مدرسة العسيلة الثانوية",
+      "date": "2026-08-24",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-52",
+      "name": "تنظيم استقبال الضيوف والداعمين في مسرح مدارس جيل العطاء بالعسيلة",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ مسرح مدارس جيل العطاء بالعسيلة وتحسين تجربة الزوار.",
+      "place": "مسرح مدارس جيل العطاء بالعسيلة",
+      "date": "2026-08-25",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-53",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في مدخل مخطط العسيلة الشمالي",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في مدخل مخطط العسيلة الشمالي لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "مدخل مخطط العسيلة الشمالي",
+      "date": "2026-07-14",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-54",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في الشقق السكنية لعمال حي العسيلة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ الشقق السكنية لعمال حي العسيلة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "الشقق السكنية لعمال حي العسيلة",
+      "date": "2026-08-27",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-55",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في معهد ريادة للغات بالعسيلة",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ معهد ريادة للغات بالعسيلة بالتعاون مع معلمين متطوعين.",
+      "place": "معهد ريادة للغات بالعسيلة",
+      "date": "2026-08-28",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-56",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في ديوانية رعاية كبار السن بالعسيلة",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في ديوانية رعاية كبار السن بالعسيلة، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "ديوانية رعاية كبار السن بالعسيلة",
+      "date": "2026-07-17",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-57",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في قاعة ريادة الذكاء بجمعية ريادة العطاء",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ قاعة ريادة الذكاء بجمعية ريادة العطاء قبيل أذان المغرب.",
+      "place": "قاعة ريادة الذكاء بجمعية ريادة العطاء",
+      "date": "2026-08-02",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-58",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في مطابخ ومطاعم حي العسيلة المشاركة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ مطابخ ومطاعم حي العسيلة المشاركة وتجنب الهدر المالي والغذائي.",
+      "place": "مطابخ ومطاعم حي العسيلة المشاركة",
+      "date": "2026-08-03",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-59",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في مدرسة العسيلة الابتدائية للبنات",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ مدرسة العسيلة الابتدائية للبنات.",
+      "place": "مدرسة العسيلة الابتدائية للبنات",
+      "date": "2026-07-20",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-60",
+      "name": "تنظيم المصلين وتوجيه الحشود في مسجد الرحمة بمخطط العسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مسجد الرحمة بمخطط العسيلة لضمان الانسيابية والسلامة.",
+      "place": "مسجد الرحمة بمخطط العسيلة",
+      "date": "2026-08-05",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-61",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في مواقف كدي",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في مواقف كدي وتسهيل تنقلهم.",
+      "place": "مواقف كدي",
+      "date": "2026-08-06",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-62",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في ممشى حي العسيلة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ ممشى حي العسيلة وتداولها إعلامياً.",
+      "place": "ممشى حي العسيلة",
+      "date": "2026-07-03",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-63",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في حديقة الألعاب العامة",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي حديقة الألعاب العامة على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "حديقة الألعاب العامة",
+      "date": "2026-08-08",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-64",
+      "name": "تنظيم استقبال الضيوف والداعمين في قاعة المؤتمرات بالجمعية",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ قاعة المؤتمرات بالجمعية وتحسين تجربة الزوار.",
+      "place": "قاعة المؤتمرات بالجمعية",
+      "date": "2026-08-09",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-65",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في حديقة ممشى العسيلة",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في حديقة ممشى العسيلة لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "حديقة ممشى العسيلة",
+      "date": "2026-07-06",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-66",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في منازل المستفيدين بمخطط العسيلة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ منازل المستفيدين بمخطط العسيلة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "منازل المستفيدين بمخطط العسيلة",
+      "date": "2026-08-11",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-67",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في معمل الحاسب الآلي بمكتبة العسيلة",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ معمل الحاسب الآلي بمكتبة العسيلة بالتعاون مع معلمين متطوعين.",
+      "place": "معمل الحاسب الآلي بمكتبة العسيلة",
+      "date": "2026-08-12",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-68",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في مركز الرعاية الاجتماعية بمكة",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في مركز الرعاية الاجتماعية بمكة، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "مركز الرعاية الاجتماعية بمكة",
+      "date": "2026-07-09",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-69",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في الغرفة الصفية بمجلس حي العسيلة",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ الغرفة الصفية بمجلس حي العسيلة قبيل أذان المغرب.",
+      "place": "الغرفة الصفية بمجلس حي العسيلة",
+      "date": "2026-08-14",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-70",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في مقر فرز الملابس للجمعية",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ مقر فرز الملابس للجمعية وتجنب الهدر المالي والغذائي.",
+      "place": "مقر فرز الملابس للجمعية",
+      "date": "2026-08-15",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-71",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في قاعة المسرح البلدي بمخطط العسيلة",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ قاعة المسرح البلدي بمخطط العسيلة.",
+      "place": "قاعة المسرح البلدي بمخطط العسيلة",
+      "date": "2026-07-12",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-72",
+      "name": "تنظيم المصلين وتوجيه الحشود في مسجد الفتح بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مسجد الفتح بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "مسجد الفتح بالعسيلة",
+      "date": "2026-08-17",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-73",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في ممشى حي العسيلة العام",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في ممشى حي العسيلة العام وتسهيل تنقلهم.",
+      "place": "ممشى حي العسيلة العام",
+      "date": "2026-08-18",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-74",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في مقر جمعية ريادة العطاء بالعسيلة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ مقر جمعية ريادة العطاء بالعسيلة وتداولها إعلامياً.",
+      "place": "مقر جمعية ريادة العطاء بالعسيلة",
+      "date": "2026-07-15",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-75",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في ملعب بلدية العسيلة لكرة القدم",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي ملعب بلدية العسيلة لكرة القدم على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "ملعب بلدية العسيلة لكرة القدم",
+      "date": "2026-08-20",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-76",
+      "name": "تنظيم استقبال الضيوف والداعمين في فندق حياة ريجنسي مكة - القاعة الكبرى",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ فندق حياة ريجنسي مكة - القاعة الكبرى وتحسين تجربة الزوار.",
+      "place": "فندق حياة ريجنسي مكة - القاعة الكبرى",
+      "date": "2026-08-21",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-77",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في جبال وهضاب حي العسيلة المحيطة",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في جبال وهضاب حي العسيلة المحيطة لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "جبال وهضاب حي العسيلة المحيطة",
+      "date": "2026-07-18",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-78",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في الساحة المجاورة لمجلس حي العسيلة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ الساحة المجاورة لمجلس حي العسيلة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "الساحة المجاورة لمجلس حي العسيلة",
+      "date": "2026-08-23",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-79",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في قاعة الندوات بالجمعية",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ قاعة الندوات بالجمعية بالتعاون مع معلمين متطوعين.",
+      "place": "قاعة الندوات بالجمعية",
+      "date": "2026-08-24",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-80",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في الحرم المكي الشريف",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في الحرم المكي الشريف، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "الحرم المكي الشريف",
+      "date": "2026-07-01",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-81",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في قاعة ريادة للتعليم الرقمي",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ قاعة ريادة للتعليم الرقمي قبيل أذان المغرب.",
+      "place": "قاعة ريادة للتعليم الرقمي",
+      "date": "2026-08-26",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-82",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في حديقة العسيلة العائلية",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ حديقة العسيلة العائلية وتجنب الهدر المالي والغذائي.",
+      "place": "حديقة العسيلة العائلية",
+      "date": "2026-08-27",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-83",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في قاعة فعاليات ريادة العطاء",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ قاعة فعاليات ريادة العطاء.",
+      "place": "قاعة فعاليات ريادة العطاء",
+      "date": "2026-07-04",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-84",
+      "name": "تنظيم المصلين وتوجيه الحشود في مسجد البركة بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مسجد البركة بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "مسجد البركة بالعسيلة",
+      "date": "2026-08-01",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-85",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في مواقف باصات نقل المعتمرين بالعسيلة",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في مواقف باصات نقل المعتمرين بالعسيلة وتسهيل تنقلهم.",
+      "place": "مواقف باصات نقل المعتمرين بالعسيلة",
+      "date": "2026-08-02",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-86",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في مسارات التفويج بمواقف حافلات العسيلة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ مسارات التفويج بمواقف حافلات العسيلة وتداولها إعلامياً.",
+      "place": "مسارات التفويج بمواقف حافلات العسيلة",
+      "date": "2026-07-07",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-87",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في الساحة العامة بجانب جامع الرضوان",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي الساحة العامة بجانب جامع الرضوان على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "الساحة العامة بجانب جامع الرضوان",
+      "date": "2026-08-04",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-88",
+      "name": "تنظيم استقبال الضيوف والداعمين في مركز التدريب والتمكين بالعسيلة",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ مركز التدريب والتمكين بالعسيلة وتحسين تجربة الزوار.",
+      "place": "مركز التدريب والتمكين بالعسيلة",
+      "date": "2026-08-05",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-89",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في ممرات حديقة الرضوان العامة",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في ممرات حديقة الرضوان العامة لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "ممرات حديقة الرضوان العامة",
+      "date": "2026-07-10",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-90",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في أطراف حي العسيلة الشمالية",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ أطراف حي العسيلة الشمالية تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "أطراف حي العسيلة الشمالية",
+      "date": "2026-08-07",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-91",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في قاعة التدريب الميداني",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ قاعة التدريب الميداني بالتعاون مع معلمين متطوعين.",
+      "place": "قاعة التدريب الميداني",
+      "date": "2026-08-08",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-92",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في قاعة ريادة لتأهيل ذوي الإعاقة",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في قاعة ريادة لتأهيل ذوي الإعاقة، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "قاعة ريادة لتأهيل ذوي الإعاقة",
+      "date": "2026-07-13",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-93",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في فصول التقوية بمقر مدرسة العسيلة الابتدائية",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ فصول التقوية بمقر مدرسة العسيلة الابتدائية قبيل أذان المغرب.",
+      "place": "فصول التقوية بمقر مدرسة العسيلة الابتدائية",
+      "date": "2026-08-10",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-94",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في مقر ديوانية ريادة العطاء بالعسيلة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ مقر ديوانية ريادة العطاء بالعسيلة وتجنب الهدر المالي والغذائي.",
+      "place": "مقر ديوانية ريادة العطاء بالعسيلة",
+      "date": "2026-08-11",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-95",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في مدرسة العسيلة الابتدائية للبنين",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ مدرسة العسيلة الابتدائية للبنين.",
+      "place": "مدرسة العسيلة الابتدائية للبنين",
+      "date": "2026-07-16",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-96",
+      "name": "تنظيم المصلين وتوجيه الحشود في مسجد النور بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مسجد النور بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "مسجد النور بالعسيلة",
+      "date": "2026-08-13",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-97",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في جامع الراجحي المكي",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في جامع الراجحي المكي وتسهيل تنقلهم.",
+      "place": "جامع الراجحي المكي",
+      "date": "2026-08-14",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-98",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في مدارس مخطط العسيلة",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ مدارس مخطط العسيلة وتداولها إعلامياً.",
+      "place": "مدارس مخطط العسيلة",
+      "date": "2026-07-19",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-99",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في صالة التدريب بالجمعية",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي صالة التدريب بالجمعية على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "صالة التدريب بالجمعية",
+      "date": "2026-08-16",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-100",
+      "name": "تنظيم استقبال الضيوف والداعمين في مقر بلدية العسيلة الفرعية",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ مقر بلدية العسيلة الفرعية وتحسين تجربة الزوار.",
+      "place": "مقر بلدية العسيلة الفرعية",
+      "date": "2026-08-17",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-101",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في شوارع حي العسيلة الفرعية",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في شوارع حي العسيلة الفرعية لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "شوارع حي العسيلة الفرعية",
+      "date": "2026-07-02",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-102",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في مستودع ريادة العطاء المركزي بالعسيلة",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ مستودع ريادة العطاء المركزي بالعسيلة تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "مستودع ريادة العطاء المركزي بالعسيلة",
+      "date": "2026-08-19",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-103",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في قاعة الشيخ الراجحي بمقر الجمعية",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ قاعة الشيخ الراجحي بمقر الجمعية بالتعاون مع معلمين متطوعين.",
+      "place": "قاعة الشيخ الراجحي بمقر الجمعية",
+      "date": "2026-08-20",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-104",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في ممشى حي العسيلة الرياضي",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في ممشى حي العسيلة الرياضي، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "ممشى حي العسيلة الرياضي",
+      "date": "2026-07-05",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-105",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في مركز تنمية مهارات الشباب بالعسيلة",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ مركز تنمية مهارات الشباب بالعسيلة قبيل أذان المغرب.",
+      "place": "مركز تنمية مهارات الشباب بالعسيلة",
+      "date": "2026-08-22",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-106",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في الساحة المحاذية لممشى العسيلة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ الساحة المحاذية لممشى العسيلة وتجنب الهدر المالي والغذائي.",
+      "place": "الساحة المحاذية لممشى العسيلة",
+      "date": "2026-08-23",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-107",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في حديقة الألعاب المائية بالعسيلة",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ حديقة الألعاب المائية بالعسيلة.",
+      "place": "حديقة الألعاب المائية بالعسيلة",
+      "date": "2026-07-08",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-108",
+      "name": "تنظيم المصلين وتوجيه الحشود في مسجد السبيل بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ مسجد السبيل بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "مسجد السبيل بالعسيلة",
+      "date": "2026-08-25",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-109",
+      "name": "مبادرة السقيا وتوزيع المياه المبردة في ساحات الحرم المكي الشريف",
+      "description": "توزيع سقيا الماء البارد والوجبات الخفيفة على ضيوف الرحمن وعابري السبيل والمعتمرين في ساحات الحرم المكي الشريف وتسهيل تنقلهم.",
+      "place": "ساحات الحرم المكي الشريف",
+      "date": "2026-08-26",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-110",
+      "name": "تغطية وتوثيق الأنشطة التطوعية إعلامياً في قاعة ريادة الفعاليات",
+      "description": "تصوير وتصميم وكتابة المواد الإعلامية والتقارير الميدانية لتوثيق قصص النجاح والمبادرات التطوعية بـ قاعة ريادة الفعاليات وتداولها إعلامياً.",
+      "place": "قاعة ريادة الفعاليات",
+      "date": "2026-07-11",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-2",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-2",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-111",
+      "name": "نشر الوعي الإسعافي والفحص المبكر في ممشى العسيلة الرياضي",
+      "description": "مبادرة تهدف لرفع مستوى الثقافة الصحية وتدريب مرتادي ممشى العسيلة الرياضي على طرق الإنعاش القلبي والرئوي والتعامل مع الطوارئ.",
+      "place": "ممشى العسيلة الرياضي",
+      "date": "2026-08-28",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-1",
+      "teamId": "team-4",
+      "leaderId": "lead-4",
+      "supervisorId": "sup-4",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-4"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-4"
+      ]
+    },
+    {
+      "id": "init-112",
+      "name": "تنظيم استقبال الضيوف والداعمين في قاعة الاجتماعات الرئيسية بالعسيلة",
+      "description": "استقبال كبار الشخصيات والوفود الرسمية والتعريف ببرامج وأنشطة جمعية ريادة العطاء بـ قاعة الاجتماعات الرئيسية بالعسيلة وتحسين تجربة الزوار.",
+      "place": "قاعة الاجتماعات الرئيسية بالعسيلة",
+      "date": "2026-08-01",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-113",
+      "name": "حملة تنظيف وتشجير وتأهيل المساحات في الساحة الخلفية لمدرسة العسيلة الابتدائية",
+      "description": "زراعة الأشجار والشتلات وتنظيف الممرات وإزالة التشوه البصري في الساحة الخلفية لمدرسة العسيلة الابتدائية لزيادة الرقعة الخضراء وتحسين جودة الحياة.",
+      "place": "الساحة الخلفية لمدرسة العسيلة الابتدائية",
+      "date": "2026-07-14",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-114",
+      "name": "فرز وتعبئة وتوزيع السلال الغذائية للأسر في مستودع الأغذية التابع للجمعية",
+      "description": "تعبئة وتوصيل المواد الغذائية الأساسية للأسر المتعففة والمسجلة بنطاق الجمعية بـ مستودع الأغذية التابع للجمعية تعزيزاً لمبدأ التكافل الاجتماعي.",
+      "place": "مستودع الأغذية التابع للجمعية",
+      "date": "2026-08-03",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-5",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-5",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-115",
+      "name": "مبادرة تيسير للدروس التقوية وتنمية المهارات في الغرفة الرقمية لبث الدورات بالعسيلة",
+      "description": "تقديم حصص ومراجعات مجانية لطلاب المدارس وتدريبهم على مهارات الاستذكار والتحضير للامتحانات بـ الغرفة الرقمية لبث الدورات بالعسيلة بالتعاون مع معلمين متطوعين.",
+      "place": "الغرفة الرقمية لبث الدورات بالعسيلة",
+      "date": "2026-08-04",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-5",
+      "teamId": "team-2",
+      "leaderId": "lead-2",
+      "supervisorId": "sup-5",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-2"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-2"
+      ]
+    },
+    {
+      "id": "init-116",
+      "name": "مبادرة رعاية كبار السن ومساندتهم في مقر جمعية ريادة العطاء بالعسيلة",
+      "description": "زيارة وتقديم الرعاية وتلبية احتياجات المرضى وكبار السن في مقر جمعية ريادة العطاء بالعسيلة، وفحص السكري والضغط وتقديم الدعم الإنساني والنفسي.",
+      "place": "مقر جمعية ريادة العطاء بالعسيلة",
+      "date": "2026-07-17",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 10,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-117",
+      "name": "مبادرة إعداد وتجهيز موائد الإفطار في فصول مدرسة العسيلة المتوسطة",
+      "description": "المساهمة في إعداد وتنسيق سفر الإفطار الجماعي وتجهيز الوجبات الساخنة وتوزيعها بـ فصول مدرسة العسيلة المتوسطة قبيل أذان المغرب.",
+      "place": "فصول مدرسة العسيلة المتوسطة",
+      "date": "2026-08-06",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 15,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-118",
+      "name": "فرز وحفظ النعمة وتوزيع الكسوة في السوبرماركت والمولات بمخطط العسيلة",
+      "description": "جمع وتصنيف وتوزيع الملابس الشتوية والوجبات الفائضة لضمان استفادة الأسر المحتاجة بـ السوبرماركت والمولات بمخطط العسيلة وتجنب الهدر المالي والغذائي.",
+      "place": "السوبرماركت والمولات بمخطط العسيلة",
+      "date": "2026-08-07",
+      "startTime": "09:00",
+      "endTime": "13:00",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 20,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "closed",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    },
+    {
+      "id": "init-119",
+      "name": "تنظيم فعاليات ومهرجان فرحة الطفل في الصالة الاجتماعية الكبرى بالعسيلة",
+      "description": "إقامة أنشطة ترفيهية ومسابقات وألعاب حركية وتوزيع هدايا العيد والجوائز لرسم البسمة على وجوه الأطفال بـ الصالة الاجتماعية الكبرى بالعسيلة.",
+      "place": "الصالة الاجتماعية الكبرى بالعسيلة",
+      "date": "2026-07-20",
+      "startTime": "18:00",
+      "endTime": "22:00",
+      "departmentId": "dep-4",
+      "teamId": "team-3",
+      "leaderId": "lead-3",
+      "supervisorId": "sup-3",
+      "neededCount": 25,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "archived",
+      "acceptedVolunteerIds": [
+        "vol-3"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-3"
+      ]
+    },
+    {
+      "id": "init-120",
+      "name": "تنظيم المصلين وتوجيه الحشود في جامع الرضوان بالعسيلة",
+      "description": "مبادرة تنظيمية تهدف لمساندة الكوادر الميدانية وتوجيه حركة دخول وخروج المصلين بـ جامع الرضوان بالعسيلة لضمان الانسيابية والسلامة.",
+      "place": "جامع الرضوان بالعسيلة",
+      "date": "2026-08-09",
+      "startTime": "17:00",
+      "endTime": "19:30",
+      "departmentId": "dep-3",
+      "teamId": "team-1",
+      "leaderId": "lead-1",
+      "supervisorId": "sup-1",
+      "neededCount": 5,
+      "acceptedCount": 1,
+      "waitlistCount": 0,
+      "registrationStatus": "open",
+      "acceptedVolunteerIds": [
+        "vol-1"
+      ],
+      "waitlistVolunteerIds": [],
+      "applicantVolunteerIds": [
+        "vol-1",
+        "vol-5"
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "id": "req-1",
+      "volunteerId": "vol-1",
+      "volunteerName": "أحمد بن علي الغامدي",
+      "teamId": "team-1",
+      "departmentId": "dep-3",
+      "initiativeId": "init-3",
+      "initiativeName": "دورة أساسيات الإسعافات الأولية للفعاليات",
+      "status": "accepted",
+      "date": "2026-07-19"
+    },
+    {
+      "id": "req-2",
+      "volunteerId": "vol-5",
+      "volunteerName": "عمر بن سليمان الحربي",
+      "teamId": "team-1",
+      "departmentId": "dep-3",
+      "initiativeId": "init-3",
+      "initiativeName": "دورة أساسيات الإسعافات الأولية للفعاليات",
+      "status": "pending",
+      "date": "2026-07-20"
+    }
+  ],
+  "attendance": [
+    {
+      "id": "att-1",
+      "initiativeId": "init-1",
+      "volunteerId": "vol-1",
+      "date": "2026-07-15",
+      "status": "full",
+      "wearingVest": true,
+      "recordedBy": "سعود الحربي",
+      "timestamp": "2026-07-15T17:15:00Z"
+    },
+    {
+      "id": "att-2",
+      "initiativeId": "init-1",
+      "volunteerId": "vol-3",
+      "date": "2026-07-15",
+      "status": "late",
+      "wearingVest": true,
+      "recordedBy": "سعود الحربي",
+      "timestamp": "2026-07-15T17:45:00Z"
+    },
+    {
+      "id": "att-3",
+      "initiativeId": "init-1",
+      "volunteerId": "vol-5",
+      "date": "2026-07-15",
+      "status": "excused",
+      "wearingVest": false,
+      "recordedBy": "سعود الحربي",
+      "timestamp": "2026-07-15T17:00:00Z"
+    }
+  ],
+  "evaluations": [
+    {
+      "id": "eval-1",
+      "volunteerId": "vol-1",
+      "initiativeId": "init-1",
+      "commitment": 5,
+      "ethics": 5,
+      "cooperation": 5,
+      "discipline": 5,
+      "interaction": 5,
+      "wearingVest": true,
+      "taskExecution": 5,
+      "comments": "متطوع متميز جداً وملتزم بكافة التوجيهات والسديري الرسمي."
+    },
+    {
+      "id": "eval-2",
+      "volunteerId": "vol-3",
+      "initiativeId": "init-1",
+      "commitment": 4,
+      "ethics": 5,
+      "cooperation": 4,
+      "discipline": 4,
+      "interaction": 5,
+      "wearingVest": true,
+      "taskExecution": 4,
+      "comments": "أداء رائع بالرغم من التأخر البسيط."
+    }
+  ],
+  "logs": [
+    {
+      "id": "log-1",
+      "timestamp": "2026-07-20T10:00:00Z",
+      "user": "المدير التنفيذي",
+      "action": "تسجيل الدخول للنظام",
+      "ip": "192.168.1.50",
+      "device": "Windows 11 / Chrome browser"
+    },
+    {
+      "id": "log-2",
+      "timestamp": "2026-07-20T11:30:00Z",
+      "user": "قائد فريق التنظيم (سعود الحربي)",
+      "action": "تسجيل الحضور للمتطوع أحمد الغامدي بمبادرة تنظيم إفطار صائم",
+      "ip": "192.168.10.12",
+      "device": "iPhone 15 / Safari browser"
+    },
+    {
+      "id": "log-3",
+      "timestamp": "2026-07-20T12:00:00Z",
+      "user": "المتطوع أحمد الغامدي",
+      "action": "إنشاء وتنزيل بطاقة التطوع الذكية",
+      "ip": "192.168.1.104",
+      "device": "Android Pie / Chrome Mobile"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "not-1",
+      "userId": "vol-1",
+      "titleAr": "تم قبول طلب انضمامك",
+      "titleEn": "Join request accepted",
+      "bodyAr": "تم قبول طلبك للمشاركة في دورة أساسيات الإسعافات الأولية للفعاليات.",
+      "bodyEn": "Your request to join First Aid Basics course has been accepted.",
+      "date": "2026-07-19",
+      "read": false
+    },
+    {
+      "id": "not-2",
+      "userId": "all",
+      "titleAr": "مبادرة جديدة متاحة للتسجيل",
+      "titleEn": "New Initiative Available",
+      "bodyAr": "تعلن إدارة العلاقات العامة عن طرح مبادرة ملتقى الشراكات المجتمعية الأول بالعسيلة.",
+      "bodyEn": "PR department announces the first Community Partnerships Forum initiative in Al-Usailah.",
+      "date": "2026-07-20",
+      "read": false
+    }
+  ],
+  "homeSettings": {
+    "logoUrl": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+    "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-hand-holding-a-growing-sprout-42234-large.mp4",
+    "videoCoverUrl": "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+    "associationNameAr": "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+    "associationNameEn": "Reyadat Al-Ata Association for Human Services in Al-Asilah",
+    "licenseNumber": "5081",
+    "heroTitleAr": "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
+    "heroTitleEn": "Leadership in Giving.. Service for Humans",
+    "heroDescAr": "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي، ممتثلين قيم العطاء والشفافية والتمكين.",
+    "heroDescEn": "We strive to provide innovative and sustainable developmental and charitable services to qualify and develop the community in the Al-Asilah district of Mecca.",
+    "aboutUsAr": "تأسست جمعية ريادة العطاء لخدمة الإنسان بالعسيلة لتباشر مسؤوليتها المجتمعية والخيرية في تقديم الدعم المتكامل، وتعزيز قيم العمل الإنساني والوطني، والتطوع المؤسسي المنظم والفاعل لمختلف فئات المجتمع المكي في العسيلة.",
+    "aboutUsEn": "Reyadat Al-Ata Association was established in Al-Asilah to carry out its community and charitable responsibility in providing integrated support, promoting values of humanitarian work, and corporate volunteering.",
+    "visionAr": "الريادة في تمكين العمل الخيري والتطوعي وخدمة ضيوف الرحمن وأهالي العسيلة بجودة وتميز.",
+    "visionEn": "Leadership in empowering charity and volunteering, serving pilgrims and the Al-Asilah community with quality.",
+    "missionAr": "تقديم خدمات إنسانية وتنموية ومبادرات تطوعية مبتكرة تسهم في سد الاحتياجات وبناء القدرات بمخطط العسيلة بجودة واحترافية.",
+    "missionEn": "Providing innovative humanitarian and developmental services and volunteer initiatives to meet needs and build capacity.",
+    "goalsAr": [
+      "استقطاب المتطوعين وتنمية قدراتهم وتأهيلهم للعمل الميداني والخدمي.",
+      "تقديم الدعم والمساعدات المتكاملة والمستدامة للمستفيدين والأسر بمخطط العسيلة.",
+      "تنظيم المبادرات التطوعية لخدمة ضيوف الرحمن والزوار والمعتمرين.",
+      "بناء شراكات استراتيجية فاعلة ومثمرة مع القطاع الحكومي والخاص وغير الربحي.",
+      "التحول الرقمي الكامل لجميع الخدمات والتعاملات الإدارية بالجمعية."
+    ],
+    "goalsEn": [
+      "Recruit, qualify and develop volunteers for field and service work.",
+      "Provide integrated and sustainable support to beneficiaries in Al-Asilah.",
+      "Organize volunteer initiatives to serve pilgrims and visitors.",
+      "Build active strategic partnerships with public, private, and non-profit sectors.",
+      "Complete digital transformation of all administrative services."
+    ],
+    "valuesAr": [
+      "الشفافية والنزاهة",
+      "التمكين والاستدامة",
+      "الريادة والابتكار",
+      "التعاون والشراكة",
+      "المسؤولية والمواطنة"
+    ],
+    "valuesEn": [
+      "Transparency",
+      "Empowerment",
+      "Innovation",
+      "Partnership",
+      "Responsibility"
+    ],
+    "donationLink": "https://store.riadataleata.org.sa",
+    "contactPhone": "0550123456",
+    "contactEmail": "info@riadataleata.org.sa",
+    "contactLocationAr": "مكة المكرمة - مخطط العسيلة - الشارع العام",
+    "contactLocationEn": "Mecca - Al-Asilah Scheme - Public Street",
+    "contactHoursAr": "الأحد - الخميس: 8:00 ص - 4:00 م",
+    "contactHoursEn": "Sunday - Thursday: 8:00 AM - 4:00 PM",
+    "socialTwitter": "https://twitter.com/riadataleata",
+    "socialInstagram": "https://instagram.com/riadataleata",
+    "socialYoutube": "https://youtube.com/riadataleata",
+    "socialSnapchat": "https://snapchat.com/add/riadataleata",
+    "themePrimary": "#059669",
+    "themeSecondary": "#0d9488",
+    "fontFamily": "Inter",
+    "sectionVisibility": {
+      "about": true,
+      "stats": true,
+      "initiatives": true,
+      "news": true,
+      "achievements": true,
+      "partners": true,
+      "gallery": true,
+      "contact": true
+    }
+  },
+  "news": [
+    {
+      "id": "news-1",
+      "titleAr": "تدشين مبادرات ريادة العطاء الرمضانية لعام 1447هـ",
+      "titleEn": "Launching Reyadat Al-Ata Ramadan Initiatives for 1447 AH",
+      "bodyAr": "دشنت جمعية ريادة العطاء لخدمة الإنسان بالعسيلة الخطة السنوية لمبادرات إفطار صائم وتوزيع وجبات المعتمرين والزوار بمكة المكرمة بمشاركة أكثر من 200 متطوع معتمد بمختلف التخصصات والفرق التابعة للجمعية.",
+      "bodyEn": "Reyadat Al-Ata Association for Human Services in Al-Asilah launched the annual plan for Ramadan food distribution and serving pilgrims and visitors in Mecca with the participation of more than 200 volunteers.",
+      "image": "https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=600&h=400&fit=crop",
+      "date": "2026-07-01"
+    },
+    {
+      "id": "news-2",
+      "titleAr": "توقيع اتفاقية شراكة استراتيجية لتأهيل الشباب المكي",
+      "titleEn": "Signing Strategic Partnership to Qualify Mecca Youth",
+      "bodyAr": "وقعت الجمعية مذكرة تفاهم مشترك مع أحد المعاهد التدريبية الرائدة بمكة المكرمة، بهدف تقديم برامج متكاملة ودورات تخصصية مجانية للمتطوعين والمستفيدين بالجمعية بمجالات الإسعافات الأولية وتأهيل الكوادر القيادية.",
+      "bodyEn": "The association signed a joint memorandum of understanding with a leading training institute in Mecca, aiming to provide integrated programs and free training for volunteers and beneficiaries.",
+      "image": "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&h=400&fit=crop",
+      "date": "2026-07-10"
+    }
+  ],
+  "partners": [
+    {
+      "id": "partner-1",
+      "nameAr": "مؤسسة سليمان الراجحي الخيرية",
+      "nameEn": "Sulaiman Al Rajhi Foundation",
+      "logo": "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=150&h=150&fit=crop",
+      "link": "https://rf.org.sa"
+    },
+    {
+      "id": "partner-2",
+      "nameAr": "منصة إحسان الوطنية للعمل الخيري",
+      "nameEn": "Ehsan National Platform",
+      "logo": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=150&h=150&fit=crop",
+      "link": "https://ehsan.sa"
+    },
+    {
+      "id": "partner-3",
+      "nameAr": "جمعية إكرام الجود لخدمة ضيوف الرحمن",
+      "nameEn": "Ekram Al-Jood Association",
+      "logo": "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=150&h=150&fit=crop",
+      "link": "https://ekram.sa"
+    }
+  ],
+  "gallery": [
+    {
+      "id": "gal-1",
+      "type": "photo",
+      "url": "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&h=600&fit=crop",
+      "titleAr": "توزيع وجبات المعتمرين في الساحات",
+      "titleEn": "Distributing meals to pilgrims in plazas",
+      "date": "2026-07-15"
+    },
+    {
+      "id": "gal-2",
+      "type": "photo",
+      "url": "https://images.unsplash.com/photo-1542810634-71277d95dcbb?w=800&h=600&fit=crop",
+      "titleAr": "اللقاء السنوي لمتطوعي ريادة العطاء",
+      "titleEn": "Annual meeting of Reyadat Al-Ata volunteers",
+      "date": "2026-07-18"
+    },
+    {
+      "id": "gal-3",
+      "type": "video",
+      "url": "https://assets.mixkit.co/videos/preview/mixkit-volunteers-distributing-food-box-to-poor-people-41584-large.mp4",
+      "titleAr": "فيديو وثائقي لمبادرة تنظيم حشود الإفطار",
+      "titleEn": "Documentary video of Ramadan food service",
+      "date": "2026-07-12"
+    }
+  ],
+  "beneficiaries": [
+    {
+      "id": "ben-1",
+      "name": "أبو محمد المكي",
+      "beneficiaryNumber": "BEN-2026-0001",
+      "barcodeId": "BC-BEN-234567",
+      "email": "abumohammad@example.com",
+      "phone": "0550112233",
+      "nationalId": "1023456789",
+      "familySize": 5,
+      "category": "أسر متعففة",
+      "address": "مكة المكرمة - العسيلة - خلف جامع الرضوان",
+      "status": "approved",
+      "createdAt": "2026-07-01T12:00:00Z"
+    },
+    {
+      "id": "ben-2",
+      "name": "أم خالد الهذلي (أرملة وأم أيتام)",
+      "beneficiaryNumber": "BEN-2026-0002",
+      "barcodeId": "BC-BEN-345678",
+      "email": "umkhalid@example.com",
+      "phone": "0554443322",
+      "nationalId": "1034567890",
+      "familySize": 4,
+      "category": "أرامل وأيتام",
+      "address": "مكة المكرمة - العسيلة - مخطط 3",
+      "status": "approved",
+      "createdAt": "2026-07-03T10:30:00Z"
+    },
+    {
+      "id": "ben-3",
+      "name": "سالم بن عبد الله القرشي (كبير سن)",
+      "beneficiaryNumber": "BEN-2026-0003",
+      "barcodeId": "BC-BEN-456789",
+      "email": "salem.qurashi@example.com",
+      "phone": "0558889900",
+      "nationalId": "1045678901",
+      "familySize": 2,
+      "category": "كبار السن ومرضى",
+      "address": "مكة المكرمة - العسيلة - الشارع التجاري",
+      "status": "approved",
+      "createdAt": "2026-07-08T14:15:00Z"
+    },
+    {
+      "id": "ben-4",
+      "name": "فاطمة بنت أحمد النجار",
+      "beneficiaryNumber": "BEN-2026-0004",
+      "barcodeId": "BC-BEN-567890",
+      "email": "fatima.najjar@example.com",
+      "phone": "0551122998",
+      "nationalId": "1056789012",
+      "familySize": 6,
+      "category": "أسر متعففة",
+      "address": "مكة المكرمة - العسيلة - جوار مدرسة البنات",
+      "status": "approved",
+      "createdAt": "2026-07-12T09:00:00Z"
+    }
+  ],
+  "distributions": [
+    {
+      "id": "dist-1",
+      "title": "توزيع سلال غذائية - رمضان 1448",
+      "aidType": "food_basket",
+      "aidTypeLabel": "سلال غذائية",
+      "description": "توزيع السلال الغذائية الرمضانية المتكاملة لمستفيدي الجمعية والأسر المتعففة والأيتام بالعسيلة",
+      "distributionDate": "2026-09-15",
+      "quantityPerBeneficiary": "1 سلة غذائية رمضانية متكاملة",
+      "targetAudience": "all",
+      "status": "active",
+      "location": "مقر الجمعية - صالة التوزيع الرئيسية بالعسيلة",
+      "createdAt": "2026-09-10T10:00:00Z",
+      "createdBy": "الإدارة العامة"
+    },
+    {
+      "id": "dist-2",
+      "title": "توزيع كسوة العيد وكسوة الشتاء",
+      "aidType": "clothing",
+      "aidTypeLabel": "كسوة وملابس",
+      "description": "صرف بطاقات وقسائم كسوة العيد وملابس متكاملة للأطفال وأسر المستفيدين",
+      "distributionDate": "2026-09-22",
+      "quantityPerBeneficiary": "1 قسيمة كسوة ملابس متكاملة",
+      "targetAudience": "all",
+      "status": "planned",
+      "location": "مركز التوزيع الميداني - قاعة العطاء",
+      "createdAt": "2026-09-11T12:00:00Z",
+      "createdBy": "إدارة المستفيدين"
+    },
+    {
+      "id": "dist-3",
+      "title": "سقيا الماء وتوزيع كراتين المياه المبردة",
+      "aidType": "water",
+      "aidTypeLabel": "سقيا ومياه",
+      "description": "مشروع سقيا الماء الصالح للشرب وتوزيع كراتين مياه معبأة للأسر المستفيدة",
+      "distributionDate": "2026-09-08",
+      "quantityPerBeneficiary": "2 كرتون مياه صحية (40 عبوة)",
+      "targetAudience": "all",
+      "status": "completed",
+      "location": "مستودع السقيا والتموين بالعسيلة",
+      "createdAt": "2026-09-01T08:00:00Z",
+      "createdBy": "فريق الإغاثة الميدانية"
+    }
+  ],
+  "distributionHandovers": [
+    {
+      "id": "handover-1",
+      "distributionId": "dist-1",
+      "beneficiaryId": "ben-1",
+      "beneficiaryName": "أبو محمد المكي",
+      "beneficiaryNumber": "BEN-2026-0001",
+      "barcodeId": "BC-BEN-234567",
+      "nationalId": "1023456789",
+      "phone": "0550112233",
+      "familySize": 5,
+      "receivedAt": "2026-09-12T09:15:00Z",
+      "date": "2026-09-12",
+      "time": "09:15:20",
+      "handedByUserId": "admin",
+      "handedByUserName": "الإدارة العامة",
+      "handedByUserRole": "admin",
+      "method": "camera_scanner",
+      "notes": "تم التحقق وتسليم السلة بنجاح بعد مسح الباركود"
+    }
+  ],
+  "benefitRequests": [
+    {
+      "id": "benreq-1",
+      "beneficiaryId": "ben-1",
+      "beneficiaryName": "أبو محمد المكي",
+      "type": "food",
+      "details": "طلب سلة غذائية رمضانية متكاملة لأسرة مكونة من 5 أفراد مسجلة بنطاق حي العسيلة.",
+      "status": "completed",
+      "date": "2026-07-05",
+      "notes": "تم تسليم السلة الغذائية المتكاملة بمقر الجمعية."
+    },
+    {
+      "id": "benreq-2",
+      "beneficiaryId": "ben-1",
+      "beneficiaryName": "أبو محمد المكي",
+      "type": "medical",
+      "details": "طلب توفير جهاز قياس السكر وضغط الدم ومستهلكات طبية للوالد المسن.",
+      "status": "pending",
+      "date": "2026-07-20",
+      "notes": ""
+    }
+  ],
+  "orgMembers": [],
+  "heroSlides": [],
+  "volunteerApplications": [
+    {
+      "id": "app-101",
+      "fullName": "محمد بن إبراهيم الحازمي",
+      "nationalId": "1098765432",
+      "fileNumber": "FILE-2026-001",
+      "gender": "male",
+      "nationality": "سعودي",
+      "birthDate": "1998-05-14",
+      "age": 28,
+      "phone": "0559876543",
+      "email": "m.hazmi@example.com",
+      "position": "متطوع",
+      "joinDate": "2026-07-26",
+      "address": "مكة المكرمة - مخطط العسيلة - حي الرضوان",
+      "bloodType": "O+",
+      "hasChronicIllness": false,
+      "illnessDetails": "",
+      "guardianName": "إبراهيم الحازمي",
+      "guardianPhone": "0501112233",
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&h=300&fit=crop",
+      "idPhoto": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&h=250&fit=crop",
+      "charterPdfUrl": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "charterPdfName": "ميثاق_التطوع_محمد_الحازمي.pdf",
+      "experiences": "خبرة 3 سنوات في تنظيم الفعاليات وإدارة الحشود بمكة المكرمة. حاصل على دورة الإسعافات الأولية المعتمدة.",
+      "agreedToTerms": true,
+      "status": "pending",
+      "appliedAt": "2026-07-26T14:30:00Z",
+      "requestedTeamId": "team-1",
+      "requestedTeamName": "فريق التنظيم"
+    },
+    {
+      "id": "app-102",
+      "fullName": "ريم بنت عبدالله الشهري",
+      "nationalId": "1087654321",
+      "fileNumber": "FILE-2026-002",
+      "gender": "female",
+      "nationality": "سعودية",
+      "birthDate": "2001-09-20",
+      "age": 25,
+      "phone": "0561239876",
+      "email": "reem.shehri@example.com",
+      "position": "متطوعة إعلامية",
+      "joinDate": "2026-07-27",
+      "address": "مكة المكرمة - العسيلة - الشارع العام",
+      "bloodType": "A+",
+      "hasChronicIllness": true,
+      "illnessDetails": "حساسية ربوية خفيفة - بخاخ محمول",
+      "guardianName": "عبدالله الشهري",
+      "guardianPhone": "0504445566",
+      "photo": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&h=300&fit=crop",
+      "idPhoto": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&h=250&fit=crop",
+      "charterPdfUrl": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "charterPdfName": "ميثاق_التطوع_ريم_الشهري.pdf",
+      "experiences": "مصممة جرافيك وصانعة محتوى مرئي. شاركت في 4 حملات تطوعية بمدينة مكة المكرمة.",
+      "agreedToTerms": true,
+      "status": "pending",
+      "appliedAt": "2026-07-27T09:15:00Z",
+      "requestedTeamId": "team-2",
+      "requestedTeamName": "فريق الإعلام"
+    },
+    {
+      "id": "app-103",
+      "fullName": "فيصل بن سعد السلمي",
+      "nationalId": "1076543210",
+      "fileNumber": "FILE-2026-003",
+      "gender": "male",
+      "nationality": "سعودي",
+      "birthDate": "1995-02-10",
+      "age": 31,
+      "phone": "0548889900",
+      "email": "faisal.sulami@example.com",
+      "position": "متطوع ميداني",
+      "joinDate": "2026-07-20",
+      "address": "مكة المكرمة - مخطط العسيلة",
+      "bloodType": "B+",
+      "hasChronicIllness": false,
+      "illnessDetails": "",
+      "guardianName": "سعد السلمي",
+      "guardianPhone": "0507778899",
+      "photo": "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=300&h=300&fit=crop",
+      "idPhoto": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&h=250&fit=crop",
+      "charterPdfUrl": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "charterPdfName": "ميثاق_التطوع_فيصل_السلمي.pdf",
+      "experiences": "خبرة في المبادرات الاجتماعية وسقيا المعتمرين.",
+      "agreedToTerms": true,
+      "status": "accepted",
+      "appliedAt": "2026-07-20T11:00:00Z",
+      "assignedTeamId": "team-1",
+      "requestedTeamId": "team-1",
+      "requestedTeamName": "فريق التنظيم"
+    }
+  ],
+  "teamApplications": [
+    {
+      "id": "t-app-101",
+      "applicationNumber": "TEAM-2026-0001",
+      "teamName": "فريق سواعد العسيلة الصحي",
+      "teamNameEn": "Sawaed Al-Asilah Health Team",
+      "field": "health",
+      "region": "منطقة مكة المكرمة",
+      "city": "مكة المكرمة - العسيلة",
+      "establishedDate": "2024-03-15",
+      "leaderName": "د. عبد المجيد بن صالح القرشي",
+      "leaderNationalId": "1088992211",
+      "leaderPhone": "0505123456",
+      "leaderEmail": "dr.qurashi@example.com",
+      "deputyName": "أ. حنان بنت فهد المحمادي",
+      "deputyPhone": "0556789012",
+      "membersCount": 22,
+      "maleMembersCount": 12,
+      "femaleMembersCount": 10,
+      "description": "فريق تطوعي متخصص في الرعاية الصحية الأولية والتثقيف الصحي الوقائي والإسعافات الأولية لقاصدي بيت الله الحرام وسكان مخطط العسيلة.",
+      "vision": "مجتمع صحي وواعي ومتمكن من مهارات السلامة والإسعاف.",
+      "mission": "تقديم مبادرات صحية تثقيفية ووقائية وطبية تطوعية بأعلى معايير الجودة.",
+      "goals": "1. تدريب 500 مستفيد سنوياً على الإنعاش القلبي والرئوي.\n2. إقامة عيادات متنقلة للفحص المبكر لضغط الدم والسكري.\n3. مساندة القطاع الصحي في مواسم الحج والعمرة بالعسيلة.",
+      "services": [
+        "فحص السكري وضغط الدم",
+        "التثقيف الصحي والغذائي",
+        "الإسعافات الأولية وتغطية الفعاليات",
+        "زيارات كبار السن المنزلية"
+      ],
+      "meaningfulIdea": "إنشاء نقاط فحص وتوعية صحية سريعة في جوامع العسيلة الرئيسية عقب صلاة الجمعة وفي مواسم العمرة والحج لتقديم الاستشارات والفحوصات الأولية وتوجيه الحالات المحتاجة للرعاية الطبية المتقدمة.",
+      "pastExperience": "نفذ الفريق خلال العامين الماضيين 14 مبادرة صحية وتوعوية، وقدم خدمات الفحص لأكثر من 3,800 مستفيد، وشارك في تنظيم مواسم الحج مع الجمعيات الصحية المعتمدة.",
+      "targetDepartment": "health",
+      "teamColor": "#059669",
+      "logoUrl": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=300&h=300&fit=crop",
+      "attachments": [
+        {
+          "id": "att-t1",
+          "title": "اللائحة الأساسية وتشكيل الفريق",
+          "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+          "fileName": "اللائحة_التنظيمية_لفريق_سواعد.pdf",
+          "type": "pdf",
+          "uploadedAt": "2026-07-28T10:00:00Z"
+        },
+        {
+          "id": "att-t2",
+          "title": "تقرير الإنجازات والمبادرات السابقة 2024-2025",
+          "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+          "fileName": "تقرير_إنجازات_الفريق.pdf",
+          "type": "pdf",
+          "uploadedAt": "2026-07-28T10:00:00Z"
+        }
+      ],
+      "socialLinks": {
+        "twitter": "https://x.com/sawaed_aseelah",
+        "instagram": "https://instagram.com/sawaed_aseelah"
+      },
+      "pastInitiativesCount": 14,
+      "pastBeneficiariesCount": 3800,
+      "pastVolunteerHours": 460,
+      "pastPartnerEntities": "التجمع الصحي بمكة، جمعية درهم وقاية، مستشفى حراء العام",
+      "majorPastInitiatives": "مبادرة نبض العسيلة للفحص المبكر، برنامج المسعف الصغير، عيادات سقيا وصحة لضيوف الرحمن",
+      "achievementsAndExperience": "الفوز بجائزة التميز الصحي التطوعي بمنطقة مكة المكرمة لعام 1445هـ",
+      "status": "pending",
+      "submittedAt": "2026-07-28T10:30:00Z",
+      "appliedAt": "2026-07-28T10:30:00Z",
+      "agreedToTerms": true,
+      "agreedToVolunteerPolicy": true,
+      "agreedToPrivacyPolicy": true,
+      "agreedToDataAccuracy": true,
+      "agreedToRegulations": true,
+      "agreementTimestamp": "2026-07-28T10:30:00Z"
+    },
+    {
+      "id": "t-app-102",
+      "applicationNumber": "TEAM-2026-0002",
+      "teamName": "فريق صناع الأثر الإعلامي التطوعي",
+      "teamNameEn": "Impact Makers Media Team",
+      "field": "media",
+      "region": "منطقة مكة المكرمة",
+      "city": "مكة المكرمة",
+      "establishedDate": "2023-11-01",
+      "leaderName": "أ. ماجد بن عبد العزيز الهذلي",
+      "leaderNationalId": "1077665544",
+      "leaderPhone": "0543322119",
+      "leaderEmail": "m.hothali@example.com",
+      "deputyName": "أ. شهد بنت طارق الحربي",
+      "deputyPhone": "0569988771",
+      "membersCount": 16,
+      "maleMembersCount": 8,
+      "femaleMembersCount": 8,
+      "description": "فريق إعلامي تطوعي متخصص في الإنتاج المرئي، التغطيات الحية، صناعة الأفلام الوثائقية، وإبراز الأثر الإنساني والمبادرات الخيرية.",
+      "vision": "صوت إعلامي رقمي رائد يوثق وينشر قيم العطاء والتكافل في أطهر البقاع.",
+      "mission": "تسخير المهارات الإعلامية والتقنية لصناعة محتوى رقمي ملهم يبرز منجزات العمل التطوعي.",
+      "goals": "1. توثيق كافة المبادرات التطوعية بإنتاج فوتوغرافي ومرئي سينمائي.\n2. إعداد تقارير تلفزيونية ورقمية للنشر على وسائل الإعلام ومنصات التواصل.\n3. تدريب المتطوعين الجدد على مهارات التصوير والمونتاج الاحترافي.",
+      "services": [
+        "التغطيات الميدانية الحية",
+        "صناعة الأفلام الوثائقية",
+        "التصميم الجرافيكي والموشن جرافيك",
+        "إدارة الحملات الرقمية"
+      ],
+      "meaningfulIdea": "إطلاق منصة 'عين العسيلة' الإعلامية لتوثيق قصص المستفيدين والمتطوعين في مقاطع فيديو ملهمة قصيرة ونشرها لتعزيز ثقافة العمل الخيري في المجتمع المكي.",
+      "pastExperience": "إنتاج أكثر من 45 تغطية إعلامية و12 فيلماً وثائقياً قصيراً للعديد من الجمعيات والمؤسسات غير الربحية بمكة المكرمة وجدة.",
+      "targetDepartment": "media",
+      "teamColor": "#0284c7",
+      "logoUrl": "https://images.unsplash.com/photo-1531482615713-2afd69097998?w=300&h=300&fit=crop",
+      "attachments": [
+        {
+          "id": "att-t3",
+          "title": "ملف أعمال الفريق الإعلامي (Portfolio)",
+          "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+          "fileName": "بورتفوليو_صناع_الأثر.pdf",
+          "type": "pdf",
+          "uploadedAt": "2026-07-29T14:00:00Z"
+        }
+      ],
+      "socialLinks": {
+        "twitter": "https://x.com/impact_media_team",
+        "youtube": "https://youtube.com/@impact_media_team",
+        "tiktok": "https://tiktok.com/@impact_media_team"
+      },
+      "pastInitiativesCount": 20,
+      "pastBeneficiariesCount": 15000,
+      "pastVolunteerHours": 620,
+      "pastPartnerEntities": "جمعية مراكز الأحياء، نادي مكة الثقافي، هيئة الإذاعة والتلفزيون",
+      "majorPastInitiatives": "وثائقي 'عطاء العسيلة'، تغطية موسم حج 1445هـ، مبادرة 'عدسة متطوع'",
+      "achievementsAndExperience": "درع التكريم الإعلامي الأول في ملتقى الإعلام التطوعي السعودي 2024م",
+      "status": "pending",
+      "submittedAt": "2026-07-29T14:15:00Z",
+      "appliedAt": "2026-07-29T14:15:00Z",
+      "agreedToTerms": true,
+      "agreedToVolunteerPolicy": true,
+      "agreedToPrivacyPolicy": true,
+      "agreedToDataAccuracy": true,
+      "agreedToRegulations": true,
+      "agreementTimestamp": "2026-07-29T14:15:00Z"
+    }
+  ],
+  "chatConversations": [
+    {
+      "id": "conv-1",
+      "type": "group",
+      "name": "فريق تنظيم العسيلة (الميداني)",
+      "avatar": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=120&h=120&fit=crop",
+      "participantIds": [
+        "admin-1",
+        "lead-1",
+        "vol-1",
+        "vol-3",
+        "vol-5"
+      ],
+      "participantNames": [
+        "سعود الحربي",
+        "أحمد الغامدي",
+        "خالد الزهراني",
+        "عمر الحربي"
+      ],
+      "teamId": "team-1",
+      "lastMessage": "تم تجهيز نقطة استقبال المعتمرين برضوان العسيلة.",
+      "lastMessageTime": "2026-07-27T10:15:00Z",
+      "unreadCount": {
+        "admin-1": 1
+      },
+      "createdAt": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": "conv-2",
+      "type": "direct",
+      "name": "سعود الحربي (قائد فريق التنظيم)",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop",
+      "participantIds": [
+        "admin-1",
+        "lead-1"
+      ],
+      "participantNames": [
+        "الإدارة العامة",
+        "سعود الحربي"
+      ],
+      "lastMessage": "السلام عليكم، هل جرى اعتماد قائمة الساعات التطوعية لهذا الأسبوع؟",
+      "lastMessageTime": "2026-07-27T09:40:00Z",
+      "unreadCount": {
+        "admin-1": 2
+      },
+      "createdAt": "2026-07-10T00:00:00Z"
+    },
+    {
+      "id": "conv-3",
+      "type": "group",
+      "name": "لجنة الإعلام والنشر والتوثيق",
+      "avatar": "https://images.unsplash.com/photo-1531482615713-2afd69097998?w=120&h=120&fit=crop",
+      "participantIds": [
+        "admin-1",
+        "lead-2",
+        "vol-2"
+      ],
+      "participantNames": [
+        "الإدارة العامة",
+        "مريم العتيبي",
+        "سارة الدوسري"
+      ],
+      "teamId": "team-2",
+      "lastMessage": "تم رفع الفيديو التوثيقي لملتقى الشراكات المجتمعية.",
+      "lastMessageTime": "2026-07-26T18:20:00Z",
+      "unreadCount": {},
+      "createdAt": "2026-07-05T00:00:00Z"
+    }
+  ],
+  "chatMessages": [
+    {
+      "id": "msg-1",
+      "conversationId": "conv-1",
+      "senderId": "lead-1",
+      "senderName": "سعود الحربي",
+      "senderAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop",
+      "senderRole": "قائد فريق التنظيم",
+      "type": "text",
+      "content": "السلام عليكم ورحمة الله وبركاته، تحية طيبة لجميع أعضاء فريق التنظيم بالعسيلة.",
+      "timestamp": "2026-07-27T10:00:00Z",
+      "status": "read"
+    },
+    {
+      "id": "msg-2",
+      "conversationId": "conv-1",
+      "senderId": "vol-1",
+      "senderName": "أحمد بن علي الغامدي",
+      "senderAvatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop",
+      "senderRole": "متطوع متميز",
+      "type": "text",
+      "content": "وعليكم السلام ورحمة الله، نحن في الجاهزية الكاملة للانطلاق في مبادرة اليوم.",
+      "timestamp": "2026-07-27T10:05:00Z",
+      "status": "read"
+    },
+    {
+      "id": "msg-3",
+      "conversationId": "conv-1",
+      "senderId": "lead-1",
+      "senderName": "سعود الحربي",
+      "senderAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop",
+      "senderRole": "قائد فريق التنظيم",
+      "type": "image",
+      "content": "https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=800&fit=crop",
+      "fileName": "خطة_توزيع_الميدان.jpg",
+      "timestamp": "2026-07-27T10:10:00Z",
+      "status": "read"
+    },
+    {
+      "id": "msg-4",
+      "conversationId": "conv-1",
+      "senderId": "lead-1",
+      "senderName": "سعود الحربي",
+      "senderAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop",
+      "senderRole": "قائد فريق التنظيم",
+      "type": "text",
+      "content": "تم تجهيز نقطة استقبال المعتمرين برضوان العسيلة.",
+      "timestamp": "2026-07-27T10:15:00Z",
+      "status": "delivered"
+    },
+    {
+      "id": "msg-5",
+      "conversationId": "conv-2",
+      "senderId": "lead-1",
+      "senderName": "سعود الحربي",
+      "senderAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop",
+      "senderRole": "قائد فريق التنظيم",
+      "type": "text",
+      "content": "السلام عليكم، هل جرى اعتماد قائمة الساعات التطوعية لهذا الأسبوع؟",
+      "timestamp": "2026-07-27T09:40:00Z",
+      "status": "delivered"
+    }
+  ],
+  "supportTickets": [
+    {
+      "id": "ticket-101",
+      "ticketNumber": "TICK-2026-001",
+      "requesterId": "vol-1",
+      "requesterName": "أحمد بن علي الغامدي",
+      "requesterEmail": "ahmed.ghamdi@example.com",
+      "requesterPhone": "0551234567",
+      "requesterRole": "volunteer",
+      "subject": "مشكلة في إصدار وتنزيل بطاقة التطوع الرقمية بالباركود",
+      "status": "new",
+      "priority": "urgent",
+      "createdAt": "2026-07-27T08:30:00Z",
+      "updatedAt": "2026-07-27T08:32:00Z",
+      "escalatedFromAi": true,
+      "escalationReason": "طلب المستخدم التحدث مع موظف دعم فني حقيقي لعدم تمكن الذكاء الاصطناعي من قراءة رمز المعرف.",
+      "chatTranscript": [
+        {
+          "id": "tm-1",
+          "ticketId": "ticket-101",
+          "senderType": "user",
+          "senderName": "أحمد بن علي الغامدي",
+          "content": "أحاول تحميل بطاقة التطوع الذكية الخاصة بي ولكن يظهر لي رمز خطأ عند الضغط على الطباعة.",
+          "timestamp": "2026-07-27T08:30:00Z"
+        },
+        {
+          "id": "tm-2",
+          "ticketId": "ticket-101",
+          "senderType": "ai",
+          "senderName": "مساعد ريادة العطاء الذكي",
+          "content": "أهلاً بك أ. أحمد! يرجى التأكد من تسجيل الدخول أولاً والتأكد من تفعيل العضوية من قبل إدارتك. هل قمت بتحديث رقم العضوية في حسابك الشخصي؟",
+          "timestamp": "2026-07-27T08:31:00Z"
+        },
+        {
+          "id": "tm-3",
+          "ticketId": "ticket-101",
+          "senderType": "user",
+          "senderName": "أحمد بن علي الغامدي",
+          "content": "نعم قمت بتحديث البيانات ولكن المشكلة مستمرة، أريد التحدث مع موظف الدعم الفني الفعلي فوراً.",
+          "timestamp": "2026-07-27T08:32:00Z"
+        },
+        {
+          "id": "tm-4",
+          "ticketId": "ticket-101",
+          "senderType": "ai",
+          "senderName": "مساعد ريادة العطاء الذكي",
+          "content": "تم تحويل الطلب تلقائياً إلى موظف الدعم الفني الفعلي (تذكرة رقم #TICK-2026-001). سيقوم الموظف بمتابعة المحادثة معك والرد هنا مباشرة.",
+          "timestamp": "2026-07-27T08:32:10Z"
+        }
+      ]
+    },
+    {
+      "id": "ticket-102",
+      "ticketNumber": "TICK-2026-002",
+      "requesterId": "ben-1",
+      "requesterName": "أبو محمد المكي",
+      "requesterEmail": "abumohammed@example.com",
+      "requesterPhone": "0501234567",
+      "requesterRole": "beneficiary",
+      "subject": "استفسار عن موعد تسليم الأجهزة الطبية لسكر الدم",
+      "status": "in_progress",
+      "priority": "medium",
+      "assignedToAgentName": "مهندس الدعم التقني - عبد الرحمن",
+      "createdAt": "2026-07-26T14:20:00Z",
+      "updatedAt": "2026-07-26T15:10:00Z",
+      "escalatedFromAi": true,
+      "escalationReason": "استفسار خاص يتطلب صلاحيات مراجعة قسم المستفيدين.",
+      "chatTranscript": [
+        {
+          "id": "tm-20",
+          "ticketId": "ticket-102",
+          "senderType": "user",
+          "senderName": "أبو محمد المكي",
+          "content": "متى سيتم التواصل معي بخصوص الطلب الطبي الصادر يوم 20 يوليو؟",
+          "timestamp": "2026-07-26T14:20:00Z"
+        },
+        {
+          "id": "tm-21",
+          "ticketId": "ticket-102",
+          "senderType": "agent",
+          "senderName": "مهندس الدعم التقني - عبد الرحمن",
+          "content": "أهلاً بك أبا محمد، تم تحويل الطلب لقسم الخدمة الاجتماعية وسيتم التواصل معك غداً صباحاً لإتمام التسليم بإذن الله.",
+          "timestamp": "2026-07-26T15:10:00Z"
+        }
+      ]
+    }
+  ],
+  "opportunityRequests": [
+    {
+      "id": "8766666666",
+      "title": "لللللللللللل",
+      "opportunityType": "فرصة عادية",
+      "domain": "إداري",
+      "neededCount": 4,
+      "acceptedVolunteersCount": 0,
+      "place": "مكتب السنين - الرياض",
+      "goals": [
+        "الهدف الأول",
+        "الهدف الثاني",
+        "الهدف الثالث"
+      ],
+      "description": "طلب فرصة إدارية عادية لتنظيم المهام الميدانية.",
+      "status": "rejected",
+      "teamId": "team-1",
+      "teamName": "فريق التنظيم",
+      "departmentId": "dep-3",
+      "leaderId": "lead-1",
+      "leaderName": "سعود الحربي",
+      "createdAt": "2026-07-20T10:00:00Z",
+      "rejectionReason": "البيانات المقدمة غير مكتملة."
+    },
+    {
+      "id": "87666666666666",
+      "title": "ر لااىات",
+      "opportunityType": "فعالية تطوعية",
+      "domain": "صحي",
+      "neededCount": 52,
+      "acceptedVolunteersCount": 0,
+      "place": "جده",
+      "goals": [
+        "ي",
+        "ي",
+        "ي"
+      ],
+      "description": "لايسشس",
+      "status": "rejected",
+      "teamId": "team-1",
+      "teamName": "فريق التنظيم",
+      "departmentId": "dep-3",
+      "leaderId": "lead-1",
+      "leaderName": "سعود الحربي",
+      "createdAt": "2026-07-21T11:00:00Z",
+      "startDate": "09/07/2026",
+      "endDate": "28/07/2026",
+      "nationalPlatformUrl": "https://riadataleata.com/opportunity_requests.php",
+      "rejectionReason": "مرفوضة لعدم استيفاء الشروط المعتمدة."
+    },
+    {
+      "id": "87666666999999",
+      "title": "حملة المسح الصحي والتوعية الميدانية بالعسيلة",
+      "opportunityType": "فعالية تطوعية",
+      "domain": "صحي",
+      "neededCount": 20,
+      "acceptedVolunteersCount": 0,
+      "place": "مكة المكرمة - العسيلة",
+      "goals": [
+        "فحص السكري والتوعية",
+        "توزيع المستلزمات الطبية",
+        "تقديم الاستشارات الميدانية"
+      ],
+      "description": "حملة صحية توعوية لمساعدة أهالي وسكان مخطط العسيلة المكي.",
+      "status": "pending",
+      "teamId": "team-1",
+      "teamName": "فريق التنظيم",
+      "departmentId": "dep-3",
+      "leaderId": "lead-1",
+      "leaderName": "سعود الحربي",
+      "createdAt": "2026-07-27T12:00:00Z"
+    }
+  ],
+  "departmentDirectives": [
+    {
+      "id": "dir-101",
+      "departmentId": "dep-6",
+      "departmentNameAr": "إدارة العلاقات العامة والإعلام",
+      "title": "إعداد الخطة الإعلامية والتوثيق الميداني لحملة الوفاء بالعسيلة",
+      "description": "المطلوب إعداد التغطية الفوغرافية، وتصميم البوستات الرسمية للمبادرة، ونشر التقرير الصحفي المعتمد عبر المنصات والموقع الإلكتروني.",
+      "priority": "urgent",
+      "dueDate": "2026-08-01",
+      "status": "in_progress",
+      "createdAt": "2026-07-27T10:00:00Z",
+      "createdBy": "مجلس الإدارة",
+      "completionNotes": "جاري العمل على التصاميم وتم التنسيق مع المصور الميداني لتغطية الموقع."
+    },
+    {
+      "id": "dir-102",
+      "departmentId": "dep-2",
+      "departmentNameAr": "الإدارة المالية",
+      "title": "رفع القوائم المالية والعهد للربع الثاني 2026م",
+      "description": "مراجعة واعتماد الميزانية المخصصة لمبادرات إفطار صائم، وتدقيق الفواتير المرفوعة وإغلاق العهد المالية مع قادة الفرق.",
+      "priority": "high",
+      "dueDate": "2026-08-05",
+      "status": "pending",
+      "createdAt": "2026-07-26T09:00:00Z",
+      "createdBy": "مجلس الإدارة"
+    },
+    {
+      "id": "dir-103",
+      "departmentId": "dep-5",
+      "departmentNameAr": "إدارة التطوع والموارد البشرية",
+      "title": "مراجعة طلبات الانضمام المعلقة وإصدار بطاقات المتطوعين الجدد",
+      "description": "المطلوب مراجعة الملفات الواردة لقائمة الانتظار، والتأكد من إرفاق الميثاق والمستندات وإصدار البطاقات الرقمية.",
+      "priority": "high",
+      "dueDate": "2026-07-30",
+      "status": "completed",
+      "createdAt": "2026-07-25T11:00:00Z",
+      "createdBy": "مجلس الإدارة",
+      "completionNotes": "تم اعتماد جميع الملفات المكتملة وإصدار 45 بطاقة رقمية بنجاح."
+    }
+  ],
+  "storeProjects": [
+    {
+      "id": "prj-wat",
+      "titleAr": "مشروع سقيا الماء بالمسجد الحرام ومناطق العسيلة",
+      "titleEn": "Water Supply Project",
+      "category": "سقيا الماء",
+      "descriptionAr": "توفير عبوات مياه الصفا الباردة والنقية لضيوف الرحمن ومرتادي الجوامع والأسر المحتاجة بقطاع العسيلة.",
+      "imageUrl": "https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=800&h=500&fit=crop",
+      "targetAmount": 100000,
+      "raisedAmount": 68500,
+      "availableBalance": 52000,
+      "totalExpenses": 16500,
+      "donationCount": 412,
+      "unitPrice": 10,
+      "status": "active",
+      "accountCode": "ACC-101-WAT",
+      "createdAt": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "prj-mus",
+      "titleAr": "مشروع إهداء وتوزيع المصاحف الشريفة وترجماتها",
+      "titleEn": "Quran Distribution Project",
+      "category": "توزيع المصاحف",
+      "descriptionAr": "طباعة وتوزيع المصاحف الشريفة مع الترجمات المعتمدة على جوامع ومساجد العسيلة والمصليات الميدانية.",
+      "imageUrl": "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=800&h=500&fit=crop",
+      "targetAmount": 50000,
+      "raisedAmount": 34200,
+      "availableBalance": 28000,
+      "totalExpenses": 6200,
+      "donationCount": 186,
+      "unitPrice": 20,
+      "status": "active",
+      "accountCode": "ACC-102-MUS",
+      "createdAt": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "prj-bsk",
+      "titleAr": "مشروع السلال الغذائية المتكاملة للأسر المتعففة",
+      "titleEn": "Food Baskets Project",
+      "category": "السلال الغذائية",
+      "descriptionAr": "توفير السلال الغذائية الأساسية الشاملة للأصناف التموينية الضرورية لدعم كبار السن والأسر المتعففة.",
+      "imageUrl": "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&h=500&fit=crop",
+      "targetAmount": 150000,
+      "raisedAmount": 112000,
+      "availableBalance": 85500,
+      "totalExpenses": 26500,
+      "donationCount": 320,
+      "unitPrice": 150,
+      "status": "active",
+      "accountCode": "ACC-103-BSK",
+      "createdAt": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "prj-zam",
+      "titleAr": "مشروع سقيا ماء زمزم المبارك للقرى والنازحين",
+      "titleEn": "Zamzam Water Project",
+      "category": "سقيا ماء زمزم",
+      "descriptionAr": "نقل وتوزيع حافظات ماء زمزم المبارك النقية لخدمة القرى المحيطة والأسر والأطفال والزوار.",
+      "imageUrl": "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?w=800&h=500&fit=crop",
+      "targetAmount": 80000,
+      "raisedAmount": 49800,
+      "availableBalance": 41200,
+      "totalExpenses": 8600,
+      "donationCount": 209,
+      "unitPrice": 15,
+      "status": "active",
+      "accountCode": "ACC-104-ZAM",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "storeDonations": [
+    {
+      "id": "don-1001",
+      "donationNumber": "DON-2026-1001",
+      "donorName": "عبدالله بن أحمد المكي",
+      "donorPhone": "0551122334",
+      "donorEmail": "donor.makkah@example.com",
+      "projectId": "prj-wat",
+      "projectNameAr": "مشروع سقيا الماء بالمسجد الحرام ومناطق العسيلة",
+      "amount": 500,
+      "paymentMethod": "mada",
+      "paymentStatus": "completed",
+      "transactionRef": "TXN-88291034",
+      "createdAt": "2026-07-28T10:15:00Z"
+    },
+    {
+      "id": "don-1002",
+      "donationNumber": "DON-2026-1002",
+      "donorName": "فاطمة بنت خالد العتيبي",
+      "donorPhone": "0503344556",
+      "projectId": "prj-mus",
+      "projectNameAr": "مشروع إهداء وتوزيع المصاحف الشريفة وترجماتها",
+      "amount": 200,
+      "paymentMethod": "visa",
+      "paymentStatus": "completed",
+      "transactionRef": "TXN-88291035",
+      "createdAt": "2026-07-28T11:40:00Z"
+    },
+    {
+      "id": "don-1003",
+      "donationNumber": "DON-2026-1003",
+      "donorName": "فاعل خير",
+      "donorPhone": "0540000000",
+      "projectId": "prj-bsk",
+      "projectNameAr": "مشروع السلال الغذائية المتكاملة للأسر المتعففة",
+      "amount": 450,
+      "paymentMethod": "apple_pay",
+      "paymentStatus": "completed",
+      "transactionRef": "TXN-88291036",
+      "createdAt": "2026-07-29T14:20:00Z"
+    },
+    {
+      "id": "don-1004",
+      "donationNumber": "DON-2026-1004",
+      "donorName": "محمد بن علي الحربي",
+      "donorPhone": "0561239876",
+      "projectId": "prj-zam",
+      "projectNameAr": "مشروع سقيا ماء زمزم المبارك للقرى والنازحين",
+      "amount": 300,
+      "paymentMethod": "mada",
+      "paymentStatus": "completed",
+      "transactionRef": "TXN-88291037",
+      "createdAt": "2026-07-30T09:05:00Z"
+    }
+  ],
+  "financialTransactions": [
+    {
+      "id": "fin-1001",
+      "type": "income",
+      "category": "donation",
+      "projectId": "prj-wat",
+      "projectNameAr": "مشروع سقيا الماء بالمسجد الحرام ومناطق العسيلة",
+      "amount": 500,
+      "paymentMethod": "مدى (Mada)",
+      "status": "completed",
+      "referenceNumber": "TXN-88291034",
+      "donorOrVendor": "عبدالله بن أحمد المكي",
+      "description": "تبرع إلكتروني مباشر عبر متجر الجمعية الإلكتروني",
+      "accountCode": "ACC-101-WAT",
+      "date": "2026-07-28",
+      "createdAt": "2026-07-28T10:15:00Z"
+    },
+    {
+      "id": "fin-1002",
+      "type": "income",
+      "category": "donation",
+      "projectId": "prj-mus",
+      "projectNameAr": "مشروع إهداء وتوزيع المصاحف الشريفة وترجماتها",
+      "amount": 200,
+      "paymentMethod": "بطاقة فيزا (VISA)",
+      "status": "completed",
+      "referenceNumber": "TXN-88291035",
+      "donorOrVendor": "فاطمة بنت خالد العتيبي",
+      "description": "تبرع إلكتروني مباشر عبر متجر الجمعية الإلكتروني",
+      "accountCode": "ACC-102-MUS",
+      "date": "2026-07-28",
+      "createdAt": "2026-07-28T11:40:00Z"
+    },
+    {
+      "id": "fin-1003",
+      "type": "income",
+      "category": "donation",
+      "projectId": "prj-bsk",
+      "projectNameAr": "مشروع السلال الغذائية المتكاملة للأسر المتعففة",
+      "amount": 450,
+      "paymentMethod": "أبل باي (Apple Pay)",
+      "status": "completed",
+      "referenceNumber": "TXN-88291036",
+      "donorOrVendor": "فاعل خير",
+      "description": "تبرع إلكتروني مباشر عبر متجر الجمعية الإلكتروني",
+      "accountCode": "ACC-103-BSK",
+      "date": "2026-07-29",
+      "createdAt": "2026-07-29T14:20:00Z"
+    },
+    {
+      "id": "fin-1004",
+      "type": "expense",
+      "category": "project_expense",
+      "projectId": "prj-wat",
+      "projectNameAr": "مشروع سقيا الماء بالمسجد الحرام ومناطق العسيلة",
+      "amount": 16500,
+      "paymentMethod": "تحويل بنكي رسمي",
+      "status": "completed",
+      "referenceNumber": "EXP-2026-001",
+      "donorOrVendor": "شركة مياه الصفا والمروة",
+      "description": "شراء توريد 500 كرتون عبوات مياه لسقيا المساجد والجوامع",
+      "accountCode": "ACC-101-WAT",
+      "date": "2026-07-25",
+      "createdAt": "2026-07-25T08:00:00Z"
+    }
+  ],
+  "letters": [
+    {
+      "id": "ltr-101",
+      "letterNumber": "LTR-2026-0001",
+      "submissionType": "ready_file",
+      "senderName": "د. عبد الرحمن بن عبد العزيز السالم",
+      "senderType": "قائد فريق",
+      "senderPhone": "0551234567",
+      "senderEmail": "leader.salem@riadataleata.org.sa",
+      "senderRole": "قائد فريق العسيلة الصحي",
+      "senderOrganization": "فريق العسيلة الصحي التطوعي",
+      "userId": "team-1",
+      "userRole": "leader",
+      "teamId": "team-1",
+      "subject": "طلب اعتماد خطة المبادرات الصحية لموسم الحج والعمرة 1447هـ",
+      "letterFileUrl": "https://example.com/letters/health_plan_2026.pdf",
+      "letterFileName": "خطة_المبادرات_الصحية_1447هـ.pdf",
+      "letterFileSize": "1.8 MB",
+      "status": "under_review",
+      "isRead": true,
+      "adminNotes": "تمت إحالة الخطة إلى إدارة البرامج والمبادرات لدراستها ومطابقتها للمسارات الصحية.",
+      "createdAt": "2026-08-01T10:00:00Z"
+    },
+    {
+      "id": "ltr-102",
+      "letterNumber": "LTR-2026-0002",
+      "submissionType": "custom_letter",
+      "senderName": "أ. ياسر الغامدي",
+      "senderType": "موظف",
+      "senderPhone": "0550000006",
+      "senderEmail": "media@riadataleata.org.sa",
+      "senderRole": "مدير إدارة العلاقات العامة والإعلام",
+      "senderOrganization": "إدارة العلاقات العامة والإعلام",
+      "departmentId": "dep-6",
+      "userId": "dep-6",
+      "userRole": "department_admin",
+      "subject": "مقترح تدشين المنصة الرقمية للتغطيات الإعلامية الميدانية",
+      "messageContent": "سعادة رئيس مجلس الإدارة والمدير التنفيذي لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة حفظهم الله،\nالسلام عليكم ورحمة الله وبركاته،\nنرفع لسعادتكم مقترح تفعيل الاستوديو الإعلامي الرقمي المتنقل لتغطية كافة المبادرات التطوعية وتوثيق جهود الفرق في منطقة مكة المكرمة ونشرها في وسائل الإعلام الرسمية ومنصات التواصل الاجتماعي لتعزيز أثر العطاء وإبراز دور الجمعية.\nوتقبلوا وافر التحية والتقدير.",
+      "status": "approved",
+      "isRead": true,
+      "adminNotes": "مقترح متميز، تم اعتماد التكليف وتخصيص الميزانية التشغيلية اللازمة.",
+      "createdAt": "2026-08-10T14:30:00Z"
+    },
+    {
+      "id": "ltr-103",
+      "letterNumber": "LTR-2026-0003",
+      "submissionType": "custom_letter",
+      "senderName": "م. فهد بن سلطان الهذلي",
+      "senderType": "زائر",
+      "senderPhone": "0509876543",
+      "senderEmail": "fahad.h@alrowad-sa.com",
+      "senderRole": "مدير إدارة المسؤولية المجتمعية",
+      "senderOrganization": "شركة الرواد للاستشارات والتنمية",
+      "subject": "عرض رعاية وشراكة استراتيجية لمبادرات كسوة وتأهيل الأسر المتعففة",
+      "messageContent": "سعادة مدراء وأعضاء جمعية ريادة العطاء لخدمة الإنسان بالعسيلة المحترمين،\nتحية طيبة وبعد،\nيسرنا في شركة الرواد التقدم لسعادتكم بعرض شراكة مجتمعية ورعاية شاملة لبرامج الرعاية الاجتماعية وتوزيع السلال وكسوة الأسر في حي العسيلة، حرصاً منا على الإسهام في التكافل الاجتماعي ودعم مستفيدي الجمعية المعتمدين.",
+      "partnershipDetails": {
+        "whatYouOffer": "تقديم رعاية مالية وعينية بقيمة 75,000 ريال، وتوفير 200 سلة غذائية مجهزة وكسوة شتوية للأسر.",
+        "whatYouWant": "التنسيق الميداني مع مستفيدي الجمعية المعتمدين، والإشراف على التوزيع وتقديم تقرير موثق.",
+        "ourRole": "التنظيم الميداني وحصر الأسر المستحقة وإصدار شهادات الشراكة المجتمعية المعتمدة.",
+        "yourRole": "التمويل وتوفير المواد العينية ومشاركة ممثلي الشركة في يوم التدشين."
+      },
+      "status": "new",
+      "isRead": false,
+      "createdAt": "2026-08-22T09:15:00Z"
+    }
+  ],
+  "systemSettings": {
+    "systemName": "نظام إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+    "teamName": "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+    "logoUrl": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+    "faviconUrl": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=32&h=32&fit=crop",
+    "loginBgImage": "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
+    "systemDescription": "منصة رقمية متكاملة لإدارة المتطوعين والمبادرات والمستفيدين وبطاقات التطوع الذكية بمخطط العسيلة المكي.",
+    "licenseNumber": "1000888600",
+    "registrationNumber": "1000888600",
+    "foundationYear": "1445هـ / 2024م",
+    "maintenanceMode": false,
+    "maintenance_mode": 0,
+    "maintenanceMessage": "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
+    "maintenance_message": "نعتذر عن عدم إتاحة الموقع مؤقتًا، ونعمل على تحسين خدماتنا. نعود إليكم قريبًا بإذن الله.",
+    "defaultLanguage": "ar",
+    "timezone": "Asia/Riyadh (GMT+3)",
+    "dateTimeFormat": "هجري / ميلادي - 12 ساعة",
+    "commanderInChief": "أ. عبد الرحمن السليمان (القائد العام)",
+    "viceCommander": "أ. ياسر الغامدي (نائب القائد العام)",
+    "officialEmail": "info@riadataleata.org.sa",
+    "mobileNumber": "0550123456",
+    "landlineNumber": "0125501234",
+    "address": "مكة المكرمة - مخطط العسيلة - الشارع العام - مقر الجمعية الرئيسي",
+    "websiteUrl": "https://riadataleata.org.sa",
+    "googleMapsEmbedUrl": "https://maps.google.com/?q=Mecca+Al-Asilah",
+    "socialLinks": [
+      {
+        "id": "soc-1",
+        "platform": "twitter",
+        "titleAr": "حساب X (تويتر) الرسمي",
+        "url": "https://twitter.com/riadataleata",
+        "enabled": true,
+        "order": 1
+      },
+      {
+        "id": "soc-2",
+        "platform": "instagram",
+        "titleAr": "حساب إنستغرام",
+        "url": "https://instagram.com/riadataleata",
+        "enabled": true,
+        "order": 2
+      },
+      {
+        "id": "soc-3",
+        "platform": "youtube",
+        "titleAr": "قناة يوتيوب الرسمية",
+        "url": "https://youtube.com/riadataleata",
+        "enabled": true,
+        "order": 3
+      },
+      {
+        "id": "soc-4",
+        "platform": "snapchat",
+        "titleAr": "حساب سناب شات",
+        "url": "https://snapchat.com/add/riadataleata",
+        "enabled": true,
+        "order": 4
+      },
+      {
+        "id": "soc-5",
+        "platform": "whatsapp",
+        "titleAr": "واتساب التكافل المباشر",
+        "url": "https://wa.me/966550123456",
+        "enabled": true,
+        "order": 5
+      },
+      {
+        "id": "soc-6",
+        "platform": "tiktok",
+        "titleAr": "حساب تيك توك",
+        "url": "https://tiktok.com/@riadataleata",
+        "enabled": true,
+        "order": 6
+      },
+      {
+        "id": "soc-7",
+        "platform": "telegram",
+        "titleAr": "قناة تيليجرام التعاميم",
+        "url": "https://t.me/riadataleata",
+        "enabled": true,
+        "order": 7
+      },
+      {
+        "id": "soc-8",
+        "platform": "linkedin",
+        "titleAr": "صفحة لينكدإن المؤسسية",
+        "url": "https://linkedin.com/company/riadataleata",
+        "enabled": true,
+        "order": 8
+      },
+      {
+        "id": "soc-9",
+        "platform": "facebook",
+        "titleAr": "صفحة فيسبوك",
+        "url": "https://facebook.com/riadataleata",
+        "enabled": false,
+        "order": 9
+      },
+      {
+        "id": "soc-10",
+        "platform": "threads",
+        "titleAr": "حساب ثريدز",
+        "url": "https://threads.net/@riadataleata",
+        "enabled": false,
+        "order": 10
+      }
+    ],
+    "allowVolunteerRegistration": true,
+    "approvalType": "manual",
+    "minAge": 16,
+    "maxAge": 65,
+    "requireNationalIdPhoto": true,
+    "requirePersonalPhoto": true,
+    "requireCharterPdf": true,
+    "enableOtpVerification": true,
+    "applicationValidityDays": 30,
+    "customRoles": [
+      {
+        "id": "role-admin",
+        "nameAr": "مدير نظام عام",
+        "nameEn": "General Admin",
+        "allowedPages": [
+          "all"
+        ],
+        "description": "صلاحيات كاملة للتحكم بالنظام والإعدادات والقواعد"
+      },
+      {
+        "id": "role-leader",
+        "nameAr": "قائد فريق تطوعي",
+        "nameEn": "Team Leader",
+        "allowedPages": [
+          "vols",
+          "init",
+          "attendance",
+          "chat"
+        ],
+        "description": "إدارة أعضاء الفريق وتسجيل الحضور والتقييم والرسائل الجماعية"
+      },
+      {
+        "id": "role-supervisor",
+        "nameAr": "مشرف قسم إداري",
+        "nameEn": "Department Supervisor",
+        "allowedPages": [
+          "deps",
+          "teams",
+          "vols",
+          "init"
+        ],
+        "description": "الإشراف على فرق القسم واختيار المتطوعين وإقرار المبادرات"
+      },
+      {
+        "id": "role-volunteer",
+        "nameAr": "متطوع معتمد",
+        "nameEn": "Certified Volunteer",
+        "allowedPages": [
+          "profile",
+          "my_card",
+          "initiatives",
+          "chat_user"
+        ],
+        "description": "عرض البطاقة الرقمية واستعراض وتجسيد المبادرات والتواصل"
+      }
+    ],
+    "notifications": {
+      "enableEmail": true,
+      "enableSms": true,
+      "enableWhatsapp": true,
+      "enableInApp": true,
+      "enableBrowserPush": true,
+      "templates": {
+        "acceptVolunteer": "أهلاً بك أ. {name}! تم قبول طلب انضمامك لجمعية ريادة العطاء وإسنادك لـ {team}. يمكنك الآن استخدام بطاقتك الرقمية.",
+        "rejectVolunteer": "عزيزي المتقدم {name}، نعتذر عن قبول طلب الانضمام لعدم توفر شروط المبادرة الحالية. نتمنى لك التوفيق.",
+        "initiativeInvite": "مبادرة جديدة متاحة! نتشرف بدعوتك للمشاركة في مبادرة {initiative_name} بتاريخ {date}.",
+        "supportTicketCreated": "تم استلام استفسارك وتأكيد فتح تذكرة دعم رقم (#{ticket_number}). فريقنا بخدمتك."
+      }
+    },
+    "aiAssistant": {
+      "enabled": true,
+      "name": "مساعد ريادة العطاء الذكي (Gemini)",
+      "welcomeMessage": "أهلاً بك! أنا مساعد الذكاء الاصطناعي لجمعية ريادة العطاء بالعسيلة. كيف يمكنني خدمتك اليوم؟",
+      "maxAttemptsBeforeTransfer": 3,
+      "escalationKeywords": [
+        "تحدث مع موظف",
+        "دعم فني",
+        "موظف حقيقي",
+        "إنسان",
+        "لم تحل مشكلتي",
+        "تذكرة",
+        "مشكلة معقدة",
+        "تحويل للدعم"
+      ],
+      "supportWorkingHours": "الأحد - الخميس: 8:00 صباحاً - 8:00 مساءً",
+      "cannedResponses": [
+        {
+          "id": "cr-1",
+          "keyword": "البطاقة",
+          "response": "يمكنك استخراج بطاقة التطوع الذكية من القائمة الرئيسية بالضغط على زر 'بطاقتي الذكية' ثم تنزيل ملف PDF أو طباعة البطاقة مباشرة."
+        },
+        {
+          "id": "cr-2",
+          "keyword": "التسجيل",
+          "response": "التسجيل متاح لجميع الراغبين في التطوع عبر نموذج 'انضم كمتطوع' بالصفحة الرئيسية مع ارفاق الهوية والصورة الشخصية."
+        },
+        {
+          "id": "cr-3",
+          "keyword": "الساعات",
+          "response": "تُحسب الساعات التطوعية فور رصد حضورك بجهة المبادرة عبر قائد الفريق وتظهر في سجلك الشخصي وبطاقتك الرقمية."
+        }
+      ],
+      "knowledgeBaseArticles": [
+        {
+          "id": "kb-1",
+          "title": "دليل استخدام بطاقات التطوع الرقمية بالباركود",
+          "content": "تضمن البطاقة الرقمية معايير التحقق الفوري من الهوية والعضوية عبر الباركود ورمز QR المعتمد رسمياً."
+        },
+        {
+          "id": "kb-2",
+          "title": "لائحة الحقوق والواجبات للمتطوع بمكة",
+          "content": "يلتزم المتطوع بالزي الرسمي والسديري المعتمد والسرية المهنية وأخلاقيات العمل الخيري لخدمة ضيوف الرحمن."
+        }
+      ]
+    },
+    "documents": {
+      "privacyPolicyAr": "تلتزم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بأقصى معايير حماية البيانات الشخصية للمتطوعين والمستفيدين وعدم مشاركتها مع أي جهات خارجية إلا بموجب الأنظمة واللوائح الرسمية بالمملكة.",
+      "termsOfUseAr": "استخدام هذا النظام يخضع لشروط وسياسات العمل التطوعي المعتمدة بوزارة الموارد البشرية والتنمية الاجتماعية واللوائح الداخلية للجمعية.",
+      "volunteerCharterAr": "ميثاق العمل التطوعي يوجب الالتزام بالأمانة، والانضباط الميداني، وارتداء الزي والسديري الرسمي أثناء أداء المبادرات بقطاع العسيلة ومكة المكرمة.",
+      "faqAr": [
+        {
+          "id": "faq-1",
+          "question": "كيف أحصل على شهادة ساعات تطوعية؟",
+          "answer": "تُصدر الشهادات آلياً عقب اكتمال المبادرة واعتماد الحضور من قائد الفريق والإدارة العليا."
+        },
+        {
+          "id": "faq-2",
+          "question": "ما هو العمر المسموح للتطوع بالجمعية؟",
+          "answer": "نقبل المتطوعين والمتطوعات من سن 16 سنة وحتى 65 سنة مع إرفاق موافقة ولي الأمر لمن هم دون 18 سنة."
+        }
+      ],
+      "userAgreementAr": "باتمام عملية التسجيل، يقر المستخدم بصحة جميع البيانات المدخلة والالتزام بالأنظمة المرعية."
+    },
+    "appearance": {
+      "mode": "light",
+      "primaryColor": "#059669",
+      "secondaryColor": "#0d9488",
+      "buttonColor": "#10b981",
+      "sidebarColor": "#111827",
+      "fontFamily": "Cairo",
+      "fontSize": "normal",
+      "bgImageUrl": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1600&h=900&fit=crop",
+      "loginBgImageUrl": "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop"
+    },
+    "backup": {
+      "autoBackupFrequency": "daily",
+      "lastBackupDate": "2026-10-28T15:28:30.101Z"
+    },
+    "security": {
+      "enable2FA": true,
+      "maxLoginAttempts": 5,
+      "sessionTimeoutMinutes": 60,
+      "logIpAddresses": true,
+      "blockedIps": [
+        "192.168.1.999"
+      ]
+    },
+    "files": {
+      "siteLogo": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=200&h=200&fit=crop",
+      "loginLogo": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=300&h=300&fit=crop",
+      "certificateLogo": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=200&h=200&fit=crop",
+      "volunteerCardLogo": "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop",
+      "officialStampUrl": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=200&h=200&fit=crop",
+      "commanderSignatureUrl": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=300&h=100&fit=crop",
+      "emergencyPhone": "0550998877"
+    }
+  }
+}

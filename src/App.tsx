@@ -31,6 +31,7 @@ import { UserSettingsModal } from "./components/UserSettingsModal";
 import { ForceChangePasswordModal } from "./components/ForceChangePasswordModal";
 import { playApplicationSubmittedChime } from "./utils/audioNotification";
 import { DashboardErrorBoundary } from "./components/DashboardErrorBoundary";
+import { LoadingScreen } from "./components/LoadingScreen";
 import { 
   getApiBaseUrl, 
   buildApiUrl, 
@@ -1618,93 +1619,39 @@ export default function App() {
   // 1. Initial Checking Guard: Never display normal site before verifying backend maintenance status
   if (maintenanceStatus.loading && !maintenanceStatus.checked) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center font-sans" dir="rtl">
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl max-w-sm w-full space-y-4">
-          <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin mx-auto" />
-          <h2 className="text-sm font-black text-slate-800 dark:text-slate-100">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h2>
-          <p className="text-xs text-slate-400">جاري التحقق من جاهزية الموقع والاتصال الآمن بالخادم...</p>
-        </div>
-      </div>
+      <LoadingScreen
+        message="جاري التحقق من جاهزية الموقع والاتصال الآمن بالخادم..."
+      />
     );
   }
 
   // 2. Safe Connection Failure Guard: Never bypass maintenance on network error
   if (maintenanceStatus.error && !maintenanceStatus.checked) {
     return (
-      <div className="min-h-screen bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-sans" dir="rtl">
-        <div className="bg-white dark:bg-slate-950 p-6 sm:p-8 rounded-3xl border border-amber-200 dark:border-amber-900/50 shadow-2xl max-w-md w-full space-y-5 text-right">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-800">
-              <AlertCircle className="w-6 h-6 text-amber-600 dark:text-amber-400 animate-pulse" />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white">تعذر الاتصال بخادم الجمعية</h2>
-              <p className="text-xs text-slate-400">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</p>
-            </div>
-          </div>
-          <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200 leading-relaxed text-center">
-            {maintenanceStatus.error}
-            <br />
-            لحماية أمن وسجلات الجمعية، يرجى إعادة المحاولة للتأكد من حالة الخادم.
-          </div>
-          <button 
-            onClick={() => fetchMaintenanceStatus(0)}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>إعادة فحص الاتصال بالخادم</span>
-          </button>
-        </div>
-      </div>
+      <LoadingScreen
+        error={maintenanceStatus.error}
+        onRetry={() => fetchMaintenanceStatus(0)}
+        isRetrying={isRetrying}
+      />
     );
   }
 
   // 3. Database Initial Load (Only needed if maintenance is NOT active)
   if (loading && !dbData && !maintenanceStatus.active) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center" dir="rtl">
-        <div className="bg-white p-8 rounded-2xl border border-neutral-100 shadow-xl max-w-sm w-full space-y-4">
-          <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin mx-auto" />
-          <h2 className="text-sm font-black text-neutral-800">جاري تشغيل محرك ريادة العطاء الذكي...</h2>
-          <p className="text-xs text-neutral-400">يرجى الانتظار بينما نقوم بمزامنة قاعدة البيانات وتدشين واجهة الذكاء الاصطناعي</p>
-        </div>
-      </div>
+      <LoadingScreen
+        message="جاري تحميل الموقع، يرجى الانتظار..."
+      />
     );
   }
 
   if (((error && !dbData) || (!loading && !dbData)) && !maintenanceStatus.active) {
     return (
-      <div className="min-h-screen bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-sans" dir="rtl">
-        <div className="bg-white dark:bg-slate-950 p-6 sm:p-8 rounded-3xl border border-rose-200 dark:border-rose-900/50 shadow-2xl max-w-md w-full space-y-5 text-right">
-          
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-800">
-              <AlertCircle className="w-6 h-6 text-rose-600 dark:text-rose-400 animate-pulse" />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-rose-900 dark:text-rose-200">تعذر الاتصال بالخادم</h2>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</p>
-            </div>
-          </div>
-
-          <div className="bg-rose-50/80 dark:bg-rose-950/30 p-4 rounded-2xl border border-rose-100 dark:border-rose-900/30 text-xs text-rose-800 dark:text-rose-300 leading-relaxed text-center">
-            {error || "تعذر الاتصال بالخادم، يرجى المحاولة مرة أخرى."}
-          </div>
-
-          <button 
-            onClick={() => fetchDatabase(false)}
-            disabled={isRetrying}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
-            <span>{isRetrying ? "جاري إعادة الاتصال..." : "إعادة المحاولة"}</span>
-          </button>
-
-          <div className="text-[11px] text-neutral-400 text-center">
-            يعتمد النظام على الاتصال التلقائي المركزي لكافة الإدارات والمستفيدين والمتطوعين دون الحاجة لضبط يدوي.
-          </div>
-        </div>
-      </div>
+      <LoadingScreen
+        error={error || "تعذر الاتصال بالخادم، يرجى المحاولة مرة أخرى."}
+        onRetry={() => fetchDatabase(false)}
+        isRetrying={isRetrying}
+      />
     );
   }
 

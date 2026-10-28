@@ -2619,6 +2619,12 @@ export function readDb() {
         try {
           fs.writeFileSync(DB_FILE_TMP, content, "utf-8");
         } catch {}
+      } else if (process.env.NODE_ENV !== "production" && !isPostgresStorageActive()) {
+        console.log("[DATABASE] Development sandbox detected missing db.json; seeding baseline schema...");
+        content = JSON.stringify(defaultDb, null, 2);
+        try {
+          fs.writeFileSync(activePath, content, "utf-8");
+        } catch {}
       }
     }
 
