@@ -4460,42 +4460,44 @@ try {
   console.error("[DATABASE] initial readDb safe-fallback caught error:", initErr);
 }
 
-// Ensure PostgreSQL tables are initialized and sync active maintenance mode immediately on startup
-initPostgresTables()
-  .then(async () => {
-    try {
-      if (isPostgresStorageActive()) {
-        const pgState = await getPostgresSystemState();
-        if (pgState && pgState.data) {
-          memoryDbCache = pgState.data;
-          console.log(`[PostgreSQL Storage] Primary memory cache hydrated from system_state (version ${pgState.version}).`);
-        }
-      }
-
-      const pgStatus = await getPostgresMaintenanceStatus();
-      if (pgStatus) {
-        const db = readDb();
-        if (!db.systemSettings) db.systemSettings = { ...defaultSystemSettings };
-        const isEnabled = Boolean(pgStatus.enabled || pgStatus.maintenance_mode === 1);
-        db.systemSettings.maintenanceMode = isEnabled;
-        db.systemSettings.maintenance_mode = isEnabled ? 1 : 0;
-        if (pgStatus.message) {
-          db.systemSettings.maintenance_message = pgStatus.message;
-          db.systemSettings.maintenanceMessage = pgStatus.message;
-        }
-        if (pgStatus.updated_at) db.systemSettings.maintenance_updated_at = pgStatus.updated_at;
-        if (pgStatus.updated_by) db.systemSettings.maintenance_updated_by = pgStatus.updated_by;
-        db.maintenance_mode = isEnabled ? 1 : 0;
-        writeDb(db);
-        console.log(`[PostgreSQL] Startup maintenance synchronization complete: mode is ${isEnabled ? 'ACTIVE (1)' : 'INACTIVE (0)'}`);
-      }
-    } catch (syncErr: any) {
-      console.warn("[PostgreSQL] Startup maintenance mode sync warning:", syncErr?.message || syncErr);
+// Dedicated asynchronous database boot barrier
+export async function ensureDatabaseReady(): Promise<boolean> {
+  if (isPostgresStorageActive()) {
+    console.log("[DATABASE BOOT] PostgreSQL storage backend is configured. Initializing tables & hydrating state...");
+    const initialized = await initPostgresTables();
+    if (!initialized) {
+      throw new Error("[DATABASE CRITICAL ERROR] Failed connecting to PostgreSQL storage. Server startup aborted to protect data integrity.");
     }
-  })
-  .catch((pgErr) => {
-    console.error("[PostgreSQL] Table auto-init caught error:", pgErr?.message || pgErr);
-  });
+    const pgState = await getPostgresSystemState();
+    if (!pgState || !pgState.data) {
+      throw new Error("[DATABASE CRITICAL ERROR] PostgreSQL system_state is uninitialized or empty. Automatic default override is permanently blocked to safeguard production data.");
+    }
+    memoryDbCache = pgState.data;
+    console.log(`[DATABASE BOOT] PostgreSQL system_state hydrated successfully (version ${pgState.version}).`);
+
+    const pgStatus = await getPostgresMaintenanceStatus();
+    if (pgStatus) {
+      const isEnabled = Boolean(pgStatus.enabled || pgStatus.maintenance_mode === 1);
+      memoryDbCache.maintenance_mode = isEnabled ? 1 : 0;
+      if (!memoryDbCache.systemSettings) memoryDbCache.systemSettings = { ...defaultSystemSettings };
+      memoryDbCache.systemSettings.maintenanceMode = isEnabled;
+    }
+    return true;
+  }
+
+  // Local JSON / Persistent Disk storage verification
+  console.log("[DATABASE BOOT] Checking local JSON database readiness...");
+  const db = readDb();
+  if (!db || typeof db !== "object" || !Array.isArray(db.departments) || db.departments.length === 0) {
+    throw new Error("[DATABASE CRITICAL ERROR] Local database is empty or uninitialized.");
+  }
+  return true;
+}
+
+// Background startup initialization for non-server entry points
+if (!process.env.VERCEL) {
+  initPostgresTables().catch(() => {});
+}
 
 // ==========================================
 // RBAC & Department Data Isolation Subsystem

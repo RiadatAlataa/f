@@ -1,6 +1,6 @@
 import path from "path";
 import express from "express";
-import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb } from "./server-core";
+import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb, ensureDatabaseReady } from "./server-core";
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
@@ -9,6 +9,14 @@ async function start() {
   // If running in Vercel Serverless environment, do not start HTTP listener
   if (process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     return;
+  }
+
+  // CRITICAL BOOT BARRIER: Ensure database is fully connected and hydrated BEFORE accepting any traffic
+  try {
+    await ensureDatabaseReady();
+  } catch (bootErr: any) {
+    console.error("[CRITICAL BOOT FAILURE] Database initialization failed. Server refused to open port:", bootErr?.message || bootErr);
+    process.exit(1);
   }
 
   if (!isProduction) {
