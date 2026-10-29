@@ -82,21 +82,25 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
 
   // Statistics Calculations
   const stats = useMemo(() => {
-    const totalOpportunities = initiatives.length;
-    const pendingRequests = opportunityRequests.filter(r => r.status === 'pending').length;
-    const acceptedRequests = opportunityRequests.filter(r => r.status === 'accepted').length;
-    const returnedRequests = opportunityRequests.filter(r => r.status === 'returned').length;
-    const rejectedRequests = opportunityRequests.filter(r => r.status === 'rejected').length;
+    const safeInits = Array.isArray(initiatives) ? initiatives : [];
+    const safeOpps = Array.isArray(opportunityRequests) ? opportunityRequests : [];
+    const safeVols = Array.isArray(volunteers) ? volunteers : [];
 
-    const publicCount = initiatives.filter(i => i.scope !== 'private' && !i.opportunityType?.includes('خاصة')).length;
-    const privateCount = initiatives.filter(i => i.scope === 'private' || i.opportunityType?.includes('خاصة')).length;
+    const totalOpportunities = safeInits.length;
+    const pendingRequests = safeOpps.filter(r => r.status === 'pending').length;
+    const acceptedRequests = safeOpps.filter(r => r.status === 'accepted').length;
+    const returnedRequests = safeOpps.filter(r => r.status === 'returned').length;
+    const rejectedRequests = safeOpps.filter(r => r.status === 'rejected').length;
 
-    const totalNeededSeats = initiatives.reduce((acc, curr) => acc + (curr.neededCount || 0), 0);
-    const totalOccupiedSeats = initiatives.reduce((acc, curr) => acc + (curr.acceptedCount || 0), 0);
-    const totalWaitlist = initiatives.reduce((acc, curr) => acc + (curr.waitlistCount || 0), 0);
+    const publicCount = safeInits.filter(i => i.scope !== 'private' && !i.opportunityType?.includes('خاصة')).length;
+    const privateCount = safeInits.filter(i => i.scope === 'private' || i.opportunityType?.includes('خاصة')).length;
 
-    const totalHours = volunteers.reduce((acc, curr) => acc + (Number(curr.hours) || 0), 0);
-    const activeVolunteers = volunteers.filter(v => v.status === 'active' || !v.status).length;
+    const totalNeededSeats = safeInits.reduce((acc, curr) => acc + (curr.neededCount || 0), 0);
+    const totalOccupiedSeats = safeInits.reduce((acc, curr) => acc + (curr.acceptedCount || 0), 0);
+    const totalWaitlist = safeInits.reduce((acc, curr) => acc + (curr.waitlistCount || 0), 0);
+
+    const totalHours = safeVols.reduce((acc, curr) => acc + (Number(curr.hours) || 0), 0);
+    const activeVolunteers = safeVols.filter(v => v.status === 'active' || !v.status).length;
 
     return {
       totalOpportunities,
@@ -277,7 +281,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
             <div>
               <span className="text-[11px] font-bold text-slate-500 block">مسودات ومعادة للتعديل</span>
               <span className="text-lg font-black text-slate-800 dark:text-slate-100 font-mono">
-                {opportunityRequests.filter(r => r.status === 'draft' || r.status === 'returned').length}
+                {(opportunityRequests || []).filter(r => r.status === 'draft' || r.status === 'returned').length}
               </span>
             </div>
             <span className="px-2 py-1 bg-slate-200 dark:bg-slate-700 text-[10px] font-bold rounded">مسودة/معدلة</span>

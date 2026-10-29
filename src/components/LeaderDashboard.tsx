@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Users, Calendar, CheckSquare, Star, MessageSquare, Send, BarChart2, 
   Check, X, RefreshCw, Award, Smile, Info, Compass, ShieldAlert,
@@ -87,6 +87,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   onBackToHome
 }: LeaderDashboardProps) => {
   // Tabs for Leader
+  const safeOpportunityRequests = useMemo(() => Array.isArray(opportunityRequests) ? opportunityRequests : [], [opportunityRequests]);
   const [activeTab, setActiveTab] = useState<'home' | 'team' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards' | 'transfers' | 'support'>('home');
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
 
@@ -691,9 +692,9 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
         >
           <FileText className="w-4 h-4 text-emerald-600" />
           <span>الفرص التطوعية</span>
-          {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length > 0 && (
+          {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length > 0 && (
             <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
-              {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length}
+              {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length}
             </span>
           )}
         </button>
@@ -926,31 +927,31 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="bg-neutral-50 p-3.5 rounded-xl border border-neutral-100 text-center space-y-1">
                 <strong className="text-lg font-black text-neutral-800 font-mono block">
-                  {opportunityRequests.filter(r => r.teamId === currentTeam.id || !r.teamId).length}
+                  {safeOpportunityRequests.filter(r => r.teamId === currentTeam.id || !r.teamId).length}
                 </strong>
                 <span className="text-[10.5px] text-neutral-500 font-bold block">إجمالي الفرص</span>
               </div>
               <div className="bg-amber-50/50 p-3.5 rounded-xl border border-amber-100 text-center space-y-1">
                 <strong className="text-lg font-black text-amber-700 font-mono block">
-                  {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'pending').length}
+                  {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'pending').length}
                 </strong>
                 <span className="text-[10.5px] text-amber-800 font-bold block">قيد المراجعة</span>
               </div>
               <div className="bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-100 text-center space-y-1">
                 <strong className="text-lg font-black text-emerald-700 font-mono block">
-                  {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'accepted').length}
+                  {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'accepted').length}
                 </strong>
                 <span className="text-[10.5px] text-emerald-800 font-bold block">مقبولة</span>
               </div>
               <div className="bg-blue-50/50 p-3.5 rounded-xl border border-blue-100 text-center space-y-1">
                 <strong className="text-lg font-black text-blue-700 font-mono block">
-                  {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length}
+                  {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length}
                 </strong>
                 <span className="text-[10.5px] text-blue-800 font-bold block">معادة للتصحيح</span>
               </div>
               <div className="bg-rose-50/50 p-3.5 rounded-xl border border-rose-100 text-center space-y-1 col-span-2 md:col-span-1">
                 <strong className="text-lg font-black text-rose-700 font-mono block">
-                  {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'rejected').length}
+                  {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'rejected').length}
                 </strong>
                 <span className="text-[10.5px] text-rose-800 font-bold block">مرفوضة</span>
               </div>
@@ -962,31 +963,31 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                 onClick={() => setOppFilterStatus('all')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${oppFilterStatus === 'all' ? 'bg-emerald-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
               >
-                الكل ({opportunityRequests.filter(r => r.teamId === currentTeam.id || !r.teamId).length})
+                الكل ({safeOpportunityRequests.filter(r => r.teamId === currentTeam.id || !r.teamId).length})
               </button>
               <button
                 onClick={() => setOppFilterStatus('pending')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${oppFilterStatus === 'pending' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
               >
-                قيد المراجعة ({opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'pending').length})
+                قيد المراجعة ({safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'pending').length})
               </button>
               <button
                 onClick={() => setOppFilterStatus('accepted')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${oppFilterStatus === 'accepted' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'}`}
               >
-                مقبولة ({opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'accepted').length})
+                مقبولة ({safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'accepted').length})
               </button>
               <button
                 onClick={() => setOppFilterStatus('returned')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${oppFilterStatus === 'returned' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-800 hover:bg-blue-100'}`}
               >
-                معادة للتصحيح ({opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length})
+                معادة للتصحيح ({safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'returned').length})
               </button>
               <button
                 onClick={() => setOppFilterStatus('rejected')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${oppFilterStatus === 'rejected' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-800 hover:bg-rose-100'}`}
               >
-                مرفوضة ({opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'rejected').length})
+                مرفوضة ({safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && r.status === 'rejected').length})
               </button>
             </div>
 
@@ -995,7 +996,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-black text-neutral-800">قائمة الفرص التطوعية</h4>
                 <span className="text-[11px] text-neutral-400 font-mono">
-                  {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && (oppFilterStatus === 'all' || r.status === oppFilterStatus)).length} فرصة
+                  {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && (oppFilterStatus === 'all' || r.status === oppFilterStatus)).length} فرصة
                 </span>
               </div>
 
@@ -1070,7 +1071,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                           </td>
                         </tr>
                       ))}
-                    {opportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && (oppFilterStatus === 'all' || r.status === oppFilterStatus)).length === 0 && (
+                    {safeOpportunityRequests.filter(r => (r.teamId === currentTeam.id || !r.teamId) && (oppFilterStatus === 'all' || r.status === oppFilterStatus)).length === 0 && (
                       <tr>
                         <td colSpan={8} className="p-8 text-center text-neutral-400 text-xs">
                           لا توجد فرص تطوعية ضمن هذا التصنيف حالياً.

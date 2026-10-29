@@ -55,6 +55,7 @@ import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
 import { AccessDeniedCard } from "./AccessDeniedCard";
 import { SiteStatusManager } from "./SiteStatusManager";
 import { AdminStaffManager } from "./AdminStaffManager";
+import { encryptBackupPayload, decryptBackupPayload, calculateSha256 } from "../utils/secureBackupCrypto";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   logoUrl: "/logo.png",
@@ -398,6 +399,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showKnightsModal, setShowKnightsModal] = useState(false);
 
+  // Defensive fallbacks for all datasets to prevent any undefined filter/map runtime errors
+  const safeOpportunityRequests = useMemo(() => Array.isArray(opportunityRequests) ? opportunityRequests : [], [opportunityRequests]);
+  const safeVolunteers = useMemo(() => Array.isArray(data?.volunteers) ? data.volunteers : [], [data?.volunteers]);
+  const safeLogs = useMemo(() => Array.isArray(data?.logs) ? data.logs : [], [data?.logs]);
+  const safeTeams = useMemo(() => Array.isArray(data?.teams) ? data.teams : [], [data?.teams]);
+  const safeDepartments = useMemo(() => Array.isArray(data?.departments) ? data.departments : [], [data?.departments]);
+  const safeInitiatives = useMemo(() => Array.isArray(data?.initiatives) ? data.initiatives : [], [data?.initiatives]);
+  const safeEmployeeRequests = useMemo(() => Array.isArray(employeeRequests) ? employeeRequests : [], [employeeRequests]);
+  const safeEmployees = useMemo(() => Array.isArray(employees) ? employees : [], [employees]);
+  const safeBeneficiaries = useMemo(() => Array.isArray(data?.beneficiaries) ? data.beneficiaries : [], [data?.beneficiaries]);
+  const safeDistributions = useMemo(() => Array.isArray(data?.distributions) ? data.distributions : [], [data?.distributions]);
+  const safeBeneficiaryRatings = useMemo(() => Array.isArray(data?.beneficiaryRatings) ? data.beneficiaryRatings : [], [data?.beneficiaryRatings]);
+  const safeVolunteerApplications = useMemo(() => Array.isArray(data?.volunteerApplications) ? data.volunteerApplications : [], [data?.volunteerApplications]);
+  const safeTeamApplications = useMemo(() => Array.isArray(data?.teamApplications) ? data.teamApplications : [], [data?.teamApplications]);
+  const safeLetters = useMemo(() => Array.isArray(data?.letters) ? data.letters : [], [data?.letters]);
+  const safeDepartmentDirectives = useMemo(() => Array.isArray(data?.departmentDirectives) ? data.departmentDirectives : [], [data?.departmentDirectives]);
+  const safeNotifications = useMemo(() => Array.isArray(data?.notifications) ? data.notifications : [], [data?.notifications]);
+
   // Define the Core Administrative Categories (Consolidated, Distinct, Well-Categorized)
   const primaryCategories = useMemo(() => [
     {
@@ -415,15 +434,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       label: "إدارة التطوع",
       icon: HeartHandshake,
       description: "إحصائيات التطوع الموحدة، الفرص المعتمدة، الفرق، المتطوعين وسجلات الساعات",
-      badge: opportunityRequests.filter(r => r.status === 'pending').length || undefined,
+      badge: safeOpportunityRequests.filter(r => r.status === 'pending').length || undefined,
       items: [
         { id: 'volunteer_mgmt_dashboard', label: 'لوحة إدارة التطوع والإحصائيات', icon: BarChart3, badge: 'نظام متكامل' },
-        { id: 'opp_requests', label: 'اعتماد وإدارة الفرص التطوعية', icon: FileText, badge: opportunityRequests.filter(r => r.status === 'pending').length || undefined },
-        { id: 'init', label: 'المبادرات التطوعية', icon: Calendar, badge: data.initiatives?.length || 0 },
-        { id: 'vols', label: 'سجلات وساعات المتطوعين', icon: Users, badge: data.volunteers?.length || 0 },
-        { id: 'teams', label: 'الفرق التطوعية وقادتها', icon: UsersRound, badge: data.teams?.length || 0 },
-        { id: 'joinrequests', label: 'طلبات انضمام الأفراد', icon: FileText, badge: (data.volunteerApplications || []).filter(a => a.status === 'pending').length || undefined },
-        { id: 'team_join_requests', label: 'طلبات انضمام الفرق', icon: UsersRound, badge: (data.teamApplications || []).filter(a => a.status === 'pending').length || undefined },
+        { id: 'opp_requests', label: 'اعتماد وإدارة الفرص التطوعية', icon: FileText, badge: safeOpportunityRequests.filter(r => r.status === 'pending').length || undefined },
+        { id: 'init', label: 'المبادرات التطوعية', icon: Calendar, badge: safeInitiatives.length || 0 },
+        { id: 'vols', label: 'سجلات وساعات المتطوعين', icon: Users, badge: safeVolunteers.length || 0 },
+        { id: 'teams', label: 'الفرق التطوعية وقادتها', icon: UsersRound, badge: safeTeams.length || 0 },
+        { id: 'joinrequests', label: 'طلبات انضمام الأفراد', icon: FileText, badge: safeVolunteerApplications.filter(a => a.status === 'pending').length || undefined },
+        { id: 'team_join_requests', label: 'طلبات انضمام الفرق', icon: UsersRound, badge: safeTeamApplications.filter(a => a.status === 'pending').length || undefined },
         { id: 'volunteer_transfers', label: 'طلبات نقل المتطوعين وإنهاء الارتباط', icon: ArrowRightLeft, badge: 'جديد' },
         { id: 'cards', label: 'قوالب بطاقات المتطوعين', icon: CreditCard, badge: 'نظام متكامل' }
       ]
@@ -433,11 +452,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       label: "إدارة المستفيدين",
       icon: HeartHandshake,
       description: "إدارة المستفيدين، طلبات الإعانة، توزيع السلال والكسوة، وتقييمات الرضا",
-      badge: (data.beneficiaries || []).length || undefined,
+      badge: safeBeneficiaries.length || undefined,
       items: [
-        { id: 'beneficiaries', label: 'المستفيدون وطلبات الإعانة', icon: Users, badge: (data.beneficiaries || []).length || undefined },
-        { id: 'distributions', label: 'التوزيعات وسندات الاستلام', icon: Package, badge: (data.distributions || []).filter(d => d.status === 'active').length || undefined },
-        { id: 'beneficiary_ratings', label: 'تقييمات ورضا المستفيدين', icon: Star, badge: (data.beneficiaryRatings || []).length || undefined }
+        { id: 'beneficiaries', label: 'المستفيدون وطلبات الإعانة', icon: Users, badge: safeBeneficiaries.length || undefined },
+        { id: 'distributions', label: 'التوزيعات وسندات الاستلام', icon: Package, badge: safeDistributions.filter(d => d.status === 'active').length || undefined },
+        { id: 'beneficiary_ratings', label: 'تقييمات ورضا المستفيدين', icon: Star, badge: safeBeneficiaryRatings.length || undefined }
       ]
     },
     {
@@ -445,10 +464,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       label: "الموارد البشرية",
       icon: Briefcase,
       description: "الموظفون، العقود والبدلات، الحضور والانصراف، الإجازات، مسيرات الرواتب والقرارات الإدارية",
-      badge: (employeeRequests || []).filter(r => r.status === 'pending').length || (employees?.length || 0),
+      badge: safeEmployeeRequests.filter(r => r.status === 'pending').length || (safeEmployees.length || 0),
       items: [
         { id: 'hr_dashboard', label: 'نظام إدارة الموارد البشرية (HR Master)', icon: Briefcase, badge: 'شامل' },
-        { id: 'employee_requests', label: 'طلبات واستقطاب الكوادر', icon: Users, badge: (employeeRequests || []).filter(r => r.status === 'pending').length || undefined }
+        { id: 'employee_requests', label: 'طلبات واستقطاب الكوادر', icon: Users, badge: safeEmployeeRequests.filter(r => r.status === 'pending').length || undefined }
       ]
     },
     {
@@ -456,13 +475,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       label: "الإدارة العامة",
       icon: Building2,
       description: "الهيكلة والموقع والصلاحيات والتواصل",
-      badge: data.departments?.length || 0,
+      badge: safeDepartments.length || 0,
       items: [
-        { id: 'deps', label: 'هيكلة الإدارات', icon: Building2, badge: data.departments?.length || 0 },
-        { id: 'org_chart', label: 'إدارة الهيكل الإداري', icon: Network, badge: (data.orgMembers || []).length || undefined },
-        { id: 'hero_slides', label: 'إدارة صور الصفحة الرئيسية', icon: ImageIcon, badge: (data.heroSlides || []).length || undefined },
-        { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data.partners || []).length || undefined },
-        { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: (data.letters || []).filter(l => !l.isRead).length || undefined },
+        { id: 'deps', label: 'هيكلة الإدارات', icon: Building2, badge: safeDepartments.length || 0 },
+        { id: 'org_chart', label: 'إدارة الهيكل الإداري', icon: Network, badge: (data?.orgMembers || []).length || undefined },
+        { id: 'hero_slides', label: 'إدارة صور الصفحة الرئيسية', icon: ImageIcon, badge: (data?.heroSlides || []).length || undefined },
+        { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data?.partners || []).length || undefined },
+        { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: safeLetters.filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
         { id: 'users_mgmt', label: 'إدارة المستخدمين الشاملة', icon: Users, badge: 'شامل' },
         { id: 'password_resets', label: 'طلبات تغيير كلمات المرور (مدير العمليات)', icon: KeyRound, badge: 'العمليات' },
@@ -521,7 +540,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'backup', label: 'قاعدة البيانات والنسخ', icon: Database }
       ]
     }
-  ], [data, opportunityRequests, employeeRequests, isMaintenanceActive]);
+  ], [
+    data,
+    safeOpportunityRequests,
+    safeEmployeeRequests,
+    safeEmployees,
+    safeDepartments,
+    safeInitiatives,
+    safeVolunteers,
+    safeTeams,
+    safeBeneficiaries,
+    safeDistributions,
+    safeBeneficiaryRatings,
+    safeVolunteerApplications,
+    safeTeamApplications,
+    safeLetters,
+    isMaintenanceActive
+  ]);
 
   // Derive navGroups for ModernAppSidebar to maintain 100% synchronization
   const navGroups: NavGroup[] = useMemo(() => {
@@ -542,10 +577,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [primaryCategories]);
 
   const totalPendingCount = useMemo(() => {
-    return (data.teamApplications || []).filter(a => a.status === 'pending').length +
-      (data.volunteerApplications || []).filter(a => a.status === 'pending').length +
-      opportunityRequests.filter(r => r.status === 'pending').length;
-  }, [data, opportunityRequests]);
+    return safeTeamApplications.filter(a => a.status === 'pending').length +
+      safeVolunteerApplications.filter(a => a.status === 'pending').length +
+      safeOpportunityRequests.filter(r => r.status === 'pending').length;
+  }, [safeTeamApplications, safeVolunteerApplications, safeOpportunityRequests]);
 
   const getActiveTabTitle = (tabId: string) => {
     for (const cat of primaryCategories) {
@@ -635,6 +670,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [notifSuccess, setNotifSuccess] = useState(false);
   const [simulatedDeliveries, setSimulatedDeliveries] = useState<any[]>([]);
 
+  // Secure Encrypted Export (v934) states
+  const [showSecureExportModal, setShowSecureExportModal] = useState(false);
+  const [securePassphrase, setSecurePassphrase] = useState("");
+  const [securePassphraseConfirm, setSecurePassphraseConfirm] = useState("");
+  const [showSecurePassphrase, setShowSecurePassphrase] = useState(false);
+  const [isExportingSecure, setIsExportingSecure] = useState(false);
+  const [secureExportProgress, setSecureExportProgress] = useState("");
+  const [secureExportError, setSecureExportError] = useState<string | null>(null);
+  const [secureExportSuccess, setSecureExportSuccess] = useState<any | null>(null);
+  const [dryRunTestResult, setDryRunTestResult] = useState<{ ok: boolean; message: string; time: string } | null>(null);
+
   // Leaderboard tab states
   const [leaderboardDeptFilter, setLeaderboardDeptFilter] = useState("");
   const [leaderboardTeamFilter, setLeaderboardTeamFilter] = useState("");
@@ -704,7 +750,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // Parse CSV-like input: Name, Phone, Email
     const lines = excelText.split("\n");
     const parsedList: any[] = [];
-    const selectedTeam = data.teams.find(t => t.id === excelTeamId);
+    const selectedTeam = safeTeams.find(t => t.id === excelTeamId);
     
     lines.forEach(line => {
       const parts = line.split(",");
@@ -765,6 +811,143 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleStartSecureExportModal = () => {
+    setShowSecureExportModal(true);
+    setSecurePassphrase("");
+    setSecurePassphraseConfirm("");
+    setSecureExportError(null);
+    setSecureExportSuccess(null);
+    setSecureExportProgress("");
+  };
+
+  const handleDownloadOfflineDecryptor = () => {
+    const link = document.createElement("a");
+    link.href = "/tools/offline_decryptor.html";
+    link.download = "offline_decryptor.html";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleRunDryRunCryptoTest = async () => {
+    try {
+      setDryRunTestResult({ ok: true, message: "جاري تشغيل فحص Web Crypto في المتصفح...", time: new Date().toLocaleTimeString('ar-SA') });
+      const testSecret = "Test_Reyadat_AlAtaa_Passphrase_2026!";
+      const sampleText = JSON.stringify({ test: "reyadat_integrity_check", timestamp: Date.now() });
+      const sampleSha = await calculateSha256(sampleText);
+      
+      const { blob, metadata } = await encryptBackupPayload(sampleText, testSecret, {
+        version: 934,
+        size: sampleText.length,
+        sha256: sampleSha
+      });
+      
+      const buffer = await blob.arrayBuffer();
+      const decResult = await decryptBackupPayload(buffer, testSecret);
+      
+      if (decResult.ok && decResult.shaMatch) {
+        setDryRunTestResult({
+          ok: true,
+          message: "✅ فحص Web Crypto ناجح 100%: اشتقاق PBKDF2 والتشفير وفك التشفير ومطابقة البصمة تعمل بكفاءة تامة.",
+          time: new Date().toLocaleTimeString('ar-SA')
+        });
+      } else {
+        throw new Error(decResult.error || "فشل تطابق البصمة التجريبية.");
+      }
+    } catch (err: any) {
+      setDryRunTestResult({
+        ok: false,
+        message: "❌ فشل الفحص التجريبي: " + (err?.message || "خطأ غير معروف"),
+        time: new Date().toLocaleTimeString('ar-SA')
+      });
+    }
+  };
+
+  const handleExecuteSecureExport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSecureExportError(null);
+
+    if (!securePassphrase || securePassphrase.length < 8) {
+      setSecureExportError("كلمة المرور يجب أن لا تقل عن 8 خانات لضمان قوة التشفير.");
+      return;
+    }
+
+    if (securePassphrase !== securePassphraseConfirm) {
+      setSecureExportError("كلمتا المرور غير متطابقتين، يرجى إعادة التأكد.");
+      return;
+    }
+
+    setIsExportingSecure(true);
+    setSecureExportProgress("جاري جلب النسخة الأصلية v934 والتحقق من بصمة النزاهة...");
+
+    try {
+      const stored = localStorage.getItem("reyadat_auth_session") || localStorage.getItem("reyadat_alata_auth_session");
+      const parsed = stored ? JSON.parse(stored) : null;
+      const token = parsed?.sessionToken || parsed?.token || authenticatedUser?.sessionToken || authenticatedUser?.token || "";
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      if (token) {
+        headers["x-session-token"] = token;
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch("/api/admin/backup/v934/prepare-export", {
+        method: "POST",
+        headers,
+        credentials: "same-origin"
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || "تعذر جلب النسخة الاحتياطية من الخادم.");
+      }
+
+      const prepData = await res.json();
+      if (!prepData.ok || !prepData.payload) {
+        throw new Error(prepData.error || "استجابة الخادم غير صالحة.");
+      }
+
+      setSecureExportProgress("جاري اشتقاق مفتاح AES-256 محلياً في المتصفح (PBKDF2-HMAC-SHA512)...");
+
+      // Encrypt 100% in browser memory
+      const { blob, metadata } = await encryptBackupPayload(prepData.payload, securePassphrase, {
+        version: prepData.version || 934,
+        size: prepData.size,
+        sha256: prepData.sha256
+      });
+
+      setSecureExportProgress("جاري تنزيل الملف المشفر إلى جهازك...");
+
+      // Download .enc file
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `riada_backup_v934_${new Date().toISOString().slice(0, 10)}.enc`;
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+
+      setSecureExportSuccess({
+        version: metadata.version,
+        size: metadata.size,
+        sha256: metadata.sha256,
+        encSize: blob.size,
+        filename: link.download
+      });
+      setSecurePassphrase("");
+      setSecurePassphraseConfirm("");
+    } catch (err: any) {
+      console.error("Secure export error:", err);
+      setSecureExportError(err?.message || "حدث خطأ أثناء تشفير أو تنزيل النسخة.");
+    } finally {
+      setIsExportingSecure(false);
+      setSecureExportProgress("");
+    }
+  };
+
   const handleTriggerRestoreUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -795,18 +978,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Filter lists
-  const filteredVolunteers = data.volunteers.filter(v => {
+  const filteredVolunteers = safeVolunteers.filter(v => {
     const matchSearch = 
-      v.name.toLowerCase().includes(volSearch.toLowerCase()) || 
-      v.membershipNumber.toLowerCase().includes(volSearch.toLowerCase()) ||
+      (v.name || '').toLowerCase().includes(volSearch.toLowerCase()) || 
+      (v.membershipNumber || '').toLowerCase().includes(volSearch.toLowerCase()) ||
       (v.phone || '').includes(volSearch);
     const matchTeam = volTeamFilter === 'all' || v.teamId === volTeamFilter;
     return matchSearch && matchTeam;
   });
 
-  const filteredLogs = data.logs.filter(l => 
-    l.action.toLowerCase().includes(logSearch.toLowerCase()) || 
-    l.user.toLowerCase().includes(logSearch.toLowerCase())
+  const filteredLogs = safeLogs.filter(l => 
+    (l.action || '').toLowerCase().includes(logSearch.toLowerCase()) || 
+    (l.user || '').toLowerCase().includes(logSearch.toLowerCase())
   );
 
   const triggerBatchPrint = () => {
@@ -861,12 +1044,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           handleSelectTab(tabId);
         }}
         navGroups={navGroups}
-        totalVolunteersCount={data.volunteers?.length || 0}
+        totalVolunteersCount={safeVolunteers.length || 0}
         pendingRequestsCount={
-          (data.teamApplications || []).filter(a => a.status === 'pending').length +
-          (data.volunteerApplications || []).filter(a => a.status === 'pending').length
+          safeTeamApplications.filter(a => a.status === 'pending').length +
+          safeVolunteerApplications.filter(a => a.status === 'pending').length
         }
-        pendingOpportunitiesCount={opportunityRequests.filter(r => r.status === 'pending').length}
+        pendingOpportunitiesCount={safeOpportunityRequests.filter(r => r.status === 'pending').length}
         onOpenQuickSupport={() => handleSelectTab('support')}
         onOpenQuickSettings={() => handleSelectTab('system_settings')}
       />
@@ -1344,30 +1527,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <p className="text-xs text-emerald-800/80 mt-0.5">عرض ومراجعة الفرص التطوعية المقدمة من قادة الفرق، تعيين معرف الفرصة الرسمي، واعتمادها أو إعادتها للتصحيح أو رفضها.</p>
                 </div>
                 <span className="text-xs font-mono font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl self-start md:self-auto">
-                  إجمالي الفرص: {opportunityRequests.length}
+                  إجمالي الفرص: {safeOpportunityRequests.length}
                 </span>
               </div>
 
               {/* Counter Stats */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-150 text-center">
-                  <strong className="text-lg font-black text-neutral-800 font-mono block">{opportunityRequests.length}</strong>
+                  <strong className="text-lg font-black text-neutral-800 font-mono block">{safeOpportunityRequests.length}</strong>
                   <span className="text-[11px] text-neutral-500 font-bold block">إجمالي الفرص</span>
                 </div>
                 <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-center">
-                  <strong className="text-lg font-black text-amber-700 font-mono block">{opportunityRequests.filter(r => r.status === 'pending').length}</strong>
+                  <strong className="text-lg font-black text-amber-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'pending').length}</strong>
                   <span className="text-[11px] text-amber-800 font-bold block">قيد المراجعة</span>
                 </div>
                 <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
-                  <strong className="text-lg font-black text-emerald-700 font-mono block">{opportunityRequests.filter(r => r.status === 'accepted').length}</strong>
+                  <strong className="text-lg font-black text-emerald-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'accepted').length}</strong>
                   <span className="text-[11px] text-emerald-800 font-bold block">مقبولة</span>
                 </div>
                 <div className="bg-rose-50 p-3 rounded-xl border border-rose-200 text-center">
-                  <strong className="text-lg font-black text-rose-700 font-mono block">{opportunityRequests.filter(r => r.status === 'rejected').length}</strong>
+                  <strong className="text-lg font-black text-rose-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'rejected').length}</strong>
                   <span className="text-[11px] text-rose-800 font-bold block">مرفوضة</span>
                 </div>
                 <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center col-span-2 md:col-span-1">
-                  <strong className="text-lg font-black text-blue-700 font-mono block">{opportunityRequests.filter(r => r.status === 'returned').length}</strong>
+                  <strong className="text-lg font-black text-blue-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'returned').length}</strong>
                   <span className="text-[11px] text-blue-800 font-bold block">معادة للتصحيح</span>
                 </div>
               </div>
@@ -1384,11 +1567,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                     }`}
                   >
-                    {st === 'all' ? `الكل (${opportunityRequests.length})` :
-                     st === 'pending' ? `قيد المراجعة (${opportunityRequests.filter(r => r.status === 'pending').length})` :
-                     st === 'accepted' ? `مقبولة (${opportunityRequests.filter(r => r.status === 'accepted').length})` :
-                     st === 'returned' ? `معادة للتصحيح (${opportunityRequests.filter(r => r.status === 'returned').length})` :
-                     `مرفوضة (${opportunityRequests.filter(r => r.status === 'rejected').length})`}
+                    {st === 'all' ? `الكل (${safeOpportunityRequests.length})` :
+                     st === 'pending' ? `قيد المراجعة (${safeOpportunityRequests.filter(r => r.status === 'pending').length})` :
+                     st === 'accepted' ? `مقبولة (${safeOpportunityRequests.filter(r => r.status === 'accepted').length})` :
+                     st === 'returned' ? `معادة للتصحيح (${safeOpportunityRequests.filter(r => r.status === 'returned').length})` :
+                     `مرفوضة (${safeOpportunityRequests.filter(r => r.status === 'rejected').length})`}
                   </button>
                 ))}
               </div>
@@ -1412,7 +1595,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 font-medium">
-                    {opportunityRequests
+                    {safeOpportunityRequests
                       .filter(r => oppStatusFilter === 'all' || r.status === oppStatusFilter)
                       .map(r => (
                         <tr key={r.id} className="hover:bg-neutral-50/50 transition-all">
@@ -1479,7 +1662,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </td>
                         </tr>
                       ))}
-                    {opportunityRequests.filter(r => oppStatusFilter === 'all' || r.status === oppStatusFilter).length === 0 && (
+                    {safeOpportunityRequests.filter(r => oppStatusFilter === 'all' || r.status === oppStatusFilter).length === 0 && (
                       <tr>
                         <td colSpan={11} className="p-8 text-center text-neutral-400 text-xs">
                           لا توجد فرص تطوعية ضمن هذا التصنيف حالياً.
@@ -1983,7 +2166,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </thead>
                   <tbody className="divide-y divide-neutral-50">
                     {filteredVolunteers.map(v => {
-                      const team = data.teams.find(t => t.id === v.teamId);
+                      const team = safeTeams.find(t => t.id === v.teamId);
                       return (
                         <tr key={v.id} className="hover:bg-neutral-50/20 transition-all">
                           <td className="p-3">
@@ -2282,7 +2465,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             });
 
             // 1. Department Directors
-            (data.departments || []).forEach(d => {
+            safeDepartments.forEach(d => {
               allAccountsList.push({
                 id: d.id,
                 type: 'director',
@@ -2305,7 +2488,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             });
 
             // 2. Employees & Storekeepers
-            const staffList = (employees && employees.length > 0) ? employees : ((data as any).employees || []);
+            const staffList = (employees && employees.length > 0) ? employees : ((data as any)?.employees || []);
             staffList.forEach((e: any) => {
               if (!allAccountsList.some(x => x.id === e.id || (e.nationalId && x.nationalId === e.nationalId))) {
                 const isWarehouse = e.departmentId === 'dep-8' || (e.jobTitle && e.jobTitle.includes('مخزن')) || (e.jobTitle && e.jobTitle.includes('مستودع'));
@@ -2317,7 +2500,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   phone: e.phone,
                   email: e.email,
                   departmentId: e.departmentId || (isWarehouse ? 'dep-8' : 'dep-1'),
-                  departmentName: e.departmentName || ((data.departments || []).find(d => d.id === e.departmentId)?.nameAr) || (isWarehouse ? 'إدارة المستودع والمخزن' : 'إدارة عامة'),
+                  departmentName: e.departmentName || (safeDepartments.find(d => d.id === e.departmentId)?.nameAr) || (isWarehouse ? 'إدارة المستودع والمخزن' : 'إدارة عامة'),
                   jobTitle: e.jobTitle || (isWarehouse ? 'أمين مستودع' : 'موظف إدارة'),
                   role: e.role || (isWarehouse ? 'storekeeper' : 'employee'),
                   status: e.status || 'active',
@@ -2328,7 +2511,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             });
 
             // 3. Team Leaders
-            (data.teams || []).forEach(t => {
+            safeTeams.forEach(t => {
               if (t.leaderNationalId && !allAccountsList.some(x => x.nationalId === t.leaderNationalId)) {
                 allAccountsList.push({
                   id: `leader-${t.id}`,
@@ -2349,7 +2532,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             });
 
             // 4. Volunteers
-            (data.volunteers || []).forEach(v => {
+            safeVolunteers.forEach(v => {
               if (!allAccountsList.some(x => x.id === v.id || (v.nationalId && x.nationalId === v.nationalId))) {
                 allAccountsList.push({
                   id: v.id,
@@ -2360,7 +2543,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   email: v.email,
                   membershipNumber: v.membershipNumber,
                   departmentId: v.departmentId || 'dep-5',
-                  departmentName: ((data.departments || []).find(d => d.id === v.departmentId)?.nameAr) || 'إدارة العمل التطوعي',
+                  departmentName: (safeDepartments.find(d => d.id === v.departmentId)?.nameAr) || 'إدارة العمل التطوعي',
                   jobTitle: (v as any).jobTitle || (v as any).titleAr || 'متطوع معتمد',
                   role: (v as any).role || 'volunteer',
                   status: v.status || 'active',
@@ -2418,7 +2601,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               setPermSaveMessage('');
               try {
                 // Expand granular permissions with legacy keys for full server & UI backward compatibility
-                const expandedPerms = expandPermissionsWithLegacyKeys(permList, data.departments);
+                const expandedPerms = expandPermissionsWithLegacyKeys(permList, safeDepartments);
 
                 const payload = {
                   userId: permSelectedAccount.id,
@@ -2521,8 +2704,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         }}
                         className="w-full border-2 border-emerald-400/60 rounded-xl p-3 text-xs font-bold text-white bg-neutral-900/90 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all cursor-pointer shadow-inner"
                       >
-                        <option value="all" className="bg-neutral-900 text-white">📂 كافة الإدارات والمنظومة ({data.departments.length})</option>
-                        {data.departments.map(d => (
+                        <option value="all" className="bg-neutral-900 text-white">📂 كافة الإدارات والمنظومة ({safeDepartments.length})</option>
+                        {safeDepartments.map(d => (
                           <option key={d.id} value={d.id} className="bg-neutral-900 text-white">
                             🏢 {d.nameAr} ({d.id})
                           </option>
@@ -2742,7 +2925,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onChange={(e) => setPermDepartmentId(e.target.value)}
                               className="w-full border border-neutral-200 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20"
                             >
-                              {data.departments.map(d => (
+                              {safeDepartments.map(d => (
                                 <option key={d.id} value={d.id}>{d.nameAr} ({d.id})</option>
                               ))}
                             </select>
@@ -2796,7 +2979,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="border-t border-neutral-100 pt-5">
                           <DepartmentPermissionsManager
                             selectedAccount={permSelectedAccount}
-                            departments={data.departments}
+                            departments={safeDepartments}
                             currentRole={permRole}
                             currentDepartmentId={permDepartmentId}
                             selectedPermissions={permList}
@@ -2832,7 +3015,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               { key: 'tasks', label: 'المهام والتكليفات التشغيلية' },
                               { key: 'letters', label: 'الخطابات والمراسلات الرسمية' },
                             ].map(ws => {
-                              const checked = permAllowedPages.includes(ws.key);
+                              const checked = (permAllowedPages || []).includes(ws.key);
                               return (
                                 <label key={ws.key} className="flex items-center gap-2 p-2 rounded-xl border border-neutral-100 hover:bg-neutral-50 cursor-pointer text-xs select-none">
                                   <input
@@ -2840,9 +3023,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     checked={checked}
                                     onChange={() => {
                                       if (checked) {
-                                        setPermAllowedPages(permAllowedPages.filter(k => k !== ws.key));
+                                        setPermAllowedPages((permAllowedPages || []).filter(k => k !== ws.key));
                                       } else {
-                                        setPermAllowedPages([...permAllowedPages, ws.key]);
+                                        setPermAllowedPages([...(permAllowedPages || []), ws.key]);
                                       }
                                     }}
                                     className="rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
@@ -2949,7 +3132,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="border border-neutral-200 rounded-lg p-1.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20"
                     >
                       <option value="">كافة الإدارات</option>
-                      {data.departments.map(d => (
+                      {safeDepartments.map(d => (
                         <option key={d.id} value={d.id}>{d.nameAr}</option>
                       ))}
                     </select>
@@ -2963,7 +3146,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="border border-neutral-200 rounded-lg p-1.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-50"
                     >
                       <option value="">كافة الفرق</option>
-                      {data.teams.filter(t => t.departmentId === leaderboardDeptFilter).map(t => (
+                      {safeTeams.filter(t => t.departmentId === leaderboardDeptFilter).map(t => (
                         <option key={t.id} value={t.id}>{t.nameAr}</option>
                       ))}
                     </select>
@@ -3175,7 +3358,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="w-full border border-neutral-200 rounded-lg p-2 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20"
                       >
                         <option value="">جميع الإدارات</option>
-                        {data.departments.map(d => (
+                        {safeDepartments.map(d => (
                           <option key={d.id} value={d.id}>{d.nameAr}</option>
                         ))}
                       </select>
@@ -3191,7 +3374,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="w-full border border-neutral-200 rounded-lg p-2 text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-50"
                       >
                         <option value="">جميع الفرق</option>
-                        {data.teams.filter(t => t.departmentId === globalSearchDept).map(t => (
+                        {safeTeams.filter(t => t.departmentId === globalSearchDept).map(t => (
                           <option key={t.id} value={t.id}>{t.nameAr}</option>
                         ))}
                       </select>
@@ -3470,6 +3653,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <p className="text-xs text-neutral-500 mt-0.5">تنفيذ أعمال الصيانة، النسخ الاحتياطي الفوري، واستعادة السجلات بنقرة واحدة</p>
               </div>
 
+              {/* Secure Encrypted Export Card (v934 Candidate) */}
+              <div className="border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-950/20 via-slate-900/40 to-slate-950/40 p-6 rounded-3xl space-y-5 shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+                      <Shield className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold mb-1">
+                        <span>🔒 تشفير محلي عالي الأمان (Zero-Knowledge)</span>
+                        <span>•</span>
+                        <span>نسخة الجمعية المعتمدة v934</span>
+                      </div>
+                      <h4 className="text-sm font-black text-neutral-900 dark:text-white">تصدير النسخة الاحتياطية المشفرة للجمعية</h4>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">تشفير حزمة البيانات الأصلية (.db.previous_valid_secondary.bak) بكلمة مرور رئيسية تُدخلها محلياً دون إرسالها للخادم</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      id="btn-secure-export-v934"
+                      onClick={handleStartSecureExportModal}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 px-4 rounded-xl cursor-pointer flex items-center gap-2 transition-all shadow-md active:scale-95"
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>تصدير النسخة المشفرة الآمنة (v934)</span>
+                    </button>
+
+                    <button
+                      id="btn-download-offline-decryptor"
+                      onClick={handleDownloadOfflineDecryptor}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-bold py-2.5 px-3.5 rounded-xl cursor-pointer flex items-center gap-1.5 transition-all"
+                    >
+                      <FileDown className="w-4 h-4" />
+                      <span>تنزيل أداة فك التشفير (Windows)</span>
+                    </button>
+
+                    <button
+                      id="btn-dryrun-crypto-test"
+                      onClick={handleRunDryRunCryptoTest}
+                      className="bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/60 text-xs font-bold py-2.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5 transition-all"
+                      title="اختبار تشفير وفك تشفير تجريبي محلياً للتأكد من توافق المتصفح"
+                    >
+                      <Activity className="w-4 h-4 text-emerald-400" />
+                      <span>فحص تجريبي محلي</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cryptographic Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-[11px]">
+                  <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2.5">
+                    <span className="text-neutral-400 block text-[10px]">الملف المصدر:</span>
+                    <span className="font-mono text-emerald-400 font-bold truncate block">.db.previous_valid_secondary.bak</span>
+                  </div>
+                  <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2.5">
+                    <span className="text-neutral-400 block text-[10px]">الحجم الأصلي:</span>
+                    <span className="font-mono text-white font-bold">696,115 بايت (v934)</span>
+                  </div>
+                  <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2.5">
+                    <span className="text-neutral-400 block text-[10px]">معيار التشفير:</span>
+                    <span className="font-mono text-white font-bold">AES-256-GCM + PBKDF2</span>
+                  </div>
+                  <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-2.5">
+                    <span className="text-neutral-400 block text-[10px]">بصمة النزاهة (SHA-256):</span>
+                    <span className="font-mono text-emerald-400 font-bold truncate block" title="18b8b54bb228f6fe7a991f8e38488c951006ab277852b8357c487cdaddf505f2">18b8b54bb2...</span>
+                  </div>
+                </div>
+
+                {/* Dry Run Test Banner if executed */}
+                {dryRunTestResult && (
+                  <div className={`p-3 rounded-xl text-xs flex items-center justify-between border ${dryRunTestResult.ok ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-rose-950/40 border-rose-500/40 text-rose-300'}`}>
+                    <div className="flex items-center gap-2">
+                      {dryRunTestResult.ok ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
+                      <span>{dryRunTestResult.message}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-neutral-400 shrink-0">{dryRunTestResult.time}</span>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Backup export card */}
                 <div className="border border-neutral-100 p-5 rounded-2xl space-y-4">
@@ -3534,6 +3800,143 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   إعادة تهيئة النظام الافتراضي
                 </button>
               </div>
+
+              {/* Secure Export Modal Dialog */}
+              {showSecureExportModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="bg-slate-900 border border-slate-700 text-white rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-5 relative">
+                    <button
+                      onClick={() => setShowSecureExportModal(false)}
+                      className="absolute top-5 left-5 text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-800 transition-all cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+
+                    <div className="space-y-1">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                        <Lock className="w-3 h-3" />
+                        <span>تشفير محلي Zero-Knowledge في المتصفح</span>
+                      </div>
+                      <h3 className="text-base font-black text-white">تصدير النسخة المشفرة الآمنة (v934)</h3>
+                      <p className="text-xs text-neutral-400">
+                        أدخل كلمة مرور رئيسية قوية لتشفير ملف النسخة (.enc). كلمة المرور لا تُرسل للخادم إطلاقاً وتُعالج في ذاكرة جهازك فقط.
+                      </p>
+                    </div>
+
+                    {/* Metadata Summary Pill */}
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between text-neutral-400">
+                        <span>الملف المصدر:</span>
+                        <span className="font-mono text-emerald-400">.db.previous_valid_secondary.bak</span>
+                      </div>
+                      <div className="flex justify-between text-neutral-400">
+                        <span>الإصدار والحجم:</span>
+                        <span className="font-mono text-white">v934 (696,115 بايت)</span>
+                      </div>
+                      <div className="flex justify-between text-neutral-400">
+                        <span>بصمة SHA-256:</span>
+                        <span className="font-mono text-emerald-400 text-[10px]" title="18b8b54bb228f6fe7a991f8e38488c951006ab277852b8357c487cdaddf505f2">
+                          18b8b54bb228f6fe7a...05f2
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Success Notice if already exported */}
+                    {secureExportSuccess && (
+                      <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-2xl p-4 text-xs space-y-2 text-emerald-200">
+                        <div className="flex items-center gap-2 font-bold text-emerald-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>تم تشفير وتنزيل النسخة بنجاح!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-300/90 leading-relaxed">
+                          تم حفظ الملف <span className="font-mono font-bold text-white">"{secureExportSuccess.filename}"</span> في مجلد التنزيلات بجهازك. احتفظ بكلمة المرور في مكان آمن، ولا تشاركها مع أحد.
+                        </p>
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            onClick={() => setShowSecureExportModal(false)}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-4 rounded-xl text-xs cursor-pointer"
+                          >
+                            إغلاق
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!secureExportSuccess && (
+                      <form onSubmit={handleExecuteSecureExport} className="space-y-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-neutral-300">كلمة المرور الرئيسية (Master Passphrase):</label>
+                          <div className="relative">
+                            <input
+                              type={showSecurePassphrase ? "text" : "password"}
+                              value={securePassphrase}
+                              onChange={(e) => setSecurePassphrase(e.target.value)}
+                              placeholder="أدخل 8 خانات على الأقل..."
+                              disabled={isExportingSecure}
+                              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:border-emerald-500 outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSecurePassphrase(!showSecurePassphrase)}
+                              className="absolute left-3 top-3 text-neutral-400 hover:text-white text-xs cursor-pointer"
+                            >
+                              {showSecurePassphrase ? "إخفاء" : "إظهار"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-neutral-300">تأكيد كلمة المرور:</label>
+                          <input
+                            type={showSecurePassphrase ? "text" : "password"}
+                            value={securePassphraseConfirm}
+                            onChange={(e) => setSecurePassphraseConfirm(e.target.value)}
+                            placeholder="أعد كتابة كلمة المرور..."
+                            disabled={isExportingSecure}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:border-emerald-500 outline-none"
+                          />
+                        </div>
+
+                        {/* Error Banner */}
+                        {secureExportError && (
+                          <div className="bg-rose-950/40 border border-rose-500/40 text-rose-300 p-3 rounded-xl text-xs flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                            <span>{secureExportError}</span>
+                          </div>
+                        )}
+
+                        {/* Progress Status */}
+                        {secureExportProgress && (
+                          <div className="bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 p-3 rounded-xl text-xs flex items-center gap-2">
+                            <div className="w-3 h-3 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+                            <span>{secureExportProgress}</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowSecureExportModal(false)}
+                            disabled={isExportingSecure}
+                            className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold py-2.5 px-4 rounded-xl text-xs cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+
+                          <button
+                            type="submit"
+                            disabled={isExportingSecure || !securePassphrase || securePassphrase.length < 8}
+                            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl text-xs cursor-pointer flex items-center gap-2 transition-all shadow-md"
+                          >
+                            <Lock className="w-4 h-4" />
+                            <span>تشفير وتنزيل النسخة الآن</span>
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4623,7 +5026,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }
                     // Check duplicate code
                     const trimmedCode = oppCode.trim();
-                    const duplicate = opportunityRequests.find(r => r.id !== reviewingOpp.id && r.opportunityCode === trimmedCode);
+                    const duplicate = safeOpportunityRequests.find(r => r.id !== reviewingOpp.id && r.opportunityCode === trimmedCode);
                     if (duplicate) {
                       setOppModalError(`معرف الفرصة (${trimmedCode}) مستخدم مسبقاً في فرصة أخرى بعنوان "${duplicate.title}". يرجى اختيار معرف فريد.`);
                       return;

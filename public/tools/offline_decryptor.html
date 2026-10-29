@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>أداة فك التشفير المستقلة - جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</title>
+  <style>
+    :root {
+      --primary: #10b981;
+      --primary-dark: #059669;
+      --navy: #0f172a;
+      --slate: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: var(--navy); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; }
+    .card { background-color: var(--slate); border: 1px solid var(--border); border-radius: 20px; width: 100%; max-width: 680px; padding: 32px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { text-align: center; margin-bottom: 28px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; border-radius: 9999px; font-size: 12px; font-weight: bold; margin-bottom: 12px; }
+    h1 { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    p.sub { font-size: 13px; color: var(--text-muted); }
+    .dropzone { border: 2px dashed var(--border); border-radius: 16px; padding: 28px 16px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 20px; background: rgba(15, 23, 42, 0.4); }
+    .dropzone:hover, .dropzone.dragover { border-color: var(--primary); background: rgba(16, 185, 129, 0.05); }
+    .dropzone-icon { font-size: 32px; margin-bottom: 8px; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; font-size: 12px; font-weight: bold; color: var(--text-muted); margin-bottom: 8px; }
+    .input-wrap { position: relative; }
+    input[type="password"], input[type="text"] { width: 100%; background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; color: #fff; font-size: 14px; outline: none; transition: border-color 0.2s; }
+    input:focus { border-color: var(--primary); }
+    button.btn-primary { width: 100%; background: var(--primary); color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 14px; font-weight: bold; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    button.btn-primary:hover { background: var(--primary-dark); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-box { margin-top: 24px; border-radius: 14px; padding: 18px; font-size: 13px; display: none; }
+    .status-box.success { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; display: block; }
+    .status-box.error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; display: block; }
+    .meta-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 12px; }
+    .meta-row:last-child { border-bottom: none; }
+    .meta-label { color: var(--text-muted); }
+    .meta-value { color: #fff; font-family: monospace; font-weight: bold; }
+    .btn-download { display: inline-block; width: 100%; text-align: center; background: #2563eb; color: #fff; text-decoration: none; padding: 12px; border-radius: 12px; font-weight: bold; font-size: 13px; margin-top: 14px; transition: background 0.2s; }
+    .btn-download:hover { background: #1d4ed8; }
+    .notice { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 20px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="header">
+      <div class="badge">🔒 أداة مستقلة بدون إنترنت (Offline Safe)</div>
+      <h1>أداة فك تشفير وفحص نسخة قاعدة البيانات</h1>
+      <p class="sub">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - معيار AES-256-GCM</p>
+    </div>
+
+    <!-- Dropzone -->
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="dropzone-icon">📦</div>
+      <div id="file-label" style="font-size: 14px; font-weight: bold;">اسحب وأفلت ملف النسخة (.enc) هنا أو اضغط للاختيار</div>
+      <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">يقبل ملفات النسخ المشفرة من صيغة RCDB</div>
+      <input type="file" id="file-input" accept=".enc,.bin" style="display: none;" onchange="handleFileSelected(this.files[0])">
+    </div>
+
+    <!-- Passphrase Input -->
+    <div class="form-group">
+      <label for="passphrase">كلمة المرور الرئيسية الخاصة بك:</label>
+      <div class="input-wrap">
+        <input type="password" id="passphrase" placeholder="أدخل كلمة المرور التي اخترتها عند التشفير..." autocomplete="off">
+      </div>
+    </div>
+
+    <!-- Action Button -->
+    <button class="btn-primary" id="btn-decrypt" onclick="executeDecryption()" disabled>
+      <span>🔓 فك التشفير والتحقق من سلامة البصمة</span>
+    </button>
+
+    <!-- Status & Results Box -->
+    <div id="status-box" class="status-box"></div>
+
+    <div class="notice">
+      ℹ️ هذه الأداة تعمل محلياً 100% داخل متصفحك دون إرسال أي بايت إلى أي خادم خارجي.<br>
+      خوارزمية فك التشفير: <strong>PBKDF2-HMAC-SHA512 (100,000 دورة) + AES-256-GCM</strong>.
+    </div>
+  </div>
+
+  <script>
+    let selectedFileBuffer = null;
+    let selectedFileName = "";
+    const MAGIC = new Uint8Array([0x52, 0x43, 0x44, 0x42]); // 'RCDB'
+
+    const dropzone = document.getElementById('dropzone');
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) handleFileSelected(e.dataTransfer.files[0]);
+    });
+
+    document.getElementById('passphrase').addEventListener('input', checkReady);
+
+    function checkReady() {
+      const pass = document.getElementById('passphrase').value;
+      document.getElementById('btn-decrypt').disabled = !(selectedFileBuffer && pass.trim().length > 0);
+    }
+
+    function handleFileSelected(file) {
+      if (!file) return;
+      selectedFileName = file.name;
+      document.getElementById('file-label').innerHTML = `✅ تم اختيار الملف: <span style="color:#34d399">${file.name}</span> (${(file.size / 1024).toFixed(1)} KB)`;
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        selectedFileBuffer = e.target.result;
+        checkReady();
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    async function executeDecryption() {
+      const statusBox = document.getElementById('status-box');
+      const passphrase = document.getElementById('passphrase').value;
+      const btn = document.getElementById('btn-decrypt');
+
+      if (!selectedFileBuffer || !passphrase) return;
+
+      btn.disabled = true;
+      btn.innerHTML = "⏳ جاري فك التشفير والتحقق جينياً...";
+      statusBox.style.display = 'none';
+
+      try {
+        const bytes = new Uint8Array(selectedFileBuffer);
+        if (bytes.length < 52) throw new Error("حجم الملف المشفر غير صالح أو مقطوع.");
+
+        // 1. Verify Magic
+        if (bytes[0] !== MAGIC[0] || bytes[1] !== MAGIC[1] || bytes[2] !== MAGIC[2] || bytes[3] !== MAGIC[3]) {
+          throw new Error("صيغة الملف غير متوافقة؛ لا يحمل التوقيع المعتمد RCDB.");
+        }
+
+        // 2. Read Meta
+        const metaLen = new DataView(selectedFileBuffer, 4, 4).getUint32(0, false);
+        const metaBytes = bytes.slice(8, 8 + metaLen);
+        const dec = new TextDecoder();
+        const metadata = JSON.parse(dec.decode(metaBytes));
+
+        let offset = 8 + metaLen;
+        const salt = bytes.slice(offset, offset + 16);
+        offset += 16;
+        const iv = bytes.slice(offset, offset + 12);
+        offset += 12;
+        const ciphertextAndTag = bytes.slice(offset);
+
+        // 3. Derive Key
+        const enc = new TextEncoder();
+        const baseKey = await window.crypto.subtle.importKey(
+          "raw",
+          enc.encode(passphrase),
+          { name: "PBKDF2" },
+          false,
+          ["deriveKey"]
+        );
+
+        const aesKey = await window.crypto.subtle.deriveKey(
+          {
+            name: "PBKDF2",
+            salt: salt,
+            iterations: metadata.iterations || 100000,
+            hash: "SHA-512"
+          },
+          baseKey,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"]
+        );
+
+        const metaLenBytes = new Uint8Array(4);
+        new DataView(metaLenBytes.buffer).setUint32(0, metaLen, false);
+
+        // 4. Decrypt
+        const decryptedBuffer = await window.crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: iv,
+            additionalData: metaLenBytes
+          },
+          aesKey,
+          ciphertextAndTag
+        );
+
+        const decryptedBytes = new Uint8Array(decryptedBuffer);
+        const rawJsonText = dec.decode(decryptedBytes);
+
+        // 5. SHA-256
+        const hashBuf = await window.crypto.subtle.digest("SHA-256", decryptedBytes);
+        const hashArr = Array.from(new Uint8Array(hashBuf));
+        const calculatedSha256 = hashArr.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const isShaMatch = calculatedSha256 === metadata.sha256;
+        const isSizeMatch = decryptedBytes.length === metadata.size;
+
+        if (!isShaMatch) {
+          throw new Error("تحذير أمني: البصمة المحسوبة للملف المفكوك لا تطابق البصمة المعتمدة في الترويسة!");
+        }
+
+        // Summary parse
+        const parsedDb = JSON.parse(rawJsonText);
+        const accountsCount = (parsedDb.userDepartmentAccess || parsedDb.systemUsers || []).length;
+        const volsCount = (parsedDb.volunteers || []).length;
+        const benefCount = (parsedDb.beneficiaries || []).length;
+        const initsCount = (parsedDb.initiatives || []).length;
+
+        // Download link
+        const blob = new Blob([rawJsonText], { type: "application/json" });
+        const downloadUrl = URL.createObjectURL(blob);
+
+        statusBox.className = "status-box success";
+        statusBox.innerHTML = `
+          <div style="font-weight: 800; font-size: 15px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+            <span>🛡️</span>
+            <span>نجح فك التشفير والتحقق من النزاهة 100%</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">الجهة التابعة:</span>
+            <span class="meta-value">${metadata.organization || 'جمعية ريادة العطاء'}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">إصدار قاعدة البيانات:</span>
+            <span class="meta-value">v${metadata.version}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">حجم الملف المستعاد:</span>
+            <span class="meta-value">${decryptedBytes.length.toLocaleString()} بايت (${isSizeMatch ? 'مطابق بالبايت ✅' : 'مختلف ⚠️'})</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">بصمة SHA-256 المحسوبة:</span>
+            <span class="meta-value" style="font-size: 10px; word-break: break-all;">${calculatedSha256}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">مطابقة البصمة المعتمدة:</span>
+            <span class="meta-value" style="color: #34d399">متطابقة جينياً 100% ✅</span>
+          </div>
+          <div class="meta-row" style="margin-top: 8px;">
+            <span class="meta-label">إحصاء الكيانات الأساسية:</span>
+            <span class="meta-value">${accountsCount} حسابات | ${volsCount} متطوع | ${benefCount} مستفيد | ${initsCount} مبادرة</span>
+          </div>
+          <a class="btn-download" href="${downloadUrl}" download="riada_db_restored_v${metadata.version}.json">
+            ⬇️ حفظ ملف قاعدة البيانات المستعادة (JSON) على جهازك
+          </a>
+        `;
+      } catch (err) {
+        statusBox.className = "status-box error";
+        statusBox.innerHTML = `
+          <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">❌ تعذر فك التشفير</div>
+          <div>${err?.message || "تأكد من إدخال كلمة المرور الصحيحة أو سلامة ملف النسخة المشفرة."}</div>
+        `;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "🔓 فك التشفير والتحقق من سلامة البصمة";
+      }
+    }
+  </script>
+</body>
+</html>

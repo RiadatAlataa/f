@@ -4633,21 +4633,6 @@ export function createServerSession(user: any, role: string): ServerSession {
     expiresAt: now + (7 * 24 * 60 * 60 * 1000) // 7 days persistent session
   };
   activeSessions.set(token, session);
-
-  try {
-    const db = readDb();
-    if (db) {
-      if (!Array.isArray(db.activeSessions)) {
-        db.activeSessions = [];
-      }
-      db.activeSessions = db.activeSessions.filter((s: any) => s && s.expiresAt > now);
-      db.activeSessions.push(session);
-      writeDb(db);
-    }
-  } catch (e) {
-    console.error("Error persisting session to db:", e);
-  }
-
   return session;
 }
 
@@ -4687,13 +4672,6 @@ export function getServerSession(token?: string): ServerSession | null {
 export function destroyServerSession(token?: string): boolean {
   if (!token) return false;
   activeSessions.delete(token);
-  try {
-    const db = readDb();
-    if (db && Array.isArray(db.activeSessions)) {
-      db.activeSessions = db.activeSessions.filter((s: any) => s && s.token !== token);
-      writeDb(db);
-    }
-  } catch {}
   return true;
 }
 
@@ -7644,6 +7622,90 @@ app.get("/api/db/backup", (req, res) => {
   } catch (err) {
     console.error("[BACKUP ERROR] Failed generating backup:", err);
     res.status(500).json({ ok: false, error: "تعذر إنشاء ملف النسخة الاحتياطية.", code: "BACKUP_GENERATION_FAILED" });
+  }
+});
+
+// Secure In-Browser Export Preparation for v934 Candidate (.db.previous_valid_secondary.bak)
+app.post("/api/admin/backup/v934/prepare-export", async (req, res) => {
+  // Prevent any browser, proxy, or CDN caching
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+
+  try {
+    const sessionToken = (req.headers['x-session-token'] as string) || 
+      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+      (req.cookies?.['reyadat_session'] as string);
+
+    if (!sessionToken) {
+      return res.status(401).json({
+        ok: false,
+        error: "غير مصرح: يلزم إرسال رمز جلسة موثوقة للوصول إلى تصدير النسخة الاحتياطية.",
+        code: "UNAUTHORIZED_NO_SESSION"
+      });
+    }
+
+    // Resolve authoritative session object directly from server storage
+    const session = getServerSession(sessionToken);
+    if (!session) {
+      return res.status(401).json({
+        ok: false,
+        error: "غير مصرح: رمز الجلسة غير موجود أو منتهي الصلاحية.",
+        code: "UNAUTHORIZED_INVALID_SESSION"
+      });
+    }
+
+    // Server-authoritative role check (ignoring any user-supplied role in body/params)
+    const isAuthorized = session.role === 'operations_manager' || session.role === 'admin' || session.role === 'super_admin';
+    if (!isAuthorized) {
+      return res.status(403).json({
+        ok: false,
+        error: "تم رفض الوصول: يتطلب التصدير صلاحيات مدير العمليات أو الإدارة العليا حصراً.",
+        code: "FORBIDDEN_INSUFFICIENT_PRIVILEGES"
+      });
+    }
+
+    const candidatePath = path.join(process.cwd(), '.db.previous_valid_secondary.bak');
+    if (!fs.existsSync(candidatePath)) {
+      return res.status(404).json({
+        ok: false,
+        error: "ملف النسخة الاحتياطية المرشحة v934 غير موجود على الخادم.",
+        code: "CANDIDATE_FILE_NOT_FOUND"
+      });
+    }
+
+    const candidateBuffer = fs.readFileSync(candidatePath);
+    const candidateSha256 = crypto.createHash('sha256').update(candidateBuffer).digest('hex');
+    const expectedSha256 = '18b8b54bb228f6fe7a991f8e38488c951006ab277852b8357c487cdaddf505f2';
+
+    if (candidateSha256 !== expectedSha256) {
+      return res.status(400).json({
+        ok: false,
+        error: "فشل التحقق الأمني: بصمة SHA-256 للملف لا تطابق البصمة المعتمدة.",
+        code: "CHECKSUM_MISMATCH",
+        actualSha256: candidateSha256
+      });
+    }
+
+    // Audit log without PII or database content
+    console.log(`[SECURE EXPORT AUDIT] Candidate v934 payload prepared for authorized session (User: ${session.userId}, Role: ${session.role}, Size: ${candidateBuffer.length} bytes, SHA-256: ${candidateSha256.substring(0, 12)}...)`);
+
+    return res.json({
+      ok: true,
+      version: 934,
+      size: candidateBuffer.length,
+      sha256: candidateSha256,
+      filename: "riada_backup_v934_encrypted.enc",
+      payload: candidateBuffer.toString('utf8')
+    });
+  } catch (err: any) {
+    console.error("[SECURE EXPORT ERROR] Failed preparing v934 export:", err?.message || err);
+    return res.status(500).json({
+      ok: false,
+      error: "حدث خطأ غير متوقع أثناء تجهيز النسخة المشفرة.",
+      code: "PREPARE_FAILED"
+    });
   }
 });
 
