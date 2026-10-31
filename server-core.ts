@@ -38,7 +38,9 @@ import {
   isPostgresStorageActive,
   getPostgresSystemState,
   savePostgresSystemState,
-  executePostgresTransactionMutation
+  executePostgresTransactionMutation,
+  getPostgresHealthReport,
+  bootstrapCleanPostgresSystemState
 } from "./server/postgres";
 import { writeCoordinator } from "./server/writeLock";
 import { backupEngine } from "./server/backupEngine";
@@ -186,6 +188,59 @@ app.use((req, res, next) => {
       });
     }
   }
+  next();
+});
+
+// PostgreSQL Boot & Awaiting Bootstrap Guard Middleware
+app.use((req, res, next) => {
+  if (isPostgresStorageActive() && isAwaitingBootstrap()) {
+    const p = req.path || '';
+    const isExempt = 
+      p.startsWith('/api/health') || 
+      p === '/api/ping' || 
+      p === '/api/admin/system/bootstrap' ||
+      !p.startsWith('/api');
+
+    if (!isExempt) {
+      return res.status(503).json({
+        ok: false,
+        status: "awaiting_bootstrap",
+        error: "قاعدة البيانات PostgreSQL متصلة بنجاح، ولكنها بانتظار إجراء التهيئة الأولية الآمنة لإنشاء أول حساب لمدير العمليات.",
+        code: "DATABASE_AWAITING_BOOTSTRAP",
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+  next();
+});
+
+// Mandatory Password Change Enforcement Barrier
+// Blocks sensitive API operations until temporary password is changed
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+
+  const exempt = 
+    req.path.startsWith('/api/health') ||
+    req.path === '/api/ping' ||
+    req.path === '/api/db/auth/login' ||
+    req.path === '/api/db/auth/logout' ||
+    req.path === '/api/db/auth/change-password' ||
+    req.path === '/api/db/auth/self-change-password' ||
+    req.path === '/api/db/auth/me' ||
+    req.path === '/api/admin/system/bootstrap';
+
+  if (exempt) return next();
+
+  const authContext = getUserAccessContext(req);
+  if (authContext.isAuthenticated && (authContext as any).mustChangePassword) {
+    return res.status(403).json({
+      ok: false,
+      error: "يجب تغيير كلمة المرور المؤقتة أولاً قبل إجراء أي عمليات أو استعلامات على النظام.",
+      code: "MUST_CHANGE_PASSWORD",
+      mustChangePassword: true
+    });
+  }
+
   next();
 });
 
@@ -2607,6 +2662,12 @@ export function readDb() {
   if (memoryDbCache) {
     return memoryDbCache;
   }
+  if (isPostgresStorageActive()) {
+    if (isPostgresAwaitingBootstrap) {
+      throw new Error("[DATABASE AWAITING BOOTSTRAP] PostgreSQL database is clean and awaiting administrative bootstrap. Run POST /api/admin/system/bootstrap to initialize.");
+    }
+    throw new Error("[DATABASE CRITICAL ERROR] PostgreSQL storage is active (STORAGE_BACKEND=postgres) but in-memory state is uninitialized. Server must await ensureDatabaseReady() before serving database reads. Fallback to local db.json is blocked to prevent split-brain state.");
+  }
   try {
     const activePath = getActiveDbPath();
     let content = "";
@@ -4461,9 +4522,19 @@ export type { ReconcileOptions, ReconcileResult } from "./server/reconcile";
 
 // Ensure database file is initialized fail-safely on module load
 try {
-  readDb();
+  if (!isPostgresStorageActive()) {
+    readDb();
+  } else {
+    console.log("[DATABASE] PostgreSQL storage is active. Skipping synchronous module-load readDb(); awaiting ensureDatabaseReady().");
+  }
 } catch (initErr) {
   console.error("[DATABASE] initial readDb safe-fallback caught error:", initErr);
+}
+
+// Tracking flag for PostgreSQL clean database awaiting one-time bootstrap
+let isPostgresAwaitingBootstrap = false;
+export function isAwaitingBootstrap(): boolean {
+  return isPostgresAwaitingBootstrap;
 }
 
 // Dedicated asynchronous database boot barrier
@@ -4476,8 +4547,11 @@ export async function ensureDatabaseReady(): Promise<boolean> {
     }
     const pgState = await getPostgresSystemState();
     if (!pgState || !pgState.data) {
-      throw new Error("[DATABASE CRITICAL ERROR] PostgreSQL system_state is uninitialized or empty. Automatic default override is permanently blocked to safeguard production data.");
+      console.warn("[DATABASE BOOT] PostgreSQL connected successfully, but system_state is uninitialized. Database entering standby mode awaiting one-time administrative bootstrap.");
+      isPostgresAwaitingBootstrap = true;
+      return true;
     }
+    isPostgresAwaitingBootstrap = false;
     memoryDbCache = pgState.data;
     console.log(`[DATABASE BOOT] PostgreSQL system_state hydrated successfully (version ${pgState.version}).`);
 
@@ -4860,16 +4934,69 @@ function getUserAccessContext(req: any) {
     }
   }
 
-  // Super Admin (Executive Director / Board of Directors / Administrator mosa)
+  // 1. Database-driven dynamic permissions from userDepartmentAccess
+  const accessEntry = (db.userDepartmentAccess || []).find((u: any) => 
+    (userId && (u.userId === userId || u.id === userId || (u.email && u.email.toLowerCase() === String(userId).toLowerCase()))) ||
+    (nationalId && u.nationalId === nationalId) ||
+    (departmentId && (u.userId === `depadmin-${departmentId}` || u.primaryDepartmentId === departmentId))
+  );
+
+  if (accessEntry) {
+    const isSuper = accessEntry.role === 'admin' || (accessEntry.permissions && accessEntry.permissions.includes('super_admin'));
+    const isOps = accessEntry.role === 'operations_manager' || (accessEntry.permissions && accessEntry.permissions.includes('operations_manager'));
+    const allDeptIds = (db.departments || []).map((d: any) => d.id);
+    
+    const allowed = (isSuper || isOps)
+      ? (accessEntry.allowedDepartmentIds && accessEntry.allowedDepartmentIds.length > 0 ? accessEntry.allowedDepartmentIds : allDeptIds)
+      : Array.from(new Set([
+          accessEntry.primaryDepartmentId,
+          ...(accessEntry.additionalDepartmentIds || []),
+          ...(accessEntry.permissions?.includes('cross_department_access') ? (accessEntry.allowedDepartmentIds || []) : [])
+        ])).filter(Boolean);
+
+    const defaultPermissions = isOps
+      ? [
+          'super_admin', 'operations_manager', 'manage_users', 'manage_permissions',
+          'view_department', 'create_data', 'edit_data', 'delete_data', 
+          'export_pdf', 'export_excel', 'manage_staff', 'manage_tasks', 
+          'view_reports', 'cross_department_access', 'all_permissions'
+        ]
+      : isSuper
+      ? [
+          'super_admin', 'view_department', 'create_data', 'edit_data', 
+          'delete_data', 'export_pdf', 'export_excel', 'manage_staff', 
+          'manage_tasks', 'view_reports', 'cross_department_access', 'all_permissions'
+        ]
+      : ['view_department'];
+
+    return {
+      isAuthenticated: true,
+      isSuperAdmin: isSuper || isOps,
+      isOperationsManager: isOps,
+      role: accessEntry.role || (isOps ? 'operations_manager' : isSuper ? 'admin' : 'employee'),
+      userId: accessEntry.userId || accessEntry.id || userId,
+      userName: accessEntry.userName || accessEntry.name || (isOps ? 'مدير العمليات' : isSuper ? 'مسؤول النظام' : 'موظف'),
+      jobTitle: accessEntry.jobTitle || (isOps ? 'مدير العمليات والتشغيل' : isSuper ? 'المدير العام والمدير التنفيذي' : 'موظف'),
+      primaryDepartmentId: accessEntry.primaryDepartmentId || 'dep-1',
+      primaryDepartmentName: accessEntry.primaryDepartmentName || 'الإدارة العامة',
+      additionalDepartmentIds: accessEntry.additionalDepartmentIds || (isSuper || isOps ? allDeptIds : []),
+      allowedDepartmentIds: allowed,
+      permissions: accessEntry.permissions && accessEntry.permissions.length > 0 ? accessEntry.permissions : defaultPermissions,
+      teamId: accessEntry.teamId || teamId,
+      mustChangePassword: Boolean(accessEntry.mustChangePassword)
+    };
+  }
+
+  // 2. Super Admin fallback (for legacy administration sessions)
   if (userRole === 'admin' || userId === 'admin' || userId === 'admin-user' || userId === 'mosa' || nationalId === '1000000000' || nationalId === '1000000099') {
     const allDeptIds = (db.departments || []).map((d: any) => d.id);
     return {
       isAuthenticated: true,
       isSuperAdmin: true,
       role: 'admin',
-      userId: userId === 'mosa' ? 'mosa' : 'admin-user',
-      userName: userId === 'mosa' ? 'موسى (مسؤول النظام Administrator)' : 'مجلس الجمعية والمدير التنفيذي',
-      jobTitle: userId === 'mosa' ? 'مسؤول النظام (Administrator)' : 'المدير العام والمدير التنفيذي',
+      userId: userId || 'admin-user',
+      userName: activeSession?.name || 'مسؤول النظام',
+      jobTitle: 'المدير العام والمدير التنفيذي',
       primaryDepartmentId: 'dep-1',
       primaryDepartmentName: 'الإدارة التنفيذية',
       additionalDepartmentIds: allDeptIds,
@@ -4878,11 +5005,12 @@ function getUserAccessContext(req: any) {
         'super_admin', 'view_department', 'create_data', 'edit_data', 
         'delete_data', 'export_pdf', 'export_excel', 'manage_staff', 
         'manage_tasks', 'view_reports', 'cross_department_access', 'all_permissions'
-      ]
+      ],
+      mustChangePassword: false
     };
   }
 
-  // Operations Manager (مدير العمليات والتشغيل - أعلى صلاحيات تشغيلية)
+  // 3. Operations Manager fallback
   if (userRole === 'operations_manager' || userId === 'ops-manager' || userId === 'operations_manager' || userId === 'operations' || nationalId === '1020000000') {
     const allDeptIds = (db.departments || []).map((d: any) => d.id);
     return {
@@ -4890,8 +5018,8 @@ function getUserAccessContext(req: any) {
       isSuperAdmin: true,
       isOperationsManager: true,
       role: 'operations_manager',
-      userId: 'ops-manager',
-      userName: 'م. سلطان الزهراني (مدير العمليات)',
+      userId: userId || 'ops-manager',
+      userName: activeSession?.name || 'مدير العمليات',
       jobTitle: 'مدير العمليات والتشغيل',
       primaryDepartmentId: 'dep-1',
       primaryDepartmentName: 'إدارة العمليات والتشغيل',
@@ -4902,11 +5030,12 @@ function getUserAccessContext(req: any) {
         'view_department', 'create_data', 'edit_data', 'delete_data', 
         'export_pdf', 'export_excel', 'manage_staff', 'manage_tasks', 
         'view_reports', 'cross_department_access', 'all_permissions'
-      ]
+      ],
+      mustChangePassword: false
     };
   }
 
-  // Volunteer Role Access Context
+  // 4. Volunteer Role Access Context
   if (userRole === 'volunteer' || (userId && typeof userId === 'string' && (userId.startsWith('vol-') || userId === 'volunteer-1'))) {
     const vol = (db.volunteers || []).find((v: any) => v.id === userId || v.nationalId === nationalId || v.email === userId) || activeSession?.user;
     return {
@@ -4920,11 +5049,12 @@ function getUserAccessContext(req: any) {
       primaryDepartmentName: 'إدارة التطوع والموارد البشرية',
       allowedDepartmentIds: ['dep-5'],
       teamId: vol?.teamId || teamId || 'team-1',
-      permissions: ['view_volunteer_portal', 'join_initiatives', 'print_card', 'view_certificates']
+      permissions: ['view_volunteer_portal', 'join_initiatives', 'print_card', 'view_certificates'],
+      mustChangePassword: false
     };
   }
 
-  // Beneficiary Role Access Context
+  // 5. Beneficiary Role Access Context
   if (userRole === 'beneficiary' || (userId && typeof userId === 'string' && (userId.startsWith('ben-') || userId === 'beneficiary-1'))) {
     const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === nationalId || b.phone === userId) || activeSession?.user;
     return {
@@ -4937,41 +5067,8 @@ function getUserAccessContext(req: any) {
       primaryDepartmentId: 'dep-4',
       primaryDepartmentName: 'إدارة شؤون المستفيدين والكفالات',
       allowedDepartmentIds: ['dep-4'],
-      permissions: ['view_beneficiary_portal', 'request_aid', 'track_distribution']
-    };
-  }
-
-  // Look up in configured userDepartmentAccess
-  const accessEntry = (db.userDepartmentAccess || []).find((u: any) => 
-    (userId && (u.userId === userId || u.id === userId)) ||
-    (nationalId && u.nationalId === nationalId) ||
-    (userId && u.userId === `depadmin-${departmentId}`)
-  );
-
-  if (accessEntry) {
-    const isSuper = accessEntry.role === 'admin' || (accessEntry.permissions && accessEntry.permissions.includes('super_admin'));
-    const allDepts = (db.departments || []).map((d: any) => d.id);
-    const allowed = isSuper 
-      ? allDepts
-      : Array.from(new Set([
-          accessEntry.primaryDepartmentId,
-          ...(accessEntry.additionalDepartmentIds || []),
-          ...(accessEntry.permissions?.includes('cross_department_access') ? (accessEntry.allowedDepartmentIds || []) : [])
-        ])).filter(Boolean);
-
-    return {
-      isAuthenticated: true,
-      isSuperAdmin: isSuper,
-      role: accessEntry.role,
-      userId: accessEntry.userId,
-      userName: accessEntry.userName,
-      jobTitle: accessEntry.jobTitle || 'موظف',
-      primaryDepartmentId: accessEntry.primaryDepartmentId,
-      primaryDepartmentName: accessEntry.primaryDepartmentName,
-      additionalDepartmentIds: accessEntry.additionalDepartmentIds || [],
-      allowedDepartmentIds: allowed,
-      permissions: accessEntry.permissions || ['view_department'],
-      teamId: accessEntry.teamId || teamId
+      permissions: ['view_beneficiary_portal', 'request_aid', 'track_distribution'],
+      mustChangePassword: false
     };
   }
 
@@ -5491,9 +5588,71 @@ app.get(["/api", "/api/"], (req, res) => {
 });
 
 // Comprehensive Health Check & Diagnostic endpoint for custom domain, proxy & uptime monitoring
-app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
+app.get(["/api/health", "/api/health/", "/health", "/health/"], async (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+
+  const pgActive = isPostgresStorageActive();
+  
+  if (pgActive) {
+    const pgReport = await getPostgresHealthReport();
+    if (isAwaitingBootstrap()) {
+      return res.status(200).json({
+        ok: true,
+        status: "awaiting_bootstrap",
+        message: "خادم الجمعية متصل بقاعدة بيانات PostgreSQL بنجاح وبانتظار إجراء التهيئة الأولية الآمنة لإنشاء حساب مدير العمليات.",
+        service: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - البوابة المركزية",
+        storageBackend: "postgres",
+        database: {
+          connected: pgReport.connected,
+          initialized: false,
+          latencyMs: pgReport.latencyMs,
+          status: "awaiting_bootstrap"
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (!pgReport.connected) {
+      return res.status(503).json({
+        ok: false,
+        status: "unhealthy",
+        error: "فشل الاتصال بقاعدة بيانات PostgreSQL المركزية.",
+        storageBackend: "postgres",
+        timestamp: new Date().toISOString(),
+        database: {
+          status: "disconnected",
+          error: pgReport.error
+        }
+      });
+    }
+
+    let db: any = null;
+    try { db = readDb(); } catch {}
+
+    return res.status(200).json({
+      ok: true,
+      status: "healthy",
+      message: "خادم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة وقاعدة بيانات PostgreSQL متصلان وقيد العمل بنجاح",
+      service: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - البوابة المركزية",
+      storageBackend: "postgres",
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      database: {
+        status: "connected",
+        version: pgReport.version,
+        lastModified: pgReport.lastModified,
+        stateChecksum: pgReport.checksum,
+        latencyMs: pgReport.latencyMs,
+        departmentsCount: (db?.departments || []).length,
+        volunteersCount: (db?.volunteers || []).length,
+        initiativesCount: (db?.initiatives || []).length,
+        beneficiariesCount: (db?.beneficiaries || []).length
+      }
+    });
+  }
+
+  // Local JSON / Persistent Disk fallback health check
   let db: any = null;
   try {
     db = readDb();
@@ -5508,6 +5667,7 @@ app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
       ok: false,
       status: "unhealthy",
       error: "قاعدة البيانات المركزية غير متصلة أو لم يتم تهيئتها بنجاح",
+      storageBackend: "json",
       timestamp: new Date().toISOString(),
       database: {
         status: "disconnected"
@@ -5520,38 +5680,64 @@ app.get(["/api/health", "/api/health/", "/health", "/health/"], (req, res) => {
     status: "healthy",
     message: "خادم جمعية ريادة العطاء لخدمة الإنسان بالعسيلة وقاعدة البيانات متصلان وقيد العمل بنجاح",
     service: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - البوابة المركزية",
+    storageBackend: "json",
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
-    port: PORT,
-    environment: process.env.NODE_ENV || "production",
     database: {
       status: "connected",
       departmentsCount: (db?.departments || []).length,
       volunteersCount: (db?.volunteers || []).length,
       initiativesCount: (db?.initiatives || []).length,
-      beneficiariesCount: (db?.beneficiaries || []).length,
-      inventoryCount: (db?.inventoryItems || []).length
-    },
-    services: {
-      database: "operational",
-      auth: "operational",
-      volunteering: "operational",
-      beneficiaries: "operational",
-      warehouse: "operational",
-      finance: "operational"
-    },
-    clientInfo: {
-      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
-      host: req.headers.host,
-      protocol: req.protocol
+      beneficiariesCount: (db?.beneficiaries || []).length
     }
   });
 });
 
 // Dedicated Database & System Health Check Endpoint
-app.get(["/api/health/db", "/api/health/db/", "/health/db"], (req, res) => {
+app.get(["/api/health/db", "/api/health/db/", "/health/db"], async (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  
+  if (isPostgresStorageActive()) {
+    const pgReport = await getPostgresHealthReport();
+    if (isAwaitingBootstrap()) {
+      return res.status(200).json({
+        status: "AWAITING_BOOTSTRAP",
+        storageBackend: "postgres",
+        database: "CONNECTED_EMPTY",
+        message: "قاعدة البيانات متصلة وبانتظار إجراء التهيئة الأولية الآمنة لإنشاء حساب مدير العمليات.",
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (!pgReport.connected) {
+      return res.status(503).json({
+        status: "ERROR",
+        storageBackend: "postgres",
+        database: "DISCONNECTED",
+        error: pgReport.error || "Failed connecting to PostgreSQL",
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    let db: any = null;
+    try { db = readDb(); } catch {}
+    const usersCount = (db?.userDepartmentAccess?.length || 0);
+
+    return res.status(200).json({
+      status: "OK",
+      storageBackend: "postgres",
+      database: "CONNECTED",
+      version: pgReport.version,
+      lastModified: pgReport.lastModified,
+      stateChecksum: pgReport.checksum,
+      latencyMs: pgReport.latencyMs,
+      usersCount,
+      departmentsCount: (db?.departments || []).length,
+      timestamp: new Date().toISOString()
+    });
+  }
+
   try {
     const db = readDb();
     const isDbConnected = Boolean(db && Array.isArray(db.departments) && db.departments.length > 0);
@@ -5560,27 +5746,140 @@ app.get(["/api/health/db", "/api/health/db/", "/health/db"], (req, res) => {
 
     return res.status(200).json({
       status: "OK",
-      api: "OK",
+      storageBackend: "json",
       database: isDbConnected ? "OK" : "ERROR",
       authentication: authReady ? "OK" : "ERROR",
-      usersApi: "OK",
-      message: "جميع خدمات الخادم وقاعدة البيانات ونظام إدارة المستخدمين تعمل بكفاءة تامة",
+      message: "خدمة قاعدة البيانات ونظام المستخدمين يعملان بنجاح",
       timestamp: new Date().toISOString(),
       details: {
         departmentsCount: (db?.departments || []).length,
-        usersCount,
-        uptimeSeconds: Math.floor(process.uptime()),
-        environment: process.env.NODE_ENV || "production"
+        usersCount
       }
     });
   } catch (err: any) {
     return res.status(500).json({
       status: "ERROR",
-      api: "OK",
       database: "ERROR",
-      authentication: "ERROR",
-      usersApi: "ERROR",
       error: err.message || "Failed to query database"
+    });
+  }
+});
+
+// Administrative Clean Bootstrap Endpoint (One-Time Execution Only)
+app.post("/api/admin/system/bootstrap", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  
+  if (!isPostgresStorageActive()) {
+    return res.status(400).json({
+      ok: false,
+      error: "التهيئة متاحة حصراً عند تفعيل نمط التخزين الدائم PostgreSQL (STORAGE_BACKEND=postgres).",
+      code: "POSTGRES_NOT_ACTIVE"
+    });
+  }
+
+  // If already initialized and not awaiting bootstrap, immediately disable the route
+  if (!isPostgresAwaitingBootstrap) {
+    return res.status(409).json({
+      ok: false,
+      error: "مسار التهيئة الأولية معطل نهائياً لأن قاعدة البيانات مهيأة ونشطة بالفعل.",
+      code: "ALREADY_INITIALIZED"
+    });
+  }
+
+  // Rate-limiting check (max 5 attempts per 60 seconds per IP)
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '127.0.0.1';
+  const rateCheck = checkRateLimit('login', `bootstrap_${clientIp}`, 5, 60000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      ok: false,
+      error: `تم تجاوز الحد الأقصى للمحاولات. يرجى المحاولة بعد ${rateCheck.retryAfterSec || 60} ثانية.`,
+      code: "TOO_MANY_REQUESTS"
+    });
+  }
+
+  const token = (req.headers['x-bootstrap-token'] as string) || req.body?.bootstrapToken || req.body?.bootstrapKey;
+  const configuredSecret = process.env.BOOTSTRAP_ADMIN_KEY || process.env.BOOTSTRAP_TOKEN;
+
+  // Constant-time comparison to prevent timing attacks
+  let isTokenValid = false;
+  if (configuredSecret && typeof token === 'string') {
+    const bufA = Buffer.from(token, 'utf8');
+    const bufB = Buffer.from(configuredSecret, 'utf8');
+    if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+      isTokenValid = true;
+    }
+  }
+
+  // Verify authorization secret
+  if (!isTokenValid) {
+    return res.status(401).json({
+      ok: false,
+      error: "رمز تفويض التهيئة الأولية غير صحيح أو غير مصرح به (Unauthorized Bootstrap Token).",
+      code: "INVALID_BOOTSTRAP_TOKEN"
+    });
+  }
+
+  const { username, userEmail, name, temporaryPassword, phone, nationalId } = req.body || {};
+
+  if (!userEmail || typeof userEmail !== 'string' || !userEmail.includes('@')) {
+    return res.status(400).json({ ok: false, error: "يرجى تزويد بريد إلكتروني صالح لمدير العمليات." });
+  }
+
+  if (!temporaryPassword || typeof temporaryPassword !== 'string' || temporaryPassword.length < 8) {
+    return res.status(400).json({ ok: false, error: "يجب ألا تقل كلمة المرور المؤقتة عن 8 خانات." });
+  }
+
+  try {
+    const passwordHash = hashPassword(temporaryPassword.trim());
+    const initialOps = {
+      userId: `ops-${(username || 'manager').toLowerCase().replace(/[^a-z0-9_-]/g, '')}`,
+      username: (username || 'operations').trim(),
+      name: (name || 'مدير العمليات والتشغيل').trim(),
+      email: userEmail.trim().toLowerCase(),
+      passwordHash,
+      phone: phone ? String(phone).trim() : "",
+      nationalId: nationalId ? String(nationalId).trim() : ""
+    };
+
+    const outcome = await bootstrapCleanPostgresSystemState(initialOps, "مجلس الجمعية والمدير التنفيذي");
+    memoryDbCache = outcome.data;
+    isPostgresAwaitingBootstrap = false;
+
+    return res.status(201).json({
+      ok: true,
+      status: "bootstrapped",
+      message: "تم تهيئة قاعدة بيانات الإنتاج بنجاح بنسخة نظيفة غير وهمية، وتأسيس أول حساب لمدير العمليات.",
+      details: {
+        version: outcome.version,
+        checksum: outcome.checksum,
+        departmentsCount: outcome.data.departments?.length || 8,
+        volunteersCount: 0,
+        beneficiariesCount: 0,
+        initiativesCount: 0,
+        opsAccount: {
+          userId: initialOps.userId,
+          username: initialOps.username,
+          name: initialOps.name,
+          email: initialOps.email,
+          role: "operations_manager",
+          mustChangePassword: true,
+          status: "active"
+        }
+      }
+    });
+  } catch (err: any) {
+    console.error("[BOOTSTRAP ERROR]:", err.message || err);
+    if (err.message && err.message.includes("مهيأة مسبقًا")) {
+      return res.status(409).json({
+        ok: false,
+        error: "قاعدة البيانات مهيأة مسبقاً بالفعل، التهيئة الأولية غير قابلة للتكرار لحماية البيانات.",
+        code: "ALREADY_INITIALIZED"
+      });
+    }
+    return res.status(500).json({
+      ok: false,
+      error: `فشلت عملية التهيئة: ${err.message || 'خطأ غير معروف'}`,
+      code: "BOOTSTRAP_FAILED"
     });
   }
 });
