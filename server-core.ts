@@ -5371,15 +5371,148 @@ function checkDepartmentPermission(
   return { allowed: true, context };
 }
 
+// ==========================================
+// Centralized User & Security DTO Definitions
+// ==========================================
+
+export interface SafeLinkedProfileDto {
+  source: string;
+  id: string;
+  role?: string;
+  status?: string;
+  label?: string;
+  name?: string;
+  departmentId?: string;
+  departmentName?: string;
+}
+
+export interface SafeUserDto {
+  id: string;
+  userId: string;
+  username: string;
+  name: string;
+  email: string;
+  phone: string;
+  nationalId?: string;
+  role: string;
+  jobTitle: string;
+  departmentId: string;
+  departmentName: string;
+  permissions: string[];
+  allowedDepartmentIds?: string[];
+  allowedPages?: string[];
+  status: "active" | "suspended" | "inactive" | "pending" | "rejected";
+  mustChangePassword?: boolean;
+  lastLogin?: string | null;
+  lastActivity?: string | null;
+  createdAt?: string;
+  emailVerified?: boolean;
+  identityVerified?: boolean;
+  notes?: string;
+  beneficiaryNumber?: string;
+  category?: string;
+  familySize?: number;
+  monthlyIncome?: number;
+  housingType?: string;
+  address?: string;
+  membershipNumber?: string;
+  hours?: number;
+  teamId?: string;
+  teamName?: string;
+  rejectionReason?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  linkedProfiles?: SafeLinkedProfileDto[];
+  primarySource?: string;
+  loginDisabled?: boolean;
+  hasLoginAccount?: boolean;
+}
+
+export function sanitizeUserDepartmentAccess(entry: any) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const { password, passwordHash, tempPassword, hash, secret, bootstrapSecret, ...safe } = entry;
+  return safe;
+}
+
+export function sanitizeUserDepartmentAccessList(entries: any[]) {
+  if (!Array.isArray(entries)) return [];
+  return entries.map(sanitizeUserDepartmentAccess);
+}
+
+export function toSafeUserDto(u: any): SafeUserDto {
+  if (!u || typeof u !== 'object') {
+    return u;
+  }
+
+  // Strictly sanitize linked profiles to guarantee no self-references or nested circular data
+  const safeLinkedProfiles: SafeLinkedProfileDto[] = Array.isArray(u.linkedProfiles)
+    ? u.linkedProfiles.map((lp: any) => ({
+        source: String(lp?.source || 'system'),
+        id: String(lp?.id || ''),
+        role: lp?.role ? String(lp.role) : undefined,
+        status: lp?.status ? String(lp.status) : undefined,
+        label: lp?.label ? String(lp.label) : undefined,
+        name: lp?.name ? String(lp.name) : undefined,
+        departmentId: lp?.departmentId ? String(lp.departmentId) : undefined,
+        departmentName: lp?.departmentName ? String(lp.departmentName) : undefined
+      }))
+    : [];
+
+  return {
+    id: String(u.id || u.userId || ''),
+    userId: String(u.userId || u.id || ''),
+    username: String(u.username || u.userId || u.id || ''),
+    name: String(u.name || u.userName || ''),
+    email: String(u.email || u.userEmail || ''),
+    phone: String(u.phone || ''),
+    nationalId: u.nationalId ? String(u.nationalId) : undefined,
+    role: String(u.role || 'employee'),
+    jobTitle: String(u.jobTitle || ''),
+    departmentId: String(u.departmentId || u.primaryDepartmentId || 'dep-1'),
+    departmentName: String(u.departmentName || u.primaryDepartmentName || 'إدارة عامة'),
+    permissions: Array.isArray(u.permissions) ? u.permissions.map(String) : [],
+    allowedDepartmentIds: Array.isArray(u.allowedDepartmentIds) ? u.allowedDepartmentIds.map(String) : [],
+    allowedPages: Array.isArray(u.allowedPages) ? u.allowedPages.map(String) : [],
+    status: (u.status === 'active' || u.status === 'suspended' || u.status === 'inactive' || u.status === 'pending' || u.status === 'rejected')
+      ? u.status
+      : 'active',
+    mustChangePassword: Boolean(u.mustChangePassword),
+    lastLogin: u.lastLogin || null,
+    lastActivity: u.lastActivity || u.updatedAt || u.createdAt || null,
+    createdAt: u.createdAt || undefined,
+    emailVerified: u.emailVerified !== undefined ? Boolean(u.emailVerified) : true,
+    identityVerified: u.identityVerified !== undefined ? Boolean(u.identityVerified) : Boolean(u.nationalId),
+    notes: u.notes ? String(u.notes) : undefined,
+    beneficiaryNumber: u.beneficiaryNumber ? String(u.beneficiaryNumber) : undefined,
+    category: u.category ? String(u.category) : undefined,
+    familySize: typeof u.familySize === 'number' ? u.familySize : undefined,
+    monthlyIncome: typeof u.monthlyIncome === 'number' ? u.monthlyIncome : (typeof u.income === 'number' ? u.income : undefined),
+    housingType: u.housingType ? String(u.housingType) : undefined,
+    address: u.address ? String(u.address) : undefined,
+    membershipNumber: u.membershipNumber ? String(u.membershipNumber) : undefined,
+    hours: typeof u.hours === 'number' ? u.hours : undefined,
+    teamId: u.teamId ? String(u.teamId) : undefined,
+    teamName: u.teamName ? String(u.teamName) : undefined,
+    rejectionReason: u.rejectionReason ? String(u.rejectionReason) : undefined,
+    approvedBy: u.approvedBy ? String(u.approvedBy) : undefined,
+    approvedAt: u.approvedAt ? String(u.approvedAt) : undefined,
+    linkedProfiles: safeLinkedProfiles,
+    primarySource: u.primarySource ? String(u.primarySource) : undefined,
+    loginDisabled: Boolean(u.loginDisabled),
+    hasLoginAccount: u.hasLoginAccount !== undefined ? Boolean(u.hasLoginAccount) : !Boolean(u.loginDisabled)
+  };
+}
+
 // 3. Database Isolation Filter (Enforces Data Segregation at DB level)
 function filterDatabaseForUser(db: any, context: any) {
   const sanitizedEmail = getSanitizedEmailConfig(db);
   const { activeSessions, ...safeDb } = db || {};
 
-  // Super Admin receives all records with sanitized secrets (activeSessions never sent over wire)
+  // Super Admin receives all records with sanitized secrets (activeSessions never sent over wire, passwordHash stripped)
   if (context.isSuperAdmin) {
     return {
       ...safeDb,
+      userDepartmentAccess: sanitizeUserDepartmentAccessList(safeDb.userDepartmentAccess || []),
       emailSettings: sanitizedEmail,
       currentUserContext: context,
       activeSessions: undefined
@@ -5546,10 +5679,10 @@ function filterDatabaseForUser(db: any, context: any) {
       ? (db.initiativeRatings || [])
       : (db.initiativeRatings || []),
 
-    // Permissions and audit logs: non-admins only see their own profile and logs
+    // Permissions and audit logs: non-admins only see their own profile and logs (strictly sanitized of secrets)
     userDepartmentAccess: (context.isSuperAdmin || context.isOperationsManager)
-      ? (db.userDepartmentAccess || [])
-      : (db.userDepartmentAccess || []).filter((u: any) => u.userId === context.userId),
+      ? sanitizeUserDepartmentAccessList(db.userDepartmentAccess || [])
+      : sanitizeUserDepartmentAccessList((db.userDepartmentAccess || []).filter((u: any) => u.userId === context.userId)),
     permissionChangeLogs: (context.isSuperAdmin || context.isOperationsManager)
       ? (db.permissionChangeLogs || [])
       : (db.permissionChangeLogs || []).filter((l: any) => l.targetUserId === context.userId),
@@ -6005,16 +6138,23 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       existingKey = emailToKey.get(email) || null;
     }
 
+    const profileItem: SafeLinkedProfileDto = {
+      source: collectionSource,
+      id: String(record.id || record.userId || key),
+      role: record.role || undefined,
+      status: record.status || undefined,
+      label: record.jobTitle || record.name || undefined,
+      name: record.name || undefined,
+      departmentId: record.departmentId || undefined,
+      departmentName: record.departmentName || undefined
+    };
+
     if (existingKey) {
       const existing = userMap.get(existingKey);
       existing.linkedProfiles = existing.linkedProfiles || [];
-      existing.linkedProfiles.push({
-        source: collectionSource,
-        id: record.id || record.userId,
-        role: record.role,
-        status: record.status,
-        data: record
-      });
+      if (!existing.linkedProfiles.some((lp: any) => lp.source === collectionSource && lp.id === profileItem.id)) {
+        existing.linkedProfiles.push(profileItem);
+      }
       // Merge missing operational fields without overwriting primary identity
       if (!existing.phone && record.phone) existing.phone = record.phone;
       if (!existing.nationalId && record.nationalId) existing.nationalId = record.nationalId;
@@ -6029,13 +6169,7 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
       return existingKey;
     } else {
       record.primarySource = collectionSource;
-      record.linkedProfiles = [{
-        source: collectionSource,
-        id: record.id || record.userId,
-        role: record.role,
-        status: record.status,
-        data: record
-      }];
+      record.linkedProfiles = [profileItem];
       userMap.set(key, record);
       if (natId && natId.length >= 8) nationalIdToKey.set(natId, key);
       if (email && email.includes("@")) emailToKey.set(email, key);
@@ -6346,31 +6480,32 @@ app.get(["/api/db/users", "/api/users"], (req, res) => {
   }, "supervisors");
 
   const allUsers = Array.from(userMap.values());
+  const safeUsers = allUsers.map(toSafeUserDto);
 
   // Aggregate Summary Counters
   const summary = {
-    total: allUsers.length,
+    total: safeUsers.length,
     byCategory: {
-      admins: allUsers.filter(u => u.role === 'admin' || u.role === 'operations_manager' || u.role === 'supervisor' || u.role === 'department_admin').length,
-      employees: allUsers.filter(u => u.role === 'employee' || u.role === 'storekeeper').length,
-      leaders: allUsers.filter(u => u.role === 'leader').length,
-      volunteers: allUsers.filter(u => u.role === 'volunteer').length,
-      beneficiaries: allUsers.filter(u => u.role === 'beneficiary').length,
-      support: allUsers.filter(u => u.role === 'support_manager' || u.role === 'support_agent').length
+      admins: safeUsers.filter(u => u.role === 'admin' || u.role === 'operations_manager' || u.role === 'supervisor' || u.role === 'department_admin').length,
+      employees: safeUsers.filter(u => u.role === 'employee' || u.role === 'storekeeper').length,
+      leaders: safeUsers.filter(u => u.role === 'leader').length,
+      volunteers: safeUsers.filter(u => u.role === 'volunteer').length,
+      beneficiaries: safeUsers.filter(u => u.role === 'beneficiary').length,
+      support: safeUsers.filter(u => u.role === 'support_manager' || u.role === 'support_agent').length
     },
     byStatus: {
-      active: allUsers.filter(u => u.status === 'active').length,
-      pending: allUsers.filter(u => u.status === 'pending').length,
-      suspended: allUsers.filter(u => u.status === 'suspended').length,
-      inactive: allUsers.filter(u => u.status === 'inactive').length,
-      rejected: allUsers.filter(u => u.status === 'rejected').length
+      active: safeUsers.filter(u => u.status === 'active').length,
+      pending: safeUsers.filter(u => u.status === 'pending').length,
+      suspended: safeUsers.filter(u => u.status === 'suspended').length,
+      inactive: safeUsers.filter(u => u.status === 'inactive').length,
+      rejected: safeUsers.filter(u => u.status === 'rejected').length
     }
   };
 
   res.json({
     status: "success",
-    users: allUsers,
-    total: allUsers.length,
+    users: safeUsers,
+    total: safeUsers.length,
     summary,
     departments: (db.departments || []).map((d: any) => ({ id: d.id, nameAr: d.nameAr, nameEn: d.nameEn }))
   });
@@ -6493,7 +6628,7 @@ app.post(["/api/db/users/create", "/api/users/create"], (req, res) => {
 
   writeDb(db);
 
-  const { passwordHash: _, ...safeUser } = newUserRecord;
+  const safeUser = toSafeUserDto(newUserRecord);
   res.json({
     status: "success",
     message: `تم إنشاء حساب المستخدم (${name.trim()}) بنجاح.`,
@@ -7567,7 +7702,7 @@ app.get("/api/db/permissions/users", (req, res) => {
   const db = readDb();
   res.json({
     status: "success",
-    users: db.userDepartmentAccess || [],
+    users: sanitizeUserDepartmentAccessList(db.userDepartmentAccess || []),
     departments: (db.departments || []).map((d: any) => ({ id: d.id, nameAr: d.nameAr, nameEn: d.nameEn }))
   });
 });
@@ -7709,7 +7844,7 @@ app.post("/api/db/permissions/update", (req, res) => {
   res.json({
     status: "success",
     message: `تم تحديث صلاحيات ونطاق الوصول للمستخدم (${targetUserName}) بنجاح`,
-    users: db.userDepartmentAccess,
+    users: sanitizeUserDepartmentAccessList(db.userDepartmentAccess || []),
     changeLogs: db.permissionChangeLogs
   });
 });
@@ -21773,4 +21908,6 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 export default app;
 export { app, defaultDb, defaultSystemSettings };
+
+
 
