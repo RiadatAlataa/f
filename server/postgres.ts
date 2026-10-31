@@ -52,7 +52,7 @@ export function getPostgresPool(): pg.Pool | null {
       ssl: isLocalhost ? false : { rejectUnauthorized: true },
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 15000,
     });
 
     pool.on('error', (err) => {
@@ -81,7 +81,27 @@ export async function initPostgresTables(): Promise<boolean> {
     }
 
     try {
-      const client = await p.connect();
+      let client: pg.PoolClient | null = null;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          client = await p.connect();
+          break;
+        } catch (connErr: any) {
+          lastError = connErr;
+          console.warn(`[PostgreSQL] Connection attempt ${attempt}/3 failed: ${connErr.message}. Retrying in 1.5s (handling Neon serverless wake-up)...`);
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        }
+      }
+
+      if (!client) {
+        console.error('[PostgreSQL Initialization Error]:', lastError?.message || lastError);
+        return false;
+      }
+
       try {
         console.log('[PostgreSQL] Connected successfully to database. Ensuring tables exist...');
         

@@ -5797,8 +5797,17 @@ app.post("/api/admin/system/bootstrap", async (req, res) => {
     });
   }
 
-  const token = (req.headers['x-bootstrap-token'] as string) || req.body?.bootstrapToken || req.body?.bootstrapKey;
-  const configuredSecret = process.env.BOOTSTRAP_ADMIN_KEY || process.env.BOOTSTRAP_TOKEN;
+  const authHeader = req.headers['authorization'];
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+  const token = 
+    bearerToken ||
+    (req.headers['x-bootstrap-admin-key'] as string) ||
+    (req.headers['x-bootstrap-key'] as string) ||
+    (req.headers['x-bootstrap-token'] as string) ||
+    req.body?.bootstrapAdminKey ||
+    req.body?.bootstrapKey ||
+    req.body?.bootstrapToken;
+  const configuredSecret = process.env.BOOTSTRAP_ADMIN_KEY || process.env.BOOTSTRAP_SECRET || process.env.BOOTSTRAP_TOKEN;
 
   // Constant-time comparison to prevent timing attacks
   let isTokenValid = false;
