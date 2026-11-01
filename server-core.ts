@@ -40,7 +40,8 @@ import {
   savePostgresSystemState,
   executePostgresTransactionMutation,
   getPostgresHealthReport,
-  bootstrapCleanPostgresSystemState
+  bootstrapCleanPostgresSystemState,
+  normalizeSystemStateCollections
 } from "./server/postgres";
 import { writeCoordinator } from "./server/writeLock";
 import { backupEngine } from "./server/backupEngine";
@@ -393,6 +394,33 @@ app.get("/api/attachments/download/*", async (req, res) => {
       id: authContext.userId
     });
 
+    // Audit Log for private file download / access
+    if (isPrivate) {
+      try {
+        const liveDb = readDb();
+        if (liveDb) {
+          if (!liveDb.accessAuditLogs) liveDb.accessAuditLogs = [];
+          liveDb.accessAuditLogs.unshift({
+            id: "audit-dl-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+            timestamp: new Date().toISOString(),
+            userId: authContext.userId || "anonymous",
+            userName: authContext.userName || "مستخدم موثق",
+            userRole: authContext.role || "user",
+            userDepartmentId: authContext.primaryDepartmentId || "general",
+            targetDepartmentId: "attachments",
+            action: "download_attachment",
+            resource: "تخزين المرفقات",
+            endpoint: req.originalUrl || req.url,
+            status: "allowed",
+            ip: req.ip || req.headers["x-forwarded-for"] || "127.0.0.1",
+            device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+            notes: `تم تنزيل/استعراض المرفق الخاص (${cleanKey}) بنجاح`
+          });
+          writeDb(liveDb);
+        }
+      } catch {}
+    }
+
     const safeFilename = attachment.record?.originalName
       ? encodeURIComponent(attachment.record.originalName)
       : path.basename(cleanKey);
@@ -481,6 +509,31 @@ app.post("/api/attachments/upload", async (req, res) => {
       uploadedBy: authContext.userId
     });
 
+    // Audit Log for file upload
+    try {
+      const liveDb = readDb();
+      if (liveDb) {
+        if (!liveDb.accessAuditLogs) liveDb.accessAuditLogs = [];
+        liveDb.accessAuditLogs.unshift({
+          id: "audit-up-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          timestamp: new Date().toISOString(),
+          userId: authContext.userId || "system",
+          userName: authContext.userName || "مستخدم موثق",
+          userRole: authContext.role || "user",
+          userDepartmentId: authContext.primaryDepartmentId || "general",
+          targetDepartmentId: "attachments",
+          action: "upload_attachment",
+          resource: "تخزين المرفقات",
+          endpoint: "/api/attachments/upload",
+          status: "allowed",
+          ip: req.ip || req.headers["x-forwarded-for"] || "127.0.0.1",
+          device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+          notes: `تم رفع ملف جديد (${record.originalName}) بحجم (${record.fileSize} بايت) للكيان (${record.entityType}/${record.entityId}) وتخزينه في (${record.storageProvider})`
+        });
+        writeDb(liveDb);
+      }
+    } catch {}
+
     return res.json({
       ok: true,
       status: "success",
@@ -491,6 +544,67 @@ app.post("/api/attachments/upload", async (req, res) => {
       ok: false,
       error: err?.message || "فشل رفع المرفق"
     });
+  }
+});
+
+// Secure Attachment Delete Endpoint (Admin / Operations Manager Only)
+app.delete("/api/attachments/delete/*", async (req, res) => {
+  try {
+    const authContext = getUserAccessContext(req);
+    if (!authContext.isAuthenticated) {
+      return res.status(401).json({ ok: false, error: "يجب تسجيل الدخول لحذف المرفق." });
+    }
+
+    const rawKey = req.params[0] || (req.query.key as string) || '';
+    if (!rawKey) {
+      return res.status(400).json({ ok: false, error: "معرّف المرفق مطلوب (fileKey missing)." });
+    }
+
+    const fileKey = decodeURIComponent(rawKey);
+    const cleanKey = path.normalize(fileKey).replace(/^[/\\]+/, '');
+
+    const isAuthorized = 
+      authContext.isSuperAdmin || 
+      authContext.role === 'admin' || 
+      authContext.role === 'operations_manager';
+
+    if (!isAuthorized) {
+      return res.status(403).json({ ok: false, error: "غير مصرح: حذف المرفقات يتطلب صلاحيات إدارية عليا." });
+    }
+
+    const deleted = await attachmentStorage.deleteAttachment(cleanKey);
+    if (!deleted) {
+      return res.status(500).json({ ok: false, error: "فشل حذف المرفق من التخزين." });
+    }
+
+    // Audit Log for file deletion
+    try {
+      const liveDb = readDb();
+      if (liveDb) {
+        if (!liveDb.accessAuditLogs) liveDb.accessAuditLogs = [];
+        liveDb.accessAuditLogs.unshift({
+          id: "audit-del-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          timestamp: new Date().toISOString(),
+          userId: authContext.userId,
+          userName: authContext.userName,
+          userRole: authContext.role,
+          userDepartmentId: authContext.primaryDepartmentId || "general",
+          targetDepartmentId: "attachments",
+          action: "delete_attachment",
+          resource: "تخزين المرفقات",
+          endpoint: req.originalUrl || req.url,
+          status: "allowed",
+          ip: req.ip || req.headers["x-forwarded-for"] || "127.0.0.1",
+          device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+          notes: `تم حذف المرفق (${cleanKey}) من التخزين الدائم بواسطة (${authContext.userName})`
+        });
+        writeDb(liveDb);
+      }
+    } catch {}
+
+    return res.json({ ok: true, status: "success", message: `تم حذف المرفق (${cleanKey}) بنجاح.` });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: "فشل عملية حذف المرفق", details: err?.message });
   }
 });
 
@@ -2647,6 +2761,7 @@ export function reloadDbFromDisk() {
     getPostgresSystemState()
       .then((pgState) => {
         if (pgState && pgState.data) {
+          normalizeSystemStateCollections(pgState.data);
           memoryDbCache = pgState.data;
         }
       })
@@ -2660,6 +2775,7 @@ export function reloadDbFromDisk() {
 // Helper: Read db from file or write defaults
 export function readDb() {
   if (memoryDbCache) {
+    normalizeSystemStateCollections(memoryDbCache);
     return memoryDbCache;
   }
   if (isPostgresStorageActive()) {
@@ -4497,6 +4613,7 @@ export async function mutateDb<T>(mutator: (db: any) => Promise<T> | T): Promise
     try {
       const latestPg = await getPostgresSystemState();
       if (latestPg && latestPg.data) {
+        normalizeSystemStateCollections(latestPg.data);
         memoryDbCache = latestPg.data;
       }
     } catch {}
@@ -4553,6 +4670,13 @@ export async function ensureDatabaseReady(): Promise<boolean> {
     }
     isPostgresAwaitingBootstrap = false;
     memoryDbCache = pgState.data;
+    const healed = normalizeSystemStateCollections(memoryDbCache);
+    if (healed) {
+      console.log(`[DATABASE BOOT] Auto-healed missing collections in PostgreSQL system_state. Persisting fix...`);
+      savePostgresSystemState(memoryDbCache, 'Automatic normalization of missing collections').catch(err => {
+        console.error('[DATABASE BOOT] Failed persisting healed collections:', err?.message || err);
+      });
+    }
     console.log(`[DATABASE BOOT] PostgreSQL system_state hydrated successfully (version ${pgState.version}).`);
 
     const pgStatus = await getPostgresMaintenanceStatus();
@@ -8804,6 +8928,7 @@ app.post("/api/db/volunteers/profile-image", async (req, res) => {
       // Remove profile image only; NEVER touch the official card image (photo)
       db.volunteers[index].profileImage = "";
       db.volunteers[index].profile_image = "";
+      if (!Array.isArray(db.logs)) db.logs = [];
       db.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: new Date().toISOString(),
@@ -8842,6 +8967,7 @@ app.post("/api/db/volunteers/profile-image", async (req, res) => {
     db.volunteers[index].profileImage = permanentUrl;
     db.volunteers[index].profile_image = permanentUrl;
 
+    if (!Array.isArray(db.logs)) db.logs = [];
     db.logs.unshift({
       id: "log-" + Date.now(),
       timestamp: new Date().toISOString(),
@@ -13619,19 +13745,26 @@ app.post("/api/db/license/upload", async (req, res) => {
       if (ext === "jpeg") ext = "jpg";
       const base64Data = matches[2];
       const filename = `license_official_${Date.now()}.${ext}`;
-      const filePath = path.join(licenseDir, filename);
+      const buffer = Buffer.from(base64Data, "base64");
 
       try {
-        if (!fs.existsSync(licenseDir)) {
-          fs.mkdirSync(licenseDir, { recursive: true });
-        }
-        const buffer = Buffer.from(base64Data, "base64");
-        await writeCoordinator.guardAttachmentOperation(() => {
-          fs.writeFileSync(filePath, buffer);
+        const record = await attachmentStorage.uploadAttachment(buffer, {
+          originalFilename: filename,
+          mimeType: `image/${ext === 'svg' ? 'svg+xml' : ext}`,
+          entityType: "licenses",
+          entityId: "license_official",
+          isPrivate: false,
+          uploadedBy: "general_manager"
         });
-        localUrl = `/uploads/license/${filename}`;
-      } catch (fsErr) {
-        console.warn("Could not write file to disk (falling back to base64 storage):", fsErr);
+        localUrl = record.url;
+      } catch (attErr: any) {
+        if (attachmentStorage.getStrictStorageMode()) {
+          return res.status(500).json({
+            ok: false,
+            error: `فشل حفظ وثيقة الترخيص في التخزين الدائم: ${attErr.message}`
+          });
+        }
+        console.warn("Storage upload failed, falling back to localUrl:", attErr.message);
       }
     }
 
@@ -19918,9 +20051,10 @@ app.get("/api/db/card-templates", (req, res) => {
   });
 });
 
-// 1.1 Upload card template background image to local server file system
-app.post("/api/db/card-templates/upload-image", (req, res) => {
+// 1.1 Upload card template background image to permanent storage
+app.post("/api/db/card-templates/upload-image", async (req, res) => {
   try {
+    const authContext = getUserAccessContext(req);
     const { imageBase64, teamId, width, height } = req.body;
     if (!imageBase64 || typeof imageBase64 !== "string") {
       return res.status(400).json({ error: "صورة القالب بصيغة Base64 مطلوبة" });
@@ -19937,22 +20071,28 @@ app.post("/api/db/card-templates/upload-image", (req, res) => {
     }
 
     const filename = `template_${teamId ? 'team_' + teamId : 'custom'}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${ext}`;
-    const filePath = path.join(cardTemplatesDir, filename);
-
     const buffer = Buffer.from(base64Data, "base64");
-    fs.writeFileSync(filePath, buffer);
 
-    const localUrl = `/card_templates/${filename}`;
+    const record = await attachmentStorage.uploadAttachment(buffer, {
+      originalFilename: filename,
+      mimeType: `image/${ext === 'svg' ? 'svg+xml' : ext}`,
+      entityType: "cards",
+      entityId: teamId ? `team_${teamId}` : "card_templates",
+      isPrivate: false,
+      uploadedBy: authContext.userId || "card_designer"
+    });
+
     res.json({
       status: "success",
-      url: localUrl,
+      url: record.url,
+      fileKey: record.fileKey,
       width: width || 856,
       height: height || 540,
       filename
     });
   } catch (err: any) {
     console.error("Error uploading card template image:", err);
-    res.status(500).json({ error: "فشل في حفظ صورة قالب البطاقة على السيرفر", details: err?.message });
+    res.status(500).json({ error: "فشل في حفظ صورة قالب البطاقة في التخزين الدائم", details: err?.message });
   }
 });
 

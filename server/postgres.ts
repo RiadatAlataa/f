@@ -152,6 +152,65 @@ export async function initPostgresTables(): Promise<boolean> {
           );
         `);
 
+        // 5. Dedicated system_files table for permanent S3/R2 file metadata & RBAC access control
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS system_files (
+            id VARCHAR(64) PRIMARY KEY,
+            file_key VARCHAR(512) NOT NULL UNIQUE,
+            original_name VARCHAR(255) NOT NULL,
+            sanitized_name VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            file_size_bytes BIGINT NOT NULL,
+            storage_provider VARCHAR(32) NOT NULL DEFAULT 's3',
+            bucket_name VARCHAR(128) NOT NULL,
+            checksum_sha256 VARCHAR(64) NOT NULL,
+            entity_type VARCHAR(64) NOT NULL,
+            entity_id VARCHAR(128) NOT NULL,
+            field_name VARCHAR(64),
+            is_private BOOLEAN NOT NULL DEFAULT TRUE,
+            access_roles JSONB NOT NULL DEFAULT '["admin"]',
+            uploaded_by VARCHAR(128) NOT NULL,
+            uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(32) NOT NULL DEFAULT 'active'
+          );
+          CREATE INDEX IF NOT EXISTS idx_files_entity ON system_files (entity_type, entity_id);
+          CREATE INDEX IF NOT EXISTS idx_files_checksum ON system_files (checksum_sha256);
+          CREATE INDEX IF NOT EXISTS idx_files_private ON system_files (is_private);
+          CREATE INDEX IF NOT EXISTS idx_files_uploaded_at ON system_files (uploaded_at DESC);
+        `);
+
+        // 6. Dedicated migration_tracking table for recorded schema and data migrations
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS migration_tracking (
+            id SERIAL PRIMARY KEY,
+            migration_name VARCHAR(100) NOT NULL UNIQUE,
+            applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            details JSONB
+          );
+        `);
+
+        // 7. Dedicated audit_logs table for persistent SQL-level compliance logging
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS audit_logs (
+            id VARCHAR(64) PRIMARY KEY,
+            timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            actor_id VARCHAR(64),
+            actor_name VARCHAR(100),
+            actor_role VARCHAR(50),
+            action VARCHAR(100) NOT NULL,
+            entity_type VARCHAR(50),
+            entity_id VARCHAR(64),
+            department_id VARCHAR(50),
+            ip_address VARCHAR(50),
+            user_agent TEXT,
+            status VARCHAR(20) DEFAULT 'success',
+            details JSONB
+          );
+          CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs (timestamp DESC);
+          CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs (actor_id);
+          CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs (action);
+        `);
+
         // Ensure default row exists in maintenance_settings if empty
         const checkRes = await client.query('SELECT COUNT(*) FROM maintenance_settings WHERE id = 1;');
         if (parseInt(checkRes.rows[0].count, 10) === 0) {
@@ -162,7 +221,7 @@ export async function initPostgresTables(): Promise<boolean> {
           `);
         }
 
-        console.log('[PostgreSQL] Maintenance and system_state tables verified and ready.');
+        console.log('[PostgreSQL] Maintenance, system_state, and system_files tables verified and ready.');
         isInitialized = true;
         return true;
       } finally {
@@ -347,6 +406,145 @@ export function isPostgresStorageActive(): boolean {
 /**
  * Reads the unified system state from PostgreSQL
  */
+/**
+ * Ensures all required system collections (arrays and core objects) exist.
+ * Heals missing collections automatically to prevent "Cannot read properties of undefined (reading 'unshift')".
+ * Preserves 100% of existing data, accounts, and configuration.
+ */
+export function normalizeSystemStateCollections(db: any): boolean {
+  if (!db || typeof db !== "object") return false;
+  let modified = false;
+
+  const defaultArrayKeys = [
+    "departments",
+    "teams",
+    "volunteers",
+    "beneficiaries",
+    "initiatives",
+    "requests",
+    "benefitRequests",
+    "volunteerApplications",
+    "teamApplications",
+    "volunteerTransferRequests",
+    "passwordResetRequests",
+    "letters",
+    "news",
+    "partners",
+    "gallery",
+    "chatConversations",
+    "chatMessages",
+    "supportTickets",
+    "supportTasks",
+    "custodies",
+    "logs",
+    "notifications",
+    "storekeepers",
+    "inventoryItems",
+    "inventoryMovements",
+    "inventoryLogs",
+    "inventoryAudits",
+    "volunteerIssuances",
+    "issuedVolunteerCards",
+    "volunteerCardTemplates",
+    "employees",
+    "employeeRequests",
+    "hrLeaves",
+    "hrAttendance",
+    "hrDecisions",
+    "hrEvaluations",
+    "attendance",
+    "evaluations",
+    "distributions",
+    "distributionHandovers",
+    "orgMembers",
+    "heroSlides",
+    "opportunityRequests",
+    "departmentDirectives",
+    "storeProjects",
+    "storeDonations",
+    "financialTransactions",
+    "financialAuditLog",
+    "financialTransfers",
+    "financialIncome",
+    "financialReceipts",
+    "financialExpenses",
+    "financialPurchases",
+    "financialPayables",
+    "financialPayroll",
+    "financialDocuments",
+    "emailLogs",
+    "notificationDeliveryLogs",
+    "accessAuditLogs",
+    "permissionChangeLogs",
+    "developerErrorLogs",
+    "customFields",
+    "userDepartmentAccess"
+  ];
+
+  for (const key of defaultArrayKeys) {
+    if (!Array.isArray(db[key])) {
+      db[key] = [];
+      modified = true;
+    }
+  }
+
+  // Ensure default objects
+  if (!db.systemSettings || typeof db.systemSettings !== "object") {
+    db.systemSettings = {
+      systemName: "نظام إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+      teamName: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
+      licenseNumber: "5434",
+      registrationNumber: "5434",
+      foundationYear: "1445هـ / 2024م",
+      officialEmail: "info@riadataleata.org.sa",
+      address: "مكة المكرمة - مخطط العسيلة - الشارع العام",
+      maintenanceMode: false
+    };
+    modified = true;
+  }
+  if (!db.homeSettings || typeof db.homeSettings !== "object") {
+    db.homeSettings = {};
+    modified = true;
+  }
+  if (!db.files || typeof db.files !== "object") {
+    db.files = {};
+    modified = true;
+  }
+
+  // Ensure nested arrays for entity sub-records
+  if (Array.isArray(db.volunteers)) {
+    for (const vol of db.volunteers) {
+      if (vol && typeof vol === "object" && !Array.isArray(vol.teamHistory)) {
+        vol.teamHistory = [];
+        modified = true;
+      }
+    }
+  }
+
+  if (Array.isArray(db.custodies)) {
+    for (const c of db.custodies) {
+      if (c && typeof c === "object" && !Array.isArray(c.history)) {
+        c.history = [];
+        modified = true;
+      }
+    }
+  }
+
+  if (Array.isArray(db.supportTasks)) {
+    for (const t of db.supportTasks) {
+      if (t && typeof t === "object" && !Array.isArray(t.history)) {
+        t.history = [];
+        modified = true;
+      }
+    }
+  }
+
+  return modified;
+}
+
+/**
+ * Retrieves the unified system state from PostgreSQL
+ */
 export async function getPostgresSystemState(): Promise<{
   data: any;
   version: number;
@@ -364,6 +562,9 @@ export async function getPostgresSystemState(): Promise<{
     if (!res.rows || res.rows.length === 0) return null;
 
     const row = res.rows[0];
+    if (row.data) {
+      normalizeSystemStateCollections(row.data);
+    }
     return {
       data: row.data,
       version: Number(row.version),
@@ -450,7 +651,8 @@ export async function executePostgresTransactionMutation<T>(
       currentVersion = Number(res.rows[0].version);
     }
 
-    // 2. Execute the user mutator function on the latest locked state
+    // 2. Execute the user mutator function on the latest locked state (guaranteeing normalized collections)
+    normalizeSystemStateCollections(currentDb);
     const result = await mutator(currentDb);
 
     // 3. Increment sequential version and update timestamp
@@ -668,7 +870,49 @@ export async function bootstrapCleanPostgresSystemState(
       chatConversations: [],
       chatMessages: [],
       supportTickets: [],
+      supportTasks: [],
+      custodies: [],
+      requests: [],
+      logs: [],
+      notifications: [],
       storekeepers: [],
+      inventoryItems: [],
+      inventoryMovements: [],
+      inventoryLogs: [],
+      inventoryAudits: [],
+      volunteerIssuances: [],
+      issuedVolunteerCards: [],
+      volunteerCardTemplates: [],
+      employees: [],
+      employeeRequests: [],
+      hrLeaves: [],
+      hrAttendance: [],
+      hrDecisions: [],
+      hrEvaluations: [],
+      attendance: [],
+      evaluations: [],
+      distributions: [],
+      distributionHandovers: [],
+      orgMembers: [],
+      heroSlides: [],
+      opportunityRequests: [],
+      departmentDirectives: [],
+      storeProjects: [],
+      storeDonations: [],
+      financialTransactions: [],
+      financialAuditLog: [],
+      financialTransfers: [],
+      financialIncome: [],
+      financialReceipts: [],
+      financialExpenses: [],
+      financialPurchases: [],
+      financialPayables: [],
+      financialPayroll: [],
+      financialDocuments: [],
+      emailLogs: [],
+      notificationDeliveryLogs: [],
+      permissionChangeLogs: [],
+      developerErrorLogs: [],
       customFields: [],
       systemSettings: {
         systemName: "نظام إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
@@ -748,4 +992,184 @@ export async function bootstrapCleanPostgresSystemState(
     client.release();
   }
 }
+
+// ============================================================================
+// SYSTEM FILES PERMANENT REPOSITORY (PostgreSQL Metadata Layer)
+// ============================================================================
+
+export interface SystemFileRecord {
+  id: string;
+  fileKey: string;
+  originalName: string;
+  sanitizedName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  storageProvider: string;
+  bucketName: string;
+  checksumSha256: string;
+  entityType: string;
+  entityId: string;
+  fieldName?: string;
+  isPrivate: boolean;
+  accessRoles: string[];
+  uploadedBy: string;
+  uploadedAt: string;
+  status: 'active' | 'archived' | 'deleted';
+}
+
+function mapRowToFileRecord(row: any): SystemFileRecord {
+  let roles: string[] = ['admin'];
+  if (Array.isArray(row.access_roles)) {
+    roles = row.access_roles;
+  } else if (typeof row.access_roles === 'string') {
+    try { roles = JSON.parse(row.access_roles); } catch {}
+  }
+
+  return {
+    id: row.id,
+    fileKey: row.file_key,
+    originalName: row.original_name,
+    sanitizedName: row.sanitized_name,
+    mimeType: row.mime_type,
+    fileSizeBytes: Number(row.file_size_bytes),
+    storageProvider: row.storage_provider,
+    bucketName: row.bucket_name,
+    checksumSha256: row.checksum_sha256,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    fieldName: row.field_name || undefined,
+    isPrivate: Boolean(row.is_private),
+    accessRoles: roles,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at ? new Date(row.uploaded_at).toISOString() : new Date().toISOString(),
+    status: row.status || 'active'
+  };
+}
+
+export async function insertSystemFile(file: SystemFileRecord): Promise<void> {
+  const p = getPostgresPool();
+  if (!p) return;
+
+  await initPostgresTables();
+  await p.query(
+    `INSERT INTO system_files (
+      id, file_key, original_name, sanitized_name, mime_type, file_size_bytes,
+      storage_provider, bucket_name, checksum_sha256, entity_type, entity_id,
+      field_name, is_private, access_roles, uploaded_by, uploaded_at, status
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17
+    ) ON CONFLICT (file_key) DO UPDATE SET
+      original_name = EXCLUDED.original_name,
+      file_size_bytes = EXCLUDED.file_size_bytes,
+      checksum_sha256 = EXCLUDED.checksum_sha256,
+      entity_type = EXCLUDED.entity_type,
+      entity_id = EXCLUDED.entity_id,
+      field_name = EXCLUDED.field_name,
+      is_private = EXCLUDED.is_private,
+      access_roles = EXCLUDED.access_roles,
+      status = EXCLUDED.status;`,
+    [
+      file.id,
+      file.fileKey,
+      file.originalName,
+      file.sanitizedName,
+      file.mimeType,
+      file.fileSizeBytes,
+      file.storageProvider || 's3',
+      file.bucketName,
+      file.checksumSha256,
+      file.entityType,
+      file.entityId,
+      file.fieldName || null,
+      file.isPrivate,
+      JSON.stringify(file.accessRoles || ['admin']),
+      file.uploadedBy,
+      file.uploadedAt || new Date().toISOString(),
+      file.status || 'active'
+    ]
+  );
+}
+
+export async function getSystemFileByKey(fileKey: string): Promise<SystemFileRecord | null> {
+  const p = getPostgresPool();
+  if (!p) return null;
+
+  try {
+    const res = await p.query(
+      `SELECT * FROM system_files WHERE file_key = $1 AND status != 'deleted' LIMIT 1;`,
+      [fileKey]
+    );
+    if (!res.rows || res.rows.length === 0) return null;
+    return mapRowToFileRecord(res.rows[0]);
+  } catch (err: any) {
+    console.error(`[PostgreSQL getSystemFileByKey Error]:`, err.message);
+    return null;
+  }
+}
+
+export async function getSystemFileById(id: string): Promise<SystemFileRecord | null> {
+  const p = getPostgresPool();
+  if (!p) return null;
+
+  try {
+    const res = await p.query(
+      `SELECT * FROM system_files WHERE id = $1 AND status != 'deleted' LIMIT 1;`,
+      [id]
+    );
+    if (!res.rows || res.rows.length === 0) return null;
+    return mapRowToFileRecord(res.rows[0]);
+  } catch (err: any) {
+    console.error(`[PostgreSQL getSystemFileById Error]:`, err.message);
+    return null;
+  }
+}
+
+export async function listSystemFilesByEntity(entityType: string, entityId: string): Promise<SystemFileRecord[]> {
+  const p = getPostgresPool();
+  if (!p) return [];
+
+  try {
+    const res = await p.query(
+      `SELECT * FROM system_files WHERE entity_type = $1 AND entity_id = $2 AND status != 'deleted' ORDER BY uploaded_at DESC;`,
+      [entityType, entityId]
+    );
+    return (res.rows || []).map(mapRowToFileRecord);
+  } catch (err: any) {
+    console.error(`[PostgreSQL listSystemFilesByEntity Error]:`, err.message);
+    return [];
+  }
+}
+
+export async function deleteSystemFile(fileKey: string): Promise<boolean> {
+  const p = getPostgresPool();
+  if (!p) return false;
+
+  try {
+    const res = await p.query(
+      `UPDATE system_files SET status = 'deleted' WHERE file_key = $1;`,
+      [fileKey]
+    );
+    return (res.rowCount || 0) > 0;
+  } catch (err: any) {
+    console.error(`[PostgreSQL deleteSystemFile Error]:`, err.message);
+    return false;
+  }
+}
+
+export async function listAllSystemFiles(limit: number = 1000): Promise<SystemFileRecord[]> {
+  const p = getPostgresPool();
+  if (!p) return [];
+
+  try {
+    const res = await p.query(
+      `SELECT * FROM system_files WHERE status != 'deleted' ORDER BY uploaded_at DESC LIMIT $1;`,
+      [limit]
+    );
+    return (res.rows || []).map(mapRowToFileRecord);
+  } catch (err: any) {
+    console.error(`[PostgreSQL listAllSystemFiles Error]:`, err.message);
+    return [];
+  }
+}
+
 

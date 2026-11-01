@@ -1,17 +1,18 @@
 /**
- * Permanent Attachments Storage Service (Cloudflare R2 / S3-Compatible & Local Sandbox)
+ * Permanent Attachments & Object Storage Service (AWS S3-Compatible / Cloudflare R2 / Local Sandbox)
  * Project: جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
  * 
  * Features:
- * 1. Cloudflare R2 integration via @aws-sdk/client-s3 with zero-silent-fallback protection.
- * 2. Strict anti-silent fallback: Blocks writing to ephemeral disk when R2 is required or configured.
- * 3. Cryptographic unique key generation avoiding user-supplied file names.
- * 4. MIME type whitelisting and strict payload size limits (Images, Logos, Cards, PDF, Docs).
- * 5. Path-traversal attack prevention (anti-ZipSlip, null byte, directory escape).
- * 6. Private attachment access authorization with streaming proxy (volunteers, beneficiaries, financial).
- * 7. Custom domain / Public CDN support for public assets (logos, announcements, public templates).
- * 8. Audit scanner for orphaned files and missing database attachments without premature deletion.
- * 9. Non-destructive connection health check and diagnostics.
+ * 1. Universal S3-compatible integration supporting AWS S3 (including Riyadh region me-central-1) and Cloudflare R2.
+ * 2. Strict anti-silent fallback: Blocks writing to ephemeral disk when cloud storage is required or configured.
+ * 3. PostgreSQL metadata layer integration: Persists file records into the `system_files` table with SHA-256 and RBAC tags.
+ * 4. Cryptographic unique key generation avoiding user-supplied file names and preventing collisions.
+ * 5. MIME type whitelisting and strict payload size limits (Images, Logos, Cards, PDF, Docs, Inventory).
+ * 6. Path-traversal attack prevention (anti-ZipSlip, null byte, directory escape).
+ * 7. Default-deny private attachment authorization with streaming proxy (volunteers, beneficiaries, financial).
+ * 8. Custom domain / Public CDN support for public assets (logos, announcements, public templates).
+ * 9. Audit scanner for orphaned files and missing database attachments without premature deletion.
+ * 10. Non-destructive connection health check and diagnostics.
  */
 
 import fs from "fs";
@@ -22,9 +23,15 @@ import {
   PutObjectCommand, 
   GetObjectCommand, 
   DeleteObjectCommand, 
-  ListObjectsV2Command,
-  HeadBucketCommand
+  ListObjectsV2Command
 } from "@aws-sdk/client-s3";
+import {
+  insertSystemFile,
+  getSystemFileByKey,
+  deleteSystemFile,
+  isPostgresConfigured,
+  SystemFileRecord
+} from "../postgres";
 
 export type EntityType = 
   | 'volunteers' 
@@ -39,6 +46,8 @@ export type EntityType =
   | 'financial' 
   | 'letters' 
   | 'news' 
+  | 'inventory'
+  | 'certificates'
   | 'general';
 
 export interface AttachmentUploadOptions {
@@ -59,7 +68,8 @@ export interface AttachmentRecord {
   sanitizedName: string;
   mimeType: string;
   fileSize: number;
-  storageProvider: 'r2' | 'local';
+  storageProvider: 's3' | 'r2' | 'local';
+  bucketName: string;
   entityType: string;
   entityId: string;
   fieldName?: string;
@@ -82,10 +92,15 @@ export interface AttachmentAuditReport {
 }
 
 export interface StorageStatusReport {
-  provider: 'r2' | 'local';
+  provider: 's3' | 'r2' | 'local';
+  isConfigured: boolean;
   isR2Configured: boolean;
+  strictStorageMode: boolean;
   strictR2Mode: boolean;
   bucketName: string;
+  region: string;
+  endpoint?: string;
+  endpointConfigured: boolean;
   accountIdMasked?: string;
   customDomainConfigured: boolean;
   customDomain?: string;
@@ -116,48 +131,149 @@ const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 Megabytes
 export class AttachmentStorageService {
   private s3Client: S3Client | null = null;
   private bucketName: string;
+  private region: string;
+  private endpoint: string | undefined;
   private customDomain: string | null = null;
   private localBaseDir: string;
-  private strictR2Mode: boolean = false;
+  private strictStorageMode: boolean = false;
+  private storageProviderType: 's3' | 'r2' | 'local' = 'local';
   private attachmentRegistry: Map<string, AttachmentRecord> = new Map();
 
   constructor(customLocalDir?: string) {
-    this.bucketName = process.env.R2_BUCKET_NAME || "riadataleata-attachments";
-    this.customDomain = process.env.R2_CUSTOM_DOMAIN || process.env.R2_PUBLIC_URL || null;
     this.localBaseDir = customLocalDir || path.join(process.cwd(), "public", "uploads");
 
-    // Strict Mode: When REQUIRE_R2_STORAGE is true or STORAGE_PROVIDER is r2,
-    // prevent silent fallback to ephemeral local disk to protect files from loss.
-    const envRequireR2 = process.env.REQUIRE_R2_STORAGE === "true" || 
-                         process.env.STORAGE_PROVIDER === "r2" ||
-                         (process.env.NODE_ENV === "production" && Boolean(process.env.R2_BUCKET_NAME));
-    this.strictR2Mode = Boolean(envRequireR2);
+    // Discover S3 & R2 Configuration from Environment
+    this.bucketName = 
+      process.env.STORAGE_BUCKET_NAME || 
+      process.env.S3_BUCKET_NAME || 
+      process.env.AWS_BUCKET_NAME ||
+      process.env.AWS_S3_BUCKET ||
+      process.env.R2_BUCKET_NAME || 
+      "riadataleata-attachments";
 
-    this.initR2Client();
+    // Detect Cloudflare R2 presence from environment
+    const hasR2Account = Boolean(process.env.R2_ACCOUNT_ID);
+    const hasR2Endpoint = 
+      (process.env.STORAGE_ENDPOINT || '').includes('r2.cloudflarestorage.com') ||
+      (process.env.S3_ENDPOINT || '').includes('r2.cloudflarestorage.com') ||
+      (process.env.AWS_ENDPOINT || '').includes('r2.cloudflarestorage.com') ||
+      (process.env.AWS_ENDPOINT_URL || '').includes('r2.cloudflarestorage.com') ||
+      (process.env.R2_ENDPOINT || '').includes('r2.cloudflarestorage.com');
+    const isR2Environment = hasR2Account || hasR2Endpoint || process.env.STORAGE_PROVIDER === 'r2';
+
+    // R2 requires region: 'auto' for AWS SDK SigV4 signing; AWS S3 defaults to me-central-1 (Riyadh) for Saudi compliance
+    this.region = 
+      process.env.STORAGE_REGION || 
+      process.env.S3_REGION || 
+      (isR2Environment ? "auto" : (process.env.AWS_REGION || "me-central-1"));
+
+    this.customDomain = 
+      process.env.STORAGE_PUBLIC_URL || 
+      process.env.S3_PUBLIC_URL || 
+      process.env.R2_CUSTOM_DOMAIN || 
+      process.env.R2_PUBLIC_URL || 
+      null;
+
+    // Strict Mode: When true, prevents silent fallback to ephemeral disk on Render
+    const envStrict = 
+      process.env.REQUIRE_STORAGE === "true" ||
+      process.env.REQUIRE_S3_STORAGE === "true" ||
+      process.env.REQUIRE_R2_STORAGE === "true" ||
+      process.env.REQUIRE_PERMANENT_STORAGE === "true" ||
+      process.env.STRICT_STORAGE_MODE === "true" ||
+      process.env.STORAGE_PROVIDER === "s3" ||
+      process.env.STORAGE_PROVIDER === "r2" ||
+      (process.env.NODE_ENV === "production" && (
+        Boolean(process.env.S3_BUCKET_NAME) || 
+        Boolean(process.env.AWS_BUCKET_NAME) || 
+        Boolean(process.env.R2_BUCKET_NAME) || 
+        Boolean(process.env.STORAGE_BUCKET_NAME)
+      ));
+
+    this.strictStorageMode = Boolean(envStrict);
+
+    this.initStorageClient();
     this.ensureLocalDirectories();
   }
 
-  public initR2Client(configOverride?: {
-    accountId?: string;
+  /**
+   * Initializes AWS S3 / Cloudflare R2 / S3-compatible client
+   */
+  public initStorageClient(configOverride?: {
     accessKeyId?: string;
     secretAccessKey?: string;
     bucketName?: string;
+    region?: string;
+    endpoint?: string;
     customDomain?: string;
+    accountId?: string;
+    forcePathStyle?: boolean;
   }): void {
+    const accessKeyId = 
+      configOverride?.accessKeyId || 
+      process.env.STORAGE_ACCESS_KEY_ID || 
+      process.env.S3_ACCESS_KEY_ID || 
+      process.env.AWS_ACCESS_KEY_ID || 
+      process.env.R2_ACCESS_KEY_ID;
+
+    const secretAccessKey = 
+      configOverride?.secretAccessKey || 
+      process.env.STORAGE_SECRET_ACCESS_KEY || 
+      process.env.S3_SECRET_ACCESS_KEY || 
+      process.env.AWS_SECRET_ACCESS_KEY || 
+      process.env.R2_SECRET_ACCESS_KEY;
+
+    if (configOverride?.bucketName) this.bucketName = configOverride.bucketName;
+    if (configOverride?.customDomain) this.customDomain = configOverride.customDomain;
+
     const accountId = configOverride?.accountId || process.env.R2_ACCOUNT_ID;
-    const accessKeyId = configOverride?.accessKeyId || process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = configOverride?.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY;
-    if (configOverride?.bucketName) {
-      this.bucketName = configOverride.bucketName;
-    }
-    if (configOverride?.customDomain) {
-      this.customDomain = configOverride.customDomain;
+
+    // Resolve Endpoint:
+    let resolvedEndpoint = 
+      configOverride?.endpoint || 
+      process.env.STORAGE_ENDPOINT || 
+      process.env.S3_ENDPOINT || 
+      process.env.AWS_ENDPOINT_URL ||
+      process.env.AWS_ENDPOINT ||
+      process.env.R2_ENDPOINT;
+
+    if (!resolvedEndpoint && accountId) {
+      resolvedEndpoint = `https://${accountId}.r2.cloudflarestorage.com`;
     }
 
-    if (accountId && accessKeyId && secretAccessKey) {
+    // Determine Provider Type and Enforce Cloudflare R2 Region Rule (region: 'auto')
+    const isR2 = Boolean(
+      (resolvedEndpoint && resolvedEndpoint.includes('r2.cloudflarestorage.com')) || 
+      accountId || 
+      process.env.STORAGE_PROVIDER === 'r2'
+    );
+
+    if (isR2) {
+      this.storageProviderType = 'r2';
+      // Cloudflare R2 strictly requires 'auto' signing region with AWS SDK S3Client
+      this.region = configOverride?.region || "auto";
+    } else {
+      this.storageProviderType = 's3';
+      if (!resolvedEndpoint && accessKeyId) {
+        resolvedEndpoint = `https://s3.${this.region}.amazonaws.com`;
+      }
+      if (configOverride?.region) {
+        this.region = configOverride.region;
+      }
+    }
+
+    this.endpoint = resolvedEndpoint;
+
+    const forcePathStyle = 
+      configOverride?.forcePathStyle !== undefined
+        ? configOverride.forcePathStyle
+        : (process.env.STORAGE_FORCE_PATH_STYLE === "true" || process.env.S3_FORCE_PATH_STYLE === "true" || process.env.AWS_FORCE_PATH_STYLE === "true");
+
+    if (accessKeyId && secretAccessKey) {
       this.s3Client = new S3Client({
-        region: "auto",
-        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+        region: this.region,
+        endpoint: this.endpoint,
+        forcePathStyle,
         credentials: {
           accessKeyId,
           secretAccessKey
@@ -165,22 +281,36 @@ export class AttachmentStorageService {
       });
     } else {
       this.s3Client = null;
+      this.storageProviderType = 'local';
     }
   }
 
+  // Alias for backward compatibility
+  public initR2Client(configOverride?: any): void {
+    this.initStorageClient(configOverride);
+  }
+
+  public setStrictStorageMode(strict: boolean): void {
+    this.strictStorageMode = strict;
+  }
+
   public setStrictR2Mode(strict: boolean): void {
-    this.strictR2Mode = strict;
+    this.strictStorageMode = strict;
+  }
+
+  public getStrictStorageMode(): boolean {
+    return this.strictStorageMode;
   }
 
   public getStrictR2Mode(): boolean {
-    return this.strictR2Mode;
+    return this.strictStorageMode;
   }
 
   private ensureLocalDirectories(): void {
     const subdirs = [
       'volunteers', 'beneficiaries', 'licenses', 'cards', 
       'logos', 'slider', 'initiatives', 'partners', 
-      'deliveries', 'financial', 'letters', 'news', 'general'
+      'deliveries', 'financial', 'letters', 'news', 'inventory', 'certificates', 'general'
     ];
     for (const sub of subdirs) {
       const full = path.join(this.localBaseDir, sub);
@@ -188,10 +318,14 @@ export class AttachmentStorageService {
         try {
           fs.mkdirSync(full, { recursive: true });
         } catch {
-          // May be read-only in some execution runtimes
+          // In some serverless/read-only runtimes
         }
       }
     }
+  }
+
+  public isStorageConfigured(): boolean {
+    return this.s3Client !== null;
   }
 
   public isR2Configured(): boolean {
@@ -205,10 +339,16 @@ export class AttachmentStorageService {
       : (accountId ? "****" : undefined);
 
     return {
-      provider: this.s3Client ? 'r2' : 'local',
+      provider: this.s3Client ? this.storageProviderType : 'local',
+      storageProvider: this.s3Client ? this.storageProviderType : 'local',
+      isConfigured: this.s3Client !== null,
       isR2Configured: this.s3Client !== null,
-      strictR2Mode: this.strictR2Mode,
+      strictStorageMode: this.strictStorageMode,
+      strictR2Mode: this.strictStorageMode,
       bucketName: this.bucketName,
+      region: this.region,
+      endpoint: this.endpoint,
+      endpointConfigured: Boolean(this.endpoint),
       accountIdMasked: maskedAccount,
       customDomainConfigured: Boolean(this.customDomain),
       customDomain: this.customDomain || undefined,
@@ -219,19 +359,18 @@ export class AttachmentStorageService {
   }
 
   /**
-   * Performs an isolated, non-destructive connection probe against Cloudflare R2
+   * Performs an isolated, non-destructive connection probe against AWS S3 / Cloudflare R2
    */
-  public async testConnection(): Promise<{ success: boolean; message: string; latencyMs?: number }> {
+  public async testConnection(): Promise<{ success: boolean; message: string; latencyMs?: number; region?: string }> {
     if (!this.s3Client) {
       return {
         success: false,
-        message: "عميل Cloudflare R2 غير مهيأ (متغيرات R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY ناقصة)."
+        message: "عميل التخزين السحابي غير مهيأ (متغيرات S3/R2 Access Key و Secret Key ناقصة)."
       };
     }
 
     const start = Date.now();
     try {
-      // ListObjects with max 1 key to verify authenticated connection safely without altering data
       await this.s3Client.send(new ListObjectsV2Command({
         Bucket: this.bucketName,
         MaxKeys: 1
@@ -239,13 +378,14 @@ export class AttachmentStorageService {
       const latency = Date.now() - start;
       return {
         success: true,
-        message: `تم التحقق بنجاح من اتصال Cloudflare R2 بالحاوية [${this.bucketName}] (${latency}ms).`,
-        latencyMs: latency
+        message: `تم التحقق بنجاح من اتصال التخزين السحابي بالحاوية [${this.bucketName}] في المنطقة [${this.region}] (${latency}ms).`,
+        latencyMs: latency,
+        region: this.region
       };
     } catch (err: any) {
       return {
         success: false,
-        message: `فشل فحص اتصال Cloudflare R2: ${err.message || 'خطأ غير معروف'}`
+        message: `فشل فحص اتصال التخزين السحابي: ${err.message || 'خطأ غير معروف'}`
       };
     }
   }
@@ -274,7 +414,7 @@ export class AttachmentStorageService {
   }
 
   /**
-   * Uploads an attachment either to Cloudflare R2 or local storage
+   * Uploads an attachment either to AWS S3 / Cloudflare R2 or local storage
    * Enforces zero silent fallback when strict mode is active.
    */
   public async uploadAttachment(
@@ -302,16 +442,16 @@ export class AttachmentStorageService {
     const fileKey = this.generateSecureKey(options.entityType, options.originalFilename);
 
     // 5. Strict Mode Guard: Prevent silent fallback to ephemeral disk
-    if (this.strictR2Mode && !this.s3Client) {
+    if (this.strictStorageMode && !this.s3Client) {
       throw new Error(
-        "خطأ أمان التخزين: تم تفعيل وضع التخزين الدائم الإلزامي (Strict R2 Mode)، ولكن بيانات اتصال Cloudflare R2 " +
-        "(R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) غير مكتملة. " +
+        "خطأ أمان التخزين: تم تفعيل وضع التخزين الدائم الإلزامي (Strict Storage Mode)، ولكن بيانات اتصال S3/R2 " +
+        "(STORAGE_ACCESS_KEY_ID, STORAGE_SECRET_ACCESS_KEY, STORAGE_BUCKET_NAME) غير مكتملة. " +
         "تم رفض الرجوع التلقائي للتخزين المحلي المؤقت منعاً لفقدان الملفات عند إعادة تشغيل الخادم."
       );
     }
 
     // 6. Upload to target destination
-    let provider: 'r2' | 'local' = 'local';
+    let provider: 's3' | 'r2' | 'local' = 'local';
     let publicUrl = '';
 
     if (this.s3Client) {
@@ -328,7 +468,7 @@ export class AttachmentStorageService {
             "original-name": encodeURIComponent(options.originalFilename)
           }
         }));
-        provider = 'r2';
+        provider = this.storageProviderType === 'r2' ? 'r2' : 's3';
 
         // URL Strategy:
         // - Private files (volunteers, beneficiaries, financial) MUST ALWAYS route via authenticated API proxy
@@ -340,12 +480,11 @@ export class AttachmentStorageService {
           const cleanDomain = this.customDomain.replace(/\/+$/, '');
           publicUrl = `${cleanDomain}/${fileKey}`;
         } else {
-          // Without custom domain, serve via API endpoint to avoid S3 SigV4 403 error on browser direct access
           publicUrl = `/api/attachments/download/${encodeURIComponent(fileKey)}`;
         }
       } catch (err: any) {
-        // NEVER fall back to local disk if R2 was attempted and failed!
-        throw new Error(`فشل رفع المرفق إلى Cloudflare R2: ${err.message}`);
+        // NEVER fall back to local disk if S3/R2 was attempted and failed!
+        throw new Error(`فشل رفع المرفق إلى التخزين السحابي (${this.bucketName}): ${err.message}`);
       }
     } else {
       // Local Sandboxed File System Fallback (Only allowed in local development without strict mode)
@@ -371,16 +510,18 @@ export class AttachmentStorageService {
         : `/uploads/${fileKey}`;
     }
 
-    // 7. Register Metadata in Memory Index
+    // 7. Register Metadata
     const isFilePrivate = this.isPrivateKey(fileKey, { isPrivate: options.isPrivate } as any);
+    const fileId = "att-" + crypto.randomUUID();
     const record: AttachmentRecord = {
-      id: "att-" + crypto.randomUUID(),
+      id: fileId,
       fileKey,
       originalName: options.originalFilename,
       sanitizedName: path.basename(fileKey),
       mimeType: mimeLower,
       fileSize: fileBuffer.length,
       storageProvider: provider,
+      bucketName: this.bucketName,
       entityType: options.entityType,
       entityId: options.entityId,
       fieldName: options.fieldName,
@@ -394,6 +535,34 @@ export class AttachmentStorageService {
     };
 
     this.attachmentRegistry.set(fileKey, record);
+
+    // 8. Persist into PostgreSQL system_files table if PostgreSQL is configured
+    if (isPostgresConfigured()) {
+      try {
+        await insertSystemFile({
+          id: record.id,
+          fileKey: record.fileKey,
+          originalName: record.originalName,
+          sanitizedName: record.sanitizedName,
+          mimeType: record.mimeType,
+          fileSizeBytes: record.fileSize,
+          storageProvider: record.storageProvider,
+          bucketName: record.bucketName,
+          checksumSha256: record.checksumSha256,
+          entityType: record.entityType,
+          entityId: record.entityId,
+          fieldName: record.fieldName,
+          isPrivate: record.isPrivate,
+          accessRoles: [record.accessRole || 'admin'],
+          uploadedBy: record.uploadedBy || 'system',
+          uploadedAt: record.uploadedAt,
+          status: 'active'
+        });
+      } catch (dbErr: any) {
+        console.warn(`[SystemFiles DB Warning]: Failed to record file metadata in PostgreSQL: ${dbErr.message}`);
+      }
+    }
+
     return record;
   }
 
@@ -403,7 +572,7 @@ export class AttachmentStorageService {
    * Only explicit public folders (logos, cards, slider, public, license) are public.
    * All beneficiary, volunteer, financial, delivery, identity, letter, and report files are PRIVATE.
    */
-  public isPrivateKey(fileKey: string, record?: AttachmentRecord): boolean {
+  public isPrivateKey(fileKey: string, record?: AttachmentRecord | SystemFileRecord): boolean {
     if (record && typeof record.isPrivate === 'boolean') {
       return record.isPrivate;
     }
@@ -438,6 +607,7 @@ export class AttachmentStorageService {
       'letters',
       'reports',
       'identities',
+      'inventory',
       'confidential'
     ]);
 
@@ -461,15 +631,52 @@ export class AttachmentStorageService {
       throw new Error("مسار ملف غير صالح أو محاولة اجتياز مسار.");
     }
 
-    const record = this.attachmentRegistry.get(fileKey);
+    let record = this.attachmentRegistry.get(fileKey);
+
+    // If not in memory registry, check PostgreSQL system_files table
+    if (!record && isPostgresConfigured()) {
+      try {
+        const dbFile = await getSystemFileByKey(fileKey);
+        if (dbFile) {
+          record = {
+            id: dbFile.id,
+            fileKey: dbFile.fileKey,
+            originalName: dbFile.originalName,
+            sanitizedName: dbFile.sanitizedName,
+            mimeType: dbFile.mimeType,
+            fileSize: dbFile.fileSizeBytes,
+            storageProvider: (dbFile.storageProvider === 'r2' ? 'r2' : dbFile.storageProvider === 's3' ? 's3' : 'local'),
+            bucketName: dbFile.bucketName,
+            entityType: dbFile.entityType,
+            entityId: dbFile.entityId,
+            fieldName: dbFile.fieldName,
+            isPrivate: dbFile.isPrivate,
+            accessRole: dbFile.accessRoles[0] || 'admin',
+            checksumSha256: dbFile.checksumSha256,
+            uploadedBy: dbFile.uploadedBy,
+            uploadedAt: dbFile.uploadedAt,
+            url: `/api/attachments/download/${encodeURIComponent(dbFile.fileKey)}`,
+            status: dbFile.status
+          };
+          this.attachmentRegistry.set(fileKey, record);
+        }
+      } catch (err: any) {
+        console.warn(`[SystemFiles DB Lookup Warning]: ${err.message}`);
+      }
+    }
+
     const isPrivate = this.isPrivateKey(fileKey, record);
 
     if (isPrivate) {
       const role = userContext?.role || 'guest';
-      const isAuthorized = role === 'admin' || role === 'operations_manager' || 
+      const isAuthorized = 
+        role === 'admin' || 
+        role === 'operations_manager' || 
+        role === 'super_admin' ||
         (record && record.uploadedBy && record.uploadedBy === userContext?.id) ||
         (record && record.entityId && record.entityId === userContext?.id) ||
         (Boolean(userContext?.id) && userContext?.id !== 'guest' && userContext?.id !== 'public' && fileKey.includes(String(userContext?.id)));
+
       if (!isAuthorized) {
         throw new Error("غير مصرح لك بالوصول إلى هذا المرفق الخاص.");
       }
@@ -482,14 +689,14 @@ export class AttachmentStorageService {
           Key: fileKey
         }));
         const byteArray = await response.Body?.transformToByteArray();
-        if (!byteArray) throw new Error("تعذر استرجاع محتوى الملف من Cloudflare R2.");
+        if (!byteArray) throw new Error("تعذر استرجاع محتوى الملف من التخزين السحابي.");
         return {
           buffer: Buffer.from(byteArray),
           record,
           mimeType: response.ContentType || record?.mimeType || 'application/octet-stream'
         };
       } catch (err: any) {
-        throw new Error(`تعذر قراءة الملف من Cloudflare R2: ${err.message}`);
+        throw new Error(`تعذر قراءة الملف من التخزين السحابي (${this.bucketName}): ${err.message}`);
       }
     } else {
       const localPath = path.join(this.localBaseDir, fileKey);
@@ -511,7 +718,7 @@ export class AttachmentStorageService {
   }
 
   /**
-   * Safe deletion from Cloudflare R2 or local storage
+   * Safe deletion from AWS S3 / Cloudflare R2 or local storage
    */
   public async deleteAttachment(fileKey: string): Promise<boolean> {
     if (this.s3Client) {
@@ -521,7 +728,7 @@ export class AttachmentStorageService {
           Key: fileKey
         }));
       } catch (err: any) {
-        console.error(`[R2 Delete Error]: ${err.message}`);
+        console.error(`[Storage Delete Error]: ${err.message}`);
         return false;
       }
     } else {
@@ -536,6 +743,15 @@ export class AttachmentStorageService {
     }
 
     this.attachmentRegistry.delete(fileKey);
+
+    if (isPostgresConfigured()) {
+      try {
+        await deleteSystemFile(fileKey);
+      } catch (err: any) {
+        console.warn(`[SystemFiles DB Delete Warning]: ${err.message}`);
+      }
+    }
+
     return true;
   }
 
@@ -563,7 +779,7 @@ export class AttachmentStorageService {
           }
         }
       } catch (err: any) {
-        console.error("[R2 List Error]:", err.message);
+        console.error("[Storage List Error]:", err.message);
       }
     } else {
       // Local scan
