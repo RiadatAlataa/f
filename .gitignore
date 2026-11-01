@@ -15,3 +15,5 @@ db.json
 .db.*
 scripts/scan_report.json
 scripts/migration_backup_mapping.json
+*.patch
+patches/

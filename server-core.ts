@@ -357,8 +357,8 @@ app.use("/uploads", (req, res, next) => {
   return res.sendFile(resolvedTarget);
 });
 
-// Dedicated Secure Attachment Download Endpoint
-app.get("/api/attachments/download/*", async (req, res) => {
+// Dedicated Secure Attachment Download & Inline Streaming Endpoint
+app.get(["/api/attachments/download/*", "/api/attachments/file/*"], async (req, res) => {
   try {
     const rawKey = req.params[0] || (req.query.key as string) || '';
     if (!rawKey) {
@@ -425,10 +425,20 @@ app.get("/api/attachments/download/*", async (req, res) => {
       ? encodeURIComponent(attachment.record.originalName)
       : path.basename(cleanKey);
 
+    const isInline = req.path.startsWith('/api/attachments/file');
+    const disposition = isInline
+      ? `inline; filename="${safeFilename}"`
+      : `attachment; filename="${safeFilename}"`;
+
     res.setHeader("Content-Type", attachment.mimeType || "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+    res.setHeader("Content-Disposition", disposition);
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+    res.setHeader(
+      "Cache-Control",
+      isPrivate
+        ? "private, no-cache, no-store, must-revalidate"
+        : "public, max-age=86400, stale-while-revalidate=604800"
+    );
 
     return res.send(attachment.buffer);
   } catch (err: any) {

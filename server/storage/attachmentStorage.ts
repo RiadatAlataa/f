@@ -93,6 +93,7 @@ export interface AttachmentAuditReport {
 
 export interface StorageStatusReport {
   provider: 's3' | 'r2' | 'local';
+  storageProvider?: string;
   isConfigured: boolean;
   isR2Configured: boolean;
   strictStorageMode: boolean;
@@ -101,12 +102,13 @@ export interface StorageStatusReport {
   region: string;
   endpoint?: string;
   endpointConfigured: boolean;
-  accountIdMasked?: string;
   customDomainConfigured: boolean;
   customDomain?: string;
   localBaseDir: string;
   allowedMimesCount: number;
   maxSizeBytes: number;
+  hasAccessKey?: boolean;
+  hasSecretKey?: boolean;
 }
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -209,33 +211,58 @@ export class AttachmentStorageService {
     accountId?: string;
     forcePathStyle?: boolean;
   }): void {
+    const cleanStr = (val?: string): string => {
+      if (!val || typeof val !== 'string') return '';
+      return val.replace(/^["']|["']$/g, '').trim();
+    };
+
     const accessKeyId = 
-      configOverride?.accessKeyId || 
-      process.env.STORAGE_ACCESS_KEY_ID || 
-      process.env.S3_ACCESS_KEY_ID || 
-      process.env.AWS_ACCESS_KEY_ID || 
-      process.env.R2_ACCESS_KEY_ID;
+      cleanStr(configOverride?.accessKeyId) || 
+      cleanStr(process.env.AWS_ACCESS_KEY_ID) || 
+      cleanStr(process.env.R2_ACCESS_KEY_ID) || 
+      cleanStr(process.env.STORAGE_ACCESS_KEY_ID) || 
+      cleanStr(process.env.S3_ACCESS_KEY_ID) || 
+      cleanStr(process.env.CLOUDFLARE_ACCESS_KEY_ID) ||
+      cleanStr(process.env.CLOUDFLARE_R2_ACCESS_KEY_ID) ||
+      cleanStr(process.env.ACCESS_KEY_ID) ||
+      cleanStr(process.env.AWS_ACCESS_KEY) ||
+      cleanStr(process.env.R2_KEY_ID);
 
     const secretAccessKey = 
-      configOverride?.secretAccessKey || 
-      process.env.STORAGE_SECRET_ACCESS_KEY || 
-      process.env.S3_SECRET_ACCESS_KEY || 
-      process.env.AWS_SECRET_ACCESS_KEY || 
-      process.env.R2_SECRET_ACCESS_KEY;
+      cleanStr(configOverride?.secretAccessKey) || 
+      cleanStr(process.env.AWS_SECRET_ACCESS_KEY) || 
+      cleanStr(process.env.R2_SECRET_ACCESS_KEY) || 
+      cleanStr(process.env.STORAGE_SECRET_ACCESS_KEY) || 
+      cleanStr(process.env.S3_SECRET_ACCESS_KEY) || 
+      cleanStr(process.env.CLOUDFLARE_SECRET_ACCESS_KEY) ||
+      cleanStr(process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) ||
+      cleanStr(process.env.SECRET_ACCESS_KEY) ||
+      cleanStr(process.env.AWS_SECRET_KEY) ||
+      cleanStr(process.env.R2_KEY_SECRET) ||
+      cleanStr(process.env.R2_SECRET_KEY);
 
-    if (configOverride?.bucketName) this.bucketName = configOverride.bucketName;
-    if (configOverride?.customDomain) this.customDomain = configOverride.customDomain;
+    const envBucket = 
+      cleanStr(configOverride?.bucketName) || 
+      cleanStr(process.env.AWS_BUCKET_NAME) || 
+      cleanStr(process.env.R2_BUCKET_NAME) || 
+      cleanStr(process.env.STORAGE_BUCKET_NAME) || 
+      cleanStr(process.env.S3_BUCKET_NAME) || 
+      cleanStr(process.env.AWS_S3_BUCKET) || 
+      cleanStr(process.env.BUCKET_NAME);
+    if (envBucket) this.bucketName = envBucket;
 
-    const accountId = configOverride?.accountId || process.env.R2_ACCOUNT_ID;
+    if (configOverride?.customDomain) this.customDomain = cleanStr(configOverride.customDomain);
+
+    const accountId = cleanStr(configOverride?.accountId) || cleanStr(process.env.R2_ACCOUNT_ID) || cleanStr(process.env.CLOUDFLARE_ACCOUNT_ID);
 
     // Resolve Endpoint:
     let resolvedEndpoint = 
-      configOverride?.endpoint || 
-      process.env.STORAGE_ENDPOINT || 
-      process.env.S3_ENDPOINT || 
-      process.env.AWS_ENDPOINT_URL ||
-      process.env.AWS_ENDPOINT ||
-      process.env.R2_ENDPOINT;
+      cleanStr(configOverride?.endpoint) || 
+      cleanStr(process.env.AWS_ENDPOINT_URL) ||
+      cleanStr(process.env.AWS_ENDPOINT) ||
+      cleanStr(process.env.STORAGE_ENDPOINT) || 
+      cleanStr(process.env.S3_ENDPOINT) || 
+      cleanStr(process.env.R2_ENDPOINT);
 
     if (!resolvedEndpoint && accountId) {
       resolvedEndpoint = `https://${accountId}.r2.cloudflarestorage.com`;
@@ -245,20 +272,22 @@ export class AttachmentStorageService {
     const isR2 = Boolean(
       (resolvedEndpoint && resolvedEndpoint.includes('r2.cloudflarestorage.com')) || 
       accountId || 
-      process.env.STORAGE_PROVIDER === 'r2'
+      cleanStr(process.env.STORAGE_PROVIDER) === 'r2'
     );
 
     if (isR2) {
       this.storageProviderType = 'r2';
       // Cloudflare R2 strictly requires 'auto' signing region with AWS SDK S3Client
-      this.region = configOverride?.region || "auto";
+      this.region = cleanStr(configOverride?.region) || "auto";
     } else {
       this.storageProviderType = 's3';
       if (!resolvedEndpoint && accessKeyId) {
         resolvedEndpoint = `https://s3.${this.region}.amazonaws.com`;
       }
       if (configOverride?.region) {
-        this.region = configOverride.region;
+        this.region = cleanStr(configOverride.region);
+      } else if (process.env.AWS_REGION) {
+        this.region = cleanStr(process.env.AWS_REGION);
       }
     }
 
@@ -270,19 +299,36 @@ export class AttachmentStorageService {
         : (process.env.STORAGE_FORCE_PATH_STYLE === "true" || process.env.S3_FORCE_PATH_STYLE === "true" || process.env.AWS_FORCE_PATH_STYLE === "true");
 
     if (accessKeyId && secretAccessKey) {
-      this.s3Client = new S3Client({
-        region: this.region,
-        endpoint: this.endpoint,
-        forcePathStyle,
-        credentials: {
-          accessKeyId,
-          secretAccessKey
-        }
-      });
+      try {
+        this.s3Client = new S3Client({
+          region: this.region,
+          endpoint: this.endpoint,
+          forcePathStyle,
+          credentials: {
+            accessKeyId,
+            secretAccessKey
+          }
+        });
+      } catch (clientErr: any) {
+        console.error(`[STORAGE INIT ERROR] Failed instantiating S3Client: ${clientErr.message}`);
+        this.s3Client = null;
+        this.storageProviderType = 'local';
+      }
     } else {
       this.s3Client = null;
       this.storageProviderType = 'local';
     }
+
+    // Safe diagnostic log (strictly indicates presence only without logging any key fragments or lengths)
+    console.log(
+      `[STORAGE INIT] Provider: ${this.storageProviderType.toUpperCase()} | ` +
+      `Endpoint: ${this.endpoint || '(AWS default)'} | ` +
+      `Region: ${this.region} | ` +
+      `Bucket: ${this.bucketName} | ` +
+      `AccessKey: ${accessKeyId ? 'CONFIGURED' : 'NOT_CONFIGURED'} | ` +
+      `SecretKey: ${secretAccessKey ? 'CONFIGURED' : 'NOT_CONFIGURED'} | ` +
+      `Status: ${this.s3Client ? 'CONNECTED (Cloud Ready)' : 'OFFLINE'}`
+    );
   }
 
   // Alias for backward compatibility
@@ -333,10 +379,19 @@ export class AttachmentStorageService {
   }
 
   public getStatus(): StorageStatusReport {
-    const accountId = process.env.R2_ACCOUNT_ID || "";
-    const maskedAccount = accountId.length > 8 
-      ? `${accountId.substring(0, 4)}...${accountId.substring(accountId.length - 4)}` 
-      : (accountId ? "****" : undefined);
+    const accessKey = 
+      process.env.AWS_ACCESS_KEY_ID || 
+      process.env.R2_ACCESS_KEY_ID || 
+      process.env.STORAGE_ACCESS_KEY_ID || 
+      process.env.S3_ACCESS_KEY_ID || 
+      process.env.ACCESS_KEY_ID || "";
+
+    const secretKey = 
+      process.env.AWS_SECRET_ACCESS_KEY || 
+      process.env.R2_SECRET_ACCESS_KEY || 
+      process.env.STORAGE_SECRET_ACCESS_KEY || 
+      process.env.S3_SECRET_ACCESS_KEY || 
+      process.env.SECRET_ACCESS_KEY || "";
 
     return {
       provider: this.s3Client ? this.storageProviderType : 'local',
@@ -349,12 +404,13 @@ export class AttachmentStorageService {
       region: this.region,
       endpoint: this.endpoint,
       endpointConfigured: Boolean(this.endpoint),
-      accountIdMasked: maskedAccount,
       customDomainConfigured: Boolean(this.customDomain),
       customDomain: this.customDomain || undefined,
       localBaseDir: this.localBaseDir,
       allowedMimesCount: ALLOWED_MIME_TYPES.size,
-      maxSizeBytes: MAX_FILE_SIZE_BYTES
+      maxSizeBytes: MAX_FILE_SIZE_BYTES,
+      hasAccessKey: Boolean(accessKey),
+      hasSecretKey: Boolean(secretKey)
     };
   }
 
@@ -441,12 +497,23 @@ export class AttachmentStorageService {
     // 4. Generate secure collision-resistant file key
     const fileKey = this.generateSecureKey(options.entityType, options.originalFilename);
 
-    // 5. Strict Mode Guard: Prevent silent fallback to ephemeral disk
-    if (this.strictStorageMode && !this.s3Client) {
+    // 5. Dynamic re-check of client in case environment variables were injected late
+    if (!this.s3Client) {
+      this.initStorageClient();
+    }
+
+    // Eliminate silent local fallback when STORAGE_PROVIDER=s3, STORAGE_PROVIDER=r2, in production, or strict mode
+    const isCloudRequested = 
+      process.env.STORAGE_PROVIDER === 's3' || 
+      process.env.STORAGE_PROVIDER === 'r2' || 
+      process.env.NODE_ENV === 'production' ||
+      this.strictStorageMode;
+
+    if (isCloudRequested && !this.s3Client) {
       throw new Error(
-        "خطأ أمان التخزين: تم تفعيل وضع التخزين الدائم الإلزامي (Strict Storage Mode)، ولكن بيانات اتصال S3/R2 " +
-        "(STORAGE_ACCESS_KEY_ID, STORAGE_SECRET_ACCESS_KEY, STORAGE_BUCKET_NAME) غير مكتملة. " +
-        "تم رفض الرجوع التلقائي للتخزين المحلي المؤقت منعاً لفقدان الملفات عند إعادة تشغيل الخادم."
+        "خطأ أمان التخزين: تم ضبط مزود التخزين السحابي (STORAGE_PROVIDER=s3 / R2)، " +
+        "ولكن تعذر إنشاء اتصال سحابي موثق مع Cloudflare R2 نظراً لعدم اكتمال بيانات الاتصال أو مفاتيح الاعتماد (AWS_ACCESS_KEY_ID و AWS_SECRET_ACCESS_KEY و AWS_ENDPOINT_URL). " +
+        "تم إلغاء عملية الرفع وإرجاع خطأ صريح لمنع حفظ الملفات على القرص المؤقت المعرض للفقدان."
       );
     }
 
@@ -470,9 +537,11 @@ export class AttachmentStorageService {
         }));
         provider = this.storageProviderType === 'r2' ? 'r2' : 's3';
 
+        console.log(`[STORAGE UPLOAD SUCCESS] Provider: ${provider.toUpperCase()} | Bucket: ${this.bucketName} | Key: ${fileKey} | Size: ${fileBuffer.length} bytes`);
+
         // URL Strategy:
         // - Private files (volunteers, beneficiaries, financial) MUST ALWAYS route via authenticated API proxy
-        // - Public files (logos, templates, news) use custom domain CDN if configured, or stream via download endpoint
+        // - Public files (logos, templates, news, profile photos) use custom domain CDN if configured, or stream via inline file endpoint
         const isFilePrivate = this.isPrivateKey(fileKey, { isPrivate: options.isPrivate } as any);
         if (isFilePrivate) {
           publicUrl = `/api/attachments/download/${encodeURIComponent(fileKey)}`;
@@ -480,7 +549,7 @@ export class AttachmentStorageService {
           const cleanDomain = this.customDomain.replace(/\/+$/, '');
           publicUrl = `${cleanDomain}/${fileKey}`;
         } else {
-          publicUrl = `/api/attachments/download/${encodeURIComponent(fileKey)}`;
+          publicUrl = `/api/attachments/file/${encodeURIComponent(fileKey)}`;
         }
       } catch (err: any) {
         // NEVER fall back to local disk if S3/R2 was attempted and failed!
@@ -491,6 +560,8 @@ export class AttachmentStorageService {
       const destPath = path.join(this.localBaseDir, fileKey);
       const destDir = path.dirname(destPath);
       
+      console.warn(`[STORAGE UPLOAD LOCAL FALLBACK] Warning: Upload (${fileKey}) saved to Render ephemeral container disk (${destPath}) because S3/R2 client is not configured. This file will be LOST on restart!`);
+
       // Strict Path Traversal Verification
       const resolved = path.resolve(destPath);
       if (!resolved.startsWith(path.resolve(this.localBaseDir))) {
@@ -578,6 +649,11 @@ export class AttachmentStorageService {
     }
     const clean = fileKey.replace(/^[\\/]+/, '').toLowerCase();
     const top = clean.split(/[\\/]/)[0];
+
+    // Explicit Public Whitelist for profile photos and avatars
+    if (clean.includes('profile_') || clean.includes('avatar') || clean.includes('logo')) {
+      return false;
+    }
 
     // Explicit Public Whitelist
     const publicCategories = new Set([
