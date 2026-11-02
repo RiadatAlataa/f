@@ -317,13 +317,13 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
               </label>
               <input
                 type="text"
-                value={settings.licenseNumber || "5081"}
+                value={settings.licenseNumber || "1000888600"}
                 onChange={e => updateSettings(s => ({ ...s, licenseNumber: e.target.value }))}
-                placeholder="5081"
+                placeholder="1000888600"
                 className="w-full text-xs font-mono font-bold p-2.5 rounded-xl border border-emerald-300 focus:border-emerald-600 focus:outline-none bg-white text-emerald-900"
               />
               <p className="text-[10px] text-emerald-700 mt-1">
-                الترخيص الرسمي: 5081 - صادر من المركز الوطني لتنمية القطاع غير الربحي بمكة المكرمة.
+                الترخيص الرسمي: 1000888600 - صادر من المركز الوطني لتنمية القطاع غير الربحي بمكة المكرمة.
               </p>
             </div>
 
@@ -337,7 +337,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
                   fetch("/api/db/license/upload", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ imageBase64: val, licenseNumber: settings.licenseNumber || "5081" })
+                    body: JSON.stringify({ imageBase64: val, licenseNumber: settings.licenseNumber || "1000888600" })
                   }).catch(console.error);
                 }}
                 aspectRatio="square"

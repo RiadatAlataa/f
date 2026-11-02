@@ -285,7 +285,7 @@ export function OfficialHomePage({
 
   // Official License Document URL & Number
   const licenseImageUrl = settings?.licenseImage || settings?.licenseConfig?.imageUrl || "";
-  const licenseNumber = settings?.licenseNumber || "5081";
+  const licenseNumber = settings?.licenseNumber || "1000888600";
 
   // Registration Form States
   const [regName, setRegName] = useState("");
@@ -2408,7 +2408,9 @@ export function OfficialHomePage({
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{lang === "ar" ? "رقم الهاتف" : "Phone Call"}</h4>
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 font-mono mt-0.5" dir="ltr">{settings?.contactPhone}</p>
+                  <a href={`tel:${settings?.contactPhone || '0541820904'}`} className="text-[11px] text-neutral-500 hover:text-emerald-600 dark:text-neutral-400 font-mono mt-0.5 block transition-colors" dir="ltr">
+                    {settings?.contactPhone || "0541820904"}
+                  </a>
                 </div>
               </div>
 
@@ -2659,7 +2661,7 @@ export function OfficialHomePage({
 
               {/* WhatsApp Direct */}
               <a 
-                href="https://wa.me/966550123456" 
+                href="https://wa.me/966541820904" 
                 target="_blank" 
                 rel="noopener noreferrer" 
                 title="واتساب المباشر"
@@ -2737,7 +2739,7 @@ export function OfficialHomePage({
       </>
       )}
 
-      {/* 2.5 Official License Document Preview Modal (نافذة عرض وتكبير وثيقة الترخيص الرسمية رقم 5081) */}
+      {/* 2.5 Official License Document Preview Modal (نافذة عرض وتكبير وثيقة الترخيص الرسمية رقم 1000888600) */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
           {isLicenseModalOpen && (

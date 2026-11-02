@@ -732,7 +732,7 @@ export function AuthScreen({
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800 shrink-0">
                   <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span className="hidden sm:inline">{lang === 'ar' ? "ترخيص: " : "License: "}</span>
-                  <span className="font-mono">5081</span>
+                  <span className="font-mono">1000888600</span>
                 </span>
               </div>
             </div>

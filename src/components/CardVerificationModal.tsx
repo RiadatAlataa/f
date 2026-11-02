@@ -70,7 +70,7 @@ export const CardVerificationModal: React.FC<CardVerificationModalProps> = ({
             </div>
           </div>
           <p className="text-xs text-emerald-100 font-medium">
-            جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - مكة المكرمة (ترخيص: 5081)
+            جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - مكة المكرمة (ترخيص: 1000888600)
           </p>
         </div>
 

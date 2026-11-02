@@ -124,21 +124,21 @@ export function HomepageAdminPanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             imageBase64: base64Data,
-            licenseNumber: localSettings.licenseNumber || "5081"
+            licenseNumber: localSettings.licenseNumber || "1000888600"
           })
         });
         const data = await res.json();
         const finalUrl = data.imageUrl || base64Data;
         const updated: HomeSettings = {
           ...localSettings,
-          licenseNumber: data.licenseNumber || localSettings.licenseNumber || "5081",
+          licenseNumber: data.licenseNumber || localSettings.licenseNumber || "1000888600",
           licenseImage: finalUrl,
           licenseConfig: {
             ...(localSettings.licenseConfig || {}),
             enabled: true,
             imageUrl: finalUrl,
-            titleAr: localSettings.licenseConfig?.titleAr || "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 5081",
-            notes: localSettings.licenseConfig?.notes || "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
+            titleAr: localSettings.licenseConfig?.titleAr || "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 1000888600",
+            notes: localSettings.licenseConfig?.notes || "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 1000888600"
           }
         };
         setLocalSettings(updated);
@@ -623,7 +623,7 @@ export function HomepageAdminPanel({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-neutral-800 flex items-center gap-2">
-                    <span>{lang === "ar" ? "إدارة وثيقة وصورة الترخيص الرسمي (رقم 5081)" : "Official License Management (#5081)"}</span>
+                    <span>{lang === "ar" ? "إدارة وثيقة وصورة الترخيص الرسمي (رقم 1000888600)" : "Official License Management (#1000888600)"}</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                       معتمد
                     </span>
@@ -647,8 +647,8 @@ export function HomepageAdminPanel({
                       licenseConfig: {
                         ...(localSettings.licenseConfig || {
                           imageUrl: "",
-                          titleAr: "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 5081",
-                          notes: "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
+                          titleAr: "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 1000888600",
+                          notes: "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 1000888600"
                         }),
                         enabled: e.target.checked
                       }
@@ -693,14 +693,14 @@ export function HomepageAdminPanel({
                 <div className="relative">
                   <input
                     type="text"
-                    value={localSettings.licenseNumber || "5081"}
+                    value={localSettings.licenseNumber || "1000888600"}
                     onChange={(e) => {
                       setLocalSettings({
                         ...localSettings,
                         licenseNumber: e.target.value
                       });
                     }}
-                    placeholder="5081"
+                    placeholder="1000888600"
                     className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-emerald-300 bg-white text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
                   />
                   <span className="absolute left-3 top-2.5 text-[10px] text-emerald-600 font-bold">
@@ -885,7 +885,7 @@ export function HomepageAdminPanel({
                     </div>
                     <div className="flex flex-col text-right leading-tight pr-1">
                       <span className="text-xs font-black text-emerald-800">
-                        ترخيص: {localSettings.licenseNumber || "5081"}
+                        ترخيص: {localSettings.licenseNumber || "1000888600"}
                       </span>
                       <span className="text-[8px] text-neutral-500">
                         المركز الوطني لتنمية القطاع غير الربحي
@@ -911,7 +911,7 @@ export function HomepageAdminPanel({
                     </div>
                     <div className="flex flex-col text-right">
                       <span className="text-xs font-bold text-emerald-300">
-                        الترخيص الرسمي: {localSettings.licenseNumber || "5081"}
+                        الترخيص الرسمي: {localSettings.licenseNumber || "1000888600"}
                       </span>
                       <span className="text-[9px] text-neutral-300">
                         بإشراف المركز الوطني لتنمية القطاع غير الربحي
@@ -930,7 +930,7 @@ export function HomepageAdminPanel({
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-5 h-5 text-emerald-600" />
                       <h4 className="text-sm font-bold text-neutral-900">
-                        معاينة وثيقة الترخيص الرسمية (ترخيص {localSettings.licenseNumber || "5081"})
+                        معاينة وثيقة الترخيص الرسمية (ترخيص {localSettings.licenseNumber || "1000888600"})
                       </h4>
                     </div>
                     <button
@@ -956,7 +956,7 @@ export function HomepageAdminPanel({
 
                   <div className="flex justify-between items-center pt-2">
                     <span className="text-xs text-neutral-500 font-bold">
-                      رقم الترخيص: {localSettings.licenseNumber || "5081"}
+                      رقم الترخيص: {localSettings.licenseNumber || "1000888600"}
                     </span>
                     <button
                       type="button"
@@ -1083,6 +1083,7 @@ export function HomepageAdminPanel({
                   type="text"
                   value={localSettings.contactPhone}
                   onChange={(e) => setLocalSettings({ ...localSettings, contactPhone: e.target.value })}
+                  placeholder="0541820904"
                   className="w-full px-3 py-1.5 text-xs rounded-lg border border-neutral-250 bg-neutral-50/50 font-mono text-left"
                   dir="ltr"
                 />

@@ -54,7 +54,7 @@ export const OfficialLetterheadTemplate: React.FC<OfficialLetterheadProps> = ({
   const stampImage = stampUrl || homeSettings?.officialLetterhead?.officialStampUrl || "";
   const signatureImage = signatureUrl || homeSettings?.officialLetterhead?.officialSignatureUrl || "";
   const footerAddress = homeSettings?.officialLetterhead?.footerAddressAr || "مكة المكرمة - مخطط العسيلة - المملكة العربية السعودية";
-  const footerContact = homeSettings?.officialLetterhead?.footerContactAr || `هاتف: ${homeSettings?.contactPhone || '0550123456'} | بريد: ${homeSettings?.contactEmail || 'info@riadataleata.org.sa'}`;
+  const footerContact = homeSettings?.officialLetterhead?.footerContactAr || `هاتف: ${homeSettings?.contactPhone || '0541820904'} | بريد: ${homeSettings?.contactEmail || 'info@riadataleata.org.sa'}`;
   const footerBankInfo = homeSettings?.officialLetterhead?.footerBankInfoAr || "الحساب البنكي المعتمد (مصرف الراجحي): SA0000000000000000000000";
 
   // Computed default Hijri Date if not explicitly provided

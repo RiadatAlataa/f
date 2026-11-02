@@ -217,7 +217,7 @@ export function setupWhatsAppRoutes(app: Express, readDb: () => any, writeDb: (d
       settings: {
         enabled: Boolean(config.enabled),
         provider: config.provider || "meta_cloud_api",
-        officialPhoneNumber: config.officialPhoneNumber || "966550123456",
+        officialPhoneNumber: config.officialPhoneNumber || "966541820904",
         wabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || config.wabaId || "",
         phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || config.phoneNumberId || "",
         webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || config.webhookVerifyToken || "reyadat_alata_wa_verify_2026",

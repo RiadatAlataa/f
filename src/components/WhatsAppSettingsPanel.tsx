@@ -55,7 +55,7 @@ export const WhatsAppSettingsPanel: React.FC<WhatsAppSettingsPanelProps> = () =>
 
   // Form edit states
   const [enabled, setEnabled] = useState(false);
-  const [officialPhone, setOfficialPhone] = useState("966550123456");
+  const [officialPhone, setOfficialPhone] = useState("966541820904");
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [wabaId, setWabaId] = useState("");
   const [newToken, setNewToken] = useState("");
@@ -93,7 +93,7 @@ export const WhatsAppSettingsPanel: React.FC<WhatsAppSettingsPanelProps> = () =>
         if (data.settings) {
           setSettings(data.settings);
           setEnabled(data.settings.enabled);
-          setOfficialPhone(data.settings.officialPhoneNumber || "966550123456");
+          setOfficialPhone(data.settings.officialPhoneNumber || "966541820904");
           setPhoneNumberId(data.settings.phoneNumberId || "");
           setWabaId(data.settings.wabaId || "");
           setWebhookVerifyToken(data.settings.webhookVerifyToken || "reyadat_alata_wa_verify_2026");
@@ -388,7 +388,7 @@ export const WhatsAppSettingsPanel: React.FC<WhatsAppSettingsPanelProps> = () =>
                     type="text"
                     value={officialPhone}
                     onChange={(e) => setOfficialPhone(e.target.value)}
-                    placeholder="966550123456"
+                    placeholder="966541820904"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 font-mono text-left"
                     dir="ltr"
                     required
@@ -607,7 +607,7 @@ export const WhatsAppSettingsPanel: React.FC<WhatsAppSettingsPanelProps> = () =>
                   type="text"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder="0550123456 أو 966550123456"
+                  placeholder="0541820904 أو 966541820904"
                   className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-xs font-mono text-left"
                   dir="ltr"
                   required

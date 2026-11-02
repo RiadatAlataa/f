@@ -62,7 +62,7 @@ export interface WhatsAppSendResult {
 export const defaultWhatsAppConfig: WhatsAppConfig = {
   enabled: false,
   provider: 'meta_cloud_api',
-  officialPhoneNumber: "966550123456",
+  officialPhoneNumber: "966541820904",
   wabaId: "",
   phoneNumberId: "",
   accessToken: "",

@@ -136,7 +136,7 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
               <div className="flex items-center gap-1.5">
                 <h2 className="text-xs font-bold text-slate-900 dark:text-white truncate font-lyon association-brand-text">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h2>
                 <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0">
-                  5081
+                  1000888600
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">لوحة الإدارة والتحكم الشاملة</p>

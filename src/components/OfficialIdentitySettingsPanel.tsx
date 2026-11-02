@@ -35,7 +35,7 @@ export const OfficialIdentitySettingsPanel: React.FC<OfficialIdentitySettingsPan
   const [signatoryNameAr, setSignatoryNameAr] = useState(initialLetterhead.signatoryNameAr || "رئيس مجلس الإدارة");
   const [signatoryTitleAr, setSignatoryTitleAr] = useState(initialLetterhead.signatoryTitleAr || "رئيس مجلس الإدارة");
   const [footerAddressAr, setFooterAddressAr] = useState(initialLetterhead.footerAddressAr || "مكة المكرمة - مخطط العسيلة - المملكة العربية السعودية");
-  const [footerContactAr, setFooterContactAr] = useState(initialLetterhead.footerContactAr || `هاتف: ${homeSettings?.contactPhone || '0550123456'} | بريد: ${homeSettings?.contactEmail || 'info@riadataleata.org.sa'}`);
+  const [footerContactAr, setFooterContactAr] = useState(initialLetterhead.footerContactAr || `هاتف: ${homeSettings?.contactPhone || '0541820904'} | بريد: ${homeSettings?.contactEmail || 'info@riadataleata.org.sa'}`);
   const [footerBankInfoAr, setFooterBankInfoAr] = useState(initialLetterhead.footerBankInfoAr || "الحساب البنكي المعتمد (مصرف الراجحي): SA0000000000000000000000");
 
   // Authorized Signatories List

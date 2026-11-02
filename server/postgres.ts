@@ -493,10 +493,12 @@ export function normalizeSystemStateCollections(db: any): boolean {
     db.systemSettings = {
       systemName: "نظام إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
       teamName: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
-      licenseNumber: "5434",
-      registrationNumber: "5434",
+      licenseNumber: "1000888600",
+      registrationNumber: "1000888600",
       foundationYear: "1445هـ / 2024م",
       officialEmail: "info@riadataleata.org.sa",
+      mobileNumber: "0541820904",
+      landlineNumber: "0541820904",
       address: "مكة المكرمة - مخطط العسيلة - الشارع العام",
       maintenanceMode: false
     };
@@ -506,6 +508,52 @@ export function normalizeSystemStateCollections(db: any): boolean {
     db.homeSettings = {};
     modified = true;
   }
+
+  // Ensure license number & phone number synchronization with the official non-profit license & mobile
+  if (db.homeSettings) {
+    if (!db.homeSettings.licenseNumber || db.homeSettings.licenseNumber === "5081" || db.homeSettings.licenseNumber === "5434") {
+      db.homeSettings.licenseNumber = "1000888600";
+      modified = true;
+    }
+    if (!db.homeSettings.contactPhone || db.homeSettings.contactPhone === "0550123456") {
+      db.homeSettings.contactPhone = "0541820904";
+      modified = true;
+    }
+    if (db.homeSettings.licenseConfig) {
+      if (typeof db.homeSettings.licenseConfig.titleAr === "string" && db.homeSettings.licenseConfig.titleAr.includes("5081")) {
+        db.homeSettings.licenseConfig.titleAr = db.homeSettings.licenseConfig.titleAr.replace(/5081/g, "1000888600");
+        modified = true;
+      }
+      if (typeof db.homeSettings.licenseConfig.notes === "string" && db.homeSettings.licenseConfig.notes.includes("5081")) {
+        db.homeSettings.licenseConfig.notes = db.homeSettings.licenseConfig.notes.replace(/5081/g, "1000888600");
+        modified = true;
+      }
+    }
+  }
+
+  if (db.systemSettings) {
+    if (!db.systemSettings.licenseNumber || db.systemSettings.licenseNumber === "5081" || db.systemSettings.licenseNumber === "5434") {
+      db.systemSettings.licenseNumber = "1000888600";
+      modified = true;
+    }
+    if (!db.systemSettings.registrationNumber || db.systemSettings.registrationNumber === "5081" || db.systemSettings.registrationNumber === "5434") {
+      db.systemSettings.registrationNumber = "1000888600";
+      modified = true;
+    }
+    if (!db.systemSettings.mobileNumber || db.systemSettings.mobileNumber === "0550123456") {
+      db.systemSettings.mobileNumber = "0541820904";
+      modified = true;
+    }
+    if (Array.isArray(db.systemSettings.socialLinks)) {
+      for (const soc of db.systemSettings.socialLinks) {
+        if (soc && soc.platform === "whatsapp" && soc.url && soc.url.includes("966550123456")) {
+          soc.url = soc.url.replace("966550123456", "966541820904");
+          modified = true;
+        }
+      }
+    }
+  }
+
   if (!db.files || typeof db.files !== "object") {
     db.files = {};
     modified = true;
@@ -917,10 +965,12 @@ export async function bootstrapCleanPostgresSystemState(
       systemSettings: {
         systemName: "نظام إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
         teamName: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
-        licenseNumber: "5434",
-        registrationNumber: "5434",
+        licenseNumber: "1000888600",
+        registrationNumber: "1000888600",
         foundationYear: "1445هـ / 2024م",
         officialEmail: "info@riadataleata.org.sa",
+        mobileNumber: "0541820904",
+        landlineNumber: "0541820904",
         address: "مكة المكرمة - مخطط العسيلة - الشارع العام",
         maintenanceMode: false
       },

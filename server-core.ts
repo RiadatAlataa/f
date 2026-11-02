@@ -778,8 +778,8 @@ const defaultSystemSettings = {
   commanderInChief: "أ. عبد الرحمن السليمان (القائد العام)",
   viceCommander: "أ. ياسر الغامدي (نائب القائد العام)",
   officialEmail: "info@riadataleata.org.sa",
-  mobileNumber: "0550123456",
-  landlineNumber: "0125501234",
+  mobileNumber: "0541820904",
+  landlineNumber: "0541820904",
   address: "مكة المكرمة - مخطط العسيلة - الشارع العام - مقر الجمعية الرئيسي",
   websiteUrl: "https://riadataleata.org.sa",
   googleMapsEmbedUrl: "https://maps.google.com/?q=Mecca+Al-Asilah",
@@ -790,7 +790,7 @@ const defaultSystemSettings = {
     { id: "soc-2", platform: "instagram" as const, titleAr: "حساب إنستغرام", url: "https://instagram.com/riadataleata", enabled: true, order: 2 },
     { id: "soc-3", platform: "youtube" as const, titleAr: "قناة يوتيوب الرسمية", url: "https://youtube.com/riadataleata", enabled: true, order: 3 },
     { id: "soc-4", platform: "snapchat" as const, titleAr: "حساب سناب شات", url: "https://snapchat.com/add/riadataleata", enabled: true, order: 4 },
-    { id: "soc-5", platform: "whatsapp" as const, titleAr: "واتساب التكافل المباشر", url: "https://wa.me/966550123456", enabled: true, order: 5 },
+    { id: "soc-5", platform: "whatsapp" as const, titleAr: "واتساب التكافل المباشر", url: "https://wa.me/966541820904", enabled: true, order: 5 },
     { id: "soc-6", platform: "tiktok" as const, titleAr: "حساب تيك توك", url: "https://tiktok.com/@riadataleata", enabled: true, order: 6 },
     { id: "soc-7", platform: "telegram" as const, titleAr: "قناة تيليجرام التعاميم", url: "https://t.me/riadataleata", enabled: true, order: 7 },
     { id: "soc-8", platform: "linkedin" as const, titleAr: "صفحة لينكدإن المؤسسية", url: "https://linkedin.com/company/riadataleata", enabled: true, order: 8 },
@@ -1417,7 +1417,7 @@ const defaultDb = {
     videoCoverUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&h=900&fit=crop",
     associationNameAr: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة",
     associationNameEn: "Reyadat Al-Ata Association for Human Services in Al-Asilah",
-    licenseNumber: "5081",
+    licenseNumber: "1000888600",
     heroTitleAr: "ريادةٌ في العطاء.. وخدمةٌ للإنسان",
     heroTitleEn: "Leadership in Giving.. Service for Humans",
     heroDescAr: "نسعى لتقديم الخدمات التنموية والخيرية المبتكرة والمستدامة لتأهيل وتنمية المجتمع بمخطط العسيلة المكي، ممتثلين قيم العطاء والشفافية والتمكين.",
@@ -1445,7 +1445,7 @@ const defaultDb = {
     valuesAr: ["الشفافية والنزاهة", "التمكين والاستدامة", "الريادة والابتكار", "التعاون والشراكة", "المسؤولية والمواطنة"],
     valuesEn: ["Transparency", "Empowerment", "Innovation", "Partnership", "Responsibility"],
     donationLink: "https://store.riadataleata.org.sa",
-    contactPhone: "0550123456",
+    contactPhone: "0541820904",
     contactEmail: "info@riadataleata.org.sa",
     contactLocationAr: "مكة المكرمة - مخطط العسيلة - الشارع العام",
     contactLocationEn: "Mecca - Al-Asilah Scheme - Public Street",
@@ -3494,7 +3494,7 @@ export function readDb() {
               { id: "e-dates", type: "expiryDate", labelAr: "تاريخ الانتهاء", visible: true, x: 91, y: 56, fontFamily: "Cairo", fontSize: 11, fontWeight: "bold", color: "#047857", textAlign: "right", showLabelPrefix: true, labelPrefix: "صالحة حتى:", zIndex: 15 },
               { id: "e-qr", type: "qrCode", labelAr: "رمز QR", visible: true, x: 16, y: 22, qrSize: 92, zIndex: 20 },
               { id: "e-bar", type: "barcode", labelAr: "الباركود", visible: true, x: 26, y: 47, width: 170, zIndex: 15 },
-              { id: "e-custom", type: "customText", labelAr: "عبارة رسمية", visible: true, x: 50, y: 91, fontFamily: "Tajawal", fontSize: 11, fontWeight: "bold", color: "#065f46", textAlign: "center", customTextValue: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 5081", zIndex: 15 }
+              { id: "e-custom", type: "customText", labelAr: "عبارة رسمية", visible: true, x: 50, y: 91, fontFamily: "Tajawal", fontSize: 11, fontWeight: "bold", color: "#065f46", textAlign: "center", customTextValue: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 1000888600", zIndex: 15 }
             ]
           },
           {
@@ -13783,8 +13783,8 @@ app.post("/api/db/license/upload", async (req, res) => {
       ...db.homeSettings.licenseConfig,
       enabled: true,
       imageUrl: localUrl,
-      titleAr: db.homeSettings.licenseConfig.titleAr || "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 5081",
-      notes: db.homeSettings.licenseConfig.notes || "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 5081"
+      titleAr: db.homeSettings.licenseConfig.titleAr || "وثيقة تسجيل وترخيص الجمعية الرسمية رقم 1000888600",
+      notes: db.homeSettings.licenseConfig.notes || "مسجلة بالمركز الوطني لتنمية القطاع غير الربحي بالترخيص رقم 1000888600"
     };
 
     if (licenseNumber) {
@@ -13808,7 +13808,7 @@ app.post("/api/db/license/upload", async (req, res) => {
       status: "success",
       imageUrl: localUrl,
       licenseConfig: db.homeSettings.licenseConfig,
-      licenseNumber: db.homeSettings.licenseNumber || "5081",
+      licenseNumber: db.homeSettings.licenseNumber || "1000888600",
       db
     });
   } catch (err: any) {
@@ -19829,7 +19829,7 @@ function ensureAllCardTemplates(db: any) {
         { id: "e-dates", type: "expiryDate", labelAr: "تاريخ الانتهاء", visible: true, x: 91, y: 56, fontFamily: "Cairo", fontSize: 11, fontWeight: "bold", color: "#047857", textAlign: "right", showLabelPrefix: true, labelPrefix: "صالحة حتى:", zIndex: 15 },
         { id: "e-qr", type: "qrCode", labelAr: "رمز QR", visible: true, x: 16, y: 22, qrSize: 92, zIndex: 20 },
         { id: "e-bar", type: "barcode", labelAr: "الباركود", visible: true, x: 26, y: 47, width: 170, zIndex: 15 },
-        { id: "e-custom", type: "customText", labelAr: "عبارة رسمية", visible: true, x: 50, y: 91, fontFamily: "Tajawal", fontSize: 11, fontWeight: "bold", color: "#065f46", textAlign: "center", customTextValue: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 5081", zIndex: 15 }
+        { id: "e-custom", type: "customText", labelAr: "عبارة رسمية", visible: true, x: 50, y: 91, fontFamily: "Tajawal", fontSize: 11, fontWeight: "bold", color: "#065f46", textAlign: "center", customTextValue: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 1000888600", zIndex: 15 }
       ]
     });
     modified = true;

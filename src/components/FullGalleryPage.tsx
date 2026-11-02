@@ -199,7 +199,7 @@ export const FullGalleryPage: React.FC<FullGalleryPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-4">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold shadow-xs">
             <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{lang === "ar" ? "إدارة الإعلام والتوثيق الميداني - ترخيص 5081" : "Media Department & Documentation - Lic. 5081"}</span>
+            <span>{lang === "ar" ? "إدارة الإعلام والتوثيق الميداني - ترخيص 1000888600" : "Media Department & Documentation - Lic. 1000888600"}</span>
           </div>
 
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white">

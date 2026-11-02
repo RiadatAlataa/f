@@ -79,7 +79,7 @@ const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   valuesAr: [],
   valuesEn: [],
   donationLink: "https://store.riadataleata.org.sa",
-  contactPhone: "0550123456",
+  contactPhone: "0541820904",
   contactEmail: "info@riadataleata.org.sa",
   contactLocationAr: "مكة المكرمة - مخطط العسيلة",
   contactLocationEn: "Mecca - Al-Asilah Scheme",

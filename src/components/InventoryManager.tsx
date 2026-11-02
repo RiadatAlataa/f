@@ -3922,7 +3922,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                     required
                     value={editingStorekeeper.phone || ""}
                     onChange={e => setEditingStorekeeper({ ...editingStorekeeper, phone: e.target.value })}
-                    placeholder="0550123456"
+                    placeholder="0541820904"
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-700 border font-mono"
                   />
                 </div>

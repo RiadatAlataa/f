@@ -148,7 +148,7 @@ const INITIAL_TEMPLATES: VolunteerCardTemplate[] = [
       { id: "e-dates", type: "expiryDate", labelAr: "تاريخ الانتهاء", visible: true, x: 91, y: 56, fontFamily: "Cairo", fontSize: 11, fontWeight: "bold", color: "#047857", textAlign: "right", showLabelPrefix: true, labelPrefix: "صالحة حتى:", zIndex: 15 },
       { id: "e-qr", type: "qrCode", labelAr: "رمز QR", visible: true, x: 16, y: 22, qrSize: 92, zIndex: 20 },
       { id: "e-bar", type: "barcode", labelAr: "الباركود", visible: true, x: 26, y: 47, width: 170, zIndex: 15 },
-      { id: "e-custom", type: "customText", labelAr: "عبارة رسمية", visible: true, x: 50, y: 91, fontFamily: "Tajawal", fontSize: 11, fontWeight: "bold", color: "#065f46", textAlign: "center", customTextValue: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 5081", zIndex: 15 }
+      { id: "e-custom", type: "customText", labelAr: "عبارة رسمية", visible: true, x: 50, y: 91, fontFamily: "Tajawal", fontSize: 11, fontWeight: "bold", color: "#065f46", textAlign: "center", customTextValue: "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة - ترخيص: 1000888600", zIndex: 15 }
     ]
   },
   {

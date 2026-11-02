@@ -155,7 +155,7 @@ export const AssociationStore: React.FC<AssociationStoreProps> = ({
             <div className="md:col-span-8 space-y-4">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs sm:text-sm font-semibold">
                 <Sparkles className="w-4 h-4 text-emerald-400" />
-                متجر جمعية ريادة العطاء لخدمة الإنسان بالعسيلة (ترخيص رقم: 5081)
+                متجر جمعية ريادة العطاء لخدمة الإنسان بالعسيلة (ترخيص رقم: 1000888600)
               </div>
               <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
                 ساهم في صناعة الأثر.. وشاركنا الأجر بمكة المكرمة
@@ -608,7 +608,7 @@ export const AssociationStore: React.FC<AssociationStoreProps> = ({
               <div className="flex justify-between items-start pb-3 border-b border-slate-200">
                 <div>
                   <h4 className="font-bold text-slate-800 text-sm">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h4>
-                  <p className="text-[10px] text-slate-500">رقم الترخيص الرسمي: 5081 - العسيلة بمكة المكرمة</p>
+                  <p className="text-[10px] text-slate-500">رقم الترخيص الرسمي: 1000888600 - العسيلة بمكة المكرمة</p>
                 </div>
                 <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded text-[10px]">
                   سند إيصال إلكتروني
