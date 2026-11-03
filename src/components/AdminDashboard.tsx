@@ -1498,7 +1498,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'password_resets' && (
             <div className="space-y-6">
               <PasswordResetRequestsManager
-                currentUser={{ id: 'ops-admin', name: 'م. سلطان الزهراني (مدير العمليات)' }}
+                currentUser={{ id: authenticatedUser?.id || authenticatedUser?.userId || 'ops-admin', name: authenticatedUser?.name || 'مدير العمليات' }}
                 userRole="admin"
                 onRefreshData={onRefreshGlobalData}
               />
@@ -2443,48 +2443,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             const allAccountsList: any[] = [];
 
             // 0. Operations Manager (مدير العمليات - دور إداري مستقل بأعلى صلاحيات تشغيلية)
-            allAccountsList.push({
-              id: 'ops-manager',
-              type: 'operations',
-              name: 'م. سلطان الزهراني (مدير العمليات)',
-              nationalId: '1020000000',
-              phone: '0559000000',
-              email: 'operations@riadataleata.org.sa',
-              departmentId: 'dep-1',
-              departmentName: 'مكتب إدارة العمليات (دور إداري مستقل)',
-              jobTitle: 'مدير العمليات والتشغيل',
-              role: 'operations_manager',
-              status: 'active',
-              permissions: [
-                'super_admin', 'operations_manager', 'manage_users', 'manage_permissions',
-                'view_department', 'create_data', 'edit_data', 'delete_data',
-                'export_pdf', 'export_excel', 'manage_staff', 'manage_tasks',
-                'view_reports', 'cross_department_access', 'all_permissions'
-              ],
-              allowedPages: ['inventory', 'volunteer_ops', 'requests', 'beneficiaries', 'hr_staff', 'finance_ledger', 'projects_list', 'media_news', 'directives', 'tasks', 'staff', 'letters', 'users_mgmt']
-            });
-
-            // 1. Department Directors
-            safeDepartments.forEach(d => {
+            const realOpsUser = (authenticatedUser && (authenticatedUser.role === 'operations_manager' || authenticatedUser.role === 'admin'))
+              ? authenticatedUser
+              : null;
+            if (realOpsUser) {
               allAccountsList.push({
-                id: d.id,
-                type: 'director',
-                name: d.directorName || `مدير ${d.nameAr}`,
-                nationalId: d.nationalId || '',
-                phone: d.phone || '',
-                email: d.email || '',
-                departmentId: d.id,
-                departmentName: d.nameAr,
-                jobTitle: `مدير ${d.nameAr}`,
-                role: d.id === 'dep-8' ? 'storekeeper' : 'department_admin',
+                id: realOpsUser.id || realOpsUser.userId || 'ops-manager',
+                type: 'operations',
+                name: realOpsUser.name || realOpsUser.userName || 'مدير العمليات',
+                nationalId: realOpsUser.nationalId || '',
+                phone: realOpsUser.phone || '',
+                email: realOpsUser.email || realOpsUser.userEmail || '',
+                departmentId: 'dep-1',
+                departmentName: 'مكتب إدارة العمليات (دور إداري مستقل)',
+                jobTitle: realOpsUser.jobTitle || 'مدير العمليات والتشغيل',
+                role: 'operations_manager',
                 status: 'active',
                 permissions: [
-                  'view_department', 'create_data', 'edit_data', 'delete_data', 'approve_data',
-                  'disburse_data', 'receive_data', 'print_data', 'export_pdf', 'export_excel',
-                  'manage_staff', 'manage_tasks', 'view_reports'
+                  'super_admin', 'operations_manager', 'manage_users', 'manage_permissions',
+                  'view_department', 'create_data', 'edit_data', 'delete_data',
+                  'export_pdf', 'export_excel', 'manage_staff', 'manage_tasks',
+                  'view_reports', 'cross_department_access', 'all_permissions'
                 ],
-                allowedPages: ['inventory', 'volunteer_ops', 'requests', 'beneficiaries', 'hr_staff', 'finance_ledger', 'projects_list', 'media_news', 'directives', 'tasks', 'staff', 'letters']
+                allowedPages: ['inventory', 'volunteer_ops', 'requests', 'beneficiaries', 'hr_staff', 'finance_ledger', 'projects_list', 'media_news', 'directives', 'tasks', 'staff', 'letters', 'users_mgmt']
               });
+            }
+
+            // 1. Department Directors (only if assigned by the admin)
+            safeDepartments.forEach(d => {
+              if (d.directorName && d.directorName.trim() !== '') {
+                allAccountsList.push({
+                  id: d.id,
+                  type: 'director',
+                  name: d.directorName,
+                  nationalId: d.nationalId || '',
+                  phone: d.phone || '',
+                  email: d.email || '',
+                  departmentId: d.id,
+                  departmentName: d.nameAr,
+                  jobTitle: `مدير ${d.nameAr}`,
+                  role: d.id === 'dep-8' ? 'storekeeper' : 'department_admin',
+                  status: 'active',
+                  permissions: [
+                    'view_department', 'create_data', 'edit_data', 'delete_data', 'approve_data',
+                    'disburse_data', 'receive_data', 'print_data', 'export_pdf', 'export_excel',
+                    'manage_staff', 'manage_tasks', 'view_reports'
+                  ],
+                  allowedPages: ['inventory', 'volunteer_ops', 'requests', 'beneficiaries', 'hr_staff', 'finance_ledger', 'projects_list', 'media_news', 'directives', 'tasks', 'staff', 'letters']
+                });
+              }
             });
 
             // 2. Employees & Storekeepers

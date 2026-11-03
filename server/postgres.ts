@@ -587,6 +587,143 @@ export function normalizeSystemStateCollections(db: any): boolean {
     }
   }
 
+  // Purge mock board members, fake directors, fake employees, and fake leaders so the user can add them from the control panel
+  const mockOrgMemberIds = new Set([
+    "org-board-1", "org-board-2", "org-board-3", "org-board-4", "org-board-5",
+    "org-exec-1", "org-exec-2", "org-dep-1", "org-dep-2", "org-dep-3", "org-dep-4", "org-dep-5", "org-dep-6", "org-dep-7"
+  ]);
+  const mockNames = new Set([
+    "د. عبد الله بن منصور القحطاني",
+    "أ. فهد بن عبد العزيز السليمان",
+    "م. عادل بن عبد الرحمن الحربي",
+    "أ. أحمد بن عواض المعبدي",
+    "أ. سارة بنت منصور الشريف",
+    "أ. خالد بن إبراهيم المنصور",
+    "أ. عبد الرحمن السليمان",
+    "أ. عبد الله العتيبي",
+    "أ. فيصل الأحمدي",
+    "أ. مريم الغامدي",
+    "أ. منيرة القحطاني",
+    "أ. ماجد الدوسري",
+    "أ. سعود الحربي",
+    "أ. نورة بنت فهد الشريف",
+    "سعود بن عبد العزيز الهذلي",
+    "منى بنت سليمان الحربي",
+    "عبد الله بن خالد الدوسري",
+    "ياسر بن صالح الغامدي",
+    "فهد بن محمد الشريف",
+    "ريم بنت عبد الله السلمي"
+  ]);
+
+  if (Array.isArray(db.orgMembers) && db.orgMembers.length > 0) {
+    const prevLen = db.orgMembers.length;
+    db.orgMembers = db.orgMembers.filter((m: any) => {
+      if (!m) return false;
+      if (mockOrgMemberIds.has(m.id)) return false;
+      if (typeof m.id === "string" && (m.id.startsWith("org-board-") || m.id.startsWith("org-exec-") || m.id.startsWith("org-dep-"))) return false;
+      if (typeof m.name === "string" && mockNames.has(m.name.trim())) return false;
+      return true;
+    });
+    if (db.orgMembers.length !== prevLen) modified = true;
+  }
+
+  if (db.homeSettings && Array.isArray(db.homeSettings.orgMembers)) {
+    db.homeSettings.orgMembers = db.orgMembers;
+  }
+
+  // Clear mock directors in departments
+  const mockDirectorNationalIds = new Set([
+    "1010000001", "1010000002", "1010000003", "1010000004", "1010000005", "1010000007", "1010000008", "1010000009"
+  ]);
+  if (Array.isArray(db.departments)) {
+    for (const dep of db.departments) {
+      if (dep && typeof dep === "object") {
+        if (
+          mockDirectorNationalIds.has(dep.nationalId) ||
+          mockNames.has(dep.directorName) ||
+          (typeof dep.email === "string" && (dep.email.endsWith("@riadataleata.org.sa") && !dep.email.includes("operations") && !dep.email.includes("admin") && !dep.email.includes("mosa") && !dep.email.includes("info")))
+        ) {
+          dep.directorName = "";
+          dep.nationalId = "";
+          dep.phone = "";
+          dep.email = "";
+          dep.password = "";
+          modified = true;
+        }
+      }
+    }
+  }
+
+  // Purge mock access records in userDepartmentAccess while strictly preserving real accounts (e.g. operations manager, admin, user-created accounts)
+  const mockAccessIds = new Set([
+    "perm-dep-1", "perm-dep-2", "perm-dep-3", "perm-dep-4", "perm-dep-5", "perm-dep-7", "perm-dep-8", "perm-dep-9",
+    "perm-emp-1", "perm-emp-2", "perm-emp-3", "perm-emp-4", "perm-leader-1"
+  ]);
+  if (Array.isArray(db.userDepartmentAccess) && db.userDepartmentAccess.length > 0) {
+    const prevLen = db.userDepartmentAccess.length;
+    db.userDepartmentAccess = db.userDepartmentAccess.filter((u: any) => {
+      if (!u) return false;
+      if (mockAccessIds.has(u.id)) return false;
+      if (typeof u.userId === "string" && u.userId.startsWith("depadmin-dep-")) return false;
+      if (typeof u.userId === "string" && u.userId.startsWith("emp-")) return false;
+      if (u.id === "perm-leader-1" || u.userId === "team-1") return false;
+      if (mockDirectorNationalIds.has(u.nationalId)) return false;
+      if (typeof u.userName === "string" && mockNames.has(u.userName.trim())) return false;
+      return true;
+    });
+    if (db.userDepartmentAccess.length !== prevLen) modified = true;
+  }
+
+  // Purge mock employees
+  const mockEmpIds = new Set(["emp-1", "emp-2", "emp-3", "emp-4"]);
+  if (Array.isArray(db.employees) && db.employees.length > 0) {
+    const prevLen = db.employees.length;
+    db.employees = db.employees.filter((e: any) => {
+      if (!e) return false;
+      if (mockEmpIds.has(e.id)) return false;
+      if (mockNames.has(e.name)) return false;
+      return true;
+    });
+    if (db.employees.length !== prevLen) modified = true;
+  }
+
+  // Purge mock leaders
+  const mockLdrIds = new Set(["ldr-1", "ldr-2"]);
+  if (Array.isArray(db.leaders) && db.leaders.length > 0) {
+    const prevLen = db.leaders.length;
+    db.leaders = db.leaders.filter((l: any) => {
+      if (!l) return false;
+      if (mockLdrIds.has(l.id)) return false;
+      if (mockNames.has(l.name)) return false;
+      return true;
+    });
+    if (db.leaders.length !== prevLen) modified = true;
+  }
+
+  // Purge mock employeeRequests and teamStaffAssignments
+  if (Array.isArray(db.employeeRequests) && db.employeeRequests.length > 0) {
+    const prevLen = db.employeeRequests.length;
+    db.employeeRequests = db.employeeRequests.filter((r: any) => !r || (r.id !== "emp-req-1" && r.id !== "emp-req-2"));
+    if (db.employeeRequests.length !== prevLen) modified = true;
+  }
+  if (Array.isArray(db.teamStaffAssignments) && db.teamStaffAssignments.length > 0) {
+    const prevLen = db.teamStaffAssignments.length;
+    db.teamStaffAssignments = db.teamStaffAssignments.filter((a: any) => !a || a.id !== "tsa-1");
+    if (db.teamStaffAssignments.length !== prevLen) modified = true;
+  }
+
+  // Clear mock commander from systemSettings
+  if (db.systemSettings) {
+    if (db.systemSettings.commanderInChief === "أحمد بن عواض المعبدي") {
+      db.systemSettings.commanderInChief = "";
+      modified = true;
+    }
+    if (db.systemSettings.viceCommander === "م. سلطان الزهراني") {
+      db.systemSettings.viceCommander = "";
+      modified = true;
+    }
+  }
+
   return modified;
 }
 
@@ -824,10 +961,10 @@ export async function bootstrapCleanPostgresSystemState(
           id: "dep-1",
           nameAr: "الإدارة التنفيذية",
           nameEn: "Executive Management",
-          directorName: "أ. عبد الرحمن السليمان",
-          nationalId: "1010000001",
-          email: "exec@riadataleata.org.sa",
-          phone: "0551000001",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "تنفيذ قرارات مجلس الإدارة والإشراف على كافة الإدارات والخطط التشغيلية ومؤشرات الجودة.",
           descriptionEn: "Executing board decisions, supervising all departments, operational plans, and quality metrics."
         },
@@ -835,70 +972,70 @@ export async function bootstrapCleanPostgresSystemState(
           id: "dep-2",
           nameAr: "الإدارة المالية",
           nameEn: "Financial Management",
-          directorName: "أ. عبد الله العتيبي",
-          nationalId: "1010000002",
-          email: "finance@riadataleata.org.sa",
-          phone: "0551000002",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "إدارة الميزانيات والتقارير المالية والتدقيق المحاسبي وسندات الصرف والقبض."
         },
         {
           id: "dep-3",
           nameAr: "إدارة البرامج والمشاريع",
           nameEn: "Programs & Projects Management",
-          directorName: "أ. فيصل الأحمدي",
-          nationalId: "1010000003",
-          email: "projects@riadataleata.org.sa",
-          phone: "0551000003",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "تخطيط وتنفيذ المبادرات المجتمعية والمشاريع التنموية وقياس الأثر المجتمعي."
         },
         {
           id: "dep-4",
           nameAr: "إدارة المستفيدين",
           nameEn: "Beneficiaries Management",
-          directorName: "أ. مريم الغامدي",
-          nationalId: "1010000004",
-          email: "beneficiaries@riadataleata.org.sa",
-          phone: "0551000004",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "استقبال طلبات الرعاية، دراسة الحالات الاجتماعية، وتقديم الدعم للأسر المستحقة."
         },
         {
           id: "dep-5",
           nameAr: "إدارة التطوع",
           nameEn: "Volunteer Management",
-          directorName: "أ. منيرة القحطاني",
-          nationalId: "1010000005",
-          email: "volunteers@riadataleata.org.sa",
-          phone: "0551000005",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "استقطاب وتأهيل المتطوعين، إدارة الفرق التطوعية، وإصدار بطاقات التطوع الذكية."
         },
         {
           id: "dep-7",
           nameAr: "إدارة تنمية الموارد المالية والشراكات",
           nameEn: "Resource Development & Partnerships",
-          directorName: "أ. ماجد الدوسري",
-          nationalId: "1010000007",
-          email: "partnerships@riadataleata.org.sa",
-          phone: "0551000007",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "بناء الشراكات الاستراتيجية واستقطاب الداعمين ورعاية برامج الاستدامة المالية."
         },
         {
           id: "dep-8",
           nameAr: "إدارة الخدمات المساندة",
           nameEn: "Support Services & Warehouses",
-          directorName: "أ. سعود الحربي",
-          nationalId: "1010000008",
-          email: "support@riadataleata.org.sa",
-          phone: "0551000008",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "إدارة المستودعات، الدعم التقني، المشتريات، وصيانة المرافق والخدمات العامة."
         },
         {
           id: "dep-9",
           nameAr: "إدارة الموارد البشرية",
           nameEn: "Human Resources Management",
-          directorName: "أ. نورة بنت فهد الشريف",
-          nationalId: "1010000009",
-          email: "hr@riadataleata.org.sa",
-          phone: "0551000009",
+          directorName: "",
+          nationalId: "",
+          email: "",
+          phone: "",
           descriptionAr: "إدارة شؤون الموظفين، التوظيف، العقود والرواتب، والتدريب والتطوير الإداري."
         }
       ],

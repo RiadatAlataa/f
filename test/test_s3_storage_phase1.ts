@@ -292,7 +292,7 @@ export async function runS3StoragePhase1Tests(): Promise<boolean> {
       primaryDepartmentId: "dep-1",
       allowedDepartmentIds: ["dep-1", "dep-4"],
       permissions: ["super_admin", "operations_manager", "manage_staff", "view_department", "all_permissions"]
-    });
+    }, "operations_manager");
 
     await new Promise<void>((resolve, reject) => {
       server = http.createServer(app);

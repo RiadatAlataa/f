@@ -32,18 +32,15 @@ export const OfficialIdentitySettingsPanel: React.FC<OfficialIdentitySettingsPan
   const [officialSignatureUrl, setOfficialSignatureUrl] = useState(initialLetterhead.officialSignatureUrl || "");
   const [showStamp, setShowStamp] = useState(initialLetterhead.showStamp ?? true);
   const [showSignature, setShowSignature] = useState(initialLetterhead.showSignature ?? true);
-  const [signatoryNameAr, setSignatoryNameAr] = useState(initialLetterhead.signatoryNameAr || "رئيس مجلس الإدارة");
-  const [signatoryTitleAr, setSignatoryTitleAr] = useState(initialLetterhead.signatoryTitleAr || "رئيس مجلس الإدارة");
+  const [signatoryNameAr, setSignatoryNameAr] = useState(initialLetterhead.signatoryNameAr || "");
+  const [signatoryTitleAr, setSignatoryTitleAr] = useState(initialLetterhead.signatoryTitleAr || "");
   const [footerAddressAr, setFooterAddressAr] = useState(initialLetterhead.footerAddressAr || "مكة المكرمة - مخطط العسيلة - المملكة العربية السعودية");
   const [footerContactAr, setFooterContactAr] = useState(initialLetterhead.footerContactAr || `هاتف: ${homeSettings?.contactPhone || '0541820904'} | بريد: ${homeSettings?.contactEmail || 'info@riadataleata.org.sa'}`);
   const [footerBankInfoAr, setFooterBankInfoAr] = useState(initialLetterhead.footerBankInfoAr || "الحساب البنكي المعتمد (مصرف الراجحي): SA0000000000000000000000");
 
   // Authorized Signatories List
   const [authorizedSignatories, setAuthorizedSignatories] = useState<any[]>(
-    initialLetterhead.authorizedSignatories || [
-      { id: "sig-1", name: "أحمد بن عواض المعبدي", title: "رئيس مجلس الإدارة", department: "مجلس الإدارة", isDefault: true, canIssueOfficialLetters: true },
-      { id: "sig-2", name: "المدير التنفيذي", title: "المدير التنفيذي", department: "الإدارة التنفيذية", isDefault: false, canIssueOfficialLetters: true }
-    ]
+    initialLetterhead.authorizedSignatories || []
   );
 
   // Add new authorized signatory

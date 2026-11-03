@@ -250,7 +250,7 @@ export async function runUserDtoAndCircularRegressionTests(): Promise<boolean> {
       primaryDepartmentId: "dep-1",
       allowedDepartmentIds: ["dep-1", "dep-4", "dep-5"],
       permissions: ["super_admin", "operations_manager", "manage_staff", "view_department", "all_permissions"]
-    });
+    }, "operations_manager");
 
     // Start HTTP server on dynamic port
     await new Promise<void>((resolve, reject) => {

@@ -775,8 +775,8 @@ const defaultSystemSettings = {
   dateTimeFormat: "هجري / ميلادي - 12 ساعة",
 
   // 2. Team Info
-  commanderInChief: "أ. عبد الرحمن السليمان (القائد العام)",
-  viceCommander: "أ. ياسر الغامدي (نائب القائد العام)",
+  commanderInChief: "",
+  viceCommander: "",
   officialEmail: "info@riadataleata.org.sa",
   mobileNumber: "0541820904",
   landlineNumber: "0541820904",
@@ -910,11 +910,11 @@ const defaultDb = {
       id: "dep-1", 
       nameAr: "الإدارة التنفيذية", 
       nameEn: "Executive Management", 
-      directorName: "أ. عبد الرحمن السليمان",
-      nationalId: "1010000001",
-      password: "123",
-      email: "exec@riadataleata.org.sa",
-      phone: "0551000001",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "تنفيذ قرارات مجلس الإدارة والإشراف على كافة الإدارات والخطط التشغيلية ومؤشرات الجودة.", 
       descriptionEn: "Executing board decisions, supervising all departments, operational plans, and quality metrics.",
       tasks: [
@@ -930,11 +930,11 @@ const defaultDb = {
       id: "dep-2", 
       nameAr: "الإدارة المالية", 
       nameEn: "Financial Management", 
-      directorName: "أ. عبد الله العتيبي",
-      nationalId: "1010000002",
-      password: "123",
-      email: "finance@riadataleata.org.sa",
-      phone: "0551000002",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "إدارة الميزانيات، الإيرادات والمصروفات، السجلات المحاسبية والمشتريات والرواتب.", 
       descriptionEn: "Managing annual budgets, revenue/expenses, accounting ledgers, purchases, and compliance.",
       tasks: [
@@ -951,11 +951,11 @@ const defaultDb = {
       id: "dep-3", 
       nameAr: "إدارة البرامج والمشاريع", 
       nameEn: "Programs & Projects Management", 
-      directorName: "أ. فيصل الأحمدي",
-      nationalId: "1010000003",
-      password: "123",
-      email: "projects@riadataleata.org.sa",
-      phone: "0551000003",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "تخطيط وتنفيذ البرامج والمبادرات والمشاريع التنموية وقياس أثرها واقتراح مشاريع جديدة.", 
       descriptionEn: "Planning and executing programs, initiatives, timeline plans, and measuring developmental impact.",
       tasks: [
@@ -971,11 +971,11 @@ const defaultDb = {
       id: "dep-4", 
       nameAr: "إدارة المستفيدين", 
       nameEn: "Beneficiaries Management", 
-      directorName: "أ. مريم الغامدي",
-      nationalId: "1010000004",
-      password: "123",
-      email: "beneficiaries@riadataleata.org.sa",
-      phone: "0551000004",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "استقبال وتوثيق طلبات المستفيدين، دراسة الحالات والتأكد من استحقاقها وقياس رضاهم.", 
       descriptionEn: "Receiving beneficiary requests, registering data, studying eligibility, and measuring satisfaction.",
       tasks: [
@@ -991,11 +991,11 @@ const defaultDb = {
       id: "dep-5", 
       nameAr: "إدارة التطوع", 
       nameEn: "Volunteer Management", 
-      directorName: "أ. منيرة القحطاني",
-      nationalId: "1010000005",
-      password: "123",
-      email: "volunteers@riadataleata.org.sa",
-      phone: "0551000005",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "إدارة واستقطاب المتطوعين، الفرق التطوعية، اعتماد وإدارة الفرص التطوعية العامة والخاصة، الساعات والحضور والشهادات.", 
       descriptionEn: "Volunteer recruitment, volunteer teams, approving and managing public and private opportunities, hours, attendance, and certificates.",
       tasks: [
@@ -1011,11 +1011,11 @@ const defaultDb = {
       id: "dep-6", 
       nameAr: "إدارة الإعلام والاتصال", 
       nameEn: "Media & Communication Management", 
-      directorName: "أ. عبد العزيز الشمري",
-      nationalId: "1010000006",
-      password: "123",
-      email: "media@riadataleata.org.sa",
-      phone: "0551000006",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "إدارة وتوثيق المقاطع المرئية والفيديوهات، التغطيات الإعلامية، النشر والأرشفة، وإدارة المحتوى المرئي للجمعية.", 
       descriptionEn: "Managing media videos and clips, press coverage, publishing and archiving, and digital media content.",
       tasks: [
@@ -1031,11 +1031,11 @@ const defaultDb = {
       id: "dep-7", 
       nameAr: "إدارة تنمية الموارد المالية والشراكات", 
       nameEn: "Fundraising & Partnerships Management", 
-      directorName: "أ. ماجد الدوسري",
-      nationalId: "1010000007",
-      password: "123",
-      email: "partnerships@riadataleata.org.sa",
-      phone: "0551000007",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "تنمية الاستدامة المالية، استقطاب الداعمين والرعاة، بناء الشراكات والحملات الداعمة.", 
       descriptionEn: "Developing financial sustainability, attracting donors/sponsors, partnerships, and fundraising.",
       tasks: [
@@ -1051,11 +1051,11 @@ const defaultDb = {
       id: "dep-8", 
       nameAr: "إدارة الخدمات المساندة", 
       nameEn: "Support Services Management", 
-      directorName: "أ. سعود الحربي",
-      nationalId: "1010000008",
-      password: "123",
-      email: "support@riadataleata.org.sa",
-      phone: "0551000008",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "إدارة تقنية المعلومات والأنظمة، المستودعات والعهد والصيانة والحركة والأمن والسلامة.", 
       descriptionEn: "Managing IT systems, inventory, transportation, maintenance, general facilities, and security.",
       tasks: [
@@ -1072,11 +1072,11 @@ const defaultDb = {
       id: "dep-9", 
       nameAr: "إدارة الموارد البشرية", 
       nameEn: "Human Resources Management", 
-      directorName: "أ. نورة بنت فهد الشريف",
-      nationalId: "1010000009",
-      password: "123",
-      email: "hr@riadataleata.org.sa",
-      phone: "0551000009",
+      directorName: "",
+      nationalId: "",
+      password: "",
+      email: "",
+      phone: "",
       descriptionAr: "إدارة شؤون الموظفين، العقود، مسيرات الرواتب والبدلات، الحضور والانصراف، الإجازات، والقرارات الإدارية للموظفين.", 
       descriptionEn: "Managing employee affairs, contracts, payroll and allowances, attendance, leaves, and HR administrative decisions.",
       tasks: [
@@ -3764,194 +3764,18 @@ export function readDb() {
         modified = true;
       }
 
-      if (!db.employees || !Array.isArray(db.employees) || db.employees.length === 0) {
-        db.employees = [
-          {
-            id: "emp-1",
-            employeeNumber: "EMP-2026-001",
-            name: "سعود بن عبد العزيز الهذلي",
-            nationalId: "1034567890",
-            phone: "0501234567",
-            email: "saud.h@reyadat-alata.org.sa",
-            jobTitle: "أخصائي إدارة الموارد والكوادر",
-            departmentId: "dep-6",
-            departmentName: "إدارة الموارد البشرية",
-            nationality: "سعودي",
-            section: "استقطاب الكفاءات والتدريب",
-            qualification: "بكالوريوس إدارة أعمال وموارد بشرية",
-            birthDate: "1994-05-12",
-            hireDate: "2024-03-01",
-            expiryDate: "2027-03-01",
-            employmentType: "full_time",
-            photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
-            status: "active",
-            barcode: "100088868101",
-            qrCode: "MEM-EMP-2026-001",
-            approvedBy: "المدير التنفيذي - أ. عبد الرحمن السليمان",
-            approvedAt: "2024-03-01T08:00:00Z"
-          },
-          {
-            id: "emp-2",
-            employeeNumber: "EMP-2026-002",
-            name: "منى بنت سليمان الحربي",
-            nationalId: "1098761234",
-            phone: "0559876543",
-            email: "mona.h@reyadat-alata.org.sa",
-            jobTitle: "مسؤولة العلاقات والإعلام الرقمي",
-            departmentId: "dep-4",
-            departmentName: "إدارة الإعلام والعلاقات العامة",
-            nationality: "سعودية",
-            section: "صناعة المحتوى والنشر",
-            qualification: "بكالوريوس إعلام واتصال رقمي",
-            birthDate: "1997-09-20",
-            hireDate: "2024-06-15",
-            expiryDate: "2027-06-15",
-            employmentType: "full_time",
-            photo: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&h=200&fit=crop",
-            status: "active",
-            barcode: "100088868102",
-            qrCode: "MEM-EMP-2026-002",
-            approvedBy: "المدير التنفيذي - أ. عبد الرحمن السليمان",
-            approvedAt: "2024-06-15T09:30:00Z"
-          },
-          {
-            id: "emp-3",
-            employeeNumber: "EMP-2026-003",
-            name: "عبد الله بن خالد الدوسري",
-            nationalId: "1055567891",
-            phone: "0543322114",
-            email: "a.dosari@reyadat-alata.org.sa",
-            jobTitle: "أخصائي البرامج والمشاريع الميدانية",
-            departmentId: "dep-5",
-            departmentName: "إدارة المشاريع والبرامج",
-            nationality: "سعودي",
-            section: "المشاريع المجتمعية",
-            qualification: "بكالوريوس إدارة مشاريع PMP",
-            birthDate: "1992-11-04",
-            hireDate: "2024-09-01",
-            expiryDate: "2027-09-01",
-            employmentType: "full_time",
-            photo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop",
-            status: "active",
-            barcode: "100088868103",
-            qrCode: "MEM-EMP-2026-003",
-            approvedBy: "المدير التنفيذي - أ. عبد الرحمن السليمان",
-            approvedAt: "2024-09-01T10:00:00Z"
-          },
-          {
-            id: "emp-4",
-            employeeNumber: "EMP-2026-004",
-            name: "ياسر بن صالح الغامدي",
-            nationalId: "1087654321",
-            phone: "0567788990",
-            email: "yaser.g@reyadat-alata.org.sa",
-            jobTitle: "منسق شؤون المتطوعين والفرق",
-            departmentId: "dep-3",
-            departmentName: "إدارة التطوع والشراكات المجتمعية",
-            nationality: "سعودي",
-            section: "التنسيق الميداني",
-            qualification: "دبلوم عالي في إدارة الفعاليات والعمل التطوعي",
-            birthDate: "1995-02-18",
-            hireDate: "2025-01-10",
-            expiryDate: "2028-01-10",
-            employmentType: "full_time",
-            photo: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop",
-            status: "active",
-            barcode: "100088868104",
-            qrCode: "MEM-EMP-2026-004",
-            approvedBy: "المدير التنفيذي - أ. عبد الرحمن السليمان",
-            approvedAt: "2025-01-10T08:30:00Z"
-          }
-        ];
+      if (!db.employees || !Array.isArray(db.employees)) {
+        db.employees = [];
         modified = true;
       }
 
-      if (!db.employeeRequests) {
-        db.employeeRequests = [
-          {
-            id: "emp-req-1",
-            requestNumber: "EMP-REQ-2026-001",
-            departmentId: "dep-3",
-            departmentName: "إدارة التطوع والشراكات المجتمعية",
-            requestedBy: "د. عبد الله بن منصور القحطاني",
-            requestedByPhone: "0553000003",
-            createdAt: "2026-07-25T10:00:00Z",
-            status: "pending",
-            fullName: "خالد بن إبراهيم المنصور",
-            nationalId: "1045678901",
-            phone: "0551239874",
-            email: "khalid.m@gmail.com",
-            nationality: "سعودي",
-            jobTitle: "أخصائي تدريب وتأهيل المتطوعين",
-            section: "التدريب والتطوير",
-            qualification: "ماجستير إدارة وتطوير الموارد البشرية",
-            birthDate: "1993-08-14",
-            hireDate: "2026-08-01",
-            employmentType: "full_time",
-            notes: "نظراً للتوسع الكبير في عدد المبادرات الميدانية نأمل سرعة اعتماد انضمامه للفريق.",
-            documents: [
-              { id: "doc-1", title: "السيرة الذاتية الرسمية", fileName: "CV_Khalid_Almansour.pdf", fileUrl: "#", fileSize: "1.2 MB" },
-              { id: "doc-2", title: "صورة الهوية الوطنية", fileName: "National_ID_Copy.pdf", fileUrl: "#", fileSize: "840 KB" }
-            ],
-            reviewHistory: [
-              { date: "2026-07-25T10:00:00Z", action: "submitted", performedBy: "د. عبد الله بن منصور القحطاني", notes: "رفع طلب الاحتياج الوظيفي لاعتماد الإدارة العليا" }
-            ]
-          },
-          {
-            id: "emp-req-2",
-            requestNumber: "EMP-REQ-2026-002",
-            departmentId: "dep-4",
-            departmentName: "إدارة الإعلام والعلاقات العامة",
-            requestedBy: "أ. ماجد بن فيصل الزهراني",
-            requestedByPhone: "0554000004",
-            createdAt: "2026-07-20T11:30:00Z",
-            updatedAt: "2026-07-22T09:15:00Z",
-            status: "needs_modification",
-            fullName: "سارة بنت أحمد البقمي",
-            nationalId: "1067891230",
-            phone: "0548877665",
-            email: "sara.buqami@outlook.com",
-            nationality: "سعودية",
-            jobTitle: "مصممة هوية بصرية وإنتاج إعلامي",
-            section: "التصميم والإنتاج المرئي",
-            qualification: "بكالوريوس تصميم جرافيك ووسائط رقمية",
-            birthDate: "1998-03-22",
-            hireDate: "2026-08-15",
-            employmentType: "part_time",
-            notes: "متعاونة للإنتاج المرئي وتغطية الفعاليات والمبادرات الكبرى.",
-            documents: [
-              { id: "doc-3", title: "السيرة الذاتية ونماذج الأعمال", fileName: "Portfolio_Sara.pdf", fileUrl: "#", fileSize: "3.5 MB" }
-            ],
-            modificationNotes: "يرجى إرفاق صورة شهادة التخرج المعتمدة وتحديد ساعات العمل الأسبوعية للدوام الجزئي.",
-            reviewedBy: "المدير التنفيذي - أ. عبد الرحمن السليمان",
-            reviewedAt: "2026-07-22T09:15:00Z",
-            reviewHistory: [
-              { date: "2026-07-20T11:30:00Z", action: "submitted", performedBy: "أ. ماجد بن فيصل الزهراني", notes: "رفع الطلب" },
-              { date: "2026-07-22T09:15:00Z", action: "needs_modification", performedBy: "المدير التنفيذي", notes: "طلب استكمال شهادة التخرج وتحديد الساعات" }
-            ]
-          }
-        ];
+      if (!db.employeeRequests || !Array.isArray(db.employeeRequests)) {
+        db.employeeRequests = [];
         modified = true;
       }
 
-      if (!db.teamStaffAssignments) {
-        db.teamStaffAssignments = [
-          {
-            id: "tsa-1",
-            teamId: "team-1",
-            teamName: "فريق سواعد العطاء",
-            employeeId: "emp-4",
-            employeeName: "ياسر بن صالح الغامدي",
-            employeeNationalId: "1087654321",
-            employeePhone: "0567788990",
-            employeeJobTitle: "منسق شؤون المتطوعين والفرق",
-            teamRole: "مسؤول المتطوعين داخل الفريق",
-            assignedByLeaderName: "فهد بن محمد الشريف",
-            assignedAt: "2026-07-01T10:00:00Z",
-            status: "active",
-            notes: "الإشراف الميداني وتنسيق توزيع الفرق في الفعاليات"
-          }
-        ];
+      if (!db.teamStaffAssignments || !Array.isArray(db.teamStaffAssignments)) {
+        db.teamStaffAssignments = [];
         modified = true;
       }
 
@@ -4056,314 +3880,18 @@ export function readDb() {
             notes: "مدير العمليات - أعلى صلاحيات تشغيلية وإشراف شامل على كافة الإدارات والمستخدمين",
             updatedAt: "2026-01-01T00:00:00Z",
             updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-1",
-            userId: "depadmin-dep-1",
-            userName: "أ. عبد الرحمن السليمان",
-            userEmail: "exec@riadataleata.org.sa",
-            nationalId: "1010000001",
-            phone: "0551000001",
-            role: "department_admin",
-            jobTitle: "مدير الإدارة التنفيذية",
-            primaryDepartmentId: "dep-1",
-            primaryDepartmentName: "الإدارة التنفيذية",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-1"],
-            status: "active",
-            notes: "إدارة القرارات والخطط التشغيلية ومؤشرات الأداء",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-2",
-            userId: "depadmin-dep-2",
-            userName: "أ. عبد الله العتيبي",
-            userEmail: "finance@riadataleata.org.sa",
-            nationalId: "1010000002",
-            phone: "0551000002",
-            role: "department_admin",
-            jobTitle: "مدير الإدارة المالية",
-            primaryDepartmentId: "dep-2",
-            primaryDepartmentName: "الإدارة المالية",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-2"],
-            status: "active",
-            notes: "نطاق معزول للإدارة المالية والميزانية والمصروفات",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-3",
-            userId: "depadmin-dep-3",
-            userName: "أ. فيصل الأحمدي",
-            userEmail: "projects@riadataleata.org.sa",
-            nationalId: "1010000003",
-            phone: "0551000003",
-            role: "department_admin",
-            jobTitle: "مدير إدارة البرامج والمشاريع",
-            primaryDepartmentId: "dep-3",
-            primaryDepartmentName: "إدارة البرامج والمشاريع",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-3"],
-            status: "active",
-            notes: "نطاق المشاريع والمبادرات وقياس الأثر",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-4",
-            userId: "depadmin-dep-4",
-            userName: "أ. مريم الغامدي",
-            userEmail: "beneficiaries@riadataleata.org.sa",
-            nationalId: "1010000004",
-            phone: "0551000004",
-            role: "department_admin",
-            jobTitle: "مديرة إدارة المستفيدين",
-            primaryDepartmentId: "dep-4",
-            primaryDepartmentName: "إدارة المستفيدين",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-4"],
-            status: "active",
-            notes: "نطاق رعاية المستفيدين ودراسة الحالات والتوزيعات",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-5",
-            userId: "depadmin-dep-5",
-            userName: "أ. منيرة القحطاني",
-            userEmail: "volunteers@riadataleata.org.sa",
-            nationalId: "1010000005",
-            phone: "0551000005",
-            role: "department_admin",
-            jobTitle: "مديرة إدارة التطوع والموارد البشرية",
-            primaryDepartmentId: "dep-5",
-            primaryDepartmentName: "إدارة التطوع والموارد البشرية",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-5"],
-            status: "active",
-            notes: "نطاق إدارة المتطوعين والفرق والساعات والكوادر",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-7",
-            userId: "depadmin-dep-7",
-            userName: "أ. ماجد الدوسري",
-            userEmail: "partnerships@riadataleata.org.sa",
-            nationalId: "1010000007",
-            phone: "0551000007",
-            role: "department_admin",
-            jobTitle: "مدير إدارة تنمية الموارد المالية والشراكات",
-            primaryDepartmentId: "dep-7",
-            primaryDepartmentName: "إدارة تنمية الموارد المالية والشراكات",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-7"],
-            status: "active",
-            notes: "نطاق الشراكات والداعمين وحملات الاستدامة",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-8",
-            userId: "depadmin-dep-8",
-            userName: "أ. سعود الحربي",
-            userEmail: "support@riadataleata.org.sa",
-            nationalId: "1010000008",
-            phone: "0551000008",
-            role: "department_admin",
-            jobTitle: "مدير إدارة الخدمات المساندة",
-            primaryDepartmentId: "dep-8",
-            primaryDepartmentName: "إدارة الخدمات المساندة",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-8"],
-            status: "active",
-            notes: "نطاق المستودعات والأنظمة والمشتريات والعهد والصيانة والخدمات العامة",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-dep-9",
-            userId: "depadmin-dep-9",
-            userName: "أ. نورة بنت فهد الشريف",
-            userEmail: "hr@riadataleata.org.sa",
-            nationalId: "1010000009",
-            phone: "0551000009",
-            role: "department_admin",
-            jobTitle: "مديرة إدارة الموارد البشرية",
-            primaryDepartmentId: "dep-9",
-            primaryDepartmentName: "إدارة الموارد البشرية",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "approve_data", "disburse_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-9"],
-            status: "active",
-            notes: "نطاق شؤون الموظفين والعقود والرواتب وسجلات الدوام والإجازات",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          // Employees with multi-department support
-          {
-            id: "perm-emp-1",
-            userId: "emp-1",
-            userName: "سعود بن عبد العزيز الهذلي",
-            userEmail: "saud.h@reyadat-alata.org.sa",
-            nationalId: "1034567890",
-            phone: "0501234567",
-            role: "employee",
-            jobTitle: "أخصائي الموارد البشرية والمالية",
-            primaryDepartmentId: "dep-5",
-            primaryDepartmentName: "إدارة التطوع والموارد البشرية",
-            additionalDepartmentIds: ["dep-2"], // Cross-department assignment to Finance!
-            permissions: ["view_department", "create_data", "edit_data", "export_pdf", "manage_tasks", "cross_department_access"],
-            allowedDepartmentIds: ["dep-5", "dep-2"],
-            status: "active",
-            notes: "موظف مرتبط بإدارتين: الموارد البشرية مع صلاحية مساندة الإدارة المالية",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-emp-2",
-            userId: "emp-2",
-            userName: "منى بنت سليمان الحربي",
-            userEmail: "mona.h@reyadat-alata.org.sa",
-            nationalId: "1098761234",
-            phone: "0559876543",
-            role: "employee",
-            jobTitle: "مسؤولة العلاقات والإعلام الرقمي",
-            primaryDepartmentId: "dep-6",
-            primaryDepartmentName: "إدارة العلاقات العامة والإعلام",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "export_pdf", "export_excel"],
-            allowedDepartmentIds: ["dep-6"],
-            status: "active",
-            notes: "موظفة إدارة الإعلام",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-emp-3",
-            userId: "emp-3",
-            userName: "عبد الله بن خالد الدوسري",
-            userEmail: "a.dosari@reyadat-alata.org.sa",
-            nationalId: "1055567891",
-            phone: "0543322114",
-            role: "employee",
-            jobTitle: "أخصائي البرامج والمشاريع الميدانية",
-            primaryDepartmentId: "dep-3",
-            primaryDepartmentName: "إدارة البرامج والمشاريع",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "view_reports"],
-            allowedDepartmentIds: ["dep-3"],
-            status: "active",
-            notes: "موظف إدارة المشاريع",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          {
-            id: "perm-emp-4",
-            userId: "emp-4",
-            userName: "ياسر بن صالح الغامدي",
-            userEmail: "yaser.g@reyadat-alata.org.sa",
-            nationalId: "1087654321",
-            phone: "0567788990",
-            role: "employee",
-            jobTitle: "منسق شؤون المتطوعين والفرق",
-            primaryDepartmentId: "dep-5",
-            primaryDepartmentName: "إدارة التطوع والموارد البشرية",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "manage_tasks"],
-            allowedDepartmentIds: ["dep-5"],
-            status: "active",
-            notes: "منسق شؤون المتطوعين",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
-          },
-          // Team Leader
-          {
-            id: "perm-leader-1",
-            userId: "team-1",
-            userName: "سعود الحربي (قائد فريق سواعد العطاء)",
-            userEmail: "leader@riadataleata.org.sa",
-            nationalId: "1022334455",
-            phone: "0551112233",
-            role: "leader",
-            jobTitle: "قائد فريق تطوعي معتمد",
-            primaryDepartmentId: "dep-5",
-            primaryDepartmentName: "إدارة التطوع والموارد البشرية",
-            teamId: "team-1",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "export_pdf"],
-            allowedDepartmentIds: ["dep-5"],
-            status: "active",
-            notes: "صلاحيات قائد الفريق معزولة تماماً لفريقه فقط",
-            updatedAt: "2026-01-01T00:00:00Z",
-            updatedBy: "المدير التنفيذي"
           }
         ];
         modified = true;
       }
 
       if (!db.permissionChangeLogs || !Array.isArray(db.permissionChangeLogs)) {
-        db.permissionChangeLogs = [
-          {
-            id: "pcl-1",
-            timestamp: "2026-01-10T09:00:00Z",
-            adminName: "أ. عبد الرحمن السليمان (المدير التنفيذي)",
-            targetUserId: "emp-1",
-            targetUserName: "سعود بن عبد العزيز الهذلي",
-            targetDepartment: "إدارة التطوع والموارد البشرية",
-            oldPermissions: ["view_department", "create_data"],
-            newPermissions: ["view_department", "create_data", "edit_data", "export_pdf", "manage_tasks", "cross_department_access"],
-            allowedDepartments: ["dep-5", "dep-2"],
-            reason: "منح صلاحيات إضافية وربط موظف بإدارتين (الموارد البشرية والإدارة المالية) بموجب القرار الإداري رقم 42"
-          }
-        ];
+        db.permissionChangeLogs = [];
         modified = true;
       }
 
       if (!db.accessAuditLogs || !Array.isArray(db.accessAuditLogs)) {
-        db.accessAuditLogs = [
-          {
-            id: "audit-init-1",
-            timestamp: "2026-09-17T08:00:00Z",
-            userId: "depadmin-dep-2",
-            userName: "أ. عبد الله العتيبي (مدير الإدارة المالية)",
-            userRole: "department_admin",
-            userDepartmentId: "dep-2",
-            targetDepartmentId: "dep-2",
-            action: "view_department",
-            resource: "البيانات المالية والميزانية",
-            endpoint: "/api/db/scoped",
-            status: "allowed",
-            ip: "127.0.0.1",
-            device: "Admin Workstation",
-            notes: "وصول معتمد إلى لوحة الإدارة المالية ضمن النطاق المخصص"
-          },
-          {
-            id: "audit-init-2",
-            timestamp: "2026-09-17T08:15:00Z",
-            userId: "depadmin-dep-2",
-            userName: "أ. عبد الله العتيبي (مدير الإدارة المالية)",
-            userRole: "department_admin",
-            userDepartmentId: "dep-2",
-            targetDepartmentId: "dep-5",
-            action: "view_department",
-            resource: "سجل المتطوعين",
-            endpoint: "/api/db/volunteers",
-            status: "denied",
-            ip: "127.0.0.1",
-            device: "Admin Workstation",
-            notes: "تم حظر محاولة الوصول: لا يملك مدير الإدارة المالية صلاحية على إدارة التطوع"
-          }
-        ];
+        db.accessAuditLogs = [];
         modified = true;
       }
 
@@ -4404,30 +3932,6 @@ export function readDb() {
       if (Array.isArray(db.userDepartmentAccess)) {
         if (db.userDepartmentAccess.some((u: any) => u.userId === "depadmin-dep-6" || u.id === "perm-dep-6")) {
           db.userDepartmentAccess = db.userDepartmentAccess.filter((u: any) => u.userId !== "depadmin-dep-6" && u.id !== "perm-dep-6");
-          modified = true;
-        }
-        if (!db.userDepartmentAccess.some((u: any) => u.userId === "depadmin-dep-9" || u.nationalId === "1010000009")) {
-          db.userDepartmentAccess.push({
-            id: "perm-dep-9",
-            userId: "depadmin-dep-9",
-            userName: "أ. نورة بنت فهد الشريف",
-            userEmail: "hr@riadataleata.org.sa",
-            nationalId: "1010000009",
-            phone: "0551000009",
-            role: "department_admin",
-            jobTitle: "مديرة إدارة الموارد البشرية",
-            primaryDepartmentId: "dep-9",
-            primaryDepartmentName: "إدارة الموارد البشرية",
-            additionalDepartmentIds: [],
-            permissions: ["view_department", "create_data", "edit_data", "delete_data", "approve_data", "disburse_data", "export_pdf", "export_excel", "manage_staff", "manage_tasks", "view_reports"],
-            allowedDepartmentIds: ["dep-9"],
-            status: "active",
-            emailVerified: true,
-            identityVerified: true,
-            notes: "مديرة إدارة الموارد البشرية",
-            updatedAt: new Date().toISOString(),
-            updatedBy: "المدير التنفيذي"
-          });
           modified = true;
         }
         if (!db.userDepartmentAccess.some((u: any) => u.userId === "ops-manager" || u.role === "operations_manager")) {
@@ -5129,7 +4633,7 @@ function getUserAccessContext(req: any) {
       isSuperAdmin: true,
       role: 'admin',
       userId: userId || 'admin-user',
-      userName: activeSession?.name || 'مسؤول النظام',
+      userName: (activeSession as any)?.name || 'مسؤول النظام',
       jobTitle: 'المدير العام والمدير التنفيذي',
       primaryDepartmentId: 'dep-1',
       primaryDepartmentName: 'الإدارة التنفيذية',
@@ -5153,7 +4657,7 @@ function getUserAccessContext(req: any) {
       isOperationsManager: true,
       role: 'operations_manager',
       userId: userId || 'ops-manager',
-      userName: activeSession?.name || 'مدير العمليات',
+      userName: (activeSession as any)?.name || 'مدير العمليات',
       jobTitle: 'مدير العمليات والتشغيل',
       primaryDepartmentId: 'dep-1',
       primaryDepartmentName: 'إدارة العمليات والتشغيل',
@@ -13982,182 +13486,30 @@ app.post("/api/db/gallery/delete", (req, res) => {
 // 18.0 Org Members - Get All from Database
 app.get("/api/db/org-members", (req, res) => {
   const db = readDb();
-  if (!db.orgMembers || !Array.isArray(db.orgMembers) || db.orgMembers.length === 0) {
-    db.orgMembers = [
-      {
-        id: "org-board-1",
-        name: "د. عبد العزيز بن إبراهيم الصالح",
-        roleTitle: "رئيس مجلس الإدارة",
-        level: 1,
-        levelName: "مجلس الإدارة",
-        order: 1,
-        isActive: true,
-        department: "مجلس الإدارة",
-        imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-board-2",
-        name: "أ. محمد بن عبد الله الزهراني",
-        roleTitle: "نائب رئيس مجلس الإدارة",
-        level: 1,
-        levelName: "مجلس الإدارة",
-        order: 2,
-        isActive: true,
-        department: "مجلس الإدارة",
-        imageUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-board-3",
-        name: "أ. فهد بن ناصر العتيبي",
-        roleTitle: "المشرف المالي وعضو مجلس الإدارة",
-        level: 1,
-        levelName: "مجلس الإدارة",
-        order: 3,
-        isActive: true,
-        department: "مجلس الإدارة",
-        imageUrl: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-board-4",
-        name: "د. خالد بن سعود القرشي",
-        roleTitle: "عضو مجلس الإدارة",
-        level: 1,
-        levelName: "مجلس الإدارة",
-        order: 4,
-        isActive: true,
-        department: "مجلس الإدارة",
-        imageUrl: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-board-5",
-        name: "أ. إبراهيم بن صالح الغامدي",
-        roleTitle: "عضو مجلس الإدارة",
-        level: 1,
-        levelName: "مجلس الإدارة",
-        order: 5,
-        isActive: true,
-        department: "مجلس الإدارة",
-        imageUrl: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-exec-1",
-        name: "أ. عبد الرحمن السليمان",
-        roleTitle: "المدير التنفيذي",
-        level: 2,
-        levelName: "الإدارة التنفيذية",
-        order: 6,
-        isActive: true,
-        department: "الإدارة التنفيذية",
-        imageUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-exec-2",
-        name: "أ. ياسر الغامدي",
-        roleTitle: "مستشار الإدارة التنفيذية",
-        level: 2,
-        levelName: "الإدارة التنفيذية",
-        order: 7,
-        isActive: true,
-        department: "الإدارة التنفيذية",
-        imageUrl: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-1",
-        name: "أ. عبد الله العتيبي",
-        roleTitle: "مدير الإدارة المالية",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 8,
-        isActive: true,
-        department: "الإدارة المالية",
-        imageUrl: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-2",
-        name: "أ. فيصل الأحمدي",
-        roleTitle: "مدير إدارة البرامج والمشاريع",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 9,
-        isActive: true,
-        department: "إدارة البرامج والمشاريع",
-        imageUrl: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-3",
-        name: "أ. مريم الغامدي",
-        roleTitle: "مديرة إدارة المستفيدين",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 10,
-        isActive: true,
-        department: "إدارة المستفيدين",
-        imageUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-4",
-        name: "أ. منيرة القحطاني",
-        roleTitle: "مديرة إدارة التطوع",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 11,
-        isActive: true,
-        department: "إدارة التطوع",
-        imageUrl: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-5",
-        name: "أ. ماجد الدوسري",
-        roleTitle: "مدير إدارة تنمية الموارد والشراكات",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 12,
-        isActive: true,
-        department: "إدارة تنمية الموارد المالية والشراكات",
-        imageUrl: "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-6",
-        name: "أ. سعود الحربي",
-        roleTitle: "مدير إدارة الخدمات المساندة والمستودع",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 13,
-        isActive: true,
-        department: "إدارة الخدمات المساندة",
-        imageUrl: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "org-dep-7",
-        name: "أ. نورة بنت فهد الشريف",
-        roleTitle: "مديرة إدارة الموارد البشرية",
-        level: 3,
-        levelName: "الإدارات والأقسام",
-        order: 14,
-        isActive: true,
-        department: "إدارة الموارد البشرية",
-        imageUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&h=400&fit=crop&crop=faces",
-        createdAt: new Date().toISOString()
-      }
-    ];
-    if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
-    writeDb(db);
+  if (!db.orgMembers || !Array.isArray(db.orgMembers)) {
+    db.orgMembers = [];
+    if (db.homeSettings) db.homeSettings.orgMembers = [];
   }
   const members = db.orgMembers || [];
   res.json({ success: true, count: members.length, members });
+});
+
+// 18.0.1 Org Members - Clear All (حذف جميع أعضاء الهيكل الإداري ومجلس الإدارة دفعة واحدة)
+app.post("/api/db/org-members/clear-all", (req, res) => {
+  const db = readDb();
+  const previousCount = (db.orgMembers || []).length;
+  db.orgMembers = [];
+  if (db.homeSettings) db.homeSettings.orgMembers = [];
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: "الإدارة العامة",
+    action: `تفريغ وحذف جميع بطاقات الهيكل الإداري ومجلس الإدارة بالكامل (${previousCount} عضو)`,
+    ip: req.ip || "127.0.0.1",
+    device: req.headers["user-agent"] || "System"
+  });
+  writeDb(db);
+  res.json({ success: true, message: "تم تفريغ الهيكل الإداري ومجلس الإدارة بالكامل", members: [], count: 0, db });
 });
 
 // 18.1 Org Members - Add / Edit
@@ -20552,97 +19904,13 @@ app.get("/api/db/staff-members", (req, res) => {
   const db = readDb();
   let modified = false;
 
-  // Ensure default employees if none
-  if (!db.employees || !Array.isArray(db.employees) || db.employees.length === 0) {
-    db.employees = [
-      {
-        id: "emp-1",
-        employeeNumber: "EMP-2026-001",
-        name: "سعود بن عبد العزيز الهذلي",
-        nationalId: "1034567890",
-        phone: "0501234567",
-        email: "saud.h@reyadat-alata.org.sa",
-        jobTitle: "مدير الشؤون الإدارية والمالية",
-        departmentId: "dep-1",
-        departmentName: "إدارة الشؤون الإدارية والمالية",
-        gender: "male",
-        nationality: "سعودي",
-        bloodType: "O+",
-        hireDate: "2024-03-01",
-        expiryDate: "2027-03-01",
-        photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
-        status: "active",
-        barcode: "100088868101",
-        qrCode: "MEM-EMP-2026-001"
-      },
-      {
-        id: "emp-2",
-        employeeNumber: "EMP-2026-002",
-        name: "منى بنت سليمان الحربي",
-        nationalId: "1098761234",
-        phone: "0559876543",
-        email: "mona.h@reyadat-alata.org.sa",
-        jobTitle: "مسؤولة العلاقات والإعلام الرقمي",
-        departmentId: "dep-2",
-        departmentName: "إدارة العلاقات العامة والإعلام",
-        gender: "female",
-        nationality: "سعودية",
-        bloodType: "A+",
-        hireDate: "2024-06-15",
-        expiryDate: "2027-06-15",
-        photo: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&h=200&fit=crop",
-        status: "active",
-        barcode: "100088868102",
-        qrCode: "MEM-EMP-2026-002"
-      }
-    ];
+  if (!db.employees || !Array.isArray(db.employees)) {
+    db.employees = [];
     modified = true;
   }
 
-  // Ensure default leaders if none
-  if (!db.leaders || !Array.isArray(db.leaders) || db.leaders.length === 0) {
-    db.leaders = [
-      {
-        id: "ldr-1",
-        leaderNumber: "LDR-2026-001",
-        name: "فهد بن محمد الشريف",
-        nationalId: "1065432198",
-        phone: "0543219876",
-        email: "fahad.s@reyadat-alata.org.sa",
-        leadershipTitle: "قائد فريق سواعد العطاء الميداني",
-        teamId: "team-1",
-        teamName: "فريق سواعد العطاء",
-        gender: "male",
-        nationality: "سعودي",
-        bloodType: "B+",
-        commissionDate: "2025-01-10",
-        expiryDate: "2027-01-10",
-        photo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop",
-        status: "active",
-        barcode: "100088868201",
-        qrCode: "MEM-LDR-2026-001"
-      },
-      {
-        id: "ldr-2",
-        leaderNumber: "LDR-2026-002",
-        name: "ريم بنت عبد الله السلمي",
-        nationalId: "1076543210",
-        phone: "0561122334",
-        email: "reem.s@reyadat-alata.org.sa",
-        leadershipTitle: "قائدة فريق نبض التطوع النسائي",
-        teamId: "team-2",
-        teamName: "فريق نبض التطوع",
-        gender: "female",
-        nationality: "سعودية",
-        bloodType: "O+",
-        commissionDate: "2025-04-01",
-        expiryDate: "2027-04-01",
-        photo: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&h=200&fit=crop",
-        status: "active",
-        barcode: "100088868202",
-        qrCode: "MEM-LDR-2026-002"
-      }
-    ];
+  if (!db.leaders || !Array.isArray(db.leaders)) {
+    db.leaders = [];
     modified = true;
   }
 

@@ -79,7 +79,7 @@ export interface AttachmentRecord {
   uploadedBy?: string;
   uploadedAt: string;
   url: string;
-  status: 'active' | 'archived' | 'orphan';
+  status: 'active' | 'archived' | 'orphan' | 'deleted';
 }
 
 export interface AttachmentAuditReport {

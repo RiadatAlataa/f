@@ -241,7 +241,9 @@ export const ProfessionalOrgStructure: React.FC<ProfessionalOrgStructureProps> =
           <div className="text-center py-12 bg-white/60 dark:bg-neutral-800/50 rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700">
             <User className="w-9 h-9 text-neutral-400 mx-auto mb-2" />
             <p className="text-xs font-bold text-neutral-700 dark:text-neutral-300">
-              {lang === "ar" ? "لا توجد بطاقات مطابقة لخيارات البحث" : "No matching members found"}
+              {searchQuery.trim()
+                ? (lang === "ar" ? "لا توجد نتائج مطابقة لبحثك" : "No matching members found")
+                : (lang === "ar" ? "لم يتم إضافة أعضاء في الهيكل الإداري ومجلس الإدارة بعد. يمكن لمدير النظام إضافة أعضاء مجلس الإدارة والقيادات من لوحة التحكم." : "No members added to the administrative structure yet. You can add board members and staff from the control panel.")}
             </p>
           </div>
         ) : (
