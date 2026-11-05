@@ -122,7 +122,7 @@ export function AuthScreen({
   const [gRegPhone, setGRegPhone] = useState("");
   const [gRegBirthDate, setGRegBirthDate] = useState("");
   const [gRegGender, setGRegGender] = useState<'male' | 'female'>('male');
-  const [gRegAddress, setGRegAddress] = useState("مكة المكرمة - مخطط العسيلة");
+  const [gRegAddress, setGRegAddress] = useState("");
   // Volunteer specific
   const [gRegTeamId, setGRegTeamId] = useState("team-1");
   const [gRegBloodType, setGRegBloodType] = useState("O+");
@@ -130,9 +130,9 @@ export function AuthScreen({
   const [gRegIllnessDetails, setGRegIllnessDetails] = useState("");
   const [gRegExperiences, setGRegExperiences] = useState("");
   // Beneficiary specific
-  const [gRegFamilySize, setGRegFamilySize] = useState(4);
-  const [gRegCategory, setGRegCategory] = useState("أسر محتاجة");
-  const [gRegMonthlyIncome, setGRegMonthlyIncome] = useState(3000);
+  const [gRegFamilySize, setGRegFamilySize] = useState<number | "">("");
+  const [gRegCategory, setGRegCategory] = useState("أسر أيتام");
+  const [gRegMonthlyIncome, setGRegMonthlyIncome] = useState<number | "">("");
   const [gRegHousingType, setGRegHousingType] = useState("إيجار");
   const [gRegBenFormData, setGRegBenFormData] = useState<BeneficiaryFormData>({
     birthCalendarType: 'hijri',
@@ -464,10 +464,9 @@ export function AuthScreen({
         payload.hasChronicIllness = gRegHasChronicIllness;
         payload.illnessDetails = gRegIllnessDetails;
         payload.experiences = gRegExperiences;
-      } else {
-        payload.familySize = gRegFamilySize;
+        payload.familySize = typeof gRegFamilySize === 'number' && gRegFamilySize > 0 ? gRegFamilySize : (Number(gRegFamilySize) || 1);
         payload.category = gRegCategory;
-        payload.monthlyIncome = gRegMonthlyIncome;
+        payload.monthlyIncome = typeof gRegMonthlyIncome === 'number' ? gRegMonthlyIncome : (Number(gRegMonthlyIncome) || 0);
         payload.housingType = gRegHousingType;
         payload.birthCalendarType = gRegBenFormData.birthCalendarType;
         payload.birthDate = gRegBenFormData.birthDate;
@@ -1390,7 +1389,7 @@ export function AuthScreen({
                     type="text"
                     value={recoveryIdentifier}
                     onChange={(e) => setRecoveryIdentifier(e.target.value)}
-                    placeholder="مثال: 1087654321 أو user@example.com"
+                    placeholder="أدخل رقم الهوية الوطنية أو البريد الإلكتروني الرسمي"
                     className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     autoFocus
                     required
@@ -2050,7 +2049,7 @@ export function AuthScreen({
                       type="text"
                       value={gRegFullName}
                       onChange={(e) => setGRegFullName(e.target.value)}
-                      placeholder="مثال: محمد بن عبد الله المكي"
+                      placeholder="الاسم الكامل كما هو مسجل في الهوية الوطنية"
                       className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                       required
                     />
@@ -2067,7 +2066,7 @@ export function AuthScreen({
                         maxLength={10}
                         value={gRegNationalId}
                         onChange={(e) => setGRegNationalId(e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="10xxxxxxxx"
+                        placeholder="أدخل رقم الهوية الوطنية (10 أرقام)"
                         className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                         dir="ltr"
                         required
@@ -2081,7 +2080,7 @@ export function AuthScreen({
                         type="tel"
                         value={gRegPhone}
                         onChange={(e) => setGRegPhone(e.target.value)}
-                        placeholder="05xxxxxxxx"
+                        placeholder="أدخل رقم الجوال يبدأ بـ 05"
                         className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                         dir="ltr"
                         required
@@ -2209,7 +2208,7 @@ export function AuthScreen({
                           type="text"
                           value={gRegAddress}
                           onChange={(e) => setGRegAddress(e.target.value)}
-                          placeholder="مثال: بجوار مسجد النور، الشارع العام"
+                          placeholder="العنوان والشارع والحي السكني بالتفصيل"
                           className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                         />
                       </div>
@@ -2223,7 +2222,8 @@ export function AuthScreen({
                             min={1}
                             max={30}
                             value={gRegFamilySize}
-                            onChange={(e) => setGRegFamilySize(Number(e.target.value))}
+                            placeholder="أدخل عدد أفراد الأسرة"
+                            onChange={(e) => setGRegFamilySize(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10)))}
                             className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                             required
                           />
@@ -2238,6 +2238,7 @@ export function AuthScreen({
                             className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                           >
                             <option value="أسر محتاجة">أسر محتاجة</option>
+                            <option value="أيتام">أيتام</option>
                             <option value="أسر أيتام">أسر أيتام</option>
                             <option value="كبار السن">كبار السن</option>
                             <option value="ذوي الإعاقة">ذوو الإعاقة</option>

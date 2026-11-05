@@ -491,7 +491,7 @@ export const BeneficiaryFormFields: React.FC<BeneficiaryFormFieldsProps> = ({
               required
               value={values.customDistrict || ""}
               onChange={(e) => onChange({ customDistrict: e.target.value })}
-              placeholder="مثال: مخطط ولي العهد، وادي عمير، العسيلة مخطط 5..."
+              placeholder="اكتب اسم الحي أو المخطط السكني بالتفصيل"
               className="w-full px-3 py-2 text-xs rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-amber-500"
             />
             <span className="text-[10px] text-amber-700 dark:text-amber-300 block">
@@ -502,24 +502,33 @@ export const BeneficiaryFormFields: React.FC<BeneficiaryFormFieldsProps> = ({
       </div>
 
       {/* ---------------------------------------------------------------------- */}
-      {/* 6. الحالة الاجتماعية & 7. صفة اليتم (حقلان مستقلان تماماً) */}
+      {/* 4. الحالة الاجتماعية & صفة اليتم */}
       {/* ---------------------------------------------------------------------- */}
       <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
         <label className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5 border-b border-slate-200/80 dark:border-slate-800 pb-2.5">
           <Heart className="w-4 h-4 text-emerald-600" />
-          <span>4. الحالة الاجتماعية وصفة اليتم <span className="text-rose-500">*</span></span>
+          <span>4. الحالة وفئة الاستحقاق (أرمل، مطلقة، أيتام...) <span className="text-rose-500">*</span></span>
         </label>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* الحالة الاجتماعية */}
+          {/* الحالة */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-              الحالة الاجتماعية <span className="text-rose-500">*</span>
+              الحالة (أرمل، مطلقة، أيتام، متزوج...) <span className="text-rose-500">*</span>
             </label>
             <select
               disabled={disabled}
               value={values.maritalStatus}
-              onChange={(e) => onChange({ maritalStatus: e.target.value })}
+              onChange={(e) => {
+                const val = e.target.value;
+                const updates: Partial<BeneficiaryFormData> = { maritalStatus: val };
+                if (val === 'أيتام' || val === 'يتيم') {
+                  updates.orphanStatus = 'أيتام';
+                } else if (val === 'يتيمة') {
+                  updates.orphanStatus = 'يتيمة';
+                }
+                onChange(updates);
+              }}
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500"
               required
             >
@@ -527,18 +536,31 @@ export const BeneficiaryFormFields: React.FC<BeneficiaryFormFieldsProps> = ({
                 <option key={m.id} value={m.id}>{m.label}</option>
               ))}
             </select>
-            <span className="text-[10px] text-slate-400 mt-1 block">تحديد الحالة الاجتماعية للمستفيد أو رب الأسرة</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">تحديد فئة الحالة: أرمل، مطلقة، أيتام، متزوج...</span>
           </div>
 
-          {/* صفة اليتم (حقل منفصل تماماً) */}
+          {/* صفة اليتم */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-              صفة اليتم (مستقل عن الحالة الاجتماعية) <span className="text-rose-500">*</span>
+              صفة اليتم <span className="text-rose-500">*</span>
             </label>
             <select
               disabled={disabled}
               value={values.orphanStatus}
-              onChange={(e) => onChange({ orphanStatus: e.target.value })}
+              onChange={(e) => {
+                const oVal = e.target.value;
+                const updates: Partial<BeneficiaryFormData> = { orphanStatus: oVal };
+                if (oVal === 'أيتام' || oVal === 'يتيم') {
+                  if (values.maritalStatus === 'أعزب' || values.maritalStatus === 'عزباء' || !values.maritalStatus) {
+                    updates.maritalStatus = 'أيتام';
+                  }
+                } else if (oVal === 'يتيمة') {
+                  if (values.maritalStatus === 'أعزب' || values.maritalStatus === 'عزباء' || !values.maritalStatus) {
+                    updates.maritalStatus = 'يتيمة';
+                  }
+                }
+                onChange(updates);
+              }}
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500"
               required
             >
@@ -546,7 +568,7 @@ export const BeneficiaryFormFields: React.FC<BeneficiaryFormFieldsProps> = ({
                 <option key={o.id} value={o.id}>{o.label}</option>
               ))}
             </select>
-            <span className="text-[10px] text-slate-400 mt-1 block">حقل مستقل لدقة التقارير والإحصائيات الإنسانية</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">توثيق اليتم لإتاحة برامج كفالة وكسوة ورعاية الأيتام</span>
           </div>
         </div>
       </div>

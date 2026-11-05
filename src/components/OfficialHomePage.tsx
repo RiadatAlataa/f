@@ -292,7 +292,7 @@ export function OfficialHomePage({
   const [regEmail, setRegEmail] = useState("");
   const [regPhone, setRegPhone] = useState("");
   const [regNationalId, setRegNationalId] = useState("");
-  const [regFamilySize, setRegFamilySize] = useState(4);
+  const [regFamilySize, setRegFamilySize] = useState<number | "">("");
   const [regAddress, setRegAddress] = useState("");
   const [regTeam, setRegTeam] = useState("");
   const [regDept, setRegDept] = useState("");
@@ -317,8 +317,8 @@ export function OfficialHomePage({
   const [teamName, setTeamName] = useState("");
   const [teamCity, setTeamCity] = useState("");
   const [teamEstablishedDate, setTeamEstablishedDate] = useState("");
-  const [teamMembersCount, setTeamMembersCount] = useState(1);
-  const [teamInitiativesCount, setTeamInitiativesCount] = useState(0);
+  const [teamMembersCount, setTeamMembersCount] = useState<number | "">("");
+  const [teamInitiativesCount, setTeamInitiativesCount] = useState<number | "">("");
   const [teamColor, setTeamColor] = useState("#0d6efd");
   const [teamLeaderName, setTeamLeaderName] = useState("");
   const [teamLeaderPhone, setTeamLeaderPhone] = useState("");
@@ -702,10 +702,10 @@ export function OfficialHomePage({
     setIsRegSubmitting(true);
     const success = await onRegisterBeneficiary({
       name: regName,
-      email: regEmail || `${regNationalId}@example.com`,
+      email: regEmail || `${regNationalId}@riadataleata.org.sa`,
       phone: regPhone,
       nationalId: regNationalId,
-      familySize: Number(regFamilySize),
+      familySize: typeof regFamilySize === 'number' && regFamilySize > 0 ? regFamilySize : (Number(regFamilySize) || 1),
       address: regAddress ? `${benFormData.city} - ${benFormData.district} (${regAddress})` : `${benFormData.city} - ${benFormData.district}`,
       status: "pending",
       ...benFormData
@@ -724,7 +724,7 @@ export function OfficialHomePage({
     setRegEmail("");
     setRegPhone("");
     setRegNationalId("");
-    setRegFamilySize(4);
+    setRegFamilySize("");
     setRegAddress("");
     setRegTeam("");
     setRegDept("");
@@ -3177,7 +3177,7 @@ export function OfficialHomePage({
                             onChange={(e) => setRegNationalId(e.target.value)}
                             required
                             maxLength={10}
-                            placeholder="1098765432"
+                            placeholder="أدخل رقم الهوية الوطنية (10 أرقام)"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-left font-bold"
                             dir="ltr"
                           />
@@ -3330,7 +3330,7 @@ export function OfficialHomePage({
                             value={regPhone}
                             onChange={(e) => setRegPhone(e.target.value)}
                             required
-                            placeholder="0551234567"
+                            placeholder="أدخل رقم الجوال يبدأ بـ 05"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-left font-mono font-bold"
                             dir="ltr"
                           />
@@ -3342,7 +3342,7 @@ export function OfficialHomePage({
                             type="email" 
                             value={regEmail}
                             onChange={(e) => setRegEmail(e.target.value)}
-                            placeholder="ahmed@example.com"
+                            placeholder="أدخل البريد الإلكتروني"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-left font-mono"
                             dir="ltr"
                           />
@@ -3435,7 +3435,7 @@ export function OfficialHomePage({
                             type="text" 
                             value={regGuardianName}
                             onChange={(e) => setRegGuardianName(e.target.value)}
-                            placeholder="إبراهيم الغامدي"
+                            placeholder="الاسم الكامل لولي الأمر أو القريب للطوارئ"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
@@ -3446,7 +3446,7 @@ export function OfficialHomePage({
                             type="tel" 
                             value={regGuardianPhone}
                             onChange={(e) => setRegGuardianPhone(e.target.value)}
-                            placeholder="0501112233"
+                            placeholder="أدخل رقم جوال الطوارئ يبدأ بـ 05"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-left font-mono"
                             dir="ltr"
                           />
@@ -3686,9 +3686,9 @@ export function OfficialHomePage({
                             type="number" 
                             min={1}
                             value={teamMembersCount}
-                            onChange={(e) => setTeamMembersCount(Number(e.target.value))}
+                            onChange={(e) => setTeamMembersCount(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10)))}
                             required
-                            placeholder="1"
+                            placeholder="أدخل عدد الأعضاء"
                             className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-bold"
                           />
                         </div>
@@ -3701,8 +3701,8 @@ export function OfficialHomePage({
                             type="number" 
                             min={0}
                             value={teamInitiativesCount}
-                            onChange={(e) => setTeamInitiativesCount(Number(e.target.value))}
-                            placeholder="0"
+                            onChange={(e) => setTeamInitiativesCount(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10)))}
+                            placeholder="أدخل عدد المبادرات المنفذة"
                             className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-bold"
                           />
                         </div>
@@ -3764,7 +3764,7 @@ export function OfficialHomePage({
                             value={teamLeaderPhone}
                             onChange={(e) => setTeamLeaderPhone(e.target.value)}
                             required
-                            placeholder="05xxxxxxxx"
+                            placeholder="أدخل رقم جوال القائد يبدأ بـ 05"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono text-left font-bold"
                             dir="ltr"
                           />
@@ -3988,7 +3988,7 @@ export function OfficialHomePage({
                           value={regName}
                           onChange={(e) => setRegName(e.target.value)}
                           required
-                          placeholder="أبو محمد المكي"
+                          placeholder="الاسم الرباعي كما هو مدون في الهوية الوطنية"
                           className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-bold"
                         />
                       </div>
@@ -4004,7 +4004,7 @@ export function OfficialHomePage({
                             onChange={(e) => setRegNationalId(e.target.value)}
                             required
                             maxLength={10}
-                            placeholder="1023456789"
+                            placeholder="أدخل رقم الهوية الوطنية (10 أرقام)"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-mono text-left font-bold"
                             dir="ltr"
                           />
@@ -4019,7 +4019,7 @@ export function OfficialHomePage({
                             value={regPhone}
                             onChange={(e) => setRegPhone(e.target.value)}
                             required
-                            placeholder="0550112233"
+                            placeholder="أدخل رقم الجوال يبدأ بـ 05"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-mono text-left font-bold"
                             dir="ltr"
                           />
@@ -4052,7 +4052,8 @@ export function OfficialHomePage({
                           <input 
                             type="number" 
                             value={regFamilySize}
-                            onChange={(e) => setRegFamilySize(Number(e.target.value))}
+                            placeholder="عدد أفراد الأسرة"
+                            onChange={(e) => setRegFamilySize(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10)))}
                             min={1}
                             max={35}
                             required
@@ -4066,7 +4067,7 @@ export function OfficialHomePage({
                             type="text" 
                             value={regAddress}
                             onChange={(e) => setRegAddress(e.target.value)}
-                            placeholder="مثال: الشارع التجاري، بجوار مسجد النور"
+                            placeholder="العنوان والشارع والحي السكني بالتفصيل"
                             className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-bold"
                           />
                         </div>

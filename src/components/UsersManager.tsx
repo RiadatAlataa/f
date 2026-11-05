@@ -1605,7 +1605,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="05xxxxxxxx"
+                placeholder="أدخل رقم الجوال يبدأ بـ 05"
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2.5 text-xs font-sans text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -1618,7 +1618,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
                 type="text"
                 value={nationalId}
                 onChange={(e) => setNationalId(e.target.value)}
-                placeholder="10xxxxxxxx"
+                placeholder="أدخل رقم الهوية الوطنية (10 أرقام)"
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2.5 text-xs font-sans text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>

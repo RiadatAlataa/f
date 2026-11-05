@@ -390,33 +390,40 @@ export const RESIDENCY_STATUS_OPTIONS: { id: ResidencyStatus; label: string; des
 // 4. الحالة الاجتماعية
 // -------------------------------------------------------------
 export type MaritalStatus = 
-  | 'أعزب' 
-  | 'عزباء' 
-  | 'متزوج' 
-  | 'متزوجة' 
+  | 'أرمل' 
+  | 'أرملة' 
   | 'مطلق' 
   | 'مطلقة' 
-  | 'أرمل' 
-  | 'أرملة';
+  | 'أيتام'
+  | 'يتيم'
+  | 'يتيمة'
+  | 'متزوج' 
+  | 'متزوجة' 
+  | 'أعزب' 
+  | 'عزباء';
 
 export const MARITAL_STATUS_OPTIONS: { id: MaritalStatus; label: string }[] = [
-  { id: 'أعزب', label: 'أعزب' },
-  { id: 'عزباء', label: 'عزباء' },
+  { id: 'أرملة', label: 'أرملة' },
+  { id: 'أرمل', label: 'أرمل' },
+  { id: 'مطلقة', label: 'مطلقة' },
+  { id: 'مطلق', label: 'مطلق' },
+  { id: 'أيتام', label: 'أيتام (أسرة أيتام)' },
+  { id: 'يتيم', label: 'يتيم' },
+  { id: 'يتيمة', label: 'يتيمة' },
   { id: 'متزوج', label: 'متزوج' },
   { id: 'متزوجة', label: 'متزوجة' },
-  { id: 'مطلق', label: 'مطلق' },
-  { id: 'مطلقة', label: 'مطلقة' },
-  { id: 'أرمل', label: 'أرمل' },
-  { id: 'أرملة', label: 'أرملة' }
+  { id: 'أعزب', label: 'أعزب' },
+  { id: 'عزباء', label: 'عزباء' }
 ];
 
 // -------------------------------------------------------------
 // 5. صفة اليتم (حقل مستقل تماماً عن الحالة الاجتماعية)
 // -------------------------------------------------------------
-export type OrphanStatus = 'يتيم' | 'يتيمة' | 'غير ذلك / لا ينطبق';
+export type OrphanStatus = 'أيتام' | 'يتيم' | 'يتيمة' | 'غير ذلك / لا ينطبق';
 
 export const ORPHAN_STATUS_OPTIONS: { id: OrphanStatus; label: string }[] = [
   { id: 'غير ذلك / لا ينطبق', label: 'غير ذلك / لا ينطبق' },
+  { id: 'أيتام', label: 'أيتام (أسرة أيتام)' },
   { id: 'يتيم', label: 'يتيم (ذكر متوفى والده وهو دون سن البلوغ/الرعاية)' },
   { id: 'يتيمة', label: 'يتيمة (أنثى متوفى والدها)' }
 ];
@@ -630,14 +637,15 @@ export function normalizeLegacyBeneficiaryData(ben: any): {
     const cat = String(ben.category);
     if (cat.includes('أرامل') || cat.includes('أرملة')) maritalStatus = 'أرملة';
     else if (cat.includes('مطلقات') || cat.includes('مطلقة')) maritalStatus = 'مطلقة';
+    else if (cat.includes('أيتام') || cat.includes('يتيم')) maritalStatus = 'أيتام';
   }
 
   // 4. صفة اليتم
-  let orphanStatus: OrphanStatus = ben.orphanStatus || 'غير ذلك / لا ينطبق';
+  let orphanStatus: OrphanStatus = ben.orphanStatus || (maritalStatus === 'أيتام' || maritalStatus === 'يتيم' ? 'أيتام' : (maritalStatus === 'يتيمة' ? 'يتيمة' : 'غير ذلك / لا ينطبق'));
   if (!ben.orphanStatus && ben.category) {
     const cat = String(ben.category);
     if (cat.includes('أيتام') || cat.includes('يتيم')) {
-      orphanStatus = 'يتيم';
+      orphanStatus = 'أيتام';
     }
   }
 

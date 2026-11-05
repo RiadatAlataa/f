@@ -2312,7 +2312,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                     required
                     value={benNationalId}
                     onChange={(e) => setBenNationalId(e.target.value)}
-                    placeholder="10XXXXXXXX"
+                    placeholder="أدخل رقم الهوية الوطنية (10 أرقام)"
                     className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-neutral-900 font-mono font-bold focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -2323,7 +2323,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                     required
                     value={benPhone}
                     onChange={(e) => setBenPhone(e.target.value)}
-                    placeholder="05XXXXXXXX"
+                    placeholder="أدخل رقم الجوال يبدأ بـ 05"
                     className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-neutral-900 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
