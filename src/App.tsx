@@ -990,6 +990,30 @@ export default function App() {
     return await syncWithServer("/api/db/volunteerApplications/accept", { applicationId, teamId }, "قبول طلب انضمام متطوع وإسناد الفريق");
   };
 
+  const handleAdminApproveVolunteerApplication = async (applicationId: string, teamId: string) => {
+    return await syncWithServer("/api/db/volunteerApplications/admin-approve", { applicationId, teamId }, "اعتماد إدارة التطوع النهائي وإصدار البطاقة");
+  };
+
+  const handleLeaderActionVolunteerApplication = async (applicationId: string, action: 'accept' | 'reject', rejectionReason?: string, notes?: string) => {
+    return await syncWithServer("/api/db/volunteerApplications/leader-action", {
+      applicationId,
+      action,
+      rejectionReason,
+      notes,
+      leaderName: activeLeaderTeam?.leaderName || "قائد الفريق",
+      teamId: activeLeaderTeam?.id,
+      teamName: activeLeaderTeam?.nameAr
+    }, action === 'accept' ? "موافقة قائد الفريق المبدئية على طلب المتطوع" : "اعتذار قائد الفريق عن طلب المتطوع");
+  };
+
+  const handleLeaderUpdateTeam = async (updatedFields: Partial<VolunteerTeam>) => {
+    if (!activeLeaderTeam) return false;
+    return await syncWithServer("/api/db/teams/leader-update", {
+      teamId: activeLeaderTeam.id,
+      ...updatedFields
+    }, "تحديث الملف التعريفي للفريق من حساب القائد");
+  };
+
   const handleRejectVolunteerApplication = async (applicationId: string, rejectionReason: string) => {
     return await syncWithServer("/api/db/volunteerApplications/reject", { applicationId, rejectionReason }, "رفض طلب انضمام متطوع");
   };
@@ -2162,8 +2186,10 @@ export default function App() {
                 onCheckoutInitiative={handleCheckoutInitiative}
                 onAddOpportunityRequest={handleAddOpportunityRequest}
                 onResubmitOpportunityRequest={handleResubmitOpportunityRequest}
-                onUpdateOpportunityRequest={handleUpdateOpportunityRequest}
                 onSubmitOfficialLetter={handleSendOfficialLetter}
+                volunteerApplications={dbData.volunteerApplications || []}
+                onLeaderActionVolunteerApplication={handleLeaderActionVolunteerApplication}
+                onLeaderUpdateTeam={handleLeaderUpdateTeam}
                 onBackToHome={handleNavigateToPublicHome}
               />
             )}

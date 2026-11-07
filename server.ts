@@ -2,8 +2,13 @@ import path from "path";
 import express from "express";
 import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb, ensureDatabaseReady } from "./server-core";
 
-const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+
+// In AI Studio / local container environment, Nginx listens on 8080 and proxies to port 3000.
+// On Render / Cloud providers, PORT is set and should be respected.
+const PORT = (!isProduction && (!process.env.RENDER && !process.env.RENDER_SERVICE_ID)) 
+  ? 3000 
+  : (Number(process.env.PORT) || 3000);
 
 async function start() {
   // If running in Vercel Serverless environment, do not start HTTP listener

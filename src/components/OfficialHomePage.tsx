@@ -23,6 +23,8 @@ import {
 import { NotificationBell } from "./NotificationBell";
 import { OpportunitiesPage } from "./OpportunitiesPage";
 import { HeroSlider } from "./HeroSlider";
+import { VolunteerTeamsCarousel } from "./VolunteerTeamsCarousel";
+import { TeamDetailsModal } from "./TeamDetailsModal";
 import { OrgChartSection } from "./OrgChartSection";
 import { OrgMember, HeroSlide } from "../types";
 import { UserSettingsModal } from "./UserSettingsModal";
@@ -165,6 +167,7 @@ export function OfficialHomePage({
 }: OfficialHomePageProps) {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
+  const [selectedTeamForDetails, setSelectedTeamForDetails] = useState<VolunteerTeam | null>(null);
   
   // Customization Colors Injection (Official Logo Identity: Royal Blue #0754C7 & Deep Navy #071C43)
   const primaryColor = (settings?.themePrimary && settings.themePrimary !== "#059669") ? settings.themePrimary : "#0754C7";
@@ -2520,6 +2523,22 @@ export function OfficialHomePage({
 
         </div>
       </section>
+
+      {/* 13.5 Volunteer Teams Carousel (فرقنا التطوعية - أسفل الصفحة الرئيسية وقبل التذييل) */}
+      <VolunteerTeamsCarousel
+        teams={teams}
+        volunteers={volunteers}
+        initiatives={initiatives}
+        lang={lang}
+        isDark={isDark}
+        onSelectTeam={(team) => setSelectedTeamForDetails(team)}
+        onJoinTeamClick={(team) => {
+          setRegTeam(team.id);
+          setSelectedJoinType("volunteer");
+          setIsJoinModalOpen(true);
+        }}
+        onOpenTeamRegistrationModal={() => setIsTeamModalOpen(true)}
+      />
       </main>
 
       {/* 14. Footer (الفوتر الرسمي) */}
@@ -2704,15 +2723,27 @@ export function OfficialHomePage({
                 </p>
               </div>
             </div>
-            <button
-              id="footer-send-letter-cta-btn"
-              type="button"
-              onClick={() => setIsLetterModalOpen(true)}
-              className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-lg hover:shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-            >
-              <Send className="w-4 h-4" />
-              <span>{lang === "ar" ? "إرسال خطاب" : "Send Letter"}</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto shrink-0">
+              <button
+                id="footer-join-team-cta-btn"
+                type="button"
+                onClick={() => setIsTeamModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black shadow-lg hover:shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                <Users className="w-4 h-4" />
+                <span>{lang === "ar" ? "الانضمام كفريق تطوعي" : "Join as a Team"}</span>
+              </button>
+
+              <button
+                id="footer-send-letter-cta-btn"
+                type="button"
+                onClick={() => setIsLetterModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-lg hover:shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                <Send className="w-4 h-4" />
+                <span>{lang === "ar" ? "إرسال خطاب" : "Send Letter"}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -3186,10 +3217,10 @@ export function OfficialHomePage({
                         {/* TEAM SELECTION FIELD (حقل اختيار الفريق الذي يرغب بالانضمام إليه) */}
                         <div>
                           <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1 flex items-center justify-between">
-                            <span>اختر الفريق الذي ترغب بالانضمام إليه <span className="text-rose-500">*</span></span>
-                            {teams.length > 0 && (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                                ({teams.length} فرق متاحة في النظام)
+                            <span>اختر الفريق التطوعي الذي ترغب في الانضمام إليه <span className="text-rose-500">*</span></span>
+                            {teams.filter(t => (!t.status || t.status === 'active' || t.status === 'approved') && t.acceptingVolunteers !== false).length > 0 && (
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">
+                                ({teams.filter(t => (!t.status || t.status === 'active' || t.status === 'approved') && t.acceptingVolunteers !== false).length} فرق معتمدة تقبل أعضاء جدد)
                               </span>
                             )}
                           </label>
@@ -3199,27 +3230,29 @@ export function OfficialHomePage({
                               value={regTeam}
                               onChange={(e) => setRegTeam(e.target.value)}
                               required
-                              className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 font-bold cursor-pointer"
+                              className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-bold cursor-pointer"
                             >
-                              <option value="">-- اختر الفريق الذي ترغب بالانضمام إليه --</option>
-                              {teams.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.nameAr} {t.leaderName ? `(قائد الفريق: ${t.leaderName})` : ''}
-                                </option>
-                              ))}
+                              <option value="">-- اختر الفريق التطوعي المعتمد --</option>
+                              {teams
+                                .filter(t => (!t.status || t.status === 'active' || t.status === 'approved') && t.acceptingVolunteers !== false)
+                                .map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.nameAr} - قائد الفريق: {t.leaderName || "قائد معتمد"} {t.city ? `(${t.city})` : ''}
+                                  </option>
+                                ))}
                             </select>
                           </div>
                           {regTeam ? (
-                            <div className="mt-1.5 p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center justify-between font-bold">
+                            <div className="mt-1.5 p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-[11px] text-blue-800 dark:text-blue-300 flex items-center justify-between font-bold">
                               <div className="flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>الفريق المختار: {teams.find(t => t.id === regTeam)?.nameAr}</span>
+                                <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                <span>الفريق المختار: {teams.find(t => t.id === regTeam)?.nameAr} (القائد: {teams.find(t => t.id === regTeam)?.leaderName || "قائد معتمد"})</span>
                               </div>
-                              <span className="text-[10px] text-neutral-500 dark:text-neutral-400">سيتم ربط عضويتك بهذا الفريق تلقائياً</span>
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400">سيُرسل طلبك لقائد هذا الفريق للمراجعة الأولية</span>
                             </div>
                           ) : (
                             <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">
-                              اختر الفريق الذي يناسب مهاراتك وشغفك للانضمام إليه مباشرة.
+                              اختر الفريق الذي ترغب في الانضمام إليه وسيتولى قائد الفريق وإدارة التطوع تدقيق واعتماد طلبك.
                             </p>
                           )}
                         </div>
@@ -4351,6 +4384,21 @@ export function OfficialHomePage({
         }}
         existingApplications={teamApplications}
         lang={lang}
+      />
+
+      {/* TEAM DETAILS MODAL */}
+      <TeamDetailsModal
+        team={selectedTeamForDetails}
+        isOpen={!!selectedTeamForDetails}
+        onClose={() => setSelectedTeamForDetails(null)}
+        volunteers={volunteers}
+        initiatives={initiatives}
+        lang={lang}
+        onJoinTeam={(team) => {
+          setRegTeam(team.id);
+          setSelectedJoinType("volunteer");
+          setIsJoinModalOpen(true);
+        }}
       />
 
       {/* OFFICIAL SEND LETTER MODAL FOR VISITORS */}

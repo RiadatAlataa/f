@@ -4,12 +4,12 @@ import {
   Check, X, RefreshCw, Award, Smile, Info, Compass, ShieldAlert,
   Clock, LogOut, Shield, Search, Filter, FileSpreadsheet, Edit3, User, CheckCircle2, ChevronDown, Plus, FileText, Globe, ExternalLink, Printer, Sparkles, Image as ImageIcon,
   Mail, AlertCircle, CreditCard, Download, Eye, Layers, Home, ArrowRight,
-  ArrowRightLeft, UserMinus, KeyRound, HelpCircle
+  ArrowRightLeft, UserMinus, KeyRound, HelpCircle, UserPlus, Sliders
 } from "lucide-react";
 import { 
   Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, VolunteerTeam, Department, OpportunityRequest,
   OfficialLetter, Employee, TeamStaffAssignment, VolunteerCardTemplate,
-  VolunteerTransferRequest, PasswordResetRequest
+  VolunteerTransferRequest, PasswordResetRequest, VolunteerApplication
 } from "../types";
 import { AttendanceScanner } from "./AttendanceScanner";
 import { SendLetterModal } from "./SendLetterModal";
@@ -56,6 +56,9 @@ interface LeaderDashboardProps {
   onAddOpportunityRequest?: (opp: Partial<OpportunityRequest>) => void;
   onResubmitOpportunityRequest?: (opp: any) => Promise<any> | void;
   onUpdateOpportunityRequest?: (opp: any) => Promise<any> | void;
+  volunteerApplications?: VolunteerApplication[];
+  onLeaderActionVolunteerApplication?: (applicationId: string, action: 'accept' | 'reject', rejectionReason?: string, notes?: string) => Promise<boolean>;
+  onLeaderUpdateTeam?: (updatedFields: Partial<VolunteerTeam>) => Promise<boolean>;
   onSubmitOfficialLetter?: (letter: Partial<OfficialLetter>) => Promise<{ success: boolean; letter?: OfficialLetter; message?: string }>;
   onBackToHome?: () => void;
 }
@@ -83,12 +86,15 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   onAddOpportunityRequest,
   onResubmitOpportunityRequest,
   onUpdateOpportunityRequest,
+  volunteerApplications = [],
+  onLeaderActionVolunteerApplication,
+  onLeaderUpdateTeam,
   onSubmitOfficialLetter,
   onBackToHome
 }: LeaderDashboardProps) => {
   // Tabs for Leader
   const safeOpportunityRequests = useMemo(() => Array.isArray(opportunityRequests) ? opportunityRequests : [], [opportunityRequests]);
-  const [activeTab, setActiveTab] = useState<'home' | 'team' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards' | 'transfers' | 'support'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'team' | 'applications' | 'team_settings' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards' | 'transfers' | 'support'>('home');
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
 
   // Formal Volunteer Transfer / Termination Request state for Leader
@@ -236,6 +242,123 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
       setCardErrorMessage(err.message || "حدث خطأ أثناء إصدار البطاقات");
     } finally {
       setIsBulkIssuing(false);
+    }
+  };
+
+  // Team Profile Editing States for Leader
+  const [teamLogoUrl, setTeamLogoUrl] = useState(currentTeam.logoUrl || "");
+  const [teamVision, setTeamVision] = useState(currentTeam.vision || "");
+  const [teamMission, setTeamMission] = useState(currentTeam.mission || "");
+  const [teamGoals, setTeamGoals] = useState(currentTeam.goals || "");
+  const [teamDescriptionAr, setTeamDescriptionAr] = useState(currentTeam.descriptionAr || "");
+  const [teamLeaderPhone, setTeamLeaderPhone] = useState(currentTeam.leaderPhone || "");
+  const [teamLeaderEmail, setTeamLeaderEmail] = useState(currentTeam.leaderEmail || "");
+  const [isSavingTeamProfile, setIsSavingTeamProfile] = useState(false);
+  const [teamProfileFeedback, setTeamProfileFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Sync team profile fields when currentTeam updates
+  useEffect(() => {
+    setTeamLogoUrl(currentTeam.logoUrl || "");
+    setTeamVision(currentTeam.vision || "");
+    setTeamMission(currentTeam.mission || "");
+    setTeamGoals(currentTeam.goals || "");
+    setTeamDescriptionAr(currentTeam.descriptionAr || "");
+    setTeamLeaderPhone(currentTeam.leaderPhone || "");
+    setTeamLeaderEmail(currentTeam.leaderEmail || "");
+  }, [currentTeam]);
+
+  const handleSaveTeamProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingTeamProfile(true);
+    setTeamProfileFeedback(null);
+    try {
+      if (onLeaderUpdateTeam) {
+        const ok = await onLeaderUpdateTeam({
+          logoUrl: teamLogoUrl,
+          vision: teamVision,
+          mission: teamMission,
+          goals: teamGoals,
+          descriptionAr: teamDescriptionAr,
+          leaderPhone: teamLeaderPhone,
+          leaderEmail: teamLeaderEmail
+        });
+        if (ok) {
+          setTeamProfileFeedback({ type: 'success', text: "تم حفظ وتحديث بيانات الفريق بنجاح وستظهر فوراً في صفحة الفريق بالموقع!" });
+        } else {
+          setTeamProfileFeedback({ type: 'error', text: "فشل حفظ بيانات الفريق، يرجى المحاولة مرة أخرى." });
+        }
+      } else {
+        const res = await fetch("/api/db/teams/leader-update", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-role": "leader",
+            "x-user-team-id": currentTeam.id
+          },
+          body: JSON.stringify({
+            teamId: currentTeam.id,
+            logoUrl: teamLogoUrl,
+            vision: teamVision,
+            mission: teamMission,
+            goals: teamGoals,
+            descriptionAr: teamDescriptionAr,
+            leaderPhone: teamLeaderPhone,
+            leaderEmail: teamLeaderEmail
+          })
+        });
+        if (res.ok) {
+          setTeamProfileFeedback({ type: 'success', text: "تم حفظ وتحديث بيانات الفريق بنجاح وستظهر فوراً في صفحة الفريق بالموقع!" });
+        } else {
+          const d = await res.json();
+          setTeamProfileFeedback({ type: 'error', text: d.error || "فشل حفظ بيانات الفريق." });
+        }
+      }
+    } catch (err: any) {
+      setTeamProfileFeedback({ type: 'error', text: err.message || "حدث خطأ غير متوقع." });
+    } finally {
+      setIsSavingTeamProfile(false);
+      setTimeout(() => setTeamProfileFeedback(null), 5000);
+    }
+  };
+
+  // Filter volunteer applications specific to this leader's team
+  const myTeamApplications = useMemo(() => {
+    return volunteerApplications.filter((app) => {
+      const matchTeam = app.assignedTeamId === currentTeam.id || app.requestedTeamId === currentTeam.id;
+      return matchTeam;
+    });
+  }, [volunteerApplications, currentTeam.id]);
+
+  // Reject Modal state for leader
+  const [rejectingApp, setRejectingApp] = useState<VolunteerApplication | null>(null);
+  const [leaderRejectReason, setLeaderRejectReason] = useState("");
+  const [isProcessingApp, setIsProcessingApp] = useState(false);
+
+  const handleLeaderAppAction = async (appId: string, action: 'accept' | 'reject', reason?: string) => {
+    setIsProcessingApp(true);
+    try {
+      if (onLeaderActionVolunteerApplication) {
+        await onLeaderActionVolunteerApplication(appId, action, reason);
+      } else {
+        await fetch("/api/db/volunteerApplications/leader-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            applicationId: appId,
+            action,
+            leaderName: currentTeam.leaderName || "قائد الفريق",
+            teamId: currentTeam.id,
+            teamName: currentTeam.nameAr,
+            rejectionReason: reason
+          })
+        });
+      }
+      setRejectingApp(null);
+      setLeaderRejectReason("");
+    } catch (e) {
+      console.error("Error processing leader application action:", e);
+    } finally {
+      setIsProcessingApp(false);
     }
   };
 
@@ -704,6 +827,27 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
         >
           <Users className="w-4 h-4" />
           <span>فريقي ({teamMembers.length})</span>
+        </button>
+        <button
+          id="tab-leader-applications"
+          onClick={() => setActiveTab('applications')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold transition-all cursor-pointer border-b-2 ${activeTab === 'applications' ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+        >
+          <UserPlus className="w-4 h-4 text-blue-600" />
+          <span>طلبات الانضمام</span>
+          {myTeamApplications.filter(a => a.status === 'pending_leader_approval' || a.status === 'pending').length > 0 && (
+            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full animate-bounce">
+              {myTeamApplications.filter(a => a.status === 'pending_leader_approval' || a.status === 'pending').length}
+            </span>
+          )}
+        </button>
+        <button
+          id="tab-leader-team-settings"
+          onClick={() => setActiveTab('team_settings')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold transition-all cursor-pointer border-b-2 ${activeTab === 'team_settings' ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+        >
+          <Sliders className="w-4 h-4 text-blue-600" />
+          <span>بيانات وإعدادات الفريق</span>
         </button>
         <button
           id="tab-leader-cards"
@@ -1258,6 +1402,286 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
               )}
             </div>
 
+          </div>
+        )}
+
+        {/* TAB: VOLUNTEER JOIN APPLICATIONS SPECIFIC TO THIS LEADER'S TEAM */}
+        {activeTab === 'applications' && (
+          <div className="space-y-6" dir="rtl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-100">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-blue-600" />
+                  <span>طلبات انضمام المتطوعين لفريق ({currentTeam.nameAr})</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  تظهر هنا حصراً طلبات المتطوعين الموجهة لفريقك، تستطيع مراجعة الملف وقبول الطلب ليُحال للاعتماد النهائي من إدارة التطوع.
+                </p>
+              </div>
+              <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
+                إجمالي الطلبات: {myTeamApplications.length}
+              </span>
+            </div>
+
+            {myTeamApplications.length > 0 ? (
+              <div className="space-y-4">
+                {myTeamApplications.map((app) => {
+                  const isPendingLeader = !app.status || app.status === 'pending' || app.status === 'pending_leader_approval';
+                  const isLeaderAccepted = app.status === 'leader_accepted';
+                  const isApproved = app.status === 'approved' || app.status === 'accepted';
+                  const isRejected = app.status === 'leader_rejected' || app.status === 'rejected' || app.status === 'admin_rejected';
+
+                  return (
+                    <div 
+                      key={app.id}
+                      className="border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-5 rounded-2xl shadow-xs hover:border-blue-400 transition-all space-y-4"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-neutral-700 border border-slate-200 dark:border-neutral-600 flex items-center justify-center font-black text-blue-700 dark:text-blue-300 text-base shrink-0 overflow-hidden">
+                            {app.photo && app.photo !== 'female_unified' ? (
+                              <img src={app.photo} alt={app.fullName} className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{(app.fullName || "م").charAt(0)}</span>
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-black text-slate-900 dark:text-white">{app.fullName}</h4>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                                #{app.fileNumber || app.id}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap font-medium">
+                              <span>الهوية: <strong className="font-mono text-slate-700 dark:text-slate-300">{app.nationalId}</strong></span>
+                              <span>•</span>
+                              <span>الجوال: <strong className="font-mono text-slate-700 dark:text-slate-300" dir="ltr">{app.phone}</strong></span>
+                              <span>•</span>
+                              <span>الموقع: {app.address || "العسيلة - مكة"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Badge */}
+                        <div>
+                          {isPendingLeader && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>بانتظار موافقتك كقائد فريق</span>
+                            </span>
+                          )}
+                          {isLeaderAccepted && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>مقبول منك – بانتظار اعتماد إدارة التطوع</span>
+                            </span>
+                          )}
+                          {isApproved && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>معتمد كمتطوع نشط بالفريق</span>
+                            </span>
+                          )}
+                          {isRejected && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                              <X className="w-3.5 h-3.5" />
+                              <span>طلب معتذر عنه ({app.rejectionReason || "تم الرفض"})</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Experience and Notes */}
+                      {app.experiences && (
+                        <div className="bg-slate-50 dark:bg-neutral-750 p-3 rounded-xl border border-slate-100 dark:border-neutral-700 text-xs text-slate-600 dark:text-slate-300">
+                          <strong className="text-slate-800 dark:text-slate-200 block mb-0.5">المهارات والخبرات السابقة للمتطوع:</strong>
+                          <p className="leading-relaxed">{app.experiences}</p>
+                        </div>
+                      )}
+
+                      {/* Action buttons for leader */}
+                      {isPendingLeader && (
+                        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-neutral-700">
+                          <button
+                            type="button"
+                            disabled={isProcessingApp}
+                            onClick={() => setRejectingApp(app)}
+                            className="px-4 py-2 text-xs font-bold rounded-xl text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
+                          >
+                            اعتذار عن قبول المتطوع
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isProcessingApp}
+                            onClick={() => handleLeaderAppAction(app.id, 'accept')}
+                            className="px-5 py-2 text-xs font-black rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>موافقة مبدئية وإحالة لإدارة التطوع</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-neutral-800 p-12 rounded-3xl border border-dashed border-slate-300 dark:border-neutral-700 text-center">
+                <Users className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                <h4 className="text-sm font-black text-slate-800 dark:text-white">لا توجد طلبات انضمام جديدة لفريقك حالياً</h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                  عندما يختار متطوع جديد فريقك ({currentTeam.nameAr}) من الموقع الرسمي، سيصلك إشعار فوري ويظهر طلبه هنا للمراجعة.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: TEAM PROFILE & SETTINGS (بيانات وإعدادات الفريق المعتمد) */}
+        {activeTab === 'team_settings' && (
+          <div className="space-y-6" dir="rtl">
+            <div className="pb-4 border-b border-neutral-100">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-blue-600" />
+                <span>إدارة الملف التعريفي لفريق ({currentTeam.nameAr})</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                تعديل شعار الفريق، الرؤية، الرسالة، الأهداف، والنبذة التعريفية التي تنعكس مباشرة في صفحة تفاصيل الفريق بالموقع الرسمي.
+              </p>
+            </div>
+
+            {teamProfileFeedback && (
+              <div className={`p-4 rounded-2xl text-xs font-bold border ${
+                teamProfileFeedback.type === 'success' 
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200' 
+                  : 'bg-rose-50 text-rose-900 border-rose-200'
+              }`}>
+                {teamProfileFeedback.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveTeamProfile} className="bg-white dark:bg-neutral-800 p-6 rounded-2xl border border-slate-200 dark:border-neutral-700 shadow-xs space-y-5">
+              {/* Logo Field */}
+              <div>
+                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                  رابط شعار الفريق (اللوجو الرسمي):
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-2xl border border-slate-200 dark:border-neutral-700 bg-slate-50 dark:bg-neutral-900 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                    {teamLogoUrl ? (
+                      <img src={teamLogoUrl} alt={currentTeam.nameAr} className="w-full h-full object-contain rounded-xl" />
+                    ) : (
+                      <Users className="w-6 h-6 text-slate-400" />
+                    )}
+                  </div>
+                  <input
+                    type="url"
+                    value={teamLogoUrl}
+                    onChange={(e) => setTeamLogoUrl(e.target.value)}
+                    placeholder="https://... رابط صورة الشعار المعتمد"
+                    className="flex-1 px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white font-mono"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* Vision */}
+              <div>
+                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                  رؤية الفريق:
+                </label>
+                <textarea
+                  rows={2}
+                  value={teamVision}
+                  onChange={(e) => setTeamVision(e.target.value)}
+                  placeholder="رؤية الفريق المعتمدة..."
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              {/* Mission */}
+              <div>
+                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                  رسالة الفريق:
+                </label>
+                <textarea
+                  rows={2}
+                  value={teamMission}
+                  onChange={(e) => setTeamMission(e.target.value)}
+                  placeholder="رسالة الفريق المعتمدة..."
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              {/* Goals */}
+              <div>
+                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                  أهداف الفريق (افصل بين الأهداف بفاصلة أو سطر جديد):
+                </label>
+                <textarea
+                  rows={3}
+                  value={teamGoals}
+                  onChange={(e) => setTeamGoals(e.target.value)}
+                  placeholder="الهدف الأول، الهدف الثاني، الهدف الثالث..."
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                  النبذة التعريفية للفريق:
+                </label>
+                <textarea
+                  rows={2}
+                  value={teamDescriptionAr}
+                  onChange={(e) => setTeamDescriptionAr(e.target.value)}
+                  placeholder="نبذة مختصرة عن الفريق وخدماته الميدانية..."
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              {/* Leader Contacts */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-slate-100 dark:border-neutral-700">
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    رقم جوال القائد للتواصل:
+                  </label>
+                  <input
+                    type="tel"
+                    value={teamLeaderPhone}
+                    onChange={(e) => setTeamLeaderPhone(e.target.value)}
+                    placeholder="05xxxxxxxx"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white font-mono"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    البريد الإلكتروني للعمل:
+                  </label>
+                  <input
+                    type="email"
+                    value={teamLeaderEmail}
+                    onChange={(e) => setTeamLeaderEmail(e.target.value)}
+                    placeholder="leader@riadataleata.org.sa"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white font-mono"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 dark:border-neutral-700 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSavingTeamProfile}
+                  className="px-6 py-2.5 text-xs font-black rounded-xl text-white bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-blue-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isSavingTeamProfile ? "جاري الحفظ..." : "حفظ بيانات الفريق"}</span>
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
@@ -3036,6 +3460,56 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
           return { success: false, message: "تعذر إرسال الخطاب" };
         }}
       />
+
+      {/* LEADER REJECT MODAL */}
+      {rejectingApp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in" dir="rtl">
+          <div className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertCircle className="w-6 h-6" />
+              <h4 className="text-sm font-black text-slate-900 dark:text-white">الاعتذار عن قبول طلب المتطوع</h4>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              يرجى تدوين سبب عدم قبول طلب المتطوع ({rejectingApp.fullName}) في فريق ({currentTeam.nameAr}) لحفظه في سجلات النظام وإشعار إدارة التطوع.
+            </p>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                سبب الاعتذار:
+              </label>
+              <textarea
+                rows={3}
+                value={leaderRejectReason}
+                onChange={(e) => setLeaderRejectReason(e.target.value)}
+                placeholder="مثال: اكتفاء العدد الحالي في الفريق / تخصص المهارات غير متوافق حالياً..."
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectingApp(null);
+                  setLeaderRejectReason("");
+                }}
+                className="px-4 py-2 text-xs font-bold rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingApp}
+                onClick={() => handleLeaderAppAction(rejectingApp.id, 'reject', leaderRejectReason)}
+                className="px-5 py-2 text-xs font-black rounded-xl text-white bg-rose-600 hover:bg-rose-700 shadow-md transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isProcessingApp ? "جاري الحفظ..." : "تأكيد الاعتذار"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -187,9 +187,12 @@ export interface VolunteerTeam {
   cardThemeColor?: string;
   cardBadgeTitle?: string;
   cardHeaderStyle?: string;
-  cardTemplateId?: string;
   points?: number;
   pointsHistory?: TeamPointsRecord[];
+  showOnHomepage?: boolean; // whether team is published/displayed in the homepage carousel
+  displayOrder?: number; // order of appearance in homepage carousel
+  acceptingVolunteers?: boolean; // whether team accepts new volunteer applications
+  leaderPhoto?: string; // photo of team leader if authorized for display
 }
 
 export interface VolunteerTeamHistoryRecord {
@@ -988,7 +991,7 @@ export interface VolunteerApplication {
   charterPdfName?: string;
   experiences: string;
   agreedToTerms: boolean;
-  status: 'pending' | 'leader_accepted' | 'pending_admin_approval' | 'approved' | 'accepted' | 'leader_rejected' | 'admin_rejected' | 'rejected';
+  status: 'pending' | 'pending_leader_approval' | 'leader_accepted' | 'pending_admin_approval' | 'approved' | 'accepted' | 'leader_rejected' | 'admin_rejected' | 'rejected';
   appliedAt: string;
   rejectionReason?: string;
   assignedTeamId?: string;

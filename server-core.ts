@@ -2835,6 +2835,26 @@ export function readDb() {
       if (!db.volunteerTransferRequests) { db.volunteerTransferRequests = []; modified = true; }
       if (!db.passwordResetRequests) { db.passwordResetRequests = []; modified = true; }
       if (!db.letters) { db.letters = defaultDb.letters || []; modified = true; }
+      if (Array.isArray(db.teams)) {
+        db.teams.forEach((t: any, idx: number) => {
+          if (t.status === undefined) { t.status = 'active'; modified = true; }
+          if (t.showOnHomepage === undefined) { t.showOnHomepage = true; modified = true; }
+          if (t.acceptingVolunteers === undefined) { t.acceptingVolunteers = true; modified = true; }
+          if (t.displayOrder === undefined) { t.displayOrder = idx + 1; modified = true; }
+          if (!t.vision) {
+            t.vision = `الريادة في العمل التطوعي الميداني وتقديم أفضل معايير الخدمة المجتمعية والإنسانية بالعسيلة.`;
+            modified = true;
+          }
+          if (!t.mission) {
+            t.mission = `تمكين وتأهيل المتطوعين للإسهام الفاعل في تنمية المجتمع وتلبية احتياجات الفئات المستفيدة بجودة واحترافية.`;
+            modified = true;
+          }
+          if (!t.goals) {
+            t.goals = `تنظيم المبادرات الميدانية باحترافية، ترسيخ ثقافة التطوع النوعي، مساندة برامج الجمعية ومبادراتها التنموية.`;
+            modified = true;
+          }
+        });
+      }
       if (!db.storekeepers) {
         db.storekeepers = [
           {
@@ -8320,6 +8340,50 @@ app.post("/api/db/teams/add", (req, res) => {
   });
   writeDb(db);
   res.json(db);
+});
+
+// 3.5 Teams Leader Profile Update (Restricted: leader can only update own team details)
+app.post("/api/db/teams/leader-update", (req, res) => {
+  const db = readDb();
+  const { teamId, logoUrl, vision, mission, goals, descriptionAr, descriptionEn, leaderPhone, leaderEmail, socialLinks } = req.body;
+  if (!teamId) {
+    return res.status(400).json({ error: "معرف الفريق مطلوب" });
+  }
+
+  const team = (db.teams || []).find((t: any) => t.id === teamId);
+  if (!team) {
+    return res.status(404).json({ error: "الفريق غير موجود" });
+  }
+
+  // Check role: Must be admin or the leader of this specific team
+  const userRole = (req.headers["x-user-role"] || "") as string;
+  const userTeamId = (req.headers["x-user-team-id"] || "") as string;
+  if (userRole === "leader" && userTeamId && userTeamId !== teamId) {
+    return res.status(403).json({ error: "غير مصرح لك بتعديل بيانات فريق آخر." });
+  }
+
+  if (logoUrl !== undefined) team.logoUrl = logoUrl;
+  if (vision !== undefined) team.vision = vision;
+  if (mission !== undefined) team.mission = mission;
+  if (goals !== undefined) team.goals = goals;
+  if (descriptionAr !== undefined) team.descriptionAr = descriptionAr;
+  if (descriptionEn !== undefined) team.descriptionEn = descriptionEn;
+  if (leaderPhone !== undefined) team.leaderPhone = leaderPhone;
+  if (leaderEmail !== undefined) team.leaderEmail = leaderEmail;
+  if (socialLinks !== undefined) team.socialLinks = socialLinks;
+
+  db.logs = db.logs || [];
+  db.logs.unshift({
+    id: "log-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: `قائد الفريق: ${team.leaderName}`,
+    action: `تحديث الملف التعريفي لفريق (${team.nameAr}) من لوحة القائد`,
+    ip: req.ip || "127.0.0.1",
+    device: "Leader Portal"
+  });
+
+  writeDb(db);
+  res.json({ status: "success", team, db });
 });
 
 // 4. Teams Delete
@@ -15824,7 +15888,7 @@ app.post("/api/db/volunteerApplications/submit", async (req, res) => {
       const fileNumber = appData.fileNumber || `FILE-${new Date().getFullYear()}-${seqNumber}`;
 
       // Resolve requested team from existing teams in database
-      const rawTeamId = appData.requestedTeamId || appData.assignedTeamId || "";
+      const rawTeamId = appData.requestedTeamId || appData.assignedTeamId || appData.teamId || "";
       const foundTeam = (db.teams || []).find((t: any) => t.id === rawTeamId);
       const requestedTeamId = foundTeam ? foundTeam.id : rawTeamId;
       const requestedTeamName = foundTeam ? foundTeam.nameAr : (appData.requestedTeamName || "");
@@ -15854,7 +15918,7 @@ app.post("/api/db/volunteerApplications/submit", async (req, res) => {
         charterPdfName: appData.charterPdfName || `ميثاق_تطوع_${cleanFullName.replace(/\s+/g, '_')}.pdf`,
         experiences: appData.experiences || "",
         agreedToTerms: !!appData.agreedToTerms,
-        status: "pending", // STRICTLY PENDING
+        status: requestedTeamId ? "pending_leader_approval" : "pending",
         appliedAt: new Date().toISOString(),
         requestedTeamId: requestedTeamId,
         requestedTeamName: requestedTeamName,
@@ -15866,12 +15930,35 @@ app.post("/api/db/volunteerApplications/submit", async (req, res) => {
 
       db.volunteerApplications.unshift(newApp);
 
+      // System notification: dispatch to specific team leader if team is requested
+      db.notifications = db.notifications || [];
+      if (foundTeam) {
+        db.notifications.unshift({
+          id: "not-" + Date.now(),
+          userId: `leader-${foundTeam.id}`,
+          titleAr: `طلب انضمام متطوع جديد لفريقك (${foundTeam.nameAr})`,
+          titleEn: `New volunteer application for your team (${foundTeam.nameAr})`,
+          bodyAr: `تقدم المتطوع (${newApp.fullName}) بطلب انضمام إلى فريق (${foundTeam.nameAr}). يرجى مراجعة الطلب من لوحة القيادة للقبول أو الرفض.`,
+          bodyEn: `Volunteer ${newApp.fullName} applied to join ${foundTeam.nameAr}. Please review from your leader portal.`,
+          date: new Date().toISOString().split('T')[0],
+          read: false,
+          type: "volunteer_application_submitted",
+          meta: {
+            applicationId: newApp.id,
+            volunteerName: newApp.fullName,
+            teamId: foundTeam.id,
+            teamName: foundTeam.nameAr,
+            phone: newApp.phone
+          }
+        });
+      }
+
       // System audit log
       db.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: new Date().toISOString(),
         user: `المتقدم ${newApp.fullName}`,
-        action: `تقديم طلب انضمام جديد كمتطوع ${opportunityTitle ? `للفرصة (${opportunityTitle})` : ''} (الهوية: ${newApp.nationalId} - الملف: ${newApp.fileNumber}) - ينتظر المراجعة`,
+        action: `تقديم طلب انضمام جديد كمتطوع ${requestedTeamName ? `لفريق (${requestedTeamName})` : ''} ${opportunityTitle ? `للفرصة (${opportunityTitle})` : ''} (الهوية: ${newApp.nationalId} - الملف: ${newApp.fileNumber}) - بانتظار موافقة قائد الفريق`,
         ip: req.ip || "127.0.0.1",
         device: req.headers["user-agent"] || "System"
       });

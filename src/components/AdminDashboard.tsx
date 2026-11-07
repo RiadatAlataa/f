@@ -2039,16 +2039,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex justify-between items-start">
                           <div>
                             <h4 className="text-xs font-black text-neutral-800">{t.nameAr}</h4>
-                            <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full mt-1 inline-block">
-                              {dep ? dep.nameAr : "مستقل"}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full inline-block">
+                                {dep ? dep.nameAr : "مستقل"}
+                              </span>
+                              {t.showOnHomepage !== false ? (
+                                <span className="text-[9px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-200">
+                                  منشور بالرئيسية
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-neutral-500 font-bold bg-neutral-100 px-1.5 py-0.5 rounded-md">
+                                  مخفي
+                                </span>
+                              )}
+                              {t.acceptingVolunteers !== false && (
+                                <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                                  يقبل أعضاء
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <span className="text-[10px] bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-sm font-mono">{t.nameEn}</span>
                         </div>
                         <p className="text-[11px] text-neutral-500 mt-2">{t.descriptionAr || "لا يوجد وصف حالياً."}</p>
-                        <div className="text-[11px] font-bold text-neutral-700 mt-3 flex justify-between items-center bg-neutral-50 p-2 rounded-lg">
-                          <span>قائد الفريق المعين:</span>
-                          <span className="text-emerald-700 font-bold">{t.leaderName}</span>
+                        
+                        <div className="grid grid-cols-2 gap-2 mt-3 text-[11px] font-bold text-neutral-700 bg-neutral-50 p-2 rounded-lg">
+                          <div>
+                            <span className="text-[10px] text-neutral-400 block">قائد الفريق:</span>
+                            <span className="text-emerald-700 font-bold truncate block">{t.leaderName}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-neutral-400 block">المتطوعون النشطون:</span>
+                            <span className="text-blue-700 font-bold font-mono">
+                              {(data.volunteers || []).filter(v => v.teamId === t.id && v.status === 'active').length} عضو
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-neutral-50">
@@ -4322,11 +4347,97 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <ImagePickerControl
                   label="شعار الفريق المخصص (اللوجو)"
-                  description="يظهر أعلى بطاقة المتطوع التابع لهذا الفريق"
+                  description="يظهر أعلى بطاقة المتطوع التابع لهذا الفريق وفي الصفحة الرئيسية"
                   value={editingTeam.logoUrl || ''}
                   onChange={(val) => setEditingTeam({ ...editingTeam, logoUrl: val })}
                   aspectRatio="logo"
                 />
+
+                {/* Team Homepage & Intake Controls (المطلب الحادي عشر) */}
+                <div className="pt-3 border-t border-neutral-150 space-y-3">
+                  <h4 className="text-xs font-black text-blue-800">🌐 النشر والظهور في الصفحة الرئيسية واستقبال الأعضاء:</h4>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-neutral-500">حالة الفريق:</label>
+                      <select
+                        value={editingTeam.status || 'active'}
+                        onChange={(e) => setEditingTeam({ ...editingTeam, status: e.target.value as any })}
+                        className="w-full border border-neutral-200 rounded-lg p-2 text-xs font-bold"
+                      >
+                        <option value="active">معتمد ونشط</option>
+                        <option value="suspended">موقوف مؤقتاً</option>
+                        <option value="pending">قيد المراجعة</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-neutral-500">ترتيب الظهور بالسلايدر:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={editingTeam.displayOrder || 1}
+                        onChange={(e) => setEditingTeam({ ...editingTeam, displayOrder: Number(e.target.value) || 1 })}
+                        className="w-full border border-neutral-200 rounded-lg p-2 text-xs font-bold text-center"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={editingTeam.showOnHomepage !== false}
+                        onChange={(e) => setEditingTeam({ ...editingTeam, showOnHomepage: e.target.checked })}
+                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      />
+                      <span>إظهار الفريق في قسم «فرقنا التطوعية» بالصفحة الرئيسية</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={editingTeam.acceptingVolunteers !== false}
+                        onChange={(e) => setEditingTeam({ ...editingTeam, acceptingVolunteers: e.target.checked })}
+                        className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                      />
+                      <span>فتح استقبال طلبات انضمام المتطوعين الجدد لهذا الفريق</span>
+                    </label>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-500">رؤية الفريق:</label>
+                    <textarea
+                      rows={2}
+                      value={editingTeam.vision || ''}
+                      onChange={(e) => setEditingTeam({ ...editingTeam, vision: e.target.value })}
+                      placeholder="رؤية الفريق المعتمدة..."
+                      className="w-full border border-neutral-200 rounded-lg p-2 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-500">رسالة الفريق:</label>
+                    <textarea
+                      rows={2}
+                      value={editingTeam.mission || ''}
+                      onChange={(e) => setEditingTeam({ ...editingTeam, mission: e.target.value })}
+                      placeholder="رسالة الفريق المعتمدة..."
+                      className="w-full border border-neutral-200 rounded-lg p-2 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-500">أهداف الفريق:</label>
+                    <textarea
+                      rows={2}
+                      value={editingTeam.goals || ''}
+                      onChange={(e) => setEditingTeam({ ...editingTeam, goals: e.target.value })}
+                      placeholder="أهداف الفريق..."
+                      className="w-full border border-neutral-200 rounded-lg p-2 text-xs"
+                    />
+                  </div>
+                </div>
 
                 {editingTeam.cardTemplateBg === 'custom-bg' && (
                   <ImagePickerControl
