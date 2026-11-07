@@ -23,10 +23,10 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
     >
       <div className="flex flex-col items-center max-w-sm w-full">
         {/* Logo and Rotating Ring Container */}
-        <div className="relative w-36 h-36 sm:w-40 sm:h-40 flex items-center justify-center mb-6">
+        <div className="relative w-36 h-36 sm:w-44 sm:h-44 md:w-48 md:h-48 flex items-center justify-center mb-6">
           {/* Subtle Ambient Glow Behind Ring */}
           <div
-            className={`absolute inset-0 rounded-full bg-blue-600/10 dark:bg-blue-500/15 blur-xl transition-opacity duration-700 pointer-events-none ${
+            className={`absolute -inset-1 rounded-full bg-blue-600/10 dark:bg-blue-500/15 blur-xl transition-opacity duration-700 pointer-events-none ${
               error ? "bg-rose-500/15 dark:bg-rose-500/20" : ""
             }`}
           />
@@ -47,12 +47,14 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
             <div className="absolute inset-0 rounded-full border-[3px] border-rose-500/60 shadow-[0_0_20px_rgba(244,63,94,0.25)]" />
           )}
 
-          {/* Inner Static Badge Housing the Official Logo */}
-          <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-md flex items-center justify-center p-3 z-10 transition-transform">
+          {/* Inner Housing for Official Logo: Transparent, Scaled & Centered */}
+          <div className="absolute inset-2 sm:inset-2.5 md:inset-3 rounded-full overflow-hidden flex items-center justify-center z-10 p-0.5 sm:p-1 pointer-events-none">
             <img
               src="/logo.png"
               alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"
-              className="w-full h-full object-contain pointer-events-none select-none drop-shadow-xs"
+              className="w-full h-full object-contain aspect-square select-none drop-shadow-sm filter"
+              loading="eager"
+              decoding="async"
               onError={(e) => {
                 // Graceful fallback to SVG logo if PNG is unavailable
                 const target = e.currentTarget;
