@@ -1090,13 +1090,7 @@ const defaultDb = {
     }
   ] as Department[],
 
-  teams: [
-    { id: "team-1", nameAr: "فريق التنظيم", nameEn: "Organizing Team", departmentId: "dep-3", leaderName: "سعود الحربي", descriptionAr: "المسؤول الأول عن إدارة الحشود والمسارات في المبادرات الميدانية.", descriptionEn: "Responsible for crowd management and routing in field initiatives." },
-    { id: "team-2", nameAr: "فريق الإعلام", nameEn: "Media Team", departmentId: "dep-2", leaderName: "عبد العزيز الشمري", descriptionAr: "توثيق وتصوير المبادرات وكتابة المحتوى الإعلامي للجمعية.", descriptionEn: "Documenting and photographing initiatives and writing media content for the association." },
-    { id: "team-3", nameAr: "فريق الاستقبال", nameEn: "Reception Team", departmentId: "dep-4", leaderName: "ماجد الدوسري", descriptionAr: "استقبال كبار الشخصيات والزوار والترحيب بالمتطوعين الجدد.", descriptionEn: "Welcoming VIPs, visitors, and welcoming new volunteers." },
-    { id: "team-4", nameAr: "فريق الإسعافات", nameEn: "First Aid Team", departmentId: "dep-1", leaderName: "د. هند العصيمي", descriptionAr: "تقديم الدعم الطبي الأولي في الفعاليات والنشاطات الكبيرة.", descriptionEn: "Providing primary medical support in large events and activities." },
-    { id: "team-5", nameAr: "فريق التصوير", nameEn: "Photography Team", departmentId: "dep-2", leaderName: "خالد الشهري", descriptionAr: "التقاط الصور وإنتاج المقاطع المرئية الاحترافية للجمعية.", descriptionEn: "Capturing photos and producing professional videos for the association." }
-  ] as VolunteerTeam[],
+  teams: [] as VolunteerTeam[],
 
   volunteers: [
     {
@@ -1489,11 +1483,7 @@ const defaultDb = {
       date: "2026-07-10"
     }
   ],
-  partners: [
-    { id: "partner-1", nameAr: "مؤسسة سليمان الراجحي الخيرية", nameEn: "Sulaiman Al Rajhi Foundation", logo: "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=150&h=150&fit=crop", link: "https://rf.org.sa" },
-    { id: "partner-2", nameAr: "منصة إحسان الوطنية للعمل الخيري", nameEn: "Ehsan National Platform", logo: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=150&h=150&fit=crop", link: "https://ehsan.sa" },
-    { id: "partner-3", nameAr: "جمعية إكرام الجود لخدمة ضيوف الرحمن", nameEn: "Ekram Al-Jood Association", logo: "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=150&h=150&fit=crop", link: "https://ekram.sa" }
-  ],
+  partners: [] as any[],
   gallery: [
     { id: "gal-1", type: "photo", url: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&h=600&fit=crop", titleAr: "توزيع وجبات المعتمرين في الساحات", titleEn: "Distributing meals to pilgrims in plazas", date: "2026-07-15" },
     { id: "gal-2", type: "photo", url: "https://images.unsplash.com/photo-1542810634-71277d95dcbb?w=800&h=600&fit=crop", titleAr: "اللقاء السنوي لمتطوعي ريادة العطاء", titleEn: "Annual meeting of Reyadat Al-Ata volunteers", date: "2026-07-18" },

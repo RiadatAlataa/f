@@ -1832,7 +1832,7 @@ export function OfficialHomePage({
               <div className="py-3.5 px-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 flex items-center justify-between">
                 <span className="text-neutral-400 font-medium">{lang === "ar" ? "شركاء النجاح والرعاة" : "Partners"}:</span>
                 <strong className="text-emerald-400 font-mono text-base font-black">
-                  <AnimatedCounter value={partnersList.length || 7} />
+                  <AnimatedCounter value={partnersList.length || 0} />
                 </strong>
               </div>
               <div className="py-3.5 px-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 flex items-center justify-between">
@@ -2981,27 +2981,6 @@ export function OfficialHomePage({
                     </div>
                   </button>
 
-                  {/* Option 2: Join as Volunteer Team */}
-                  <button
-                    onClick={() => {
-                      setIsJoinModalOpen(false);
-                      setIsTeamModalOpen(true);
-                    }}
-                    className="w-full p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/60 hover:bg-blue-50 dark:hover:bg-blue-950/20 hover:border-blue-500/30 border border-neutral-150 dark:border-neutral-800 text-right transition-all flex items-start gap-4 cursor-pointer group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                      <Building2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-xs font-bold text-neutral-800 dark:text-white">{lang === "ar" ? "الانضمام كفريق تطوعي تحت الجمعية" : "Join as Volunteer Team"}</h4>
-                        <span className="bg-blue-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full">جديد</span>
-                      </div>
-                      <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-1 leading-normal">
-                        انضم كفريق تطوعي وكن جزءاً من ريادة العطاء .. فريق واحد .. أثر واحد.
-                      </p>
-                    </div>
-                  </button>
 
                   {/* Option 3: Beneficiary */}
                   <button
