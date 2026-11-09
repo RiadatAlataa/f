@@ -1482,6 +1482,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
             onCancelHandover={onCancelHandover}
             onUpdateBeneficiaryStatus={onUpdateBeneficiaryStatus}
             onAddBeneficiary={onAddBeneficiary}
+            onRefreshGlobalData={onRefreshGlobalData}
             lang="ar"
           />
         )}

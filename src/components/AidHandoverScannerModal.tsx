@@ -640,6 +640,24 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
                   </div>
                 )}
 
+                {/* Sequential Steps Status Bar */}
+                {!isDuplicate && !isNotTargeted && (
+                  <div className="mt-3 p-2.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
+                      <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">1</span>
+                      <span>مسح الباركود والتحقق: مكتمل ✓</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 font-bold ${handoverPhoto ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400 animate-pulse'}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${handoverPhoto ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'}`}>2</span>
+                      <span>{handoverPhoto ? 'تصوير المساعدة: تم الالتقاط ✓' : 'تصوير المساعدة: بانتظار التقاط الصورة (إلزامي)'}</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 font-bold ${handoverPhoto ? 'text-emerald-700 dark:text-emerald-400' : 'text-neutral-400'}`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${handoverPhoto ? 'bg-emerald-600 text-white' : 'bg-neutral-300 dark:bg-neutral-700 text-neutral-600'}`}>3</span>
+                      <span>تأكيد التسليم وصرف المخزون</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Photo Proof Capture Section (التقاط صورة التسليم إلزامي فقط للمستحقين) */}
                 {!isDuplicate && !isNotTargeted && (
                   <div className="mt-3">
@@ -679,7 +697,7 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
                 )}
 
                 {/* Confirm / Reset Action Button */}
-                <div className="mt-4 flex items-center justify-end gap-2.5">
+                <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
                   <button
                     type="button"
                     onClick={resetScannerState}
@@ -691,19 +709,28 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
                   {!isDuplicate && !isNotTargeted && (
                     <button
                       type="button"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !handoverPhoto}
                       onClick={handleConfirmHandover}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                      className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        !handoverPhoto
+                          ? 'bg-neutral-300 dark:bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-75'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30'
+                      }`}
                     >
                       {isSubmitting ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>جاري تسجيل الاستلام وخصم المخزون...</span>
+                          <span>جاري التحقق وتسجيل الاستلام وخصم المخزون...</span>
+                        </>
+                      ) : !handoverPhoto ? (
+                        <>
+                          <Camera className="w-4 h-4 text-neutral-400" />
+                          <span>التقط صورة المساعدة أولاً لتأكيد التسليم (إلزامي 📸)</span>
                         </>
                       ) : (
                         <>
                           <Check className="w-4 h-4" />
-                          <span>✅ تم الاستلام (تسجيل التسليم وخصم المخزون)</span>
+                          <span>تأكيد تسليم المساعدة (جاهز للتأكيد ✓)</span>
                         </>
                       )}
                     </button>

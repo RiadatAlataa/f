@@ -823,13 +823,24 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
                         </td>
                         <td className="p-3 text-[11px]">
                           {ben.hasReceived && ben.handoverRecord ? (
-                            <div>
+                            <div className="space-y-0.5">
                               <div className="font-mono text-neutral-700 dark:text-neutral-300">
                                 {ben.handoverRecord.date} - {ben.handoverRecord.time}
                               </div>
                               <div className="text-[10px] text-neutral-400">
                                 الموظف: {ben.handoverRecord.handedByUserName}
                               </div>
+                              {(ben.handoverRecord.photoUrl || (ben.handoverRecord.proofPhotos && ben.handoverRecord.proofPhotos[0])) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setHistoryBeneficiary(ben)}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
+                                  title="عرض صورة التوثيق المعتمدة"
+                                >
+                                  <Camera className="w-3 h-3 text-emerald-600" />
+                                  <span>صورة المساعدة موثقة ✓</span>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <span className="text-neutral-400">---</span>

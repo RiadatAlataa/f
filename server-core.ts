@@ -4355,6 +4355,15 @@ export function createServerSession(user: any, role: string): ServerSession {
     expiresAt: now + (7 * 24 * 60 * 60 * 1000) // 7 days persistent session
   };
   activeSessions.set(token, session);
+  try {
+    const liveDb = readDb();
+    if (liveDb) {
+      if (!Array.isArray(liveDb.activeSessions)) liveDb.activeSessions = [];
+      liveDb.activeSessions = liveDb.activeSessions.filter((s: any) => s && s.expiresAt > now);
+      liveDb.activeSessions.push(session);
+      writeDb(liveDb);
+    }
+  } catch {}
   return session;
 }
 
@@ -5263,25 +5272,25 @@ function filterDatabaseForUser(db: any, context: any) {
       ? (db.storeDonations || [])
       : [],
 
-    // Beneficiaries & aid distributions: available to dep-4 (Beneficiary Care) and authenticated beneficiaries
+    // Beneficiaries & aid distributions: available to dep-4 (Beneficiary Care), dep-8 / storekeeper (Warehouse & Aid Handover), dep-1 (Executive Management), operations_manager, admin, and authenticated beneficiaries
     // STRICT IDOR PREVENTION: Beneficiaries only receive THEIR OWN record!
-    beneficiaries: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
+    beneficiaries: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (db.beneficiaries || [])
       : (context.role === 'beneficiary'
         ? (db.beneficiaries || []).filter((b: any) => b.id === context.userId || (context.nationalId && b.nationalId === context.nationalId))
         : []),
-    benefitRequests: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
+    benefitRequests: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : (db.benefitRequests || []))
       : (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : []),
-    distributions: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
+    distributions: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (context.role === 'beneficiary' ? (db.distributions || []).filter((d: any) => d.beneficiaryId === context.userId) : (db.distributions || []))
       : (context.role === 'beneficiary' ? (db.distributions || []).filter((d: any) => d.beneficiaryId === context.userId) : []),
-    distributionHandovers: (allowedDepts.includes('dep-4') || context.isSuperAdmin)
+    distributionHandovers: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (context.role === 'beneficiary' ? (db.distributionHandovers || []).filter((h: any) => h.beneficiaryId === context.userId) : (db.distributionHandovers || []))
       : (context.role === 'beneficiary' ? (db.distributionHandovers || []).filter((h: any) => h.beneficiaryId === context.userId) : []),
 
-    // Inventory Items: available to dep-8 (Warehouse), dep-4 (Beneficiary linking), and storekeeper
-    inventoryItems: (allowedDepts.includes('dep-8') || allowedDepts.includes('dep-4') || context.role === 'storekeeper' || context.isSuperAdmin)
+    // Inventory Items: available to dep-8 (Warehouse), dep-4 (Beneficiary linking), dep-1 (Executive), operations_manager, admin, and storekeeper
+    inventoryItems: (allowedDepts.includes('dep-8') || allowedDepts.includes('dep-4') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (db.inventoryItems || [])
       : [],
 
@@ -14120,6 +14129,64 @@ app.post("/api/db/beneficiaries/import", (req, res) => {
   });
 });
 
+// 20.2 Dedicated Scoped Beneficiaries Endpoint with RBAC & Anti-Stale Headers
+app.get("/api/db/beneficiaries", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  const authContext = getUserAccessContext(req);
+
+  if (!authContext.isAuthenticated || authContext.role === 'public') {
+    return res.status(401).json({
+      error: "يجب تسجيل الدخول للوصول إلى قائمة المستفيدين.",
+      isAuthenticated: false
+    });
+  }
+
+  const db = readDb();
+  if (!db) {
+    return res.status(500).json({ error: "فشل في قراءة قاعدة البيانات." });
+  }
+
+  // Beneficiary role only sees their own profile (Strict IDOR prevention)
+  if (authContext.role === 'beneficiary') {
+    const userNatId = (authContext as any).nationalId;
+    const myRecord = (db.beneficiaries || []).filter((b: any) => 
+      b && (b.id === authContext.userId || (userNatId && b.nationalId === userNatId))
+    );
+    return res.json({
+      status: "success",
+      beneficiaries: myRecord,
+      total: myRecord.length,
+      userRole: authContext.role
+    });
+  }
+
+  // Staff and Management authorization check
+  const allowedDepts: string[] = authContext.allowedDepartmentIds || (authContext.primaryDepartmentId ? [authContext.primaryDepartmentId] : []);
+  const isAuthorized = authContext.isSuperAdmin || 
+    authContext.isOperationsManager ||
+    authContext.role === 'admin' || 
+    authContext.role === 'operations_manager' || 
+    authContext.role === 'storekeeper' ||
+    allowedDepts.includes('dep-4') || 
+    allowedDepts.includes('dep-8') || 
+    allowedDepts.includes('dep-1');
+
+  if (!isAuthorized) {
+    return res.status(403).json({
+      error: "عذرًا، ليس لديك صلاحية للوصول إلى بيانات المستفيدين.",
+      userRole: authContext.role
+    });
+  }
+
+  const beneficiaries = db.beneficiaries || [];
+  return res.json({
+    status: "success",
+    beneficiaries,
+    total: beneficiaries.length,
+    userRole: authContext.role
+  });
+});
+
 // 20.2.1 Real-Time Beneficiaries Statistics API directly from PostgreSQL / DB
 app.get("/api/db/beneficiaries/statistics", (req, res) => {
   const db = readDb();
@@ -14977,19 +15044,38 @@ app.post("/api/db/distributions/delete", (req, res) => {
   res.status(404).json({ error: "التوزيعة غير موجودة." });
 });
 
-// 20.6 Aid Handover - Record Distribution Handover with Strict Duplicate Prevention & Inventory Deduction
-app.post("/api/db/distributions/handover", (req, res) => {
-  const db = readDb();
+// 20.6 Aid Handover - Record Distribution Handover with Mandatory Photo, Atomic Inventory Deduction, and Permanent Storage
+app.post("/api/db/distributions/handover", async (req, res) => {
+  const authContext = getUserAccessContext(req);
+
+  // RBAC: Only Storekeeper, Warehouse (dep-8), Beneficiary Care (dep-4), Operations Manager, Admin, and Super Admin
+  const allowedDepts: string[] = authContext.allowedDepartmentIds || (authContext.primaryDepartmentId ? [authContext.primaryDepartmentId] : []);
+  const isStorekeeper = authContext.role === 'storekeeper' || allowedDepts.includes('dep-8');
+  const isBeneficiaryManager = allowedDepts.includes('dep-4');
+  const isAuthorized = authContext.isSuperAdmin || 
+    authContext.isOperationsManager ||
+    authContext.role === 'admin' || 
+    authContext.role === 'operations_manager' || 
+    isStorekeeper || 
+    isBeneficiaryManager;
+
+  if (!authContext.isAuthenticated || !isAuthorized) {
+    return res.status(403).json({ 
+      error: "غير مصرح لك بتنفيذ عملية تسليم المساعدات وصرف المخزون. العملية محصورة لأمين المستودع والإدارة المخولة.",
+      userRole: authContext.role 
+    });
+  }
+
   const { 
     distributionId, 
     beneficiaryId, 
     barcodeId,
     photoUrl,
     proofPhotos,
-    handedByUserId = "staff",
-    handedByUserName = "مسؤول التوزيع الميداني",
-    handedByUserRole = "staff",
-    handedDepartment = "إدارة المخزون والمستودعات",
+    handedByUserId = authContext.userId || "staff",
+    handedByUserName = authContext.userName || "أمين المستودع",
+    handedByUserRole = authContext.role || "storekeeper",
+    handedDepartment = "إدارة المستودعات والدعم اللوجستي",
     method = "camera_scanner",
     notes = ""
   } = req.body;
@@ -14998,227 +15084,301 @@ app.post("/api/db/distributions/handover", (req, res) => {
     return res.status(400).json({ error: "معرف التوزيعة مطلوب." });
   }
 
-  // Resolved photo proof (saved when available, with official receipt stamp fallback)
-  const resolvedPhoto = photoUrl || (proofPhotos && proofPhotos[0]) || "official_handover_verified";
-
-  // 1. Find the distribution
-  const dist = (db.distributions || []).find((d: any) => d.id === distributionId);
-  if (!dist) {
-    return res.status(404).json({ error: "التوزيعة المحددة غير موجودة بالنظام." });
-  }
-
-  // 2. Find beneficiary by id, permanent barcodeId, beneficiaryNumber, or nationalId
-  let ben: any = null;
-  if (beneficiaryId) {
-    ben = (db.beneficiaries || []).find((b: any) => b.id === beneficiaryId);
-  }
-  if (!ben && barcodeId) {
-    const cleanSearch = barcodeId.toString().trim();
-    ben = (db.beneficiaries || []).find((b: any) => 
-      (b.barcodeId && b.barcodeId.toString().trim().toUpperCase() === cleanSearch.toUpperCase()) ||
-      (b.beneficiaryNumber && b.beneficiaryNumber.toString().trim().toLowerCase() === cleanSearch.toLowerCase()) ||
-      (b.nationalId && b.nationalId.toString().trim() === cleanSearch) ||
-      (b.id && b.id.toString().trim() === cleanSearch)
-    );
-  }
-
-  if (!ben) {
-    return res.status(404).json({ 
-      error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
-      notFound: true
+  // 1. Mandatory Real Photo Verification Check (Strict Anti-Mock & Anti-Dummy)
+  const rawPhoto = photoUrl || (proofPhotos && proofPhotos[0]);
+  if (!rawPhoto || typeof rawPhoto !== 'string' || !rawPhoto.trim() || 
+      rawPhoto === 'official_handover_verified' || rawPhoto.startsWith('dummy') || rawPhoto === 'null' || rawPhoto === 'undefined') {
+    return res.status(400).json({ 
+      error: "التقاط صورة المساعدة إلزامي لتوثيق التسليم، ولا يمكن إتمام العملية بدون صورة حقيقية للأصناف المسلمة.",
+      photoRequired: true 
     });
   }
 
-  // 2.5 Eligibility Check (التحقق من تسجيل المستفيد واستحقاقه لهذا الصنف المحدد فقط)
-  if (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0) {
-    const isTargeted = dist.targetedBeneficiaryIds.includes(ben.id);
-    if (!isTargeted) {
-      return res.status(403).json({
-        error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
-        notEligible: true,
-        beneficiary: ben,
-        distribution: dist
-      });
+  // 2. Upload / Persist Handover Photo into Permanent Project Storage (R2 / Postgres system_files)
+  let permanentPhotoUrl = rawPhoto.trim();
+  if (rawPhoto.startsWith("data:image/")) {
+    try {
+      const match = rawPhoto.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1] || "image/jpeg";
+        const base64Data = match[2];
+        const fileBuffer = Buffer.from(base64Data, "base64");
+        
+        // Validate buffer size: between 500 bytes and 15MB
+        if (fileBuffer.length < 500) {
+          return res.status(400).json({ error: "حجم الصورة الملتقطة غير صالح أو تالف. يرجى إعادة التقاط صورة المساعدة." });
+        }
+        if (fileBuffer.length > 15 * 1024 * 1024) {
+          return res.status(400).json({ error: "حجم الصورة كبير جداً (أكثر من 15 ميجابايت). يرجى التقاط صورة مناسبة." });
+        }
+
+        const ext = mimeType.includes("png") ? "png" : "jpg";
+        const uploadedRecord = await attachmentStorage.uploadAttachment(fileBuffer, {
+          originalFilename: `handover-${distributionId}-${Date.now()}.${ext}`,
+          mimeType,
+          entityType: "deliveries",
+          entityId: beneficiaryId || "handover",
+          fieldName: "handover_photo",
+          isPrivate: true,
+          accessRole: authContext.role,
+          uploadedBy: authContext.userId
+        });
+
+        if (uploadedRecord && (uploadedRecord.url || uploadedRecord.fileKey)) {
+          permanentPhotoUrl = uploadedRecord.url || `/api/attachments/stream/${encodeURIComponent(uploadedRecord.fileKey)}`;
+        }
+      }
+    } catch (uploadErr) {
+      console.error("[Handover Photo Upload Warning]:", uploadErr);
+      // Fallback preserves the valid Base64 URI if attachment storage encounters a transient error
     }
   }
 
-  // 3. Strict Duplicate Prevention Check (منع التكرار - إذا استلم مسبقاً يرفض قطعاً)
-  if (!db.distributionHandovers) db.distributionHandovers = [];
-  const existingHandover = db.distributionHandovers.find(
-    (h: any) => h.distributionId === distributionId && h.beneficiaryId === ben.id
-  );
+  // 3. Atomic Database Mutation with Double-Click & Concurrency Lock
+  try {
+    const outcome = await mutateDb(async (db) => {
+      // 1. Find distribution
+      const dist = (db.distributions || []).find((d: any) => d.id === distributionId);
+      if (!dist) {
+        return { status: 404, payload: { error: "التوزيعة المحددة غير موجودة بالنظام." } };
+      }
 
-  if (existingHandover) {
-    return res.status(409).json({
-      error: "تم استلام هذه المساعدة مسبقاً ولا يمكن صرفها مرة أخرى.",
-      alreadyReceived: true,
-      record: existingHandover,
-      beneficiary: ben,
-      distribution: dist
-    });
-  }
+      // 2. Find beneficiary
+      let ben: any = null;
+      if (beneficiaryId) {
+        ben = (db.beneficiaries || []).find((b: any) => b.id === beneficiaryId);
+      }
+      if (!ben && barcodeId) {
+        const cleanSearch = barcodeId.toString().trim();
+        ben = (db.beneficiaries || []).find((b: any) => 
+          (b.barcodeId && b.barcodeId.toString().trim().toUpperCase() === cleanSearch.toUpperCase()) ||
+          (b.beneficiaryNumber && b.beneficiaryNumber.toString().trim().toLowerCase() === cleanSearch.toLowerCase()) ||
+          (b.nationalId && b.nationalId.toString().trim() === cleanSearch) ||
+          (b.id && b.id.toString().trim() === cleanSearch)
+        );
+      }
 
-  // 4. Record new handover with Photo Proof & Custom Quantity
-  const now = new Date();
-  const timeString = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  
-  // Custom allocated qty per beneficiary if set by Beneficiaries Dept, else default unitQty
-  let handoverQty = Number(dist.unitQuantityPerBeneficiary) || 1;
-  if (dist.beneficiaryAllocations && dist.beneficiaryAllocations[ben.id] !== undefined) {
-    handoverQty = Number(dist.beneficiaryAllocations[ben.id]) || handoverQty;
-  }
+      if (!ben) {
+        return { 
+          status: 404, 
+          payload: { 
+            error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
+            notFound: true 
+          } 
+        };
+      }
 
-  const handoverRecord = {
-    id: "handover-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5),
-    distributionId,
-    beneficiaryId: ben.id,
-    beneficiaryName: ben.name,
-    beneficiaryNumber: ben.beneficiaryNumber || "BEN-2026-0000",
-    barcodeId: ben.barcodeId || "BC-BEN-000000",
-    nationalId: ben.nationalId || "",
-    phone: ben.phone || "",
-    familySize: Number(ben.familySize) || 1,
-    receivedAt: now.toISOString(),
-    date: now.toISOString().split('T')[0],
-    time: timeString,
-    handedByUserId,
-    handedByUserName,
-    handedByUserRole,
-    handedDepartment: handedDepartment || "إدارة المخزون والمستودعات",
-    method: method || "camera_scanner",
-    notes: notes || `تسليم ${handoverQty} ${dist.unit || 'طرد'} للمستفيد بموجب الاعتماد المسبق`,
-    itemName: dist.aidTypeLabel || dist.title,
-    inventoryItemId: dist.inventoryItemId,
-    handoverDate: now.toISOString().split('T')[0],
-    distributionTitle: dist.title,
-    quantity: handoverQty,
-    unit: dist.unit || "طرد",
-    photoUrl: photoUrl || (proofPhotos && proofPhotos[0]) || "",
-    proofPhotos: proofPhotos || (photoUrl ? [photoUrl] : []),
-    beneficiaryConfirmedReceipt: true
-  };
+      // 2.5 Eligibility Check
+      if (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0) {
+        const isTargeted = dist.targetedBeneficiaryIds.includes(ben.id);
+        if (!isTargeted) {
+          return {
+            status: 403,
+            payload: {
+              error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
+              notEligible: true,
+              beneficiary: ben,
+              distribution: dist
+            }
+          };
+        }
+      }
 
-  db.distributionHandovers.unshift(handoverRecord);
+      // 3. Strict Concurrency Duplicate Prevention Check (Protected by mutateDb Lock)
+      if (!db.distributionHandovers) db.distributionHandovers = [];
+      const existingHandover = db.distributionHandovers.find(
+        (h: any) => h.distributionId === distributionId && (h.beneficiaryId === ben.id || (ben.nationalId && h.nationalId === ben.nationalId))
+      );
 
-  // Update beneficiary aid history directly in their profile
-  if (!ben.aidHistory) ben.aidHistory = [];
-  ben.aidHistory.unshift({
-    id: handoverRecord.id,
-    distributionId,
-    title: dist.title,
-    aidType: dist.aidTypeLabel || dist.title,
-    quantity: handoverQty,
-    unit: dist.unit || "طرد",
-    date: now.toISOString().split('T')[0],
-    time: timeString,
-    status: "تم الاستلام",
-    handedByUserName,
-    handedDepartment: handedDepartment || "إدارة المخزون والمستودعات"
-  });
+      if (existingHandover) {
+        return {
+          status: 409,
+          payload: {
+            error: `تم استلام هذه المساعدة مسبقاً بتاريخ ${existingHandover.date || ''} الساعة ${existingHandover.time || ''} ولا يمكن صرفها مرة أخرى.`,
+            alreadyReceived: true,
+            record: existingHandover,
+            beneficiary: ben,
+            distribution: dist
+          }
+        };
+      }
 
-  // 5. Atomic Inventory Deduction (خصم المخزون المحجوز والفعلي فور التسليم)
-  if (dist.inventoryItemId) {
-    db.inventoryItems = db.inventoryItems || [];
-    const invItem = db.inventoryItems.find((itm: any) => itm.id === dist.inventoryItemId);
-    if (invItem) {
-      invItem.currentQty = Math.max(0, (Number(invItem.currentQty) || 0) - handoverQty);
-      invItem.reservedQty = Math.max(0, (Number(invItem.reservedQty) || 0) - handoverQty);
-      invItem.issuedQty = (Number(invItem.issuedQty) || 0) + handoverQty;
-      invItem.totalValue = invItem.currentQty * (Number(invItem.purchasePrice) || 0);
-      invItem.updatedAt = now.toISOString();
+      // 4. Calculate Quantity
+      let handoverQty = Number(dist.unitQuantityPerBeneficiary) || 1;
+      if (dist.beneficiaryAllocations && dist.beneficiaryAllocations[ben.id] !== undefined) {
+        handoverQty = Number(dist.beneficiaryAllocations[ben.id]) || handoverQty;
+      }
 
-      // Record inventory movement
-      db.inventoryMovements = db.inventoryMovements || [];
-      db.inventoryMovements.unshift({
-        id: "mov-" + Date.now(),
-        itemId: invItem.id,
-        itemName: invItem.name,
-        barcode: invItem.barcode,
-        type: "outbound",
-        quantity: handoverQty,
-        reason: `صرف وتسليم مساعدة للمستفيد (${ben.name}) بموجب التوزيعة (${dist.title}) مع توثيق الصورة والباركود`,
-        approvedBy: handedByUserName,
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      // 5. Build Handover Record with Verified Photo
+      const handoverRecord = {
+        id: "handover-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        distributionId,
         beneficiaryId: ben.id,
-        proofPhotos: handoverRecord.proofPhotos,
+        beneficiaryName: ben.name,
+        beneficiaryNumber: ben.beneficiaryNumber || "BEN-2026-0000",
+        barcodeId: ben.barcodeId || barcodeId || "BC-BEN-000000",
+        nationalId: ben.nationalId || "",
+        phone: ben.phone || "",
+        familySize: Number(ben.familySize) || 1,
+        receivedAt: now.toISOString(),
         date: now.toISOString().split('T')[0],
-        createdAt: now.toISOString()
+        time: timeString,
+        handedByUserId: authContext.userId || handedByUserId,
+        handedByUserName: authContext.userName || handedByUserName,
+        handedByUserRole: authContext.role || handedByUserRole,
+        handedDepartment: handedDepartment || "إدارة المستودعات والدعم اللوجستي",
+        method: method || "camera_scanner",
+        notes: notes || `تسليم ${handoverQty} ${dist.unit || 'طرد'} للمستفيد بموجب الاعتماد المسبق والتوثيق بالصورة والباركود`,
+        itemName: dist.aidTypeLabel || dist.title,
+        inventoryItemId: dist.inventoryItemId,
+        handoverDate: now.toISOString().split('T')[0],
+        distributionTitle: dist.title,
+        quantity: handoverQty,
+        unit: dist.unit || "طرد",
+        photoUrl: permanentPhotoUrl,
+        proofPhotos: [permanentPhotoUrl],
+        beneficiaryConfirmedReceipt: true
+      };
+
+      db.distributionHandovers.unshift(handoverRecord);
+
+      // 6. Update Beneficiary Profile Aid History with Photo
+      if (!ben.aidHistory) ben.aidHistory = [];
+      ben.aidHistory.unshift({
+        id: handoverRecord.id,
+        distributionId,
+        title: dist.title,
+        aidType: dist.aidTypeLabel || dist.title,
+        quantity: handoverQty,
+        unit: dist.unit || "طرد",
+        date: now.toISOString().split('T')[0],
+        time: timeString,
+        status: "تم الاستلام",
+        handedByUserName: authContext.userName || handedByUserName,
+        handedDepartment: handedDepartment || "إدارة المستودعات والدعم اللوجستي",
+        photoUrl: permanentPhotoUrl,
+        proofPhotos: [permanentPhotoUrl]
       });
-    }
+
+      // 7. Atomic Inventory Stock Deduction
+      db.inventoryItems = db.inventoryItems || [];
+      const invItem = (dist.inventoryItemId ? db.inventoryItems.find((itm: any) => itm.id === dist.inventoryItemId) : null) ||
+        db.inventoryItems.find((itm: any) => 
+          (dist.aidType === 'food_basket' && itm.name && itm.name.includes("سلة غذائية")) ||
+          (dist.aidTypeLabel && itm.name && itm.name.includes(dist.aidTypeLabel)) ||
+          (dist.title && itm.name && itm.name.includes("سلة غذائية") && dist.title.includes("سلال غذائية"))
+        );
+      if (invItem) {
+        invItem.currentQty = Math.max(0, (Number(invItem.currentQty) || 0) - handoverQty);
+        invItem.reservedQty = Math.max(0, (Number(invItem.reservedQty) || 0) - handoverQty);
+        invItem.issuedQty = (Number(invItem.issuedQty) || 0) + handoverQty;
+          invItem.totalValue = invItem.currentQty * (Number(invItem.purchasePrice) || 0);
+          invItem.updatedAt = now.toISOString();
+
+          // Record formal inventory movement
+          db.inventoryMovements = db.inventoryMovements || [];
+          db.inventoryMovements.unshift({
+            id: "mov-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5),
+            itemId: invItem.id,
+            itemName: invItem.name,
+            barcode: invItem.barcode,
+            type: "outbound",
+            quantity: handoverQty,
+            reason: `صرف وتسليم مساعدة للمستفيد (${ben.name}) بموجب التوزيعة (${dist.title}) وتوثيق الصورة والباركود`,
+            approvedBy: authContext.userName || handedByUserName,
+            beneficiaryId: ben.id,
+            proofPhotos: [permanentPhotoUrl],
+            photoUrl: permanentPhotoUrl,
+            date: now.toISOString().split('T')[0],
+            createdAt: now.toISOString()
+          });
+        }
+
+      // 8. Update Distribution Statistics
+      dist.distributedCount = (dist.distributedCount || 0) + 1;
+      const totalTargeted = (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0) 
+        ? dist.targetedBeneficiaryIds.length 
+        : (db.beneficiaries || []).length;
+      dist.completionRate = Math.min(100, Math.round((dist.distributedCount / Math.max(1, totalTargeted)) * 100));
+
+      if (dist.distributedCount >= totalTargeted) {
+        dist.status = 'completed';
+        dist.workflowStatus = 'completed';
+      } else {
+        dist.workflowStatus = 'partially_delivered';
+      }
+
+      dist.remainingAllocated = Math.max(0, (Number(dist.allocatedQuantity) || 0) - ((dist.distributedCount || 0) * (Number(dist.unitQuantityPerBeneficiary) || 1)));
+
+      if (!dist.statusHistory) dist.statusHistory = [];
+      dist.statusHistory.unshift({
+        status: dist.workflowStatus,
+        changedBy: authContext.userName || handedByUserName,
+        changedAt: now.toISOString(),
+        role: authContext.role || handedByUserRole,
+        notes: `تسليم مساعدة موثقة بالصورة للمستفيد (${ben.name}) - تم إنجاز ${dist.distributedCount} من أصل ${totalTargeted}`
+      });
+
+      // 9. In-App Notifications
+      if (!db.notifications) db.notifications = [];
+      db.notifications.unshift({
+        id: "notif-ben-handover-" + Date.now(),
+        userId: ben.id,
+        targetUserId: ben.id,
+        recipientType: "beneficiaries",
+        titleAr: "تم تسليم مساعدتك بنجاح ✓",
+        bodyAr: `تم بحمد الله تسليمك (${dist.aidTypeLabel || dist.title}) بكمية (${handoverQty} ${dist.unit || 'طرد'}) بتاريخ ${now.toISOString().split('T')[0]} في تمام الساعة ${timeString}. نشكرك لتعاونك.`,
+        category: "beneficiary",
+        type: "normal",
+        date: now.toISOString().split('T')[0],
+        createdAt: now.toISOString(),
+        read: false
+      });
+
+      db.notifications.unshift({
+        id: "notif-dept-delivery-" + Date.now(),
+        userId: "role:department_admin",
+        targetDepartmentId: "dep-4",
+        targetRole: "department_admin",
+        titleAr: `تم تنفيذ تسليم مساعدة بالصورة: ${ben.name}`,
+        bodyAr: `قامت إدارة المخزون بتسليم المساعدة المعتمدة (${dist.aidTypeLabel || dist.title}) للمستفيد (${ben.name}) بالباركود والصورة بنجاح. القائم بالتسليم: ${authContext.userName || handedByUserName}.`,
+        category: "beneficiary",
+        type: "normal",
+        date: now.toISOString().split('T')[0],
+        createdAt: now.toISOString(),
+        read: false
+      });
+
+      // 10. Audit Log
+      if (!db.logs) db.logs = [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: now.toISOString(),
+        user: authContext.userName || handedByUserName,
+        action: `تسجيل استلام مساعدة موثقة بالصورة الإلزامية: المستفيد (${ben.name}) استلم (${handoverQty} ${dist.unit || 'طرد'}) في توزيعة (${dist.title}) عبر ${method} وتم خصم المخزون بنجاح`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "Mobile Scanner"
+      });
+
+      return {
+        status: 200,
+        payload: {
+          success: true,
+          record: handoverRecord,
+          beneficiary: ben,
+          distribution: dist
+        }
+      };
+    });
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    console.error("[Handover Atomic Error]:", err);
+    return res.status(500).json({ error: "فشل في حفظ عملية التسليم أو خصم المخزون: " + (err?.message || "خطأ غير متوقع") });
   }
-
-  // Update distribution status, workflow status, and completion rate
-  dist.distributedCount = (dist.distributedCount || 0) + 1;
-  const totalTargeted = (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0) ? dist.targetedBeneficiaryIds.length : (db.beneficiaries || []).length;
-  dist.completionRate = Math.min(100, Math.round((dist.distributedCount / Math.max(1, totalTargeted)) * 100));
-  
-  if (dist.distributedCount >= totalTargeted) {
-    dist.status = 'completed';
-    dist.workflowStatus = 'completed';
-  } else {
-    dist.workflowStatus = 'partially_delivered';
-  }
-  
-  dist.remainingAllocated = Math.max(0, (Number(dist.allocatedQuantity) || 0) - ((dist.distributedCount || 0) * (Number(dist.unitQuantityPerBeneficiary) || 1)));
-
-  if (!dist.statusHistory) dist.statusHistory = [];
-  dist.statusHistory.unshift({
-    status: dist.workflowStatus,
-    changedBy: handedByUserName,
-    changedAt: now.toISOString(),
-    role: handedByUserRole,
-    notes: `تسليم مساعدة للمستفيد (${ben.name}) - تم إنجاز تسليم ${dist.distributedCount} من أصل ${totalTargeted}`
-  });
-
-  // Send delivery confirmation notification to beneficiary
-  if (!db.notifications) db.notifications = [];
-  db.notifications.unshift({
-    id: "notif-ben-handover-" + Date.now(),
-    userId: ben.id,
-    targetUserId: ben.id,
-    recipientType: "beneficiaries",
-    titleAr: "تم تسليم مساعدتك بنجاح ✓",
-    bodyAr: `تم بحمد الله تسليمك (${dist.aidTypeLabel || dist.title}) بكمية (${handoverQty} ${dist.unit || 'طرد'}) بتاريخ ${now.toISOString().split('T')[0]} في تمام الساعة ${timeString}. نشكرك لتعاونك.`,
-    category: "beneficiary",
-    type: "normal",
-    date: now.toISOString().split('T')[0],
-    createdAt: now.toISOString(),
-    read: false
-  });
-
-  // Notify Beneficiary Department that delivery was successfully executed by Warehouse
-  db.notifications.unshift({
-    id: "notif-dept-delivery-" + Date.now(),
-    userId: "role:department_admin",
-    targetDepartmentId: "dep-4",
-    targetRole: "department_admin",
-    titleAr: `تم تنفيذ تسليم مساعدة: ${ben.name}`,
-    bodyAr: `قامت إدارة المخزون بتسليم المساعدة المعتمدة (${dist.aidTypeLabel || dist.title}) للمستفيد (${ben.name}) بالباركود والصورة بنجاح. القائم بالتسليم: ${handedByUserName}.`,
-    category: "beneficiary",
-    type: "normal",
-    date: now.toISOString().split('T')[0],
-    createdAt: now.toISOString(),
-    read: false
-  });
-
-  // Log in activity log
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: now.toISOString(),
-    user: handedByUserName,
-    action: `تسجيل استلام مساعدة موثقة بالصورة: المستفيد (${ben.name}) استلم (${handoverQty} ${dist.unit || 'طرد'}) في توزيعة (${dist.title}) عبر ${method === 'camera_scanner' ? 'كاميرا الجوال' : method === 'hardware_scanner' ? 'قارئ باركود' : 'إدخال يدوي'} وتم خصم المخزون بنجاح`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "Mobile Scanner"
-  });
-
-  writeDb(db);
-
-  res.json({
-    success: true,
-    db,
-    record: handoverRecord,
-    beneficiary: ben,
-    distribution: dist
-  });
 });
 
 // 20.7 Aid Handover - Cancel / Undo (مع إعادة الكمية للمخزون)

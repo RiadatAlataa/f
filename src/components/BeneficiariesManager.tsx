@@ -33,6 +33,8 @@ import {
   LayoutGrid,
   Table as TableIcon,
   Tag,
+  RefreshCw,
+  AlertTriangle,
   Info,
   Sparkles,
   Hash,
@@ -72,6 +74,7 @@ interface BeneficiariesManagerProps {
   activeDistributionsCount?: number;
   distributions?: AidDistribution[];
   inventoryItems?: any[];
+  onRefreshGlobalData?: () => void | Promise<any>;
 }
 
 type SortField = 'index' | 'name' | 'nationalId' | 'phone' | 'familySize' | 'createdAt' | 'status';
@@ -90,13 +93,82 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   onNavigateToDistributions,
   activeDistributionsCount = 0,
   distributions = [],
-  inventoryItems = []
+  inventoryItems = [],
+  onRefreshGlobalData
 }) => {
   // Modal states for Distribution & Statistics
   const [isCreateDistributionOpen, setIsCreateDistributionOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   // Beneficiary Aid History Modal State
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
+
+  // Direct Beneficiaries Data Hydration & Anti-Stale State Engine
+  const [internalBeneficiaries, setInternalBeneficiaries] = useState<Beneficiary[]>(beneficiaries);
+  const [isFetchingBeneficiaries, setIsFetchingBeneficiaries] = useState<boolean>(false);
+  const [beneficiariesFetchError, setBeneficiariesFetchError] = useState<string | null>(null);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState<boolean>(beneficiaries && beneficiaries.length > 0);
+
+  useEffect(() => {
+    if (beneficiaries && beneficiaries.length > 0) {
+      setInternalBeneficiaries(beneficiaries);
+      setHasLoadedOnce(true);
+      setBeneficiariesFetchError(null);
+    }
+  }, [beneficiaries]);
+
+  const fetchDirectBeneficiaries = async () => {
+    setIsFetchingBeneficiaries(true);
+    setBeneficiariesFetchError(null);
+    try {
+      if (onRefreshGlobalData) {
+        onRefreshGlobalData();
+      }
+
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      };
+      try {
+        const stored = localStorage.getItem('reyadat_session_auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.sessionToken) headers['x-session-token'] = parsed.sessionToken;
+          if (parsed?.role) headers['x-user-role'] = parsed.role;
+          if (parsed?.user?.id) headers['x-user-id'] = parsed.user.id;
+          if (parsed?.user?.departmentId) headers['x-department-id'] = parsed.user.departmentId;
+          if (parsed?.user?.nationalId) headers['x-national-id'] = parsed.user.nationalId;
+        }
+      } catch {}
+
+      const res = await fetch("/api/db/beneficiaries", { headers });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `فشل في استرجاع المستفيدين (رمز: ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (data && Array.isArray(data.beneficiaries)) {
+        setInternalBeneficiaries(data.beneficiaries);
+      }
+      setHasLoadedOnce(true);
+    } catch (err: any) {
+      console.warn("BeneficiariesManager direct fetch notice:", err);
+      if (!internalBeneficiaries || internalBeneficiaries.length === 0) {
+        setBeneficiariesFetchError(err?.message || "تعذر تحميل قائمة المستفيدين من الخادم.");
+      }
+    } finally {
+      setIsFetchingBeneficiaries(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!beneficiaries || beneficiaries.length === 0) {
+      fetchDirectBeneficiaries();
+    } else {
+      setHasLoadedOnce(true);
+    }
+  }, []);
 
   // -------------------------------------------------------------
   // Filter and Search states (Requirement 6)
@@ -215,14 +287,19 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
     return authorizedRoles.includes(currentUserRole);
   }, [currentUserRole]);
 
+  // Effective beneficiaries list prioritizing fresh live data
+  const effectiveBeneficiaries = useMemo(() => {
+    return (internalBeneficiaries && internalBeneficiaries.length > 0) ? internalBeneficiaries : (beneficiaries || []);
+  }, [internalBeneficiaries, beneficiaries]);
+
   // Unique categories extracted from existing data
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
-    beneficiaries.forEach(b => {
+    effectiveBeneficiaries.forEach(b => {
       if (b.category && b.category.trim()) set.add(b.category.trim());
     });
     return Array.from(set);
-  }, [beneficiaries]);
+  }, [effectiveBeneficiaries]);
 
   // -------------------------------------------------------------
   // Filtering & Sorting Logic
@@ -234,7 +311,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
     const thirtyDaysAgo = new Date(now.getTime() - 30 * oneDay);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-    return beneficiaries
+    return effectiveBeneficiaries
       .filter((ben) => {
         // Status filter
         if (statusFilter !== "all" && ben.status !== statusFilter) {
@@ -362,21 +439,21 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
   // Quick stats directly from DB
   const stats = useMemo(() => {
-    const total = beneficiaries.length;
-    const approved = beneficiaries.filter((b) => b.status === "approved").length;
-    const pending = beneficiaries.filter((b) => b.status === "pending").length;
-    const rejected = beneficiaries.filter((b) => b.status === "rejected").length;
-    const totalIndividuals = beneficiaries.reduce((sum, b) => sum + (Number(b.familySize) || 0), 0);
-    const saudiCount = beneficiaries.filter(b => b.residencyStatus === 'مواطن سعودي' || (b.nationalId && String(b.nationalId).startsWith('1'))).length;
-    const residentCount = beneficiaries.filter(b => b.residencyStatus === 'مقيم' || (!String(b.nationalId).startsWith('1') && b.residencyStatus !== 'مواطن سعودي')).length;
-    const marriedCount = beneficiaries.filter(b => b.maritalStatus === 'متزوج' || b.maritalStatus === 'متزوجة').length;
-    const singleCount = beneficiaries.filter(b => b.maritalStatus === 'أعزب' || b.maritalStatus === 'عزباء').length;
-    const widowCount = beneficiaries.filter(b => b.maritalStatus === 'أرمل' || b.maritalStatus === 'أرملة').length;
-    const divorcedCount = beneficiaries.filter(b => b.maritalStatus === 'مطلق' || b.maritalStatus === 'مطلقة').length;
-    const orphanCount = beneficiaries.filter(b => b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة' || (b.category && b.category.includes('أيتام'))).length;
+    const total = effectiveBeneficiaries.length;
+    const approved = effectiveBeneficiaries.filter((b) => b.status === "approved").length;
+    const pending = effectiveBeneficiaries.filter((b) => b.status === "pending").length;
+    const rejected = effectiveBeneficiaries.filter((b) => b.status === "rejected").length;
+    const totalIndividuals = effectiveBeneficiaries.reduce((sum, b) => sum + (Number(b.familySize) || 0), 0);
+    const saudiCount = effectiveBeneficiaries.filter(b => b.residencyStatus === 'مواطن سعودي' || (b.nationalId && String(b.nationalId).startsWith('1'))).length;
+    const residentCount = effectiveBeneficiaries.filter(b => b.residencyStatus === 'مقيم' || (!String(b.nationalId).startsWith('1') && b.residencyStatus !== 'مواطن سعودي')).length;
+    const marriedCount = effectiveBeneficiaries.filter(b => b.maritalStatus === 'متزوج' || b.maritalStatus === 'متزوجة').length;
+    const singleCount = effectiveBeneficiaries.filter(b => b.maritalStatus === 'أعزب' || b.maritalStatus === 'عزباء').length;
+    const widowCount = effectiveBeneficiaries.filter(b => b.maritalStatus === 'أرمل' || b.maritalStatus === 'أرملة').length;
+    const divorcedCount = effectiveBeneficiaries.filter(b => b.maritalStatus === 'مطلق' || b.maritalStatus === 'مطلقة').length;
+    const orphanCount = effectiveBeneficiaries.filter(b => b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة' || (b.category && b.category.includes('أيتام'))).length;
 
     const receivedIds = new Set(handoverRecords.map(h => h.beneficiaryId || h.nationalId));
-    const receivedCount = beneficiaries.filter(b => receivedIds.has(b.id) || (b.nationalId && receivedIds.has(b.nationalId))).length;
+    const receivedCount = effectiveBeneficiaries.filter(b => receivedIds.has(b.id) || (b.nationalId && receivedIds.has(b.nationalId))).length;
     const notReceivedCount = Math.max(0, total - receivedCount);
 
     return { 
@@ -395,7 +472,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       receivedCount,
       notReceivedCount
     };
-  }, [beneficiaries, handoverRecords]);
+  }, [effectiveBeneficiaries, handoverRecords]);
 
   // Status label translation & styling
   const getStatusInfo = (status: string) => {
@@ -865,6 +942,18 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             >
               <Package className="w-4 h-4 text-emerald-200" />
               <span>{lang === "ar" ? "إنشاء توزيع مساعدات" : "Create Aid Distribution"}</span>
+            </button>
+
+            {/* LIVE REFRESH BUTTON */}
+            <button
+              type="button"
+              onClick={fetchDirectBeneficiaries}
+              disabled={isFetchingBeneficiaries}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-black transition-all cursor-pointer border border-neutral-200 shadow-2xs disabled:opacity-50"
+              title="تحديث بيانات المستفيدين من الخادم مباشرة دون الحاجة لتحديث الصفحة"
+            >
+              <RefreshCw className={`w-4 h-4 text-emerald-600 ${isFetchingBeneficiaries ? 'animate-spin' : ''}`} />
+              <span>{lang === "ar" ? "تحديث" : "Refresh"}</span>
             </button>
 
             {/* BENEFICIARIES REAL-TIME STATS BUTTON (Requirement 1) */}
@@ -1345,19 +1434,49 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {paginatedBeneficiaries.length === 0 ? (
+                {isFetchingBeneficiaries && effectiveBeneficiaries.length === 0 ? (
+                  <tr>
+                    <td colSpan={13} className="p-12 text-center">
+                      <RefreshCw className="w-8 h-8 mx-auto text-emerald-600 animate-spin mb-3" />
+                      <p className="font-black text-sm text-neutral-800 dark:text-neutral-100">جاري تحميل وتحديث بيانات المستفيدين من الخادم...</p>
+                      <p className="text-xs text-neutral-400 mt-1">يتم التحقق من الصلاحيات وجلب السجلات المعتمدة فورًا دون الحاجة لتحديث الصفحة</p>
+                    </td>
+                  </tr>
+                ) : beneficiariesFetchError && effectiveBeneficiaries.length === 0 ? (
+                  <tr>
+                    <td colSpan={13} className="p-10 text-center">
+                      <AlertTriangle className="w-9 h-9 mx-auto text-amber-500 mb-2" />
+                      <p className="font-black text-sm text-amber-900 dark:text-amber-200">{beneficiariesFetchError}</p>
+                      <p className="text-xs text-neutral-500 mt-1">حدث خطأ أثناء جلب البيانات من الخادم، يرجى المحاولة مجدداً.</p>
+                      <button
+                        type="button"
+                        onClick={fetchDirectBeneficiaries}
+                        className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>إعادة المحاولة الآن</span>
+                      </button>
+                    </td>
+                  </tr>
+                ) : paginatedBeneficiaries.length === 0 ? (
                   <tr>
                     <td colSpan={13} className="p-12 text-center text-neutral-400 dark:text-neutral-500">
                       <AlertCircle className="w-10 h-10 mx-auto text-neutral-300 dark:text-neutral-600 mb-2" />
-                      <p className="font-bold text-neutral-700 dark:text-neutral-300 text-sm">لا توجد سجلات مستفيدين تطابق معايير البحث والفلترة.</p>
-                      <p className="text-neutral-400 dark:text-neutral-500 text-xs mt-1">تأكد من كتابة الاسم أو رقم الهوية بشكل صحيح أو قم بإلغاء الفلاتر.</p>
-                      <button 
-                        onClick={resetFilters}
-                        className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-200 dark:border-emerald-800"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>إعادة ضبط وعرض الكل</span>
-                      </button>
+                      <p className="font-bold text-neutral-700 dark:text-neutral-300 text-sm">
+                        {effectiveBeneficiaries.length === 0 ? "لا يوجد مستفيدون مسجلون في النظام حتى الآن." : "لا توجد سجلات مستفيدين تطابق معايير البحث والفلترة."}
+                      </p>
+                      <p className="text-neutral-400 dark:text-neutral-500 text-xs mt-1">
+                        {effectiveBeneficiaries.length === 0 ? "يمكنك إضافة مستفيد جديد أو استيراد كشف بالضغط على الأزرار أعلاه." : "تأكد من كتابة الاسم أو رقم الهوية بشكل صحيح أو قم بإلغاء الفلاتر."}
+                      </p>
+                      {effectiveBeneficiaries.length > 0 && (
+                        <button 
+                          onClick={resetFilters}
+                          className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-emerald-200 dark:border-emerald-800"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>إعادة ضبط وعرض الكل</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ) : (

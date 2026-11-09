@@ -270,25 +270,59 @@ export const BeneficiaryHistoryModal: React.FC<BeneficiaryHistoryModalProps> = (
             <div className="bg-white dark:bg-neutral-900 rounded-3xl max-w-xl w-full p-5 space-y-4 text-right shadow-2xl border border-neutral-200 dark:border-neutral-800" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
                 <div>
-                  <h4 className="font-black text-sm text-neutral-900 dark:text-white">
-                    توثيق تسليم: {selectedPhoto.record.itemName || "مساعدة"}
+                  <h4 className="font-black text-sm text-neutral-900 dark:text-white flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-emerald-600" />
+                    <span>توثيق تسليم: {selectedPhoto.record.itemName || "مساعدة"}</span>
                   </h4>
-                  <p className="text-[11px] text-neutral-500 font-mono">
-                    المستفيد: {selectedPhoto.record.beneficiaryName} • {selectedPhoto.record.date} {selectedPhoto.record.time}
+                  <p className="text-[11px] text-neutral-500 font-mono mt-0.5">
+                    المستفيد: {selectedPhoto.record.beneficiaryName || beneficiary.name} • {selectedPhoto.record.date} {selectedPhoto.record.time}
                   </p>
                 </div>
-                <button onClick={() => setSelectedPhoto(null)} className="p-1 text-neutral-400 hover:text-neutral-700">✕</button>
+                <button onClick={() => setSelectedPhoto(null)} className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer">✕</button>
               </div>
 
-              <div className="rounded-2xl overflow-hidden bg-black max-h-[65vh] flex items-center justify-center border border-neutral-200 dark:border-neutral-800">
-                <img src={selectedPhoto.url} alt="صورة التسليم" className="w-full h-auto max-h-[60vh] object-contain" />
+              {/* 5. صورة المساعدة المسلمة */}
+              <div className="rounded-2xl overflow-hidden bg-black max-h-[55vh] flex items-center justify-center border border-neutral-200 dark:border-neutral-800 relative">
+                <img src={selectedPhoto.url} alt="صورة المساعدة المسلمة" className="w-full h-auto max-h-[50vh] object-contain" />
+                <div className="absolute top-2 right-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                  صورة المساعدة المسلمة موثقة ✓
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-xl">
-                <div>الموظف الذي سلّم: <b>{selectedPhoto.record.handedByUserName}</b></div>
-                <div>الكمية: <b>{selectedPhoto.record.quantity} {selectedPhoto.record.unit || 'طرد'}</b></div>
-                <div>الإدارة: <b>{selectedPhoto.record.handedDepartment || 'إدارة المستودع'}</b></div>
-                <div>رقم السند: <b className="font-mono text-[10px]">{selectedPhoto.record.id}</b></div>
+              {/* Comprehensive 8-point Delivery Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-neutral-50 dark:bg-neutral-800/60 p-3 rounded-2xl border border-neutral-200 dark:border-neutral-700">
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">1. اسم المستفيد:</span>
+                  <b className="text-neutral-900 dark:text-white truncate block">{selectedPhoto.record.beneficiaryName || beneficiary.name}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">2. رقم الملف:</span>
+                  <b className="font-mono text-emerald-700 dark:text-emerald-400 block">{selectedPhoto.record.beneficiaryNumber || beneficiary.beneficiaryNumber || beneficiary.id}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">3. نوع المساعدة:</span>
+                  <b className="text-neutral-900 dark:text-white truncate block">{selectedPhoto.record.itemName || selectedPhoto.record.distributionTitle || "سلة غذائية"}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">4. الكمية المسلمة:</span>
+                  <b className="font-mono text-neutral-900 dark:text-white block">{selectedPhoto.record.quantity || 1} {selectedPhoto.record.unit || 'طرد'}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">6. تاريخ ووقت التسليم:</span>
+                  <b className="font-mono text-neutral-800 dark:text-neutral-200 text-[11px] block">{selectedPhoto.record.date} {selectedPhoto.record.time}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">7. الموظف المسلم:</span>
+                  <b className="text-neutral-900 dark:text-white truncate block">{selectedPhoto.record.handedByUserName}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">8. رقم عملية التوزيع:</span>
+                  <b className="font-mono text-[10px] text-neutral-600 dark:text-neutral-400 truncate block">{selectedPhoto.record.distributionId || "DIST-2026"}</b>
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 block">رقم سند التسليم:</span>
+                  <b className="font-mono text-[10px] text-neutral-600 dark:text-neutral-400 truncate block">{selectedPhoto.record.id}</b>
+                </div>
               </div>
             </div>
           </div>

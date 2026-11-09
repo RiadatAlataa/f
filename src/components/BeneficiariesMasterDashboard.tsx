@@ -75,6 +75,7 @@ interface BeneficiariesMasterDashboardProps {
   onCancelHandover: (handoverId: string) => Promise<boolean>;
   onUpdateBeneficiaryStatus?: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   onAddBeneficiary?: (data: Partial<Beneficiary>) => Promise<boolean>;
+  onRefreshGlobalData?: () => void | Promise<any>;
   lang?: 'ar' | 'en';
 }
 
@@ -106,6 +107,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   onCancelHandover,
   onUpdateBeneficiaryStatus,
   onAddBeneficiary,
+  onRefreshGlobalData,
   lang = 'ar'
 }) => {
   // Navigation Tabs
@@ -121,6 +123,77 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     try {
       localStorage.setItem('reyadat_beneficiaries_tab', activeTab);
     } catch {}
+  }, [activeTab]);
+
+  // Robust Direct Data Hydration & Anti-Stale State Engine
+  const [internalBeneficiaries, setInternalBeneficiaries] = useState<Beneficiary[]>(beneficiaries);
+  const [isFetchingBeneficiaries, setIsFetchingBeneficiaries] = useState<boolean>(false);
+  const [beneficiariesFetchError, setBeneficiariesFetchError] = useState<string | null>(null);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState<boolean>(beneficiaries && beneficiaries.length > 0);
+
+  // Sync with incoming props seamlessly
+  useEffect(() => {
+    if (beneficiaries && beneficiaries.length > 0) {
+      setInternalBeneficiaries(beneficiaries);
+      setHasLoadedOnce(true);
+      setBeneficiariesFetchError(null);
+    }
+  }, [beneficiaries]);
+
+  // Direct fetch function without needing browser refresh (F5)
+  const fetchDirectBeneficiaries = async (force = false) => {
+    setIsFetchingBeneficiaries(true);
+    setBeneficiariesFetchError(null);
+    try {
+      if (onRefreshGlobalData) {
+        onRefreshGlobalData();
+      }
+
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      };
+      try {
+        const stored = localStorage.getItem('reyadat_session_auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.sessionToken) headers['x-session-token'] = parsed.sessionToken;
+          if (parsed?.role) headers['x-user-role'] = parsed.role;
+          if (parsed?.user?.id) headers['x-user-id'] = parsed.user.id;
+          if (parsed?.user?.departmentId) headers['x-department-id'] = parsed.user.departmentId;
+          if (parsed?.user?.nationalId) headers['x-national-id'] = parsed.user.nationalId;
+        }
+      } catch {}
+
+      const res = await fetch("/api/db/beneficiaries", { headers });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `فشل في استرجاع المستفيدين (رمز الاستجابة: ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (data && Array.isArray(data.beneficiaries)) {
+        setInternalBeneficiaries(data.beneficiaries);
+      }
+      setHasLoadedOnce(true);
+    } catch (err: any) {
+      console.warn("Direct beneficiaries fetch notice:", err);
+      if (!internalBeneficiaries || internalBeneficiaries.length === 0) {
+        setBeneficiariesFetchError(err?.message || "تعذر تحميل قائمة المستفيدين من الخادم.");
+      }
+    } finally {
+      setIsFetchingBeneficiaries(false);
+    }
+  };
+
+  // Auto-fetch if empty on mount or tab switch
+  useEffect(() => {
+    if (!beneficiaries || beneficiaries.length === 0) {
+      fetchDirectBeneficiaries();
+    } else {
+      setHasLoadedOnce(true);
+    }
   }, [activeTab]);
 
   // Modals & States
@@ -235,9 +308,14 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     });
   }, [inventoryItems]);
 
+  // Effective beneficiaries list prioritizing fresh internal fetch
+  const effectiveBeneficiaries = useMemo(() => {
+    return (internalBeneficiaries && internalBeneficiaries.length > 0) ? internalBeneficiaries : (beneficiaries || []);
+  }, [internalBeneficiaries, beneficiaries]);
+
   // Filtered beneficiaries
   const filteredBeneficiaries = useMemo(() => {
-    return beneficiaries.filter(b => {
+    return effectiveBeneficiaries.filter(b => {
       const matchSearch = 
         !benSearchQuery ||
         b.name.toLowerCase().includes(benSearchQuery.toLowerCase()) ||
@@ -250,7 +328,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       const matchStatus = benStatusFilter === 'all' || b.status === benStatusFilter;
       return matchSearch && matchCategory && matchStatus;
     });
-  }, [beneficiaries, benSearchQuery, benCategoryFilter, benStatusFilter]);
+  }, [effectiveBeneficiaries, benSearchQuery, benCategoryFilter, benStatusFilter]);
 
   // Filtered distributions
   const filteredDistributions = useMemo(() => {
@@ -1252,6 +1330,17 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
 
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={() => fetchDirectBeneficiaries(true)}
+                disabled={isFetchingBeneficiaries}
+                className="px-3.5 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                title="تحديث قائمة المستفيدين من الخادم مباشرة دون الحاجة لتحديث الصفحة"
+              >
+                <RefreshCw className={`w-4 h-4 text-emerald-600 ${isFetchingBeneficiaries ? 'animate-spin' : ''}`} />
+                <span>تحديث القائمة</span>
+              </button>
+
+              <button
                 onClick={exportBeneficiariesToExcel}
                 className="px-3.5 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
               >
@@ -1327,58 +1416,92 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {filteredBeneficiaries.map(ben => (
-                  <tr key={ben.id} className="hover:bg-neutral-50/80 transition-colors">
-                    <td className="p-3">
-                      <div className="font-bold text-neutral-900">{ben.name}</div>
-                      <div className="flex items-center gap-2 text-[10px] text-neutral-400 font-mono">
-                        <span className="text-emerald-700 font-bold">{ben.beneficiaryNumber || 'BEN-2026'}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <Barcode className="w-3 h-3 text-neutral-500" />
-                          {ben.barcodeId || 'BC-BEN-000000'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-3 font-mono font-bold text-neutral-700">{ben.nationalId || '—'}</td>
-                    <td className="p-3 font-mono text-neutral-600">{ben.phone || '—'}</td>
-                    <td className="p-3 font-bold text-neutral-800">{ben.familySize || 1} أفراد</td>
-                    <td className="p-3">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-800">
-                        {ben.category || 'عام'}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        ben.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
-                        ben.status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {ben.status === 'approved' ? 'معتمد' : ben.status === 'pending' ? 'قيد المراجعة' : 'مرفوض'}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="inline-flex items-center gap-1.5 justify-center">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBarcodeBen(ben)}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                        >
-                          <Barcode className="w-3.5 h-3.5" />
-                          <span>الباركود</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setHistoryBeneficiary(ben)}
-                          className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                          title="عرض سجل المساعدات المستلمة والموثقة بالصور لهذا المستفيد"
-                        >
-                          <Package className="w-3.5 h-3.5" />
-                          <span>سجل الاستلام ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
-                        </button>
-                      </div>
+                {isFetchingBeneficiaries && filteredBeneficiaries.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-12 text-center">
+                      <RefreshCw className="w-8 h-8 mx-auto text-emerald-600 animate-spin mb-3" />
+                      <p className="font-black text-sm text-neutral-800">جاري تحميل وتحديث قائمة المستفيدين من الخادم...</p>
+                      <p className="text-xs text-neutral-400 mt-1">يتم التحقق من الجلسة والصلاحيات وجلب أحدث السجلات المعتمدة فورًا دون الحاجة لتحديث الصفحة</p>
                     </td>
                   </tr>
-                ))}
+                ) : beneficiariesFetchError && filteredBeneficiaries.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-10 text-center">
+                      <AlertTriangle className="w-9 h-9 mx-auto text-amber-500 mb-2" />
+                      <p className="font-black text-sm text-amber-900">{beneficiariesFetchError}</p>
+                      <p className="text-xs text-neutral-500 mt-1">حدث خطأ أثناء الاتصال بالخادم الرئيسي، يرجى المحاولة مرة أخرى.</p>
+                      <button
+                        type="button"
+                        onClick={() => fetchDirectBeneficiaries(true)}
+                        className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>إعادة المحاولة الآن</span>
+                      </button>
+                    </td>
+                  </tr>
+                ) : filteredBeneficiaries.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-12 text-center text-neutral-400">
+                      <Users className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
+                      <p className="font-bold text-sm text-neutral-700">لا يوجد مستفيدون مسجلون حالياً تطابق معايير البحث.</p>
+                      <p className="text-xs text-neutral-400 mt-1">يمكنك إضافة مستفيد جديد بالضغط على «إضافة مستفيد جديد» أعلاه.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBeneficiaries.map(ben => (
+                    <tr key={ben.id} className="hover:bg-neutral-50/80 transition-colors">
+                      <td className="p-3">
+                        <div className="font-bold text-neutral-900">{ben.name}</div>
+                        <div className="flex items-center gap-2 text-[10px] text-neutral-400 font-mono">
+                          <span className="text-emerald-700 font-bold">{ben.beneficiaryNumber || 'BEN-2026'}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Barcode className="w-3 h-3 text-neutral-500" />
+                            {ben.barcodeId || 'BC-BEN-000000'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3 font-mono font-bold text-neutral-700">{ben.nationalId || '—'}</td>
+                      <td className="p-3 font-mono text-neutral-600">{ben.phone || '—'}</td>
+                      <td className="p-3 font-bold text-neutral-800">{ben.familySize || 1} أفراد</td>
+                      <td className="p-3">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-800">
+                          {ben.category || 'عام'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          ben.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                          ben.status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {ben.status === 'approved' ? 'معتمد' : ben.status === 'pending' ? 'قيد المراجعة' : 'مرفوض'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="inline-flex items-center gap-1.5 justify-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBarcodeBen(ben)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <Barcode className="w-3.5 h-3.5" />
+                            <span>الباركود</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHistoryBeneficiary(ben)}
+                            className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                            title="عرض سجل المساعدات المستلمة والموثقة بالصور لهذا المستفيد"
+                          >
+                            <Package className="w-3.5 h-3.5" />
+                            <span>سجل الاستلام ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

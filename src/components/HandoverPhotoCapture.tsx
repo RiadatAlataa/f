@@ -21,10 +21,19 @@ export const HandoverPhotoCapture: React.FC<HandoverPhotoCaptureProps> = ({
   const startCamera = async () => {
     setCameraError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
+          audio: false,
+        });
+      } catch (envErr) {
+        // Fallback to any available camera if ideal environment fails
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
       setCameraStream(stream);
       setIsCameraActive(true);
       if (videoRef.current) {
@@ -33,7 +42,7 @@ export const HandoverPhotoCapture: React.FC<HandoverPhotoCaptureProps> = ({
       }
     } catch (err: any) {
       console.warn("Camera start failed, falling back to file picker:", err);
-      setCameraError("تعذر تشغيل كاميرا الجهاز مباشرة، يرجى التقاط الصورة أو رفعها من الاستوديو.");
+      setCameraError("تعذر تشغيل كاميرا الجهاز مباشرة (يرجى منح إذن الكاميرا في المتصفح)، أو يمكنك التقاط الصورة أو رفعها من الجهاز.");
       setIsCameraActive(false);
       fileInputRef.current?.click();
     }
@@ -47,7 +56,7 @@ export const HandoverPhotoCapture: React.FC<HandoverPhotoCaptureProps> = ({
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
       onPhotoCaptured(dataUrl);
     }
     stopCamera();
@@ -64,10 +73,22 @@ export const HandoverPhotoCapture: React.FC<HandoverPhotoCaptureProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setCameraError("يرجى اختيار ملف صورة صالح (JPG, PNG, WEBP).");
+      return;
+    }
+
+    if (file.size < 500) {
+      setCameraError("ملف الصورة المختار تالف أو فارغ.");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
         onPhotoCaptured(reader.result);
+        setCameraError(null);
       }
     };
     reader.readAsDataURL(file);
@@ -75,12 +96,14 @@ export const HandoverPhotoCapture: React.FC<HandoverPhotoCaptureProps> = ({
 
   return (
     <div className="space-y-2 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 text-right">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
         <label className="text-xs font-black text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
           <Camera className="w-4 h-4 text-emerald-600" />
-          <span>توثيق صورة التسليم {required && <b className="text-rose-600 text-xs font-bold">(إلزامي)</b>}</span>
+          <span>التقاط صورة المساعدة عند التسليم {required && <b className="text-rose-600 text-xs font-bold">(إلزامي)</b>}</span>
         </label>
-        <span className="text-[10px] text-neutral-500 dark:text-neutral-400">توثيق حي بالصورة لملف المستفيد</span>
+        <span className="text-[10px] text-neutral-600 dark:text-neutral-400">
+          📦 المطلوب: تصوير المساعدة أو الأصناف المسلمة (لا يُشترط تصوير وجه المستفيد)
+        </span>
       </div>
 
       {photo ? (

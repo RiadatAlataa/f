@@ -268,6 +268,20 @@ export default function App() {
     rehydrateSession();
   }, []);
 
+  // Auto-recovery for Beneficiaries: If user is authenticated in an administrative or beneficiary management role
+  // but beneficiaries array is empty, automatically trigger a background fetch to guarantee immediate display without F5!
+  useEffect(() => {
+    if (authenticatedUser && currentRole !== 'public') {
+      const needsBeneficiaryData = currentRole === 'department_admin' || currentRole === 'storekeeper' || currentRole === 'admin' || currentRole === 'operations_manager';
+      if (needsBeneficiaryData && (!dbData || !Array.isArray(dbData.beneficiaries) || dbData.beneficiaries.length === 0)) {
+        const timer = setTimeout(() => {
+          fetchDatabase(true);
+        }, 250);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [authenticatedUser?.id, currentRole, adminSubTab, Boolean(dbData?.beneficiaries?.length)]);
+
   // Centralized safe logout handler (destroys session cleanly)
   const handleLogout = async () => {
     try {
@@ -291,14 +305,14 @@ export default function App() {
     setAdminSubTab(undefined);
   };
 
-  // Centralized login success handler (persists session immediately)
-  const handleLoginSuccess = (role: string, user: any) => {
+  // Centralized login success handler (persists session immediately and triggers authenticated data load)
+  const handleLoginSuccess = async (role: string, user: any) => {
     setAuthenticatedUser(user);
     setSavedUserRole(role as any);
     setCurrentRole(role as any);
     setActiveMainTab('system');
+    const sessionToken = user?.sessionToken || `tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     try {
-      const sessionToken = user?.sessionToken || `tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
         role,
         user,
@@ -307,8 +321,24 @@ export default function App() {
         adminSubTab: undefined,
         timestamp: Date.now()
       }));
+      localStorage.removeItem('reyadat_view_mode');
     } catch {
       // Ignore
+    }
+
+    const authHeaders: Record<string, string> = {
+      'x-session-token': sessionToken,
+      'x-user-id': user?.id || user?.userId || '',
+      'x-user-role': role,
+      'x-department-id': user?.departmentId || '',
+      'x-national-id': user?.nationalId || ''
+    };
+
+    // Immediately fetch the database with fresh session headers without requiring manual F5
+    try {
+      await fetchDatabase(false, 0, authHeaders);
+    } catch (err) {
+      console.warn("Immediate post-login fetch warning:", err);
     }
   };
 
@@ -388,13 +418,13 @@ export default function App() {
   };
 
   // Fetch Database (Supports silent background fetch without unmounting active components)
-  const fetchDatabase = async (isBackground = false, retryAttempt = 0) => {
+  const fetchDatabase = async (isBackground = false, retryAttempt = 0, overrideHeaders?: Record<string, string>) => {
     try {
       if (!isBackground && !dbData && retryAttempt === 0) {
         setLoading(true);
       }
       setIsRetrying(true);
-      const headers = getAuthHeaders();
+      const headers = { ...getAuthHeaders(), ...(overrideHeaders || {}) };
       const targetUrl = buildApiUrl("/api/db");
       const res = await fetch(targetUrl, { 
         headers,
