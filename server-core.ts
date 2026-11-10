@@ -227,8 +227,11 @@ app.use((req, res, next) => {
     req.path === '/api/db/auth/logout' ||
     req.path === '/api/db/auth/change-password' ||
     req.path === '/api/db/auth/self-change-password' ||
+    req.path === '/api/db/auth/session' ||
     req.path === '/api/db/auth/me' ||
-    req.path === '/api/admin/system/bootstrap';
+    req.path === '/api/maintenance/status' ||
+    req.path === '/api/admin/system/bootstrap' ||
+    (req.method === 'GET' && (req.path === '/api/db' || req.path === '/api/db/scoped'));
 
   if (exempt) return next();
 
@@ -4236,6 +4239,9 @@ export function hashPassword(plainText: string): string {
   return bcrypt.hashSync(plainText, 10);
 }
 
+// Default initial password for all new beneficiaries and volunteers (Mandatory to change on first login)
+export const DEFAULT_NEW_ACCOUNT_PASSWORD = "A123b456";
+
 // Password Strength Evaluation Interface & Validator
 export interface PasswordValidationResult {
   isValid: boolean;
@@ -4707,7 +4713,7 @@ function getUserAccessContext(req: any) {
       allowedDepartmentIds: ['dep-5'],
       teamId: vol?.teamId || teamId || 'team-1',
       permissions: ['view_volunteer_portal', 'join_initiatives', 'print_card', 'view_certificates'],
-      mustChangePassword: false
+      mustChangePassword: Boolean(vol?.mustChangePassword ?? (activeSession?.user as any)?.mustChangePassword)
     };
   }
 
@@ -4725,7 +4731,7 @@ function getUserAccessContext(req: any) {
       primaryDepartmentName: 'إدارة شؤون المستفيدين والكفالات',
       allowedDepartmentIds: ['dep-4'],
       permissions: ['view_beneficiary_portal', 'request_aid', 'track_distribution'],
-      mustChangePassword: false
+      mustChangePassword: Boolean(ben?.mustChangePassword ?? (activeSession?.user as any)?.mustChangePassword)
     };
   }
 
@@ -7123,6 +7129,12 @@ app.post("/api/db/auth/change-password", (req, res) => {
     return res.status(400).json({ error: "معرف المستخدم وكلمة المرور الجديدة مطلوبان." });
   }
 
+  if (newPassword.trim() === DEFAULT_NEW_ACCOUNT_PASSWORD) {
+    return res.status(400).json({ 
+      error: "لا يمكن استخدام كلمة المرور الافتراضية (A123b456). يرجى اختيار كلمة مرور جديدة خاصة بك." 
+    });
+  }
+
   const pwdCheck = validatePasswordStrength(newPassword.trim());
   if (!pwdCheck.isValid) {
     return res.status(400).json({
@@ -7147,10 +7159,41 @@ app.post("/api/db/auth/change-password", (req, res) => {
   if (dep) dep.password = hashedPassword;
   const emp = (db.employees || []).find((e: any) => e.id === userId);
   if (emp) emp.password = hashedPassword;
-  const vol = (db.volunteers || []).find((v: any) => v.id === userId);
-  if (vol) vol.password = hashedPassword;
+  
+  const vol = (db.volunteers || []).find((v: any) => v.id === userId || v.nationalId === userId || v.email === userId || (userEntry?.nationalId && v.nationalId === userEntry.nationalId));
+  if (vol) {
+    vol.password = hashedPassword;
+    vol.passwordHash = hashedPassword;
+    vol.mustChangePassword = false;
+    vol.updatedAt = new Date().toISOString();
+  }
+
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId || b.email === userId || (userEntry?.nationalId && b.nationalId === userEntry.nationalId));
+  if (ben) {
+    ben.password = hashedPassword;
+    ben.passwordHash = hashedPassword;
+    ben.mustChangePassword = false;
+    ben.updatedAt = new Date().toISOString();
+  }
+
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) sk.password = hashedPassword;
+
+  // Real-time memory and persisted session update
+  try {
+    for (const [token, sess] of activeSessions.entries()) {
+      if (sess.userId === userId || (vol && sess.userId === vol.id) || (ben && sess.userId === ben.id)) {
+        if (sess.user) sess.user.mustChangePassword = false;
+      }
+    }
+    if (Array.isArray(db.activeSessions)) {
+      db.activeSessions.forEach((sess: any) => {
+        if (sess && (sess.userId === userId || (vol && sess.userId === vol.id) || (ben && sess.userId === ben.id))) {
+          if (sess.user) sess.user.mustChangePassword = false;
+        }
+      });
+    }
+  } catch {}
 
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
   db.accessAuditLogs.unshift({
@@ -8443,6 +8486,10 @@ app.post("/api/db/volunteers/add", (req, res) => {
       vol.file_number = fn;
     }
 
+    vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    vol.passwordHash = hashPassword(vol.password);
+    vol.mustChangePassword = true;
+
     db.volunteers.push(vol);
   } else {
     const index = db.volunteers.findIndex((v: any) => v.id === vol.id);
@@ -8461,6 +8508,9 @@ app.post("/api/db/volunteers/add", (req, res) => {
         file_number: existingFileNumber || vol.fileNumber
       };
     } else {
+      vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      vol.passwordHash = hashPassword(vol.password);
+      vol.mustChangePassword = true;
       db.volunteers.push(vol);
     }
   }
@@ -8693,7 +8743,10 @@ app.post("/api/db/volunteers/batch", (req, res) => {
       status: "active",
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
-      expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0]
+      expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
+      password: DEFAULT_NEW_ACCOUNT_PASSWORD,
+      passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+      mustChangePassword: true
     };
     db.volunteers.push(vol);
     added.push(vol);
@@ -10041,11 +10094,24 @@ app.get("/api/db/auth/session", (req, res) => {
     }
   }
 
+  const userObj = { ...(activeSession.user || {}) };
+  if (activeSession.role === 'volunteer' && db.volunteers) {
+    const vol = db.volunteers.find((v: any) => v && (v.id === userId || (nationalId && v.nationalId === nationalId)));
+    if (vol && vol.mustChangePassword !== undefined) {
+      userObj.mustChangePassword = Boolean(vol.mustChangePassword);
+    }
+  } else if (activeSession.role === 'beneficiary' && db.beneficiaries) {
+    const ben = db.beneficiaries.find((b: any) => b && (b.id === userId || (nationalId && b.nationalId === nationalId)));
+    if (ben && ben.mustChangePassword !== undefined) {
+      userObj.mustChangePassword = Boolean(ben.mustChangePassword);
+    }
+  }
+
   return res.json({
     status: "success",
     sessionToken: activeSession.token,
     role: activeSession.role,
-    user: activeSession.user
+    user: userObj
   });
 });
 
@@ -10553,14 +10619,15 @@ app.post("/api/db/auth/login", (req, res) => {
     const statusCheck = checkStatus(vol.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
-    const pwdToVerify = vol.passwordHash || vol.password || "123";
+    const pwdToVerify = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
+    const isUsingDefaultPasswordVol = password === DEFAULT_NEW_ACCOUNT_PASSWORD;
     const volUser = {
       ...vol,
-      mustChangePassword: !!vol.mustChangePassword
+      mustChangePassword: vol.mustChangePassword !== undefined ? Boolean(vol.mustChangePassword) : isUsingDefaultPasswordVol
     };
     delete volUser.password;
     delete volUser.passwordHash;
@@ -10615,14 +10682,24 @@ app.post("/api/db/auth/login", (req, res) => {
     }
     const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(ben.password)) {
+
+    const pwdToVerify = ben.passwordHash || ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
+
+    const isUsingDefaultPasswordBen = password === DEFAULT_NEW_ACCOUNT_PASSWORD;
+    const benUser = {
+      ...ben,
+      mustChangePassword: ben.mustChangePassword !== undefined ? Boolean(ben.mustChangePassword) : isUsingDefaultPasswordBen
+    };
+    delete benUser.password;
+    delete benUser.passwordHash;
 
     return res.json({
       status: "success",
       role: "beneficiary",
-      user: ben
+      user: benUser
     });
   }
 
@@ -12413,6 +12490,9 @@ app.post("/api/volunteers", (req, res) => {
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
     vol.expiryDate = vol.expiryDate || expiry.toISOString().split('T')[0];
+    vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    vol.passwordHash = hashPassword(vol.password);
+    vol.mustChangePassword = true;
     db.volunteers.push(vol);
   } else {
     const index = db.volunteers.findIndex((v: any) => v.id === vol.id);
@@ -12461,7 +12541,10 @@ app.post("/api/volunteers/batch-create", (req, res) => {
       status: "active",
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
-      expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0]
+      expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
+      password: DEFAULT_NEW_ACCOUNT_PASSWORD,
+      passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+      mustChangePassword: true
     };
     db.volunteers.push(vol);
     added.push(vol);
@@ -13920,6 +14003,9 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           orphanStatus: cleanOrphanStatus,
           role: "beneficiary", // Strictly beneficiary
           status: ben.status || "pending",   // Strictly pending approval unless admin creates approved
+          password: ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD,
+          passwordHash: hashPassword(ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
+          mustChangePassword: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -14102,6 +14188,9 @@ app.post("/api/db/beneficiaries/import", (req, res) => {
         category: item.category || "أسر متعففة",
         notes: item.notes || "",
         status: item.status || "approved",
+        password: item.password || DEFAULT_NEW_ACCOUNT_PASSWORD,
+        passwordHash: hashPassword(item.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
+        mustChangePassword: true,
         createdAt: new Date().toISOString()
       };
       db.beneficiaries.push(newBen);
@@ -16217,7 +16306,9 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    password: appObj.phone,
+    password: DEFAULT_NEW_ACCOUNT_PASSWORD,
+    passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+    mustChangePassword: true,
     role: "volunteer"
   };
 
@@ -20967,7 +21058,9 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    password: appObj.phone,
+    password: DEFAULT_NEW_ACCOUNT_PASSWORD,
+    passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+    mustChangePassword: true,
     role: "volunteer",
     gender: normGender
   };

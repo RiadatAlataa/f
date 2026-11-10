@@ -989,6 +989,16 @@ export function AuthScreen({
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+
+                  {/* Default Password Tip for New Beneficiaries and Volunteers */}
+                  <div className="mt-2 p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 flex items-center gap-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span>
+                      {lang === 'ar' 
+                        ? <>كلمة المرور الافتراضية للمستفيدين والمتطوعين الجدد هي <strong className="font-mono font-black text-xs text-emerald-950 dark:text-emerald-100 bg-emerald-200/60 dark:bg-emerald-900/60 px-1 py-0.5 rounded">A123b456</strong> (يلزم تغييرها عند أول دخول).</>
+                        : <>Default password for new beneficiaries and volunteers is <strong className="font-mono font-bold">A123b456</strong> (mandatory change upon first login).</>}
+                    </span>
+                  </div>
                 </div>
 
                 {/* ROW: Remember Me & Forgot Password */}

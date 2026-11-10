@@ -229,6 +229,8 @@ export interface Volunteer {
   role?: 'admin' | 'leader' | 'supervisor' | 'volunteer' | 'executive' | 'board' | string;
   permissions?: string[];
   password?: string;
+  passwordHash?: string;
+  mustChangePassword?: boolean;
   passwordResetToken?: string;
   passwordResetExpiresAt?: number;
   nationalId?: string;
@@ -1264,6 +1266,8 @@ export interface Beneficiary {
   createdAt: string;
   updatedAt?: string;
   password?: string;
+  passwordHash?: string;
+  mustChangePassword?: boolean;
   
   // الحقول المطورة والموحدة
   birthCalendarType?: 'hijri' | 'gregorian';

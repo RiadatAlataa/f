@@ -57,6 +57,11 @@ export const ForceChangePasswordModal: React.FC<ForceChangePasswordModalProps> =
       return;
     }
 
+    if (newPassword.trim() === "A123b456") {
+      setErrorMessage("لا يمكن استخدام كلمة المرور الافتراضية (A123b456). يرجى اختيار كلمة مرور جديدة خاصة بك لضمان أمان حسابك.");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setErrorMessage("كلمتا المرور غير متطابقتين، يرجى إعادة التحقق.");
       return;
@@ -118,6 +123,14 @@ export const ForceChangePasswordModal: React.FC<ForceChangePasswordModalProps> =
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Informational Banner about Default Password */}
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 p-3 rounded-2xl text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2 leading-relaxed">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <span>
+              تم تفعيل حسابك بكلمة المرور المؤقتة الموحدة (<code className="font-mono font-black text-xs bg-amber-200/60 dark:bg-amber-900/60 px-1 py-0.5 rounded">A123b456</code>). يلزمك النظام الآن بتعيين كلمة مرور جديدة خاصة بك لإتمام الدخول.
+            </span>
+          </div>
+
           {errorMessage && (
             <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 p-3.5 rounded-2xl text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />

@@ -660,11 +660,13 @@ export function OfficialHomePage({
       if (success) {
         playApplicationSubmittedChime();
         if (selectedOpportunityForJoin) {
-          alert(`تم استلام طلبك بنجاح للفرصة: ${selectedOpportunityForJoin.name}`);
+          alert(lang === "ar" 
+            ? `تم استلام طلبك بنجاح للفرصة (${selectedOpportunityForJoin.name})! كلمة المرور الافتراضية لحسابك هي (A123b456) وسيتعين عليك تغييرها عند أول تسجيل دخول.` 
+            : `Application received for opportunity: ${selectedOpportunityForJoin.name}! Default password is (A123b456).`);
         } else {
           alert(lang === "ar" 
-            ? `تم تقديم طلب الانضمام بنجاح! تم تسجيل رغبتك بالانضمام إلى (${chosenTeamName})، وسيقوم المسؤول باعتمادك والتواصل معك.` 
-            : "Volunteer application submitted successfully! It is pending admin approval.");
+            ? `تم تقديم طلب الانضمام بنجاح! تم تسجيل رغبتك بالانضمام إلى (${chosenTeamName}). كلمة المرور الافتراضية لحسابك هي (A123b456) وسيتعين عليك تغييرها عند أول تسجيل دخول.` 
+            : "Volunteer application submitted successfully! Default password is (A123b456) and mandatory to change on first login.");
         }
         setIsJoinModalOpen(false);
         setSelectedJoinType("none");
@@ -714,7 +716,9 @@ export function OfficialHomePage({
       ...benFormData
     });
     if (success) {
-      alert(lang === "ar" ? "تم تقديم طلب التسجيل كمسفيد وجاري مراجعته والتحقق منه من قبل الباحث الاجتماعي." : "Beneficiary registration request submitted! It is under review.");
+      alert(lang === "ar" 
+        ? "تم تقديم طلب التسجيل كمستفيد بنجاح وجاري تدقيقه! كلمة المرور الافتراضية لحسابك هي (A123b456) وسيتعين عليك تغييرها عند أول تسجيل دخول بعد الاعتماد." 
+        : "Beneficiary registration submitted! Your default password is (A123b456) and mandatory to change on first login.");
       setIsJoinModalOpen(false);
       setSelectedJoinType("none");
       resetRegForm();
