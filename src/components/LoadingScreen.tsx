@@ -67,9 +67,12 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
         </div>
 
         {/* Association Branding Title */}
-        <h1 className="text-base sm:text-lg font-black text-[#071C43] dark:text-sky-200 tracking-tight mb-2">
-          جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+        <h1 className="text-xl sm:text-2xl font-black text-[#071C43] dark:text-sky-200 tracking-tight mb-1">
+          ريادة العطاء
         </h1>
+        <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 mb-3">
+          جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+        </p>
 
         {/* Dynamic Status / Error View */}
         {!error ? (

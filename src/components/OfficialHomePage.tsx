@@ -31,6 +31,7 @@ import { UserSettingsModal } from "./UserSettingsModal";
 import { PartnersSlider } from "./PartnersSlider";
 import { playApplicationSubmittedChime } from "../utils/audioNotification";
 import { BeneficiaryFormFields, BeneficiaryFormData } from "./BeneficiaryFormFields";
+import { PWAInstallButton } from "./PWAInstallButton";
 
 // -------------------------------------------------------------
 // Reusable Animated Counter (Counts up from 0 when scrolled into view)
@@ -1054,6 +1055,9 @@ export function OfficialHomePage({
               onOpenUserSettings={() => setIsUserSettingsOpen(true)}
             />
 
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="header" className="hidden sm:inline-flex" />
+
             {/* User Settings & Audio Preferences Button */}
             <button
               id="header-user-settings-btn"
@@ -1438,6 +1442,9 @@ export function OfficialHomePage({
                         )}
                       </>
                     )}
+
+                    {/* PWA App Install Action */}
+                    <PWAInstallButton variant="header" className="w-full justify-center py-2.5 font-bold shadow-md" />
 
                     {/* Dark Mode Switcher */}
                     <button
@@ -4407,6 +4414,9 @@ export function OfficialHomePage({
         isDark={isDark}
         onToggleDark={onToggleDark}
       />
+
+      {/* FLOATING PWA INSTALL ACTION (Desktop / Android / iOS) */}
+      <PWAInstallButton variant="floating" />
 
     </div>
   );

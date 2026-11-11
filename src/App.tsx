@@ -32,6 +32,8 @@ import { ForceChangePasswordModal } from "./components/ForceChangePasswordModal"
 import { playApplicationSubmittedChime } from "./utils/audioNotification";
 import { DashboardErrorBoundary } from "./components/DashboardErrorBoundary";
 import { LoadingScreen } from "./components/LoadingScreen";
+import { PWAInstallButton } from "./components/PWAInstallButton";
+import { OfflineIndicator } from "./components/OfflineIndicator";
 import { 
   getApiBaseUrl, 
   buildApiUrl, 
@@ -1771,11 +1773,11 @@ export default function App() {
                   <img src="/logo.png" alt="شعار جمعية ريادة العطاء" className="w-full h-full object-contain" />
                 </div>
                 <div className="text-right min-w-0">
-                  <h1 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[150px] min-[390px]:max-w-[210px] sm:max-w-none">
-                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                  <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[150px] min-[390px]:max-w-[210px] sm:max-w-none">
+                    ريادة العطاء
                   </h1>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block">
-                    بوابة الإدارة والأنظمة الموحدة
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block truncate">
+                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
                   </p>
                 </div>
 
@@ -1869,6 +1871,9 @@ export default function App() {
                     <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
                   )}
                 </button>
+
+                {/* PWA App Install Button */}
+                <PWAInstallButton variant="header" className="hidden sm:inline-flex" />
 
                 {/* User Logout Button (Desktop) */}
                 {authenticatedUser && (
@@ -2505,6 +2510,12 @@ export default function App() {
           onLogout={handleLogout}
         />
       )}
+
+      {/* FLOATING PWA INSTALL ACTION (Desktop / Android / iOS) */}
+      <PWAInstallButton variant="floating" />
+
+      {/* OFFLINE CONNECTIVITY INDICATOR */}
+      <OfflineIndicator />
 
     </div>
   );

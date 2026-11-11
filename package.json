@@ -36,6 +36,7 @@
     "react-dom": "^19.0.1",
     "react-draggable": "^4.7.2",
     "vite": "^6.4.5",
+    "vite-plugin-pwa": "^2.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
