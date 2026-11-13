@@ -56,6 +56,10 @@ import { AccessDeniedCard } from "./AccessDeniedCard";
 import { SiteStatusManager } from "./SiteStatusManager";
 import { AdminStaffManager } from "./AdminStaffManager";
 import { encryptBackupPayload, decryptBackupPayload, calculateSha256 } from "../utils/secureBackupCrypto";
+import { RegistrationLinksPanel } from "./RegistrationLinksPanel";
+import { AccountArchiveActionModal } from "./AccountArchiveActionModal";
+import { ArchivesDirectoryPanel } from "./ArchivesDirectoryPanel";
+import { Link2 } from "lucide-react";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   logoUrl: "/logo.png",
@@ -136,6 +140,10 @@ interface AdminDashboardProps {
   onDeleteTeam: (id: string) => void;
   onAddVolunteer: (vol: Partial<Volunteer>) => void;
   onDeleteVolunteer: (id: string) => void;
+  onArchiveOrDeleteVolunteer?: (payload: { volunteerId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreVolunteer?: (volunteerId: string) => Promise<{ ok: boolean; error?: string }>;
+  onArchiveOrDeleteBeneficiary?: (payload: { beneficiaryId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreBeneficiary?: (beneficiaryId: string) => Promise<{ ok: boolean; error?: string }>;
   onBatchCreateVolunteers: (list: Array<{ name: string; email?: string; phone?: string; teamId: string; departmentId: string }>) => void;
   onAddInitiative: (init: Partial<Initiative>) => void;
   onCopyInitiative: (originalId: string, newDate: string, newName: string) => void;
@@ -238,6 +246,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteTeam,
   onAddVolunteer,
   onDeleteVolunteer,
+  onArchiveOrDeleteVolunteer,
+  onRestoreVolunteer,
+  onArchiveOrDeleteBeneficiary,
+  onRestoreBeneficiary,
   onBatchCreateVolunteers,
   onAddInitiative,
   onCopyInitiative,
@@ -304,7 +316,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRefreshGlobalData,
   onToggleMaintenance
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support' | 'registration_links' | 'beneficiaries_archive' | 'volunteers_archive'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -402,6 +414,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Defensive fallbacks for all datasets to prevent any undefined filter/map runtime errors
   const safeOpportunityRequests = useMemo(() => Array.isArray(opportunityRequests) ? opportunityRequests : [], [opportunityRequests]);
   const safeVolunteers = useMemo(() => Array.isArray(data?.volunteers) ? data.volunteers : [], [data?.volunteers]);
+  const activeVolunteers = useMemo(() => safeVolunteers.filter(v => !v.isArchived && v.status !== 'archived' && v.status !== 'deactivated'), [safeVolunteers]);
+  const archivedVolunteersCount = useMemo(() => safeVolunteers.filter(v => v.isArchived === true || v.status === 'archived' || v.status === 'deactivated').length, [safeVolunteers]);
   const safeLogs = useMemo(() => Array.isArray(data?.logs) ? data.logs : [], [data?.logs]);
   const safeTeams = useMemo(() => Array.isArray(data?.teams) ? data.teams : [], [data?.teams]);
   const safeDepartments = useMemo(() => Array.isArray(data?.departments) ? data.departments : [], [data?.departments]);
@@ -409,6 +423,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const safeEmployeeRequests = useMemo(() => Array.isArray(employeeRequests) ? employeeRequests : [], [employeeRequests]);
   const safeEmployees = useMemo(() => Array.isArray(employees) ? employees : [], [employees]);
   const safeBeneficiaries = useMemo(() => Array.isArray(data?.beneficiaries) ? data.beneficiaries : [], [data?.beneficiaries]);
+  const activeBeneficiaries = useMemo(() => safeBeneficiaries.filter(b => !b.isArchived && b.status !== 'archived' && b.status !== 'deactivated'), [safeBeneficiaries]);
+  const archivedBeneficiariesCount = useMemo(() => safeBeneficiaries.filter(b => b.isArchived === true || b.status === 'archived' || b.status === 'deactivated').length, [safeBeneficiaries]);
   const safeDistributions = useMemo(() => Array.isArray(data?.distributions) ? data.distributions : [], [data?.distributions]);
   const safeBeneficiaryRatings = useMemo(() => Array.isArray(data?.beneficiaryRatings) ? data.beneficiaryRatings : [], [data?.beneficiaryRatings]);
   const safeVolunteerApplications = useMemo(() => Array.isArray(data?.volunteerApplications) ? data.volunteerApplications : [], [data?.volunteerApplications]);
@@ -439,7 +455,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'volunteer_mgmt_dashboard', label: 'لوحة إدارة التطوع والإحصائيات', icon: BarChart3, badge: 'نظام متكامل' },
         { id: 'opp_requests', label: 'اعتماد وإدارة الفرص التطوعية', icon: FileText, badge: safeOpportunityRequests.filter(r => r.status === 'pending').length || undefined },
         { id: 'init', label: 'المبادرات التطوعية', icon: Calendar, badge: safeInitiatives.length || 0 },
-        { id: 'vols', label: 'سجلات وساعات المتطوعين', icon: Users, badge: safeVolunteers.length || 0 },
+        { id: 'vols', label: 'سجلات وساعات المتطوعين', icon: Users, badge: activeVolunteers.length || 0 },
+        { id: 'volunteers_archive', label: 'أرشيف المتطوعين', icon: Archive, badge: archivedVolunteersCount || undefined },
         { id: 'teams', label: 'الفرق التطوعية وقادتها', icon: UsersRound, badge: safeTeams.length || 0 },
         { id: 'joinrequests', label: 'طلبات انضمام الأفراد', icon: FileText, badge: safeVolunteerApplications.filter(a => a.status === 'pending').length || undefined },
         { id: 'team_join_requests', label: 'طلبات انضمام الفرق', icon: UsersRound, badge: safeTeamApplications.filter(a => a.status === 'pending').length || undefined },
@@ -452,9 +469,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       label: "إدارة المستفيدين",
       icon: HeartHandshake,
       description: "إدارة المستفيدين، طلبات الإعانة، توزيع السلال والكسوة، وتقييمات الرضا",
-      badge: safeBeneficiaries.length || undefined,
+      badge: activeBeneficiaries.length || undefined,
       items: [
-        { id: 'beneficiaries', label: 'المستفيدون وطلبات الإعانة', icon: Users, badge: safeBeneficiaries.length || undefined },
+        { id: 'beneficiaries', label: 'المستفيدون وطلبات الإعانة', icon: Users, badge: activeBeneficiaries.length || undefined },
+        { id: 'beneficiaries_archive', label: 'أرشيف المستفيدين', icon: Archive, badge: archivedBeneficiariesCount || undefined },
         { id: 'distributions', label: 'التوزيعات وسندات الاستلام', icon: Package, badge: safeDistributions.filter(d => d.status === 'active').length || undefined },
         { id: 'beneficiary_ratings', label: 'تقييمات ورضا المستفيدين', icon: Star, badge: safeBeneficiaryRatings.length || undefined }
       ]
@@ -483,6 +501,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data?.partners || []).length || undefined },
         { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: safeLetters.filter(l => !l.isRead).length || undefined },
         { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
+        { id: 'registration_links', label: 'روابط التسجيل والمشاركة', icon: Link2, badge: 'مباشر' },
         { id: 'users_mgmt', label: 'إدارة المستخدمين الشاملة', icon: Users, badge: 'شامل' },
         { id: 'password_resets', label: 'طلبات تغيير كلمات المرور (مدير العمليات)', icon: KeyRound, badge: 'العمليات' },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
@@ -547,9 +566,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     safeEmployees,
     safeDepartments,
     safeInitiatives,
-    safeVolunteers,
+    activeVolunteers,
+    archivedVolunteersCount,
     safeTeams,
-    safeBeneficiaries,
+    activeBeneficiaries,
+    archivedBeneficiariesCount,
     safeDistributions,
     safeBeneficiaryRatings,
     safeVolunteerApplications,
@@ -632,6 +653,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Volunteer Modal State
   const [showVolModal, setShowVolModal] = useState(false);
   const [editingVol, setEditingVol] = useState<Partial<Volunteer> | null>(null);
+  const [archiveTargetVolunteer, setArchiveTargetVolunteer] = useState<Volunteer | null>(null);
 
   // Volunteer Monthly Report Modal State
   const [showReportModal, setShowReportModal] = useState(false);
@@ -977,8 +999,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.target.value = "";
   };
 
-  // Filter lists
-  const filteredVolunteers = safeVolunteers.filter(v => {
+  // Filter lists (exclude archived / deactivated records from active views)
+  const filteredVolunteers = activeVolunteers.filter(v => {
     const matchSearch = 
       (v.name || '').toLowerCase().includes(volSearch.toLowerCase()) || 
       (v.membershipNumber || '').toLowerCase().includes(volSearch.toLowerCase()) ||
@@ -995,7 +1017,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const triggerBatchPrint = () => {
     const win = window.open("", "_blank");
     if (win) {
-      const cardsHtml = (data.volunteers || []).map(v => {
+      const cardsHtml = activeVolunteers.map(v => {
         const team = (data.teams || []).find(t => t.id === v.teamId);
         const dept = (data.departments || []).find(d => d.id === v.departmentId);
         return `
@@ -1478,6 +1500,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 setActiveSubTab('opp_requests');
               }}
               onEvaluateTeamPoints={onEvaluateTeamPoints}
+              onArchiveOrDeleteVolunteer={onArchiveOrDeleteVolunteer}
+              onRestoreVolunteer={onRestoreVolunteer}
+              canManageArchive={true}
             />
           )}
 
@@ -1486,7 +1511,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="space-y-6">
               <VolunteerTeamTransferManager
                 teams={data.teams || []}
-                volunteers={data.volunteers || []}
+                volunteers={activeVolunteers}
                 currentUser={{ id: 'admin', name: 'إدارة التطوع والنظام' }}
                 userRole="admin"
                 onRefreshData={onRefreshGlobalData}
@@ -2071,7 +2096,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div>
                             <span className="text-[10px] text-neutral-400 block">المتطوعون النشطون:</span>
                             <span className="text-blue-700 font-bold font-mono">
-                              {(data.volunteers || []).filter(v => v.teamId === t.id && v.status === 'active').length} عضو
+                              {activeVolunteers.filter(v => v.teamId === t.id && (v.status === 'active' || !v.status)).length} عضو
                             </span>
                           </div>
                         </div>
@@ -2166,10 +2191,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onChange={(e) => setVolTeamFilter(e.target.value)}
                       className="bg-transparent outline-none cursor-pointer font-bold text-xs pr-1"
                     >
-                      <option value="all">جميع الفرق ({(data.volunteers || []).length})</option>
+                      <option value="all">جميع الفرق ({activeVolunteers.length})</option>
                       {(data.teams || []).map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.nameAr} ({(data.volunteers || []).filter(v => v.teamId === t.id).length})
+                          {t.nameAr} ({activeVolunteers.filter(v => v.teamId === t.id).length})
                         </option>
                       ))}
                     </select>
@@ -2244,14 +2269,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </button>
                               <button
                                 id={`btn-delete-vol-${v.id}`}
-                                onClick={() => {
-                                  if(confirm("هل أنت متأكد من رغبتك بحذف ملف هذا المتطوع بالكامل؟")) {
-                                    onDeleteVolunteer(v.id);
-                                  }
-                                }}
-                                className="text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-sm transition-all cursor-pointer font-bold"
+                                onClick={() => setArchiveTargetVolunteer(v)}
+                                className="text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-sm transition-all cursor-pointer font-bold inline-flex items-center gap-1"
                               >
-                                حذف
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف المتطوع</span>
                               </button>
                             </div>
                           </td>
@@ -2264,10 +2286,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
+          {/* TAB: VOLUNTEERS ARCHIVE */}
+          {activeSubTab === 'volunteers_archive' && (
+            <ArchivesDirectoryPanel
+              mode="volunteers"
+              volunteers={safeVolunteers}
+              teams={safeTeams}
+              onRestore={async (volunteerId) => {
+                if (onRestoreVolunteer) return await onRestoreVolunteer(volunteerId);
+                return { ok: false, error: 'تعذر استعادة المتطوع' };
+              }}
+            />
+          )}
+
           {/* TAB 5: VOLUNTEER CARD TEMPLATES & ISSUANCE SYSTEM */}
           {activeSubTab === 'cards' && (
             <VolunteerCardTemplatesPanel 
-              volunteers={data.volunteers}
+              volunteers={activeVolunteers}
               teams={data.teams}
               departments={data.departments}
               femaleUnifiedPhotoUrl={data.homeSettings?.femaleUnifiedCardPhoto}
@@ -3108,7 +3143,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {/* TAB 11: INTERACTIVE LIVE LEADERBOARD */}
           {activeSubTab === 'leaderboard' && (() => {
-            let filteredVols = [...(data.volunteers || [])];
+            let filteredVols = [...activeVolunteers];
             if (leaderboardDeptFilter) {
               filteredVols = filteredVols.filter(v => v.departmentId === leaderboardDeptFilter);
             }
@@ -3309,7 +3344,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'globalsearch' && (() => {
             const q = globalSearchTerm.toLowerCase().trim();
 
-            let matchedVols = data.volunteers || [];
+            let matchedVols = activeVolunteers;
             let matchedInits = data.initiatives || [];
             let matchedLogs = data.logs || [];
 
@@ -3537,15 +3572,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <BeneficiariesManager
               beneficiaries={data.beneficiaries || []}
               handoverRecords={data.distributionHandovers || []}
-              onUpdateBeneficiaryStatus={onUpdateBeneficiaryStatus || (async () => false)}
               homeSettings={data.homeSettings}
               lang={lang}
-              currentUserRole="admin"
-              currentUserName="المدير العام للجمعية"
+              currentUserRole={authenticatedUser?.role || "admin"}
+              currentUserName={authenticatedUser?.name || "المدير العام للجمعية"}
+              userPermissions={authenticatedUser?.permissions || ['super_admin']}
+              onUpdateBeneficiaryStatus={onUpdateBeneficiaryStatus || (async () => false)}
               onAddNewBeneficiary={onAddBeneficiary}
               onImportBeneficiaries={onImportBeneficiaries}
+              onArchiveOrDeleteBeneficiary={onArchiveOrDeleteBeneficiary}
+              onRestoreBeneficiary={onRestoreBeneficiary}
               onNavigateToDistributions={() => setActiveSubTab('distributions')}
               activeDistributionsCount={(data.distributions || []).filter(d => d.status === 'active').length}
+              distributions={data.distributions || []}
+              inventoryItems={data.inventoryItems || []}
+              onRefreshGlobalData={onRefreshGlobalData}
+            />
+          )}
+
+          {/* TAB: BENEFICIARIES ARCHIVE */}
+          {activeSubTab === 'beneficiaries_archive' && (
+            <ArchivesDirectoryPanel
+              mode="beneficiaries"
+              beneficiaries={safeBeneficiaries}
+              onRestore={async (beneficiaryId) => {
+                if (onRestoreBeneficiary) return await onRestoreBeneficiary(beneficiaryId);
+                return { ok: false, error: 'تعذر استعادة المستفيد' };
+              }}
             />
           )}
 
@@ -3553,7 +3606,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'distributions' && (
             <DistributionsManager
               distributions={data.distributions || []}
-              beneficiaries={data.beneficiaries || []}
+              beneficiaries={activeBeneficiaries}
               handoverRecords={data.distributionHandovers || []}
               inventoryItems={data.inventoryItems || []}
               homeSettings={data.homeSettings}
@@ -3580,6 +3633,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             />
           )}
 
+          {/* TAB: REGISTRATION & SHARING LINKS */}
+          {activeSubTab === 'registration_links' && (
+            <RegistrationLinksPanel
+              teams={safeTeams}
+              showOnHome={Boolean(data?.homeSettings?.showRegistrationLinksOnHome)}
+              onToggleShowOnHome={async (nextValue) => {
+                if (!onUpdateHomeSettings) return;
+                const currentSettings = data?.homeSettings || DEFAULT_ADMIN_HOMESETTINGS;
+                await onUpdateHomeSettings({
+                  ...currentSettings,
+                  showRegistrationLinksOnHome: nextValue
+                });
+              }}
+            />
+          )}
+
           {/* TAB 13: HOMEPAGE & BENEFICIARIES CONTENT MANAGER */}
           {activeSubTab === 'homepage' && (
             <HomepageAdminPanel
@@ -3587,7 +3656,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               news={data.news || []}
               partners={data.partners || []}
               gallery={data.gallery || []}
-              beneficiaries={data.beneficiaries || []}
+              beneficiaries={activeBeneficiaries}
               benefitRequests={data.benefitRequests || []}
               orgMembers={data.orgMembers || data.homeSettings?.orgMembers || []}
               heroSlides={data.heroSlides || data.homeSettings?.heroSlides || []}
@@ -5428,6 +5497,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* VOLUNTEER SAFE ARCHIVE / DELETE MODAL */}
+      {archiveTargetVolunteer && (() => {
+        const volTeam = safeTeams.find(t => t.id === archiveTargetVolunteer.teamId);
+        const attCount = (data.attendance || []).filter((a: any) => a.volunteerId === archiveTargetVolunteer.id).length;
+        const initCount = safeInitiatives.filter(i => Array.isArray(i.acceptedVolunteerIds) && i.acceptedVolunteerIds.includes(archiveTargetVolunteer.id)).length;
+        const hasHistory = attCount > 0 || initCount > 0 || (Number(archiveTargetVolunteer.points) || 0) > 0 || (Number(archiveTargetVolunteer.hours) || 0) > 0;
+        const summaryParts: string[] = [];
+        if (attCount > 0) summaryParts.push(`${attCount} سجل حضور`);
+        if (initCount > 0) summaryParts.push(`${initCount} مشاركة بمبادرة`);
+        if ((Number(archiveTargetVolunteer.points) || 0) > 0) summaryParts.push(`${archiveTargetVolunteer.points} نقطة تطوعية`);
+        if ((Number(archiveTargetVolunteer.hours) || 0) > 0) summaryParts.push(`${archiveTargetVolunteer.hours} ساعة تطوعية`);
+
+        return (
+          <AccountArchiveActionModal
+            isOpen={true}
+            entityType="volunteer"
+            entityName={archiveTargetVolunteer.name}
+            fileNumber={archiveTargetVolunteer.fileNumber || archiveTargetVolunteer.membershipNumber}
+            secondaryLabel={`${volTeam?.nameAr || 'متطوع مستقل'} • ${archiveTargetVolunteer.phone || ''}`}
+            canPermanentDelete={true}
+            hasLinkedHistory={hasHistory}
+            linkedHistorySummary={hasHistory ? `يمتلك المتطوع سجل مشاركة موثق (${summaryParts.join('، ')}). لذا يُمنع الحذف النهائي ويتم تطبيق الأرشفة الآمنة للحفاظ على النقاط وسجلات الحضور والشهادات.` : undefined}
+            onClose={() => setArchiveTargetVolunteer(null)}
+            onConfirm={async ({ actionType, reason }) => {
+              if (onArchiveOrDeleteVolunteer) {
+                return await onArchiveOrDeleteVolunteer({
+                  volunteerId: archiveTargetVolunteer.id,
+                  actionType,
+                  reason
+                });
+              }
+              return { ok: false, error: 'معالج الأرشفة غير متاح' };
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

@@ -1,6 +1,7 @@
+import fs from "fs";
 import path from "path";
 import express from "express";
-import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb, ensureDatabaseReady } from "./server-core";
+import app, { readDb, writeDb, findSourceDbJson, getActiveDbPath, mutateDb, ensureDatabaseReady, injectSeoIntoHtml, isPrivateNoIndexPath } from "./server-core";
 
 const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 
@@ -30,12 +31,55 @@ async function start() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+
+    // Inject route-specific SEO & X-Robots-Tag for direct GET document requests in dev
+    app.use(async (req, res, next) => {
+      const urlPath = req.path || "/";
+      const acceptHeader = String(req.headers.accept || "");
+      const acceptsDocument = !acceptHeader || acceptHeader.includes("text/html") || acceptHeader.includes("*/*");
+      if (
+        req.method === "GET" &&
+        !urlPath.startsWith("/api") &&
+        !urlPath.startsWith("/@") &&
+        !urlPath.startsWith("/__") &&
+        !urlPath.startsWith("/src/") &&
+        !urlPath.startsWith("/node_modules/") &&
+        !urlPath.includes(".") &&
+        acceptsDocument
+      ) {
+        try {
+          if (isPrivateNoIndexPath(urlPath)) {
+            res.setHeader("X-Robots-Tag", "noindex, nofollow");
+          }
+          const rawHtml = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");
+          const transformed = await vite.transformIndexHtml(req.originalUrl, rawHtml);
+          const db = readDb();
+          const finalHtml = injectSeoIntoHtml(transformed, urlPath, db);
+          res.status(200).set({ "Content-Type": "text/html; charset=utf-8" }).end(finalHtml);
+          return;
+        } catch (e: any) {
+          vite.ssrFixStacktrace(e);
+        }
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { index: false }));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      try {
+        if (isPrivateNoIndexPath(req.path || "/")) {
+          res.setHeader("X-Robots-Tag", "noindex, nofollow");
+        }
+        const indexHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf-8");
+        const db = readDb();
+        const finalHtml = injectSeoIntoHtml(indexHtml, req.path || "/", db);
+        res.status(200).set({ "Content-Type": "text/html; charset=utf-8" }).send(finalHtml);
+      } catch {
+        res.sendFile(path.join(distPath, "index.html"));
+      }
     });
   }
 

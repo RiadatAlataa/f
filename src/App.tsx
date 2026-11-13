@@ -40,6 +40,7 @@ import {
   checkHealthEndpoint,
   getHttpStatusDescription
 } from "./config/api";
+import { resolveRouteSeo, applyRouteSeo } from "./utils/seo";
 
 export default function App() {
   // Global App States
@@ -159,14 +160,56 @@ export default function App() {
 
   const initialAuthSession = getStoredSession();
 
+  const [browserFullPath, setBrowserFullPath] = useState<string>(() =>
+    typeof window !== 'undefined' ? (window.location.pathname + window.location.search) : '/'
+  );
+
+  const navigatePublicPath = useCallback((nextPath: string, replace = false) => {
+    if (typeof window === 'undefined') return;
+    const normalized = nextPath.startsWith('/') ? nextPath : `/${nextPath}`;
+    if ((window.location.pathname + window.location.search) !== normalized) {
+      if (replace) window.history.replaceState({}, '', normalized);
+      else window.history.pushState({}, '', normalized);
+    }
+    setBrowserFullPath(normalized);
+  }, []);
+
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [currentRole, setCurrentRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.replace(/\/+$/, '') || '/';
+      if (p === '/login' || p === '/auth') {
+        try { localStorage.removeItem('reyadat_view_mode'); } catch {}
+        return initialAuthSession?.role || 'admin';
+      }
+      if (window.location.search.includes('resetToken')) {
+        return 'admin';
+      }
+      if (p.startsWith('/register/') || p.startsWith('/teams/') || p.startsWith('/opportunities') || p.startsWith('/gallery') || p.startsWith('/news/')) {
+        return 'public';
+      }
+    }
     try {
       const viewMode = localStorage.getItem('reyadat_view_mode');
       if (viewMode === 'public') return 'public';
     } catch {}
-    return initialAuthSession?.role || (typeof window !== 'undefined' && window.location.search.includes('resetToken') ? 'admin' : 'public');
+    return initialAuthSession?.role || 'public';
   });
+
+  useEffect(() => {
+    const onPopState = () => {
+      const full = window.location.pathname + window.location.search;
+      setBrowserFullPath(full);
+      const p = window.location.pathname.replace(/\/+$/, '') || '/';
+      if ((p === '/login' || p === '/auth') && !initialAuthSession?.user) {
+        setCurrentRole('admin');
+      } else if (p === '/' || p.startsWith('/register/') || p.startsWith('/teams/') || p.startsWith('/opportunities') || p.startsWith('/gallery') || p.startsWith('/news/')) {
+        setCurrentRole('public');
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
   const [activeMainTab, setActiveMainTab] = useState<'system' | 'ai' | 'guide'>(
     initialAuthSession?.activeMainTab || 'system'
   );
@@ -190,12 +233,28 @@ export default function App() {
     }
   }, [currentRole]);
 
+  // Dynamic Route-Level SEO (Title, Description, Canonical, Robots, JSON-LD)
+  useEffect(() => {
+    const cleanPathname = browserFullPath.split('?')[0] || '/';
+    const isPrivateView = currentRole !== 'public';
+    const seoConfig = resolveRouteSeo({
+      pathname: cleanPathname,
+      isAuthenticatedView: isPrivateView,
+      settings: dbData?.homeSettings,
+      teams: dbData?.teams,
+      initiatives: dbData?.initiatives,
+      news: dbData?.news,
+    });
+    applyRouteSeo(seoConfig);
+  }, [browserFullPath, currentRole, dbData?.homeSettings, dbData?.teams, dbData?.initiatives, dbData?.news]);
+
   // Centralized Navigation between Public Site and Management Dashboards
   const handleNavigateToPublicHome = () => {
     if (currentRole && currentRole !== 'public') {
       setSavedUserRole(currentRole);
     }
     setCurrentRole('public');
+    navigatePublicPath('/');
     try {
       localStorage.setItem('reyadat_view_mode', 'public');
     } catch {}
@@ -305,6 +364,7 @@ export default function App() {
     setCurrentRole('public');
     setActiveMainTab('system');
     setAdminSubTab(undefined);
+    navigatePublicPath('/');
   };
 
   // Centralized login success handler (persists session immediately and triggers authenticated data load)
@@ -758,7 +818,97 @@ export default function App() {
   };
 
   const handleDeleteVolunteer = async (id: string) => {
-    await syncWithServer("/api/db/volunteers/delete", { id }, "حذف متطوع");
+    await syncWithServer("/api/db/volunteers/delete", { id, actionType: 'archive', reason: 'أرشفة من لوحة التحكم' }, "أرشفة ملف متطوع");
+  };
+
+  const handleArchiveOrDeleteVolunteer = async (payload: {
+    id?: string;
+    volunteerId?: string;
+    actionType: 'archive' | 'deactivate' | 'permanent_delete';
+    reason: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const targetId = payload.volunteerId || payload.id;
+      const res = await fetch(buildApiUrl("/api/db/volunteers/archive-or-delete"), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          id: targetId,
+          volunteerId: targetId,
+          actionType: payload.actionType,
+          reason: payload.reason,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data.error || 'تعذر تنفيذ الإجراء على حساب المتطوع' };
+      if (data.db) setDbData(data.db);
+      else await fetchDatabase(true);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'حدث خطأ في الاتصال بالخادم' };
+    }
+  };
+
+  const handleRestoreVolunteer = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(buildApiUrl("/api/db/volunteers/restore"), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data.error || 'تعذرت استعادة حساب المتطوع' };
+      if (data.db) setDbData(data.db);
+      else await fetchDatabase(true);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'حدث خطأ في الاتصال بالخادم' };
+    }
+  };
+
+  const handleArchiveOrDeleteBeneficiary = async (payload: {
+    id?: string;
+    beneficiaryId?: string;
+    actionType: 'archive' | 'deactivate' | 'permanent_delete';
+    reason: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const targetId = payload.beneficiaryId || payload.id;
+      const res = await fetch(buildApiUrl("/api/db/beneficiaries/archive-or-delete"), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          id: targetId,
+          beneficiaryId: targetId,
+          actionType: payload.actionType,
+          reason: payload.reason,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data.error || 'تعذر تنفيذ الإجراء على ملف المستفيد' };
+      if (data.db) setDbData(data.db);
+      else await fetchDatabase(true);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'حدث خطأ في الاتصال بالخادم' };
+    }
+  };
+
+  const handleRestoreBeneficiary = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(buildApiUrl("/api/db/beneficiaries/restore"), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data.error || 'تعذرت استعادة ملف المستفيد' };
+      if (data.db) setDbData(data.db);
+      else await fetchDatabase(true);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'حدث خطأ في الاتصال بالخادم' };
+    }
   };
 
   const handleBatchCreateVolunteers = async (list: Array<{ name: string; email?: string; phone?: string; teamId: string; departmentId: string }>) => {
@@ -2061,6 +2211,10 @@ export default function App() {
                       onDeleteTeam={handleDeleteTeam}
                       onAddVolunteer={handleAddVolunteer}
                       onDeleteVolunteer={handleDeleteVolunteer}
+                      onArchiveOrDeleteVolunteer={handleArchiveOrDeleteVolunteer}
+                      onRestoreVolunteer={handleRestoreVolunteer}
+                      onArchiveOrDeleteBeneficiary={handleArchiveOrDeleteBeneficiary}
+                      onRestoreBeneficiary={handleRestoreBeneficiary}
                       onBatchCreateVolunteers={handleBatchCreateVolunteers}
                       onAddInitiative={handleAddInitiative}
                       onCopyInitiative={handleCopyInitiative}
@@ -2180,6 +2334,10 @@ export default function App() {
                       onHandoverSubmit={handleHandoverSubmit}
                       onCancelHandover={handleCancelHandover}
                       onAddBeneficiary={handleAddBeneficiary}
+                      onArchiveOrDeleteBeneficiary={handleArchiveOrDeleteBeneficiary}
+                      onRestoreBeneficiary={handleRestoreBeneficiary}
+                      onArchiveOrDeleteVolunteer={handleArchiveOrDeleteVolunteer}
+                      onRestoreVolunteer={handleRestoreVolunteer}
                       onAddInitiative={async (init) => { await handleAddInitiative(init); return true; }}
                       onCopyInitiative={handleCopyInitiative}
                       onAddExpense={handleAddExpense}
@@ -2335,7 +2493,10 @@ export default function App() {
                   onOpenLogin={(role) => {
                     setCurrentRole(role);
                     setActiveMainTab('system');
+                    navigatePublicPath('/login');
                   }}
+                  initialRoutePath={browserFullPath}
+                  onNavigatePath={navigatePublicPath}
                   onRegisterVolunteer={handleRegisterVolunteer}
                   onSubmitVolunteerApplication={handleSubmitVolunteerApplication}
                   onRegisterBeneficiary={handleRegisterBeneficiary}

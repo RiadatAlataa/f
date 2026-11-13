@@ -41,7 +41,8 @@ import {
   executePostgresTransactionMutation,
   getPostgresHealthReport,
   bootstrapCleanPostgresSystemState,
-  normalizeSystemStateCollections
+  normalizeSystemStateCollections,
+  recordSqlAuditLog
 } from "./server/postgres";
 import { writeCoordinator } from "./server/writeLock";
 import { backupEngine } from "./server/backupEngine";
@@ -4435,6 +4436,276 @@ export function invalidateUserSessions(userId: string): number {
   return count;
 }
 
+const CANONICAL_SITE_ORIGIN = "https://www.riadataleata.com";
+
+export function isRecordActive(rec: any): boolean {
+  if (!rec) return false;
+  if (rec.isArchived === true) return false;
+  if (rec.status === "archived" || rec.status === "deactivated") return false;
+  return true;
+}
+
+function recalculateAllTeamMemberCounts(db: any) {
+  if (!db || !Array.isArray(db.teams)) return;
+  const activeVolunteers = (db.volunteers || []).filter((v: any) => isRecordActive(v) && v.status !== "suspended");
+  db.teams.forEach((team: any) => {
+    if (!team) return;
+    team.membersCount = activeVolunteers.filter((v: any) => v.teamId === team.id).length;
+  });
+}
+
+function escapeXml(str: string): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function escapeHtmlAttr(str: string): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function toIsoDateOnly(val?: string): string {
+  if (!val) return new Date().toISOString().split("T")[0];
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return new Date().toISOString().split("T")[0];
+  return d.toISOString().split("T")[0];
+}
+
+export function generateSitemapXml(db: any): string {
+  const today = new Date().toISOString().split("T")[0];
+  const entries: Array<{ loc: string; lastmod: string; changefreq: string; priority: string }> = [];
+  const seen = new Set<string>();
+
+  const pushUrl = (pathPart: string, lastmod?: string, changefreq: string = "weekly", priority: string = "0.7") => {
+    const clean = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
+    const fullUrl = `${CANONICAL_SITE_ORIGIN}${clean}`;
+    if (seen.has(fullUrl)) return;
+    seen.add(fullUrl);
+    entries.push({
+      loc: fullUrl,
+      lastmod: toIsoDateOnly(lastmod),
+      changefreq,
+      priority,
+    });
+  };
+
+  // Core public indexable routes
+  pushUrl("/", today, "daily", "1.0");
+  pushUrl("/opportunities", today, "daily", "0.9");
+  pushUrl("/gallery", today, "weekly", "0.8");
+  pushUrl("/register/beneficiary", today, "monthly", "0.7");
+  pushUrl("/register/volunteer", today, "monthly", "0.7");
+
+  // Published & approved volunteer teams
+  (db?.teams || []).forEach((team: any) => {
+    if (!team || !team.id) return;
+    const isApproved = !team.status || team.status === "active" || team.status === "approved";
+    const isPublished = team.showOnHomepage !== false;
+    if (isApproved && isPublished && isRecordActive(team)) {
+      pushUrl(`/teams/${encodeURIComponent(team.id)}`, team.approvedAt || team.updatedAt || today, "weekly", "0.8");
+    }
+  });
+
+  // Public active volunteer initiatives / opportunities
+  (db?.initiatives || []).forEach((init: any) => {
+    if (!init || !init.id) return;
+    const isPublic = init.isPublic !== false && init.scope !== "private" && init.registrationStatus !== "archived" && isRecordActive(init);
+    if (isPublic) {
+      pushUrl(`/opportunities/${encodeURIComponent(init.id)}`, init.date || today, "weekly", "0.8");
+    }
+  });
+
+  // Public news items
+  (db?.news || []).forEach((item: any) => {
+    if (!item || !item.id) return;
+    if (item.status !== "draft" && isRecordActive(item)) {
+      pushUrl(`/news/${encodeURIComponent(item.id)}`, item.date || today, "monthly", "0.7");
+    }
+  });
+
+  const urlTags = entries
+    .map(
+      (e) =>
+        `  <url>\n    <loc>${escapeXml(e.loc)}</loc>\n    <lastmod>${escapeXml(e.lastmod)}</lastmod>\n    <changefreq>${escapeXml(e.changefreq)}</changefreq>\n    <priority>${escapeXml(e.priority)}</priority>\n  </url>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlTags}\n</urlset>\n`;
+}
+
+export function generateRobotsTxt(): string {
+  return [
+    "User-agent: *",
+    "Allow: /",
+    "Disallow: /login",
+    "Disallow: /auth",
+    "Disallow: /admin",
+    "Disallow: /dashboard",
+    "Disallow: /portal",
+    "Disallow: /api/",
+    "",
+    `Sitemap: ${CANONICAL_SITE_ORIGIN}/sitemap.xml`,
+    "",
+  ].join("\n");
+}
+
+export function isPrivateNoIndexPath(reqPath: string): boolean {
+  const clean = (reqPath || "/").split("?")[0].replace(/\/+$/, "") || "/";
+  return ["/login", "/auth", "/admin", "/dashboard", "/portal"].some(
+    (p) => clean === p || clean.startsWith(`${p}/`)
+  );
+}
+
+export function injectSeoIntoHtml(html: string, reqPath: string, db: any): string {
+  try {
+    const cleanPath = (reqPath || "/").split("?")[0].replace(/\/+$/, "") || "/";
+    const settings = db?.homeSettings || {};
+    const assocName = settings.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
+    const defaultDesc =
+      settings.heroDescAr ||
+      settings.aboutUsAr ||
+      "البوابة الرسمية لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة - المبادرات التطوعية، الفرق التطوعية، ورعاية المستفيدين.";
+
+    let title = `${assocName} | البوابة الرسمية`;
+    let description = defaultDesc.slice(0, 160);
+    let canonicalPath = cleanPath;
+    let robotsContent = "index, follow";
+    let ogType = "website";
+
+    if (isPrivateNoIndexPath(cleanPath)) {
+      title = `بوابة الدخول والنظام الإداري | ${assocName}`;
+      description = `بوابة الوصول الخاصة بمنسوبي ومستفيدي ومتطوعي ${assocName}.`;
+      robotsContent = "noindex, nofollow";
+    } else if (cleanPath === "/register/beneficiary") {
+      title = `الانضمام كمستفيد | ${assocName}`;
+      description = `تقديم طلب تسجيل مستفيد جديد في ${assocName} بالعسيلة بمكة المكرمة.`;
+    } else if (cleanPath === "/register/volunteer") {
+      title = `الانضمام كمتطوع | ${assocName}`;
+      description = `بوابة التطوع الرسمية والانضمام إلى الفرق التطوعية في ${assocName}.`;
+    } else if (cleanPath === "/opportunities") {
+      title = `الفرص والمبادرات التطوعية | ${assocName}`;
+      description = `تصفح الفرص التطوعية والمبادرات المجتمعية المعتمدة لدى ${assocName}.`;
+    } else if (cleanPath === "/gallery") {
+      title = `معرض الصور والمركز الإعلامي | ${assocName}`;
+      description = `صور وفيديوهات توثيق المبادرات والفعاليات المجتمعية في ${assocName}.`;
+    } else if (cleanPath.startsWith("/teams/")) {
+      const teamId = decodeURIComponent(cleanPath.slice("/teams/".length));
+      const team = (db?.teams || []).find((t: any) => t.id === teamId);
+      if (team) {
+        title = `${team.nameAr || team.name || "فريق تطوعي"} | الفرق التطوعية - ${assocName}`;
+        description = (team.descriptionAr || team.vision || defaultDesc).slice(0, 160);
+      }
+    } else if (cleanPath.startsWith("/opportunities/")) {
+      const oppId = decodeURIComponent(cleanPath.slice("/opportunities/".length));
+      const opp = (db?.initiatives || []).find((i: any) => i.id === oppId || i.opportunityCode === oppId);
+      if (opp) {
+        title = `${opp.titleAr || opp.title || opp.name || "فرصة تطوعية"} | ${assocName}`;
+        description = (opp.descriptionAr || opp.description || defaultDesc).slice(0, 160);
+        ogType = "article";
+      }
+    } else if (cleanPath.startsWith("/news/")) {
+      const newsId = decodeURIComponent(cleanPath.slice("/news/".length));
+      const item = (db?.news || []).find((n: any) => n.id === newsId);
+      if (item) {
+        title = `${item.titleAr} | أخبار ${assocName}`;
+        description = (item.bodyAr || defaultDesc).slice(0, 160);
+        ogType = "article";
+      }
+    } else if (cleanPath !== "/") {
+      canonicalPath = cleanPath;
+    }
+
+    const canonicalUrl = `${CANONICAL_SITE_ORIGIN}${canonicalPath === "/" ? "/" : canonicalPath}`;
+
+    // Verified-only Schema.org JSON-LD (no invented facts)
+    const orgSchema = {
+      "@context": "https://schema.org",
+      "@type": "NGO",
+      "@id": `${CANONICAL_SITE_ORIGIN}/#organization`,
+      name: assocName,
+      alternateName: settings.associationNameEn || "Riadat Al-Ata Association",
+      url: CANONICAL_SITE_ORIGIN,
+      logo: `${CANONICAL_SITE_ORIGIN}/pwa-512x512.png`,
+      description: defaultDesc,
+      identifier: settings.licenseNumber || "1000888600",
+      telephone: settings.contactPhone || "0541820904",
+      email: settings.contactEmail || "info@riadataleata.org.sa",
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: settings.contactLocationAr || "مكة المكرمة - مخطط العسيلة",
+        addressLocality: "مكة المكرمة",
+        addressCountry: "SA",
+      },
+    };
+
+    const headExtras = [
+      `<link rel="canonical" href="${escapeHtmlAttr(canonicalUrl)}" />`,
+      `<meta name="robots" content="${escapeHtmlAttr(robotsContent)}" />`,
+      `<meta property="og:url" content="${escapeHtmlAttr(canonicalUrl)}" />`,
+      `<meta property="og:type" content="${escapeHtmlAttr(ogType)}" />`,
+      `<meta property="og:locale" content="ar_SA" />`,
+      robotsContent.startsWith("index")
+        ? `<script id="riadat-seo-jsonld" type="application/ld+json">${JSON.stringify(orgSchema)}</script>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n    ");
+
+    let out = html
+      .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtmlAttr(title)}</title>`)
+      .replace(
+        /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
+        `<meta name="description" content="${escapeHtmlAttr(description)}" />`
+      )
+      .replace(
+        /<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i,
+        `<meta property="og:title" content="${escapeHtmlAttr(title)}" />`
+      )
+      .replace(
+        /<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i,
+        `<meta property="og:description" content="${escapeHtmlAttr(description)}" />`
+      );
+
+    out = out.replace(/<\/head>/i, `    ${headExtras}\n  </head>`);
+
+    // Provide lightweight semantic noscript content on public routes for non-JS crawlers
+    if (robotsContent.startsWith("index") && !out.includes('id="seo-public-snapshot"')) {
+      const publicTeams = (db?.teams || [])
+        .filter((t: any) => (!t.status || t.status === "active" || t.status === "approved") && t.showOnHomepage !== false && isRecordActive(t))
+        .slice(0, 12);
+      const publicOpps = (db?.initiatives || [])
+        .filter((i: any) => i.isPublic !== false && i.scope !== "private" && i.registrationStatus !== "archived" && isRecordActive(i))
+        .slice(0, 10);
+
+      const snapshotHtml = `<noscript id="seo-public-snapshot"><main dir="rtl" lang="ar"><h1>${escapeHtmlAttr(assocName)}</h1><p>${escapeHtmlAttr(description)}</p><nav><a href="${CANONICAL_SITE_ORIGIN}/">الرئيسية</a> | <a href="${CANONICAL_SITE_ORIGIN}/opportunities">الفرص التطوعية</a> | <a href="${CANONICAL_SITE_ORIGIN}/gallery">معرض الصور</a> | <a href="${CANONICAL_SITE_ORIGIN}/register/beneficiary">تسجيل مستفيد</a> | <a href="${CANONICAL_SITE_ORIGIN}/register/volunteer">تسجيل متطوع</a></nav>${
+        publicTeams.length > 0
+          ? `<section><h2>الفرق التطوعية</h2><ul>${publicTeams
+              .map((t: any) => `<li><a href="${CANONICAL_SITE_ORIGIN}/teams/${encodeURIComponent(t.id)}">${escapeHtmlAttr(t.nameAr || t.name)}</a></li>`)
+              .join("")}</ul></section>`
+          : ""
+      }${
+        publicOpps.length > 0
+          ? `<section><h2>الفرص والمبادرات التطوعية</h2><ul>${publicOpps
+              .map((o: any) => `<li><a href="${CANONICAL_SITE_ORIGIN}/opportunities/${encodeURIComponent(o.id)}">${escapeHtmlAttr(o.titleAr || o.title || o.name || o.id)}</a></li>`)
+              .join("")}</ul></section>`
+          : ""
+      }</main></noscript>`;
+      out = out.replace(/<\/body>/i, `    ${snapshotHtml}\n  </body>`);
+    }
+
+    return out;
+  } catch {
+    return html;
+  }
+}
+
 // --- IN-MEMORY SLIDING RATE LIMITER ---
 interface RateLimitBucket {
   count: number;
@@ -4534,6 +4805,7 @@ function getUserAccessContext(req: any) {
       // Dynamically sync latest role and department configuration
       if (userAcc.role) userRole = userAcc.role;
       if (userAcc.primaryDepartmentId) departmentId = userAcc.primaryDepartmentId;
+      if (userAcc.teamId) teamId = userAcc.teamId;
     }
   }
 
@@ -4559,14 +4831,14 @@ function getUserAccessContext(req: any) {
 
   if (db.volunteers && Array.isArray(db.volunteers)) {
     const vol = db.volunteers.find((v: any) => v && (v.id === userId || (nationalId && v.nationalId === nationalId)));
-    if (vol && (vol.status === 'suspended' || vol.status === 'inactive' || vol.loginDisabled === true)) {
+    if (vol && (!isRecordActive(vol) || vol.status === 'suspended' || vol.status === 'inactive' || vol.loginDisabled === true)) {
       destroyServerSession(sessionToken);
       return {
         isAuthenticated: false,
         isSuperAdmin: false,
         role: 'public',
         userId: 'public',
-        userName: 'حساب موقوف',
+        userName: 'حساب موقوف أو مؤرشف',
         jobTitle: 'حساب معطل',
         primaryDepartmentId: '',
         primaryDepartmentName: '',
@@ -4579,14 +4851,14 @@ function getUserAccessContext(req: any) {
 
   if (db.beneficiaries && Array.isArray(db.beneficiaries)) {
     const ben = db.beneficiaries.find((b: any) => b && (b.id === userId || (nationalId && b.nationalId === nationalId)));
-    if (ben && (ben.status === 'suspended' || ben.status === 'rejected' || ben.loginDisabled === true)) {
+    if (ben && (!isRecordActive(ben) || ben.status === 'suspended' || ben.status === 'rejected' || ben.loginDisabled === true)) {
       destroyServerSession(sessionToken);
       return {
         isAuthenticated: false,
         isSuperAdmin: false,
         role: 'public',
         userId: 'public',
-        userName: 'حساب موقوف',
+        userName: 'حساب موقوف أو مؤرشف',
         jobTitle: 'حساب معطل',
         primaryDepartmentId: '',
         primaryDepartmentName: '',
@@ -4601,7 +4873,7 @@ function getUserAccessContext(req: any) {
   const accessEntry = (db.userDepartmentAccess || []).find((u: any) => 
     (userId && (u.userId === userId || u.id === userId || (u.email && u.email.toLowerCase() === String(userId).toLowerCase()))) ||
     (nationalId && u.nationalId === nationalId) ||
-    (departmentId && (u.userId === `depadmin-${departmentId}` || u.primaryDepartmentId === departmentId))
+    (userRole === 'department_admin' && departmentId && (u.userId === `depadmin-${departmentId}` || u.primaryDepartmentId === departmentId))
   );
 
   if (accessEntry) {
@@ -4695,6 +4967,26 @@ function getUserAccessContext(req: any) {
         'view_reports', 'cross_department_access', 'all_permissions'
       ],
       mustChangePassword: false
+    };
+  }
+
+  // 3.5 Team Leader Role Access Context
+  if (userRole === 'leader' || (userId && typeof userId === 'string' && userId.startsWith('leader-'))) {
+    const resolvedTeamId = teamId || (typeof userId === 'string' && userId.startsWith('leader-') ? userId.slice('leader-'.length) : '');
+    const teamObj = (db.teams || []).find((t: any) => t.id === resolvedTeamId);
+    return {
+      isAuthenticated: true,
+      isSuperAdmin: false,
+      role: 'leader',
+      userId: userId || (resolvedTeamId ? `leader-${resolvedTeamId}` : 'leader'),
+      userName: activeSession?.userName || activeSession?.user?.name || teamObj?.leaderName || 'قائد الفريق التطوعي',
+      jobTitle: teamObj ? `قائد ${teamObj.nameAr || teamObj.name || 'الفريق التطوعي'}` : 'قائد فريق تطوعي',
+      primaryDepartmentId: 'dep-5',
+      primaryDepartmentName: 'إدارة التطوع',
+      allowedDepartmentIds: ['dep-5'],
+      teamId: resolvedTeamId,
+      permissions: ['view_department', 'manage_tasks', 'view_team'],
+      mustChangePassword: Boolean((activeSession?.user as any)?.mustChangePassword)
     };
   }
 
@@ -5215,7 +5507,12 @@ function filterDatabaseForUser(db: any, context: any) {
       financialTransactions: [],
       storeDonations: [],
       volunteers: [],
-      teams: (db.teams || []).map((t: any) => ({ id: t.id, nameAr: t.nameAr, field: t.field })),
+      teams: (db.teams || [])
+        .filter((t: any) => (!t.status || t.status === 'active' || t.status === 'approved') && isRecordActive(t))
+        .map((t: any) => ({
+          ...t,
+          membersCount: (db.volunteers || []).filter((v: any) => isRecordActive(v) && v.status !== 'suspended' && v.teamId === t.id).length
+        })),
       userDepartmentAccess: [],
       permissionChangeLogs: [],
       accessAuditLogs: []
@@ -5301,9 +5598,9 @@ function filterDatabaseForUser(db: any, context: any) {
       : [],
 
     // Volunteers & teams:
-    // Volunteers only see sanitized volunteer knight leaderboard (no private phones/nationalIds of others)
+    // Volunteers only see active volunteer knight leaderboard (no archived accounts or private nationalIds)
     volunteers: (context.role === 'volunteer')
-      ? (db.volunteers || []).map((v: any) => ({
+      ? (db.volunteers || []).filter((v: any) => isRecordActive(v) && v.status !== 'suspended').map((v: any) => ({
           id: v.id,
           name: v.name,
           points: v.points || 0,
@@ -5313,11 +5610,14 @@ function filterDatabaseForUser(db: any, context: any) {
           ...(v.id === context.userId ? { phone: v.phone, email: v.email, nationalId: v.nationalId, fileNumber: v.fileNumber || v.file_number } : {})
         }))
       : (isLeader && teamId)
-        ? (db.volunteers || []).filter((v: any) => v.teamId === teamId)
-        : (allowedDepts.includes('dep-5') || context.isSuperAdmin)
+        ? (db.volunteers || []).filter((v: any) => v.teamId === teamId && isRecordActive(v))
+        : (allowedDepts.includes('dep-5') || context.isSuperAdmin || context.isOperationsManager)
           ? (db.volunteers || [])
           : [],
-    teams: (db.teams || []),
+    teams: (db.teams || []).map((t: any) => ({
+      ...t,
+      membersCount: (db.volunteers || []).filter((v: any) => isRecordActive(v) && v.status !== 'suspended' && v.teamId === t.id).length
+    })),
     initiatives: (context.role === 'volunteer')
       ? (db.initiatives || [])
       : (isLeader && teamId)
@@ -5441,9 +5741,9 @@ app.get(["/api/health", "/api/health/", "/health", "/health/"], async (req, res)
         stateChecksum: pgReport.checksum,
         latencyMs: pgReport.latencyMs,
         departmentsCount: (db?.departments || []).length,
-        volunteersCount: (db?.volunteers || []).length,
+        volunteersCount: (db?.volunteers || []).filter((v: any) => isRecordActive(v)).length,
         initiativesCount: (db?.initiatives || []).length,
-        beneficiariesCount: (db?.beneficiaries || []).length
+        beneficiariesCount: (db?.beneficiaries || []).filter((b: any) => isRecordActive(b)).length
       }
     });
   }
@@ -5482,11 +5782,29 @@ app.get(["/api/health", "/api/health/", "/health", "/health/"], async (req, res)
     database: {
       status: "connected",
       departmentsCount: (db?.departments || []).length,
-      volunteersCount: (db?.volunteers || []).length,
+      volunteersCount: (db?.volunteers || []).filter((v: any) => isRecordActive(v)).length,
       initiativesCount: (db?.initiatives || []).length,
-      beneficiariesCount: (db?.beneficiaries || []).length
+      beneficiariesCount: (db?.beneficiaries || []).filter((b: any) => isRecordActive(b)).length
     }
   });
+});
+
+// Public Dynamic SEO Sitemap & Robots.txt
+app.get(["/sitemap.xml", "/api/sitemap.xml"], (req, res) => {
+  res.setHeader("Content-Type", "application/xml; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
+  try {
+    const db = readDb();
+    return res.status(200).send(generateSitemapXml(db));
+  } catch (err: any) {
+    return res.status(200).send(generateSitemapXml(defaultDb));
+  }
+});
+
+app.get("/robots.txt", (req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  return res.status(200).send(generateRobotsTxt());
 });
 
 // Dedicated Database & System Health Check Endpoint
@@ -8689,32 +9007,292 @@ app.post("/api/db/volunteers/request-data-change", async (req, res) => {
   }
 });
 
-// 6. Volunteers Delete
-app.post("/api/db/volunteers/delete", async (req, res) => {
+// 6. Volunteers Delete / Archive / Deactivate / Restore
+function inspectVolunteerDependencies(db: any, vol: any) {
+  const attendanceCount = (db.attendance || []).filter((a: any) => a.volunteerId === vol.id).length;
+  const evaluationsCount = (db.evaluations || []).filter((e: any) => e.volunteerId === vol.id).length;
+  const certificatesCount = (db.issuedCertificates || []).filter((c: any) => c.volunteerId === vol.id).length;
+  const cardsCount =
+    (db.issuedVolunteerCards || []).filter((c: any) => c.volunteerId === vol.id).length +
+    (db.volunteerIssuances || []).filter((c: any) => c.volunteerId === vol.id).length;
+  const initiativesCount = (db.initiatives || []).filter(
+    (i: any) =>
+      (Array.isArray(i.acceptedVolunteerIds) && i.acceptedVolunteerIds.includes(vol.id)) ||
+      (Array.isArray(i.applicantVolunteerIds) && i.applicantVolunteerIds.includes(vol.id)) ||
+      (Array.isArray(i.waitlistVolunteerIds) && i.waitlistVolunteerIds.includes(vol.id))
+  ).length;
+  const points = Number(vol.points || 0);
+  const hours = Number(vol.volunteerHours || vol.hours || 0);
+  const hasOfficialRecords =
+    attendanceCount > 0 ||
+    evaluationsCount > 0 ||
+    certificatesCount > 0 ||
+    cardsCount > 0 ||
+    initiativesCount > 0 ||
+    points > 0 ||
+    hours > 0;
+
+  return {
+    attendanceCount,
+    evaluationsCount,
+    certificatesCount,
+    cardsCount,
+    initiativesCount,
+    points,
+    hours,
+    hasOfficialRecords,
+  };
+}
+
+async function handleVolunteerArchiveOrDelete(req: any, res: any) {
   const auth = checkDepartmentPermission(req, res, 'dep-5', 'delete_data', 'ملف المتطوع');
   if (!auth.allowed) return;
 
-  const { id } = req.body;
-  if (!id) return res.status(400).json({ error: "Missing volunteer id" });
+  if (auth.context.role === 'leader') {
+    return res.status(403).json({
+      error: "غير مصرح: لا يملك قائد الفريق صلاحية حذف أو أرشفة حساب المتطوع من الجمعية. يمكنه فقط رفع طلب إزالة من الفريق لإدارة التطوع.",
+      code: "FORBIDDEN_LEADER_ACCOUNT_DELETE"
+    });
+  }
+
+  const id = req.params?.id || req.body?.id;
+  const actionType = (req.body?.actionType || (req.method === 'DELETE' ? 'archive' : 'archive')) as
+    | 'deactivate'
+    | 'archive'
+    | 'permanent_delete';
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!id) return res.status(400).json({ error: "معرف المتطوع مطلوب." });
+  if (!['deactivate', 'archive', 'permanent_delete'].includes(actionType)) {
+    return res.status(400).json({ error: "نوع الإجراء غير صالح." });
+  }
+  if (!reason) {
+    return res.status(400).json({ error: "يرجى إدخال سبب الحذف أو الأرشفة قبل المتابعة." });
+  }
+  if (id === auth.context.userId) {
+    return res.status(403).json({ error: "لا يمكنك حذف أو تعطيل حسابك الشخصي أثناء الجلسة." });
+  }
 
   try {
-    await mutateDb((db) => {
+    let auditPayload: any = null;
+    const outcome = await mutateDb(async (db) => {
+      db.volunteers = db.volunteers || [];
       const vol = db.volunteers.find((v: any) => v.id === id);
-      db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
-      recordDeletedEntity(db, id, "volunteers", auth.context.userName || "إدارة التطوع");
+      if (!vol) {
+        return { status: 404, payload: { error: "ملف المتطوع غير موجود في النظام." } };
+      }
 
+      // Prevent deleting upper-admin or staff accounts via volunteer endpoint
+      const protectedAccess = (db.userDepartmentAccess || []).find(
+        (u: any) =>
+          u &&
+          (u.userId === vol.id || (vol.nationalId && u.nationalId === vol.nationalId)) &&
+          ['admin', 'operations_manager', 'department_admin', 'employee'].includes(u.role)
+      );
+      if (protectedAccess) {
+        return {
+          status: 403,
+          payload: { error: "لا يمكن حذف حساب موظف أو مسؤول إداري من واجهة المتطوعين." }
+        };
+      }
+
+      const deps = inspectVolunteerDependencies(db, vol);
+
+      if (actionType === 'permanent_delete') {
+        const isHighPrivilege =
+          auth.context.isSuperAdmin ||
+          auth.context.isOperationsManager ||
+          auth.context.role === 'admin' ||
+          auth.context.role === 'operations_manager';
+        if (!isHighPrivilege) {
+          return {
+            status: 403,
+            payload: { error: "الحذف النهائي محصور على الإدارة العليا ومدير العمليات فقط." }
+          };
+        }
+        if (deps.hasOfficialRecords) {
+          return {
+            status: 400,
+            payload: {
+              error: "لا يمكن الحذف النهائي لوجود سجلات رسمية مرتبطة بالمتطوع (نقاط، حضور، مبادرات، شهادات أو بطاقات). يرجى استخدام خيار الأرشفة للحفاظ على سلامة السجل التاريخي.",
+              code: "DEPENDENCIES_EXIST",
+              dependencies: deps
+            }
+          };
+        }
+        db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
+        recordDeletedEntity(db, id, "volunteers", auth.context.userName || "إدارة التطوع");
+      } else {
+        if (!isRecordActive(vol) && vol.accountActionType === actionType) {
+          return {
+            status: 409,
+            payload: { error: "حساب المتطوع مؤرشف أو معطل مسبقاً." }
+          };
+        }
+        const nowIso = new Date().toISOString();
+        if (!vol.previousStatus && isRecordActive(vol)) {
+          vol.previousStatus = vol.status || 'active';
+        }
+        vol.isArchived = true;
+        vol.status = actionType === 'deactivate' ? 'deactivated' : 'archived';
+        vol.loginDisabled = true;
+        vol.accountActionType = actionType;
+        vol.archivedAt = nowIso;
+        vol.archivedBy = auth.context.userName || "إدارة التطوع";
+        vol.archivedById = auth.context.userId;
+        vol.archiveReason = reason;
+        if (actionType === 'deactivate') {
+          vol.deactivatedAt = nowIso;
+          vol.deactivatedBy = auth.context.userName || "إدارة التطوع";
+        }
+      }
+
+      recalculateAllTeamMemberCounts(db);
+      invalidateUserSessions(id);
+
+      const actionLabel =
+        actionType === 'permanent_delete'
+          ? 'حذف نهائي لملف المتطوع'
+          : actionType === 'deactivate'
+            ? 'تعطيل حساب المتطوع'
+            : 'أرشفة ملف المتطوع';
+
+      db.logs = db.logs || [];
       db.logs.unshift({
         id: "log-" + Date.now(),
         timestamp: new Date().toISOString(),
         user: auth.context.userName || "إدارة التطوع",
-        action: `حذف ملف المتطوع: ${vol ? vol.name : id}`,
+        action: `${actionLabel}: (${vol.name} - ملف: ${vol.fileNumber || vol.membershipNumber || id}) - السبب: ${reason}`,
         ip: req.ip || "127.0.0.1",
         device: req.headers["user-agent"] || "System"
       });
+
+      db.accessAuditLogs = db.accessAuditLogs || [];
+      db.accessAuditLogs.unshift({
+        id: "audit-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+        timestamp: new Date().toISOString(),
+        userId: auth.context.userId,
+        userName: auth.context.userName,
+        userRole: auth.context.role,
+        userDepartmentId: auth.context.primaryDepartmentId || 'dep-5',
+        targetDepartmentId: 'dep-5',
+        action: `volunteer_${actionType}`,
+        resource: `متطوع: ${vol.name}`,
+        endpoint: req.originalUrl || req.path,
+        status: 'allowed',
+        ip: req.ip || '127.0.0.1',
+        device: (req.headers['user-agent'] || 'Web').slice(0, 100),
+        notes: reason
+      });
+
+      auditPayload = { volName: vol.name, deps, actionType };
+      return { status: 200, payload: { ok: true, actionType, volunteerId: id, dependencies: deps, db: filterDatabaseForUser(db, auth.context) } };
     });
-    res.json(readDb());
+
+    if (outcome.status === 200) {
+      await recordSqlAuditLog({
+        actorId: auth.context.userId,
+        actorName: auth.context.userName,
+        actorRole: auth.context.role,
+        action: `volunteer_${actionType}`,
+        entityType: 'volunteer',
+        entityId: id,
+        departmentId: 'dep-5',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        status: 'success',
+        details: { reason, ...auditPayload }
+      });
+    }
+
+    return res.status(outcome.status).json(outcome.payload);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to delete volunteer", details: err?.message });
+    return res.status(500).json({ error: "فشلت عملية معالجة حساب المتطوع", details: err?.message });
+  }
+}
+
+app.post("/api/db/volunteers/delete", handleVolunteerArchiveOrDelete);
+app.post("/api/db/volunteers/archive-or-delete", handleVolunteerArchiveOrDelete);
+
+app.post("/api/db/volunteers/restore", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, 'dep-5', 'edit_data', 'استعادة ملف متطوع');
+  if (!auth.allowed) return;
+  if (auth.context.role === 'leader') {
+    return res.status(403).json({ error: "غير مصرح لقائد الفريق باستعادة حسابات المتطوعين المؤرشفة." });
+  }
+
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ error: "معرف المتطوع مطلوب." });
+
+  try {
+    const outcome = await mutateDb(async (db) => {
+      db.volunteers = db.volunteers || [];
+      const vol = db.volunteers.find((v: any) => v.id === id);
+      if (!vol) {
+        return { status: 404, payload: { error: "ملف المتطوع غير موجود." } };
+      }
+      if (isRecordActive(vol)) {
+        return { status: 409, payload: { error: "حساب المتطوع نشط بالفعل ولا يحتاج لاستعادة." } };
+      }
+
+      // Ensure no active duplicate nationalId / membershipNumber / fileNumber
+      const dup = db.volunteers.find(
+        (other: any) =>
+          other.id !== vol.id &&
+          isRecordActive(other) &&
+          ((vol.nationalId && other.nationalId === vol.nationalId) ||
+            (vol.membershipNumber && other.membershipNumber === vol.membershipNumber) ||
+            (vol.fileNumber && other.fileNumber === vol.fileNumber))
+      );
+      if (dup) {
+        return {
+          status: 409,
+          payload: { error: `يوجد متطوع نشط آخر بنفس رقم الهوية أو رقم العضوية (${dup.name}).` }
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      vol.isArchived = false;
+      vol.loginDisabled = false;
+      vol.status = vol.previousStatus && !['archived', 'deactivated', 'suspended'].includes(vol.previousStatus)
+        ? vol.previousStatus
+        : 'active';
+      vol.restoredAt = nowIso;
+      vol.restoredBy = auth.context.userName || "إدارة التطوع";
+
+      recalculateAllTeamMemberCounts(db);
+
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: nowIso,
+        user: auth.context.userName || "إدارة التطوع",
+        action: `استعادة حساب المتطوع من الأرشيف: ${vol.name} (رقم الملف: ${vol.fileNumber || vol.membershipNumber || id})`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+
+      return { status: 200, payload: { ok: true, volunteer: vol, db: filterDatabaseForUser(db, auth.context) } };
+    });
+
+    if (outcome.status === 200) {
+      await recordSqlAuditLog({
+        actorId: auth.context.userId,
+        actorName: auth.context.userName,
+        actorRole: auth.context.role,
+        action: 'volunteer_restore',
+        entityType: 'volunteer',
+        entityId: id,
+        departmentId: 'dep-5',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        status: 'success'
+      });
+    }
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ error: "فشلت استعادة حساب المتطوع", details: err?.message });
   }
 });
 
@@ -10190,7 +10768,13 @@ app.post("/api/db/auth/login", (req, res) => {
     return verifyPasswordAgainstHash(password, targetPassword);
   };
 
-  const checkStatus = (status?: string) => {
+  const checkStatus = (status?: string, isArchived?: boolean) => {
+    if (isArchived || status === "archived") {
+      return { ok: false, error: "هذا الحساب مؤرشف ولا يمكن تسجيل الدخول إليه. السجلات التاريخية محفوظة لدى الجمعية." };
+    }
+    if (status === "deactivated") {
+      return { ok: false, error: "تم تعطيل هذا الحساب من قِبل الإدارة، يرجى التواصل مع إدارة الجمعية." };
+    }
     if (status === "suspended" || status === "banned") {
       return { ok: false, error: "تم إيقاف الحساب مؤقتًا، يرجى التواصل مع الإدارة." };
     }
@@ -10389,6 +10973,7 @@ app.post("/api/db/auth/login", (req, res) => {
       jobTitle: accessUser.jobTitle || "موظف",
       departmentId: accessUser.primaryDepartmentId || "dep-1",
       departmentName: accessUser.primaryDepartmentName || "إدارة عامة",
+      teamId: accessUser.teamId || (accessUser.role === 'leader' ? accessUser.userId : undefined),
       permissions: accessUser.permissions || ["view_department"],
       allowedDepartmentIds: accessUser.allowedDepartmentIds || [accessUser.primaryDepartmentId || "dep-1"],
       allowedPages: accessUser.allowedPages || [],
@@ -10612,11 +11197,11 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (vol) {
-    if (vol.loginDisabled || vol.hasLoginAccount === false) {
-      logLoginAttempt('denied', { id: vol.id, name: vol.name, role: 'volunteer' }, 'حساب المتطوع معطل');
-      return res.status(403).json({ error: "تم إلغاء حساب تسجيل الدخول لهذا المتطوع، مع بقاء ملف التطوع وسجل ساعاته محفوظاً في الجمعية." });
+    if (vol.isArchived || vol.status === "archived" || vol.status === "deactivated" || vol.loginDisabled || vol.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: vol.id, name: vol.name, role: 'volunteer' }, 'حساب المتطوع مؤرشف أو معطل');
+      return res.status(403).json({ error: "تم أرشفة أو تعطيل حساب تسجيل الدخول لهذا المتطوع، مع بقاء السجل التاريخي محفوظاً في الجمعية." });
     }
-    const statusCheck = checkStatus(vol.status);
+    const statusCheck = checkStatus(vol.status, vol.isArchived);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
     const pwdToVerify = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
@@ -10676,11 +11261,11 @@ app.post("/api/db/auth/login", (req, res) => {
   );
 
   if (ben) {
-    if (ben.loginDisabled || ben.hasLoginAccount === false) {
-      logLoginAttempt('denied', { id: ben.id, name: ben.name, role: 'beneficiary' }, 'حساب المستفيد معطل');
-      return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول للمستفيد، مع بقاء ملف الرعاية والطلبات والمرفقات محفوظة بالكامل في الجمعية." });
+    if (ben.isArchived || ben.status === "archived" || ben.status === "deactivated" || ben.loginDisabled || ben.hasLoginAccount === false) {
+      logLoginAttempt('denied', { id: ben.id, name: ben.name, role: 'beneficiary' }, 'حساب المستفيد مؤرشف أو معطل');
+      return res.status(403).json({ error: "تم أرشفة أو تعطيل حساب المستفيد، ولا يمكن تسجيل الدخول إليه. السجل التاريخي محفوظ لدى الجمعية." });
     }
-    const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status);
+    const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status, ben.isArchived);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
 
     const pwdToVerify = ben.passwordHash || ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
@@ -12563,28 +13148,7 @@ app.post("/api/volunteers/batch-create", (req, res) => {
   res.json({ status: "success", count: added.length, volunteers: added });
 });
 
-app.delete("/api/volunteers/:id", async (req, res) => {
-  const id = req.params.id;
-  try {
-    await mutateDb((db) => {
-      const vol = db.volunteers.find((v: any) => v.id === id);
-      db.volunteers = db.volunteers.filter((v: any) => v.id !== id);
-      recordDeletedEntity(db, id, "volunteers", "إدارة التطوع");
-
-      db.logs.unshift({
-        id: "log-" + Date.now(),
-        timestamp: new Date().toISOString(),
-        user: "إدارة التطوع",
-        action: `حذف ملف المتطوع: ${vol ? vol.name : id}`,
-        ip: req.ip || "127.0.0.1",
-        device: req.headers["user-agent"] || "System"
-      });
-    });
-    res.json({ status: "success" });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to delete volunteer", details: err?.message });
-  }
-});
+app.delete("/api/volunteers/:id", handleVolunteerArchiveOrDelete);
 
 // Initiatives CRUD
 app.post("/api/initiatives", (req, res) => {
@@ -14105,6 +14669,286 @@ app.post("/api/db/beneficiaries/status", (req, res) => {
   res.json(db);
 });
 
+// 20.0.1 Beneficiary Dependency Inspection, Safe Archive/Deactivate/Permanent Delete & Restore
+function inspectBeneficiaryDependencies(db: any, ben: any) {
+  const handoversCount = (db.distributionHandovers || []).filter(
+    (h: any) => h.beneficiaryId === ben.id || (ben.nationalId && h.nationalId === ben.nationalId)
+  ).length;
+  const benefitRequestsCount = (db.benefitRequests || []).filter(
+    (r: any) => r.beneficiaryId === ben.id
+  ).length;
+  const targetedDistributionsCount = (db.distributions || []).filter(
+    (d: any) => Array.isArray(d.targetedBeneficiaryIds) && d.targetedBeneficiaryIds.includes(ben.id)
+  ).length;
+  const aidHistoryCount = Array.isArray(ben.aidHistory) ? ben.aidHistory.length : 0;
+
+  return {
+    handoversCount,
+    benefitRequestsCount,
+    targetedDistributionsCount,
+    aidHistoryCount,
+    hasLinkedRecords:
+      handoversCount > 0 ||
+      benefitRequestsCount > 0 ||
+      targetedDistributionsCount > 0 ||
+      aidHistoryCount > 0,
+  };
+}
+
+async function handleBeneficiaryArchiveOrDelete(req: any, res: any) {
+  const context = getUserAccessContext(req);
+  if (!context.isAuthenticated || context.role === 'public') {
+    return res.status(401).json({ error: "يجب تسجيل الدخول لتنفيذ هذا الإجراء." });
+  }
+  if (['leader', 'volunteer', 'beneficiary'].includes(context.role)) {
+    return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية حذف أو أرشفة ملفات المستفيدين." });
+  }
+
+  const allowedDepts: string[] = context.allowedDepartmentIds || (context.primaryDepartmentId ? [context.primaryDepartmentId] : []);
+  const isHighPrivilege =
+    context.isSuperAdmin ||
+    context.isOperationsManager ||
+    context.role === 'admin' ||
+    context.role === 'operations_manager';
+  const hasBeneficiaryAccess = isHighPrivilege || allowedDepts.includes('dep-4');
+  const userPerms: string[] = context.permissions || [];
+  const hasPerm =
+    isHighPrivilege ||
+    userPerms.includes('delete_data') ||
+    userPerms.includes('edit_data') ||
+    userPerms.some((p: string) => p.includes('beneficiar') || p.includes('_delete_') || p.includes('_edit_'));
+
+  if (!hasBeneficiaryAccess || !hasPerm) {
+    return res.status(403).json({ error: "تم رفض الوصول: هذه الصلاحية محصورة لإدارة المستفيدين المخولة والإدارة العليا." });
+  }
+
+  const id = req.params?.id || req.body?.id;
+  const actionType = (req.body?.actionType || 'archive') as 'deactivate' | 'archive' | 'permanent_delete';
+  const reason = String(req.body?.reason || '').trim();
+
+  if (!id) return res.status(400).json({ error: "معرف المستفيد مطلوب." });
+  if (!['deactivate', 'archive', 'permanent_delete'].includes(actionType)) {
+    return res.status(400).json({ error: "نوع الإجراء غير صالح." });
+  }
+  if (!reason) {
+    return res.status(400).json({ error: "يرجى إدخال سبب الحذف أو الأرشفة قبل المتابعة." });
+  }
+
+  try {
+    let auditInfo: any = null;
+    const outcome = await mutateDb(async (db) => {
+      db.beneficiaries = db.beneficiaries || [];
+      const ben = db.beneficiaries.find((b: any) => b.id === id);
+      if (!ben) {
+        return { status: 404, payload: { error: "ملف المستفيد غير موجود." } };
+      }
+
+      const deps = inspectBeneficiaryDependencies(db, ben);
+
+      if (actionType === 'permanent_delete') {
+        if (!isHighPrivilege) {
+          return {
+            status: 403,
+            payload: { error: "الحذف النهائي لملفات المستفيدين متاح فقط للإدارة العليا أو مدير العمليات." }
+          };
+        }
+        if (deps.hasLinkedRecords) {
+          return {
+            status: 400,
+            payload: {
+              error: "لا يمكن الحذف النهائي لوجود مساعدات مصروفة أو طلبات أو توزيعات مرتبطة بهذا المستفيد. يرجى استخدام خيار الأرشفة للحفاظ على سلامة السجلات.",
+              code: "DEPENDENCIES_EXIST",
+              dependencies: deps
+            }
+          };
+        }
+        db.beneficiaries = db.beneficiaries.filter((b: any) => b.id !== id);
+        recordDeletedEntity(db, id, "beneficiaries", context.userName || "إدارة المستفيدين");
+      } else {
+        if (!isRecordActive(ben) && ben.accountActionType === actionType) {
+          return {
+            status: 409,
+            payload: { error: "حساب المستفيد مؤرشف أو معطل مسبقاً." }
+          };
+        }
+        const nowIso = new Date().toISOString();
+        if (!ben.previousStatus && isRecordActive(ben)) {
+          ben.previousStatus = ben.status || 'approved';
+        }
+        ben.isArchived = true;
+        ben.status = actionType === 'deactivate' ? 'deactivated' : 'archived';
+        ben.loginDisabled = true;
+        ben.accountActionType = actionType;
+        ben.archivedAt = nowIso;
+        ben.archivedBy = context.userName || "إدارة المستفيدين";
+        ben.archivedById = context.userId;
+        ben.archiveReason = reason;
+        if (actionType === 'deactivate') {
+          ben.deactivatedAt = nowIso;
+          ben.deactivatedBy = context.userName || "إدارة المستفيدين";
+        }
+      }
+
+      invalidateUserSessions(id);
+
+      const actionLabel =
+        actionType === 'permanent_delete'
+          ? 'حذف نهائي لملف المستفيد'
+          : actionType === 'deactivate'
+            ? 'تعطيل حساب المستفيد'
+            : 'أرشفة ملف المستفيد';
+
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: context.userName || "إدارة المستفيدين",
+        action: `${actionLabel}: (${ben.name} - رقم الملف: ${ben.beneficiaryNumber || id}) - السبب: ${reason}`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+
+      db.accessAuditLogs = db.accessAuditLogs || [];
+      db.accessAuditLogs.unshift({
+        id: "audit-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+        timestamp: new Date().toISOString(),
+        userId: context.userId,
+        userName: context.userName,
+        userRole: context.role,
+        userDepartmentId: context.primaryDepartmentId || 'dep-4',
+        targetDepartmentId: 'dep-4',
+        action: `beneficiary_${actionType}`,
+        resource: `مستفيد: ${ben.name}`,
+        endpoint: req.originalUrl || req.path,
+        status: 'allowed',
+        ip: req.ip || '127.0.0.1',
+        device: (req.headers['user-agent'] || 'Web').slice(0, 100),
+        notes: reason
+      });
+
+      auditInfo = { benName: ben.name, deps, actionType };
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          actionType,
+          beneficiaryId: id,
+          dependencies: deps,
+          db: filterDatabaseForUser(db, context)
+        }
+      };
+    });
+
+    if (outcome.status === 200) {
+      await recordSqlAuditLog({
+        actorId: context.userId,
+        actorName: context.userName,
+        actorRole: context.role,
+        action: `beneficiary_${actionType}`,
+        entityType: 'beneficiary',
+        entityId: id,
+        departmentId: 'dep-4',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        status: 'success',
+        details: { reason, ...auditInfo }
+      });
+    }
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ error: "فشلت عملية معالجة ملف المستفيد", details: err?.message });
+  }
+}
+
+app.post("/api/db/beneficiaries/archive-or-delete", handleBeneficiaryArchiveOrDelete);
+app.post("/api/db/beneficiaries/delete", handleBeneficiaryArchiveOrDelete);
+
+app.post("/api/db/beneficiaries/restore", async (req, res) => {
+  const context = getUserAccessContext(req);
+  if (!context.isAuthenticated || context.role === 'public') {
+    return res.status(401).json({ error: "يجب تسجيل الدخول." });
+  }
+  const allowedDepts: string[] = context.allowedDepartmentIds || (context.primaryDepartmentId ? [context.primaryDepartmentId] : []);
+  const isAuthorized =
+    context.isSuperAdmin ||
+    context.isOperationsManager ||
+    context.role === 'admin' ||
+    context.role === 'operations_manager' ||
+    allowedDepts.includes('dep-4');
+  if (!isAuthorized) {
+    return res.status(403).json({ error: "ليس لديك صلاحية استعادة ملفات المستفيدين." });
+  }
+
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ error: "معرف المستفيد مطلوب." });
+
+  try {
+    const outcome = await mutateDb(async (db) => {
+      db.beneficiaries = db.beneficiaries || [];
+      const ben = db.beneficiaries.find((b: any) => b.id === id);
+      if (!ben) return { status: 404, payload: { error: "ملف المستفيد غير موجود." } };
+      if (isRecordActive(ben)) {
+        return { status: 409, payload: { error: "حساب المستفيد نشط بالفعل." } };
+      }
+
+      const dup = db.beneficiaries.find(
+        (other: any) =>
+          other.id !== ben.id &&
+          isRecordActive(other) &&
+          ((ben.nationalId && other.nationalId === ben.nationalId) ||
+            (ben.beneficiaryNumber && other.beneficiaryNumber === ben.beneficiaryNumber))
+      );
+      if (dup) {
+        return {
+          status: 409,
+          payload: { error: `يوجد مستفيد نشط آخر بنفس رقم الهوية أو رقم المستفيد (${dup.name}).` }
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      ben.isArchived = false;
+      ben.loginDisabled = false;
+      ben.status = ben.previousStatus && !['archived', 'deactivated', 'rejected'].includes(ben.previousStatus)
+        ? ben.previousStatus
+        : 'approved';
+      ben.restoredAt = nowIso;
+      ben.restoredBy = context.userName || "إدارة المستفيدين";
+
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: nowIso,
+        user: context.userName || "إدارة المستفيدين",
+        action: `استعادة ملف المستفيد من الأرشيف: ${ben.name} (رقم المستفيد: ${ben.beneficiaryNumber || id})`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "System"
+      });
+
+      return { status: 200, payload: { ok: true, beneficiary: ben, db: filterDatabaseForUser(db, context) } };
+    });
+
+    if (outcome.status === 200) {
+      await recordSqlAuditLog({
+        actorId: context.userId,
+        actorName: context.userName,
+        actorRole: context.role,
+        action: 'beneficiary_restore',
+        entityType: 'beneficiary',
+        entityId: id,
+        departmentId: 'dep-4',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        status: 'success'
+      });
+    }
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ error: "فشلت عملية استعادة المستفيد", details: err?.message });
+  }
+});
+
 // 20.1 Beneficiaries Export Audit Log
 app.post("/api/db/beneficiaries/export-log", (req, res) => {
   const db = readDb();
@@ -14279,7 +15123,7 @@ app.get("/api/db/beneficiaries", (req, res) => {
 // 20.2.1 Real-Time Beneficiaries Statistics API directly from PostgreSQL / DB
 app.get("/api/db/beneficiaries/statistics", (req, res) => {
   const db = readDb();
-  const beneficiaries: any[] = db.beneficiaries || [];
+  const beneficiaries: any[] = (db.beneficiaries || []).filter((b: any) => isRecordActive(b));
   const handovers: any[] = db.distributionHandovers || [];
   const distributions: any[] = db.distributions || [];
 
@@ -14555,7 +15399,7 @@ app.post("/api/db/distributions/create-advanced", (req, res) => {
     const validSet = new Set<string>();
     rawIds.forEach((id: string) => {
       if (id && !excludedSet.has(id)) {
-        const exists = db.beneficiaries.find((b: any) => b.id === id);
+        const exists = db.beneficiaries.find((b: any) => b.id === id && isRecordActive(b) && b.status === 'approved');
         if (exists) validSet.add(id);
       }
     });
@@ -14573,8 +15417,8 @@ app.post("/api/db/distributions/create-advanced", (req, res) => {
     );
 
     const matchedBeneficiaries = db.beneficiaries.filter((b: any) => {
-      // Must be approved / active
-      if (b.status !== 'approved') return false;
+      // Must be approved / active and non-archived
+      if (!isRecordActive(b) || b.status !== 'approved') return false;
       if (excludedSet.has(b.id)) return false;
       if (!hasAnyCriteria) return true;
 
@@ -14613,7 +15457,7 @@ app.post("/api/db/distributions/create-advanced", (req, res) => {
     finalBeneficiaryIds = Array.from(new Set<string>(matchedBeneficiaries.map((b: any) => b.id)));
   } else {
     // 'all_eligible': All active and approved beneficiaries
-    const eligible = db.beneficiaries.filter((b: any) => b.status === 'approved' && !excludedSet.has(b.id));
+    const eligible = db.beneficiaries.filter((b: any) => isRecordActive(b) && b.status === 'approved' && !excludedSet.has(b.id));
     finalBeneficiaryIds = Array.from(new Set<string>(eligible.map((b: any) => b.id)));
   }
 
@@ -14962,10 +15806,13 @@ app.post("/api/db/distributions/create", (req, res) => {
   if (!db.notifications) db.notifications = [];
 
   let inventoryItem: any = null;
+  const activeBeneficiariesList = (db.beneficiaries || []).filter((b: any) => isRecordActive(b) && b.status === 'approved');
+  const activeBenIdSet = new Set(activeBeneficiariesList.map((b: any) => b.id));
+  const cleanTargetedIds = Array.isArray(payload.targetedBeneficiaryIds)
+    ? payload.targetedBeneficiaryIds.filter((bid: string) => activeBenIdSet.has(bid))
+    : [];
   const unitQty = Number(payload.unitQuantityPerBeneficiary) || 1;
-  const targetCount = Array.isArray(payload.targetedBeneficiaryIds) && payload.targetedBeneficiaryIds.length > 0 
-    ? payload.targetedBeneficiaryIds.length 
-    : (db.beneficiaries || []).length;
+  const targetCount = cleanTargetedIds.length > 0 ? cleanTargetedIds.length : activeBeneficiariesList.length;
   
   // Custom per-beneficiary allocated quantities (e.g. { "ben-1": 1, "ben-2": 2, "ben-3": 1 })
   let totalRequiredQty = 0;
@@ -15024,7 +15871,7 @@ app.post("/api/db/distributions/create", (req, res) => {
     distributionDate: payload.distributionDate || new Date().toISOString().split('T')[0],
     quantityPerBeneficiary: payload.quantityPerBeneficiary || `${unitQty} ${inventoryItem?.unitOfMeasure || 'طرد / سلة'}`,
     targetAudience: payload.targetAudience || "all",
-    targetedBeneficiaryIds: payload.targetedBeneficiaryIds || [],
+    targetedBeneficiaryIds: cleanTargetedIds,
     beneficiaryAllocations: payload.beneficiaryAllocations || {},
     status: payload.status || "active",
     location: payload.location || "مقر الجمعية - مخطط العسيلة",
@@ -15048,9 +15895,9 @@ app.post("/api/db/distributions/create", (req, res) => {
   db.distributions.unshift(newDist);
 
   // Notify targeted beneficiaries: "لديك مساعدة مستحقة للاستلام"
-  const beneficiariesToNotify = payload.targetedBeneficiaryIds && payload.targetedBeneficiaryIds.length > 0
-    ? (db.beneficiaries || []).filter((b: any) => payload.targetedBeneficiaryIds.includes(b.id))
-    : (db.beneficiaries || []);
+  const beneficiariesToNotify = cleanTargetedIds.length > 0
+    ? activeBeneficiariesList.filter((b: any) => cleanTargetedIds.includes(b.id))
+    : activeBeneficiariesList;
 
   beneficiariesToNotify.forEach((ben: any) => {
     db.notifications.unshift({
@@ -15254,6 +16101,16 @@ app.post("/api/db/distributions/handover", async (req, res) => {
             error: "عذرًا، هذا المستفيد غير مدرج ضمن قائمة المستحقين لهذه المساعدة. لا يمكن إتمام عملية التسليم.",
             notFound: true 
           } 
+        };
+      }
+
+      if (!isRecordActive(ben) || ben.loginDisabled === true) {
+        return {
+          status: 403,
+          payload: {
+            error: "عذرًا، تم أرشفة أو تعطيل حساب هذا المستفيد ولا يمكن صرف مساعدة له.",
+            archivedBeneficiary: true
+          }
         };
       }
 
@@ -17111,269 +17968,358 @@ app.post("/api/support/tickets/status", (req, res) => {
 
 // 1. Get Volunteer Transfer Requests
 app.get("/api/db/volunteerTransfers", (req, res) => {
+  const context = getUserAccessContext(req);
+  if (!context.isAuthenticated || context.role === 'public') {
+    return res.status(401).json({ error: "يجب تسجيل الدخول للوصول إلى طلبات النقل والإزالة." });
+  }
+
   const db = readDb();
   db.volunteerTransferRequests = db.volunteerTransferRequests || [];
-  const teamId = req.query.teamId as string;
   const volunteerId = req.query.volunteerId as string;
-  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
-  
+
   let list = db.volunteerTransferRequests;
-  if (teamId && userRole === 'leader') {
-    list = list.filter((r: any) => r.currentTeamId === teamId || r.suggestedTeamId === teamId);
+  if (context.role === 'leader') {
+    const leaderTeamId = context.teamId || '';
+    if (!leaderTeamId) return res.json([]);
+    list = list.filter((r: any) => r.currentTeamId === leaderTeamId || r.suggestedTeamId === leaderTeamId);
+  } else if (context.role === 'volunteer') {
+    list = list.filter((r: any) => r.volunteerId === context.userId);
   } else if (volunteerId) {
     list = list.filter((r: any) => r.volunteerId === volunteerId);
   }
-  res.json(list);
+  return res.json(list);
 });
 
-// 2. Submit Volunteer Transfer or Termination Request by Team Leader
-app.post("/api/db/volunteerTransfers/submit", (req, res) => {
-  const db = readDb();
+// 2. Submit Volunteer Transfer or Team Removal Request by Team Leader
+app.post("/api/db/volunteerTransfers/submit", async (req, res) => {
+  const context = getUserAccessContext(req);
+  if (!context.isAuthenticated || context.role === 'public') {
+    return res.status(401).json({ error: "يجب تسجيل الدخول لرفع طلب إزالة أو نقل متطوع." });
+  }
+
+  const allowedDepts: string[] = context.allowedDepartmentIds || (context.primaryDepartmentId ? [context.primaryDepartmentId] : []);
+  const canSubmit =
+    context.isSuperAdmin ||
+    context.isOperationsManager ||
+    context.role === 'admin' ||
+    context.role === 'operations_manager' ||
+    context.role === 'leader' ||
+    allowedDepts.includes('dep-5');
+
+  if (!canSubmit) {
+    return res.status(403).json({ error: "غير مصرح لك برفع طلبات نقل أو إزالة المتطوعين." });
+  }
+
   const {
     volunteerId,
     requestType = "transfer",
     reason,
     suggestedTeamId,
     additionalNotes,
-    leaderId,
-    leaderName
-  } = req.body;
+  } = req.body || {};
 
   if (!volunteerId) {
-    return res.status(400).json({ error: "معرف المتطوع مطلوب" });
+    return res.status(400).json({ error: "معرف المتطوع مطلوب." });
   }
-  if (!reason || !reason.trim()) {
-    return res.status(400).json({ error: "يرجى توضيح سبب طلب النقل أو إنهاء الارتباط بالفريق" });
-  }
-
-  db.volunteers = db.volunteers || [];
-  const vol = db.volunteers.find((v: any) => v.id === volunteerId);
-  if (!vol) {
-    return res.status(404).json({ error: "سجل المتطوع غير موجود في النظام" });
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ error: "يرجى توضيح سبب طلب النقل أو الإزالة من الفريق." });
   }
 
-  const currentTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
-  const suggestedTeam = suggestedTeamId ? (db.teams || []).find((t: any) => t.id === suggestedTeamId) : null;
+  const normalizedType = requestType === "terminate_affiliation" ? "terminate_affiliation" : "transfer";
 
-  const newRequest = {
-    id: "vtr-" + Date.now(),
-    volunteerId: vol.id,
-    volunteerName: vol.name,
-    volunteerFileNumber: vol.fileNumber || vol.file_number || "—",
-    volunteerPhone: vol.phone || "",
-    currentTeamId: currentTeam?.id || vol.teamId || "",
-    currentTeamName: currentTeam?.nameAr || "فريق غير محدد",
-    requestType: requestType === "terminate_affiliation" ? "terminate_affiliation" : "transfer",
-    reason: reason.trim(),
-    suggestedTeamId: suggestedTeam?.id || "",
-    suggestedTeamName: suggestedTeam?.nameAr || "",
-    additionalNotes: additionalNotes ? additionalNotes.trim() : "",
-    leaderId: leaderId || currentTeam?.leaderId || "leader",
-    leaderName: leaderName || currentTeam?.leaderName || "قائد الفريق",
-    status: "pending",
-    createdAt: new Date().toISOString()
-  };
+  try {
+    let createdReq: any = null;
+    const outcome = await mutateDb(async (db) => {
+      db.volunteers = db.volunteers || [];
+      db.volunteerTransferRequests = db.volunteerTransferRequests || [];
 
-  db.volunteerTransferRequests = db.volunteerTransferRequests || [];
-  db.volunteerTransferRequests.unshift(newRequest);
+      const vol = db.volunteers.find((v: any) => v.id === volunteerId);
+      if (!vol || !isRecordActive(vol)) {
+        return { status: 404, payload: { error: "سجل المتطوع غير موجود أو مؤرشف." } };
+      }
 
-  // Send high priority notification to Volunteer Dept / Admin
-  db.notifications = db.notifications || [];
-  db.notifications.unshift({
-    id: "not-" + Date.now(),
-    userId: "admin",
-    titleAr: newRequest.requestType === 'transfer' ? `طلب نقل متطوع جديد من قائد (${newRequest.currentTeamName})` : `طلب إنهاء ارتباط متطوع من قائد (${newRequest.currentTeamName})`,
-    titleEn: "Volunteer Transfer/Termination Request",
-    bodyAr: `رفع القائد (${newRequest.leaderName}) طلباً رسمياً لـ(${newRequest.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'}) المتطوع (${newRequest.volunteerName} - ملف: ${newRequest.volunteerFileNumber}). السبب: ${newRequest.reason}. يتطلب مراجعة واعتماد إدارة التطوع.`,
-    date: new Date().toISOString().split('T')[0],
-    read: false,
-    type: "volunteer_transfer_request"
-  });
+      if (context.role === 'leader') {
+        if (!context.teamId || vol.teamId !== context.teamId) {
+          return {
+            status: 403,
+            payload: { error: "غير مصرح: لا يملك قائد الفريق صلاحية إزالة أو نقل متطوع من خارج فريقه." }
+          };
+        }
+      }
 
-  // Audit log
-  db.logs = db.logs || [];
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: `قائد الفريق: ${newRequest.leaderName}`,
-    action: `رفع ${newRequest.requestType === 'transfer' ? 'طلب نقل' : 'طلب إنهاء ارتباط'} للمتطوع (${newRequest.volunteerName} - ملف: ${newRequest.volunteerFileNumber}) من فريق (${newRequest.currentTeamName}) إلى إدارة التطوع`,
-    ip: req.ip || "127.0.0.1",
-    device: "Leader Portal"
-  });
+      const existingPending = db.volunteerTransferRequests.find(
+        (r: any) => r.volunteerId === vol.id && r.status === "pending" && r.requestType === normalizedType
+      );
+      if (existingPending) {
+        return {
+          status: 409,
+          payload: { error: "يوجد طلب معلق مسبقاً لنفس المتطوع قيد المراجعة لدى إدارة التطوع." }
+        };
+      }
 
-  writeDb(db);
-  res.json({ status: "success", request: newRequest, db });
+      const currentTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
+      const suggestedTeam = suggestedTeamId ? (db.teams || []).find((t: any) => t.id === suggestedTeamId) : null;
+
+      createdReq = {
+        id: "vtr-" + Date.now(),
+        volunteerId: vol.id,
+        volunteerName: vol.name,
+        volunteerFileNumber: vol.fileNumber || vol.file_number || vol.membershipNumber || "—",
+        volunteerPhone: vol.phone || "",
+        currentTeamId: currentTeam?.id || vol.teamId || "",
+        currentTeamName: currentTeam?.nameAr || "فريق غير محدد",
+        requestType: normalizedType,
+        reason: String(reason).trim(),
+        suggestedTeamId: suggestedTeam?.id || "",
+        suggestedTeamName: suggestedTeam?.nameAr || "",
+        additionalNotes: additionalNotes ? String(additionalNotes).trim() : "",
+        leaderId: context.userId || currentTeam?.leaderId || "leader",
+        leaderName: context.userName || currentTeam?.leaderName || "قائد الفريق",
+        status: "pending",
+        createdAt: new Date().toISOString()
+      };
+
+      db.volunteerTransferRequests.unshift(createdReq);
+
+      db.notifications = db.notifications || [];
+      db.notifications.unshift({
+        id: "not-" + Date.now(),
+        userId: "admin",
+        targetUserId: "admin",
+        targetDepartmentId: "dep-5",
+        titleAr: normalizedType === 'transfer' ? `طلب نقل متطوع جديد من قائد (${createdReq.currentTeamName})` : `طلب إزالة متطوع من فريق (${createdReq.currentTeamName})`,
+        titleEn: "Volunteer Transfer/Removal Request",
+        bodyAr: `رفع (${createdReq.leaderName}) طلباً رسمياً لـ(${normalizedType === 'transfer' ? 'نقل' : 'إزالة من الفريق'}) المتطوع (${createdReq.volunteerName} - ملف: ${createdReq.volunteerFileNumber}). السبب: ${createdReq.reason}. يتطلب مراجعة واعتماد إدارة التطوع.`,
+        date: new Date().toISOString().split('T')[0],
+        read: false,
+        type: "volunteer_transfer_request"
+      });
+
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: `قائد الفريق: ${createdReq.leaderName}`,
+        action: `رفع ${normalizedType === 'transfer' ? 'طلب نقل' : 'طلب إزالة من الفريق'} للمتطوع (${createdReq.volunteerName} - ملف: ${createdReq.volunteerFileNumber}) من فريق (${createdReq.currentTeamName}) إلى إدارة التطوع`,
+        ip: req.ip || "127.0.0.1",
+        device: req.headers["user-agent"] || "Leader Portal"
+      });
+
+      return { status: 200, payload: { status: "success", request: createdReq, db: filterDatabaseForUser(db, context) } };
+    });
+
+    if (outcome.status === 200 && createdReq) {
+      await recordSqlAuditLog({
+        actorId: context.userId,
+        actorName: context.userName,
+        actorRole: context.role,
+        action: `volunteer_${normalizedType}_request_submitted`,
+        entityType: 'volunteer',
+        entityId: volunteerId,
+        departmentId: 'dep-5',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        status: 'success',
+        details: { requestId: createdReq.id, reason: createdReq.reason, teamId: createdReq.currentTeamId }
+      });
+    }
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ error: "فشل إرسال الطلب لإدارة التطوع", details: err?.message });
+  }
 });
 
-// 3. Action Volunteer Transfer or Termination Request by Volunteer Department
-app.post("/api/db/volunteerTransfers/action", (req, res) => {
-  const db = readDb();
+// 3. Action Volunteer Transfer or Team Removal Request by Volunteer Department
+app.post("/api/db/volunteerTransfers/action", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, 'dep-5', 'edit_data', 'البت في طلبات نقل وإزالة المتطوعين');
+  if (!auth.allowed) return;
+
+  if (auth.context.role === 'leader') {
+    return res.status(403).json({ error: "غير مصرح: لا يملك قائد الفريق صلاحية البت في طلبات النقل أو الإزالة، هذا الإجراء مخصص لإدارة التطوع فقط." });
+  }
+
   const {
     requestId,
     action, // 'approve' | 'reject'
     targetTeamId,
     reviewerNotes,
-    reviewerName = "إدارة التطوع",
-    userRole
-  } = req.body;
+  } = req.body || {};
 
-  const auth = checkDepartmentPermission(req, res, 'dep-5', 'edit_data', 'البت في طلبات نقل المتطوعين');
-  if (!auth.allowed) return;
-
-  if (auth.context.role === 'leader') {
-    return res.status(403).json({ error: "غير مصرح: لا يملك قائد الفريق صلاحية البت في طلبات النقل، هذا الإجراء مخصص لإدارة التطوع فقط." });
+  if (!requestId || !action || !['approve', 'reject'].includes(action)) {
+    return res.status(400).json({ error: "معرف الطلب والإجراء المطلوب (approve / reject) حقول إلزامية." });
   }
 
-  if (!requestId || !action) {
-    return res.status(400).json({ error: "معرف الطلب والإجراء المطلوب حقول إلزامية" });
-  }
-
-  db.volunteerTransferRequests = db.volunteerTransferRequests || [];
-  const reqObj = db.volunteerTransferRequests.find((r: any) => r.id === requestId);
-  if (!reqObj) {
-    return res.status(404).json({ error: "طلب النقل غير موجود" });
-  }
-
-  const vol = (db.volunteers || []).find((v: any) => v.id === reqObj.volunteerId);
-  if (!vol) {
-    return res.status(404).json({ error: "سجل المتطوع غير موجود" });
-  }
-
-  const nowIso = new Date().toISOString();
-
-  if (action === "approve") {
-    if (reqObj.requestType === "transfer") {
-      const finalTargetTeamId = targetTeamId || reqObj.suggestedTeamId;
-      const targetTeam = (db.teams || []).find((t: any) => t.id === finalTargetTeamId);
-      if (!targetTeam) {
-        return res.status(400).json({ error: "يرجى اختيار الفريق المعتمد لنقل المتطوع إليه." });
+  try {
+    const reviewerName = auth.context.userName || "إدارة التطوع";
+    let auditReq: any = null;
+    const outcome = await mutateDb(async (db) => {
+      db.volunteerTransferRequests = db.volunteerTransferRequests || [];
+      const reqObj = db.volunteerTransferRequests.find((r: any) => r.id === requestId);
+      if (!reqObj) {
+        return { status: 404, payload: { error: "الطلب غير موجود." } };
+      }
+      if (reqObj.status !== "pending") {
+        return { status: 409, payload: { error: "تم البت في هذا الطلب مسبقاً." } };
       }
 
-      // Record in volunteer's historical team log
-      vol.teamHistory = vol.teamHistory || [];
-      vol.teamHistory.unshift({
-        fromTeamId: vol.teamId,
-        fromTeamName: reqObj.currentTeamName,
-        toTeamId: targetTeam.id,
-        toTeamName: targetTeam.nameAr,
-        transferredAt: nowIso,
-        transferredBy: reviewerName,
-        reason: reqObj.reason,
-        notes: reviewerNotes || "",
-        requestId: reqObj.id
+      const vol = (db.volunteers || []).find((v: any) => v.id === reqObj.volunteerId);
+      if (!vol) {
+        return { status: 404, payload: { error: "سجل المتطوع غير موجود." } };
+      }
+
+      const nowIso = new Date().toISOString();
+
+      if (action === "approve") {
+        if (reqObj.requestType === "transfer") {
+          const finalTargetTeamId = targetTeamId || reqObj.suggestedTeamId;
+          const targetTeam = (db.teams || []).find((t: any) => t.id === finalTargetTeamId);
+          if (!targetTeam) {
+            return { status: 400, payload: { error: "يرجى اختيار الفريق المعتمد لنقل المتطوع إليه." } };
+          }
+
+          vol.teamHistory = vol.teamHistory || [];
+          vol.teamHistory.unshift({
+            fromTeamId: vol.teamId,
+            fromTeamName: reqObj.currentTeamName,
+            toTeamId: targetTeam.id,
+            toTeamName: targetTeam.nameAr,
+            transferredAt: nowIso,
+            transferredBy: reviewerName,
+            reason: reqObj.reason,
+            notes: reviewerNotes || "",
+            requestId: reqObj.id
+          });
+
+          vol.teamId = targetTeam.id;
+          vol.departmentId = targetTeam.departmentId;
+          reqObj.targetTeamId = targetTeam.id;
+          reqObj.targetTeamName = targetTeam.nameAr;
+        } else {
+          // terminate_affiliation (إزالة من الفريق فقط مع بقاء حساب المتطوع ونقاطه وسجله التاريخي محفوظة)
+          vol.teamHistory = vol.teamHistory || [];
+          vol.teamHistory.unshift({
+            fromTeamId: vol.teamId,
+            fromTeamName: reqObj.currentTeamName,
+            toTeamId: "",
+            toTeamName: "متطوع مستقل (تم إنهاء الارتباط بالفريق)",
+            transferredAt: nowIso,
+            transferredBy: reviewerName,
+            reason: reqObj.reason,
+            notes: reviewerNotes || "",
+            requestId: reqObj.id
+          });
+
+          vol.teamId = "";
+          reqObj.targetTeamId = "";
+          reqObj.targetTeamName = "متطوع مستقل";
+        }
+
+        recalculateAllTeamMemberCounts(db);
+
+        reqObj.status = "approved";
+        reqObj.reviewedAt = nowIso;
+        reqObj.reviewedBy = reviewerName;
+        reqObj.reviewerNotes = reviewerNotes || "";
+
+        db.notifications = db.notifications || [];
+        db.notifications.unshift({
+          id: "not-" + Date.now(),
+          userId: vol.id,
+          targetUserId: vol.id,
+          titleAr: reqObj.requestType === 'transfer' ? `تم اعتماد نقلك إلى فريق (${reqObj.targetTeamName})` : `تم إنهاء ارتباطك بفريق (${reqObj.currentTeamName})`,
+          titleEn: "Volunteer Affiliation Updated",
+          bodyAr: reqObj.requestType === 'transfer'
+            ? `وافقت إدارة التطوع على نقلك رسمياً إلى فريق (${reqObj.targetTeamName}). جميع نقاطك وشهاداتك وسجل ساعاتك محفوظة بالكامل.`
+            : `تم اعتماد إزالتك من فريق (${reqObj.currentTeamName}) من قِبل إدارة التطوع وأصبحت الآن متطوعاً مستقلاً مع الحفاظ التام على نقاطك وشهاداتك وسجلاتك.`,
+          date: nowIso.split('T')[0],
+          read: false
+        });
+
+        db.notifications.unshift({
+          id: "not-" + (Date.now() + 1),
+          userId: reqObj.leaderId || "leader",
+          targetUserId: reqObj.leaderId || "leader",
+          titleAr: `تمت الموافقة على طلب (${reqObj.requestType === 'transfer' ? 'نقل' : 'إزالة من الفريق'}) المتطوع (${vol.name})`,
+          titleEn: "Volunteer Request Approved",
+          bodyAr: `اعتمدت إدارة التطوع طلبكم بشأن المتطوع (${vol.name} - ملف: ${vol.fileNumber || '—'}). ${reqObj.requestType === 'transfer' ? `تم نقله إلى فريق (${reqObj.targetTeamName}).` : 'تمت إزالته من الفريق بنجاح.'}`,
+          date: nowIso.split('T')[0],
+          read: false
+        });
+
+        db.logs = db.logs || [];
+        db.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: nowIso,
+          user: reviewerName,
+          action: `اعتماد ${reqObj.requestType === 'transfer' ? `نقل المتطوع (${vol.name}) إلى فريق (${reqObj.targetTeamName})` : `إزالة المتطوع (${vol.name}) من فريق (${reqObj.currentTeamName})`} مع حفظ السجل التاريخي`,
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "Admin Volunteer Mgmt"
+        });
+      } else {
+        reqObj.status = "rejected";
+        reqObj.reviewedAt = nowIso;
+        reqObj.reviewedBy = reviewerName;
+        reqObj.reviewerNotes = reviewerNotes || "تم الاعتذار عن قبول الطلب";
+
+        db.notifications = db.notifications || [];
+        db.notifications.unshift({
+          id: "not-" + Date.now(),
+          userId: reqObj.leaderId || "leader",
+          targetUserId: reqObj.leaderId || "leader",
+          titleAr: `تم رفض طلب (${reqObj.requestType === 'transfer' ? 'نقل' : 'إزالة من الفريق'}) المتطوع (${vol.name})`,
+          titleEn: "Volunteer Request Rejected",
+          bodyAr: `اعتذرت إدارة التطوع عن قبول الطلب للمتطوع (${vol.name}). سبب الرفض: ${reviewerNotes || 'عدم توافق المبررات مع الشروط التشغيلية'}.`,
+          date: nowIso.split('T')[0],
+          read: false
+        });
+
+        db.notifications.unshift({
+          id: "not-" + (Date.now() + 1),
+          userId: vol.id,
+          targetUserId: vol.id,
+          titleAr: "إفادة بخصوص حالة عضويتك في الفريق التطوعي",
+          titleEn: "Volunteer Team Request Status",
+          bodyAr: `تفيد إدارة التطوع برفض طلب النقل/الإزالة والاستمرار في فريقكم الحالي (${reqObj.currentTeamName}).`,
+          date: nowIso.split('T')[0],
+          read: false
+        });
+
+        db.logs = db.logs || [];
+        db.logs.unshift({
+          id: "log-" + Date.now(),
+          timestamp: nowIso,
+          user: reviewerName,
+          action: `رفض طلب ${reqObj.requestType === 'transfer' ? 'نقل' : 'إزالة'} المتطوع (${vol.name}) - سبب الرفض: ${reviewerNotes || 'غير محدد'}`,
+          ip: req.ip || "127.0.0.1",
+          device: req.headers["user-agent"] || "Admin Volunteer Mgmt"
+        });
+      }
+
+      auditReq = reqObj;
+      return { status: 200, payload: { status: "success", request: reqObj, volunteer: vol, db: filterDatabaseForUser(db, auth.context) } };
+    });
+
+    if (outcome.status === 200 && auditReq) {
+      await recordSqlAuditLog({
+        actorId: auth.context.userId,
+        actorName: auth.context.userName,
+        actorRole: auth.context.role,
+        action: `volunteer_${auditReq.requestType}_${action}`,
+        entityType: 'volunteer',
+        entityId: auditReq.volunteerId,
+        departmentId: 'dep-5',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        status: 'success',
+        details: { requestId, action, reviewerNotes }
       });
-
-      // Update volunteer affiliation without erasing points, hours, or certificates
-      vol.teamId = targetTeam.id;
-      vol.departmentId = targetTeam.departmentId;
-
-      reqObj.targetTeamId = targetTeam.id;
-      reqObj.targetTeamName = targetTeam.nameAr;
-    } else {
-      // terminate_affiliation
-      vol.teamHistory = vol.teamHistory || [];
-      vol.teamHistory.unshift({
-        fromTeamId: vol.teamId,
-        fromTeamName: reqObj.currentTeamName,
-        toTeamId: "",
-        toTeamName: "متطوع مستقل (تم إنهاء الارتباط بالفريق)",
-        transferredAt: nowIso,
-        transferredBy: reviewerName,
-        reason: reqObj.reason,
-        notes: reviewerNotes || "",
-        requestId: reqObj.id
-      });
-
-      vol.teamId = ""; // Unassigned team / independent volunteer
-      reqObj.targetTeamId = "";
-      reqObj.targetTeamName = "متطوع مستقل";
     }
 
-    reqObj.status = "approved";
-    reqObj.reviewedAt = nowIso;
-    reqObj.reviewedBy = reviewerName;
-    reqObj.reviewerNotes = reviewerNotes || "";
-
-    // Notifications
-    db.notifications = db.notifications || [];
-    // 1. Notify Volunteer
-    db.notifications.unshift({
-      id: "not-" + Date.now(),
-      userId: vol.id,
-      titleAr: reqObj.requestType === 'transfer' ? `تم اعتماد نقلك إلى فريق (${reqObj.targetTeamName}) 🎉` : `تم اعتماد إنهاء ارتباطك بفريق (${reqObj.currentTeamName})`,
-      titleEn: "Volunteer Affiliation Updated",
-      bodyAr: reqObj.requestType === 'transfer' 
-        ? `وافقت إدارة التطوع على نقلك رسمياً إلى فريق (${reqObj.targetTeamName}). تم تحديث ملفك وبطاقتك التطوعية.` 
-        : `تم اعتماد طلب إنهاء الارتباط بفريق (${reqObj.currentTeamName}) من قِبل إدارة التطوع وأصبحت الآن متطوعاً مستقلاً.`,
-      date: nowIso.split('T')[0],
-      read: false
-    });
-
-    // 2. Notify Requesting Leader
-    db.notifications.unshift({
-      id: "not-" + (Date.now() + 1),
-      userId: reqObj.leaderId || "leader",
-      titleAr: `تمت الموافقة على طلب (${reqObj.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'}) المتطوع (${vol.name})`,
-      titleEn: "Volunteer Transfer Request Approved",
-      bodyAr: `اعتمدت إدارة التطوع طلبكم بشأن المتطوع (${vol.name} - ملف: ${vol.fileNumber || '—'}). ${reqObj.requestType === 'transfer' ? `تم نقله إلى فريق (${reqObj.targetTeamName}).` : 'تم إنهاء ارتباطه بالفريق بنجاح.'} ملاحظات الإدارة: ${reviewerNotes || 'لا توجد'}`,
-      date: nowIso.split('T')[0],
-      read: false
-    });
-
-    // Audit log
-    db.logs = db.logs || [];
-    db.logs.unshift({
-      id: "log-" + Date.now(),
-      timestamp: nowIso,
-      user: reviewerName,
-      action: `اعتماد ${reqObj.requestType === 'transfer' ? `نقل المتطوع (${vol.name}) إلى فريق (${reqObj.targetTeamName})` : `إنهاء ارتباط المتطوع (${vol.name}) من فريق (${reqObj.currentTeamName})`} وحفظ السجل التاريخي`,
-      ip: req.ip || "127.0.0.1",
-      device: "Admin Volunteer Mgmt"
-    });
-  } else {
-    // reject
-    reqObj.status = "rejected";
-    reqObj.reviewedAt = nowIso;
-    reqObj.reviewedBy = reviewerName;
-    reqObj.reviewerNotes = reviewerNotes || "تم الاعتذار عن قبول طلب النقل";
-
-    // Notify Requesting Leader
-    db.notifications = db.notifications || [];
-    db.notifications.unshift({
-      id: "not-" + Date.now(),
-      userId: reqObj.leaderId || "leader",
-      titleAr: `تم رفض طلب (${reqObj.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'}) المتطوع (${vol.name})`,
-      titleEn: "Volunteer Transfer Request Rejected",
-      bodyAr: `اعتذرت إدارة التطوع عن قبول طلب النقل للمتطوع (${vol.name}). سبب الرفض: ${reviewerNotes || 'عدم توافق مبررات النقل مع الشروط التشغيلية'}. يبقى المتطوع في فريقه الحالي.`,
-      date: nowIso.split('T')[0],
-      read: false
-    });
-
-    // Notify Volunteer
-    db.notifications.unshift({
-      id: "not-" + (Date.now() + 1),
-      userId: vol.id,
-      titleAr: "إفادة بخصوص طلب النقل بين الفرق التطوعية",
-      titleEn: "Volunteer Transfer Request Status",
-      bodyAr: `تفيد إدارة التطوع برفض طلب النقل والاستمرار في فريقكم الحالي (${reqObj.currentTeamName}). ملاحظات الإدارة: ${reviewerNotes || 'استمرار التكليف الحالي'}.`,
-      date: nowIso.split('T')[0],
-      read: false
-    });
-
-    // Audit log
-    db.logs = db.logs || [];
-    db.logs.unshift({
-      id: "log-" + Date.now(),
-      timestamp: nowIso,
-      user: reviewerName,
-      action: `رفض طلب ${reqObj.requestType === 'transfer' ? 'نقل' : 'إنهاء ارتباط'} المتطوع (${vol.name}) - سبب الرفض: ${reviewerNotes || 'غير محدد'}`,
-      ip: req.ip || "127.0.0.1",
-      device: "Admin Volunteer Mgmt"
-    });
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ error: "فشلت معالجة الطلب", details: err?.message });
   }
-
-  writeDb(db);
-  res.json({ status: "success", request: reqObj, volunteer: vol, db });
 });
 
 // -------------------------------------------------------------

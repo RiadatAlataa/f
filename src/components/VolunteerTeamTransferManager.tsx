@@ -20,6 +20,7 @@ import {
   Info
 } from 'lucide-react';
 import { Volunteer, VolunteerTeam, VolunteerTransferRequest } from '../types';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 interface VolunteerTeamTransferManagerProps {
   teams: VolunteerTeam[];
@@ -64,6 +65,7 @@ export const VolunteerTeamTransferManager: React.FC<VolunteerTeamTransferManager
       }
       const res = await fetch(url, {
         headers: {
+          ...getAuthHeaders(),
           'x-user-role': userRole || 'admin'
         }
       });
@@ -116,6 +118,7 @@ export const VolunteerTeamTransferManager: React.FC<VolunteerTeamTransferManager
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
           'x-user-role': userRole || 'admin'
         },
         body: JSON.stringify({

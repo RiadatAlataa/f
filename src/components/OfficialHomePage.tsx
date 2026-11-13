@@ -129,6 +129,8 @@ interface OfficialHomePageProps {
   heroSlides?: HeroSlide[];
   authenticatedUser?: any | null;
   onReturnToDashboard?: () => void;
+  initialRoutePath?: string;
+  onNavigatePath?: (path: string) => void;
 }
 
 export function OfficialHomePage({
@@ -164,7 +166,9 @@ export function OfficialHomePage({
   orgMembers = [],
   heroSlides = [],
   authenticatedUser,
-  onReturnToDashboard
+  onReturnToDashboard,
+  initialRoutePath = '/',
+  onNavigatePath
 }: OfficialHomePageProps) {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
@@ -188,6 +192,75 @@ export function OfficialHomePage({
   const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false);
   const [licenseZoom, setLicenseZoom] = useState(1);
   const [selectedHomeGalleryItem, setSelectedHomeGalleryItem] = useState<GalleryItem | null>(null);
+
+  // Sync URL route paths cleanly for SEO, direct registration links, teams, opportunities, and news
+  useEffect(() => {
+    const raw = initialRoutePath || (typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/');
+    const [pathOnly, searchPart] = raw.split('?');
+    const cleanPath = (pathOnly || '/').replace(/\/+$/, '') || '/';
+    const params = new URLSearchParams(searchPart || '');
+
+    if (cleanPath === '/register/beneficiary') {
+      setCurrentPublicPage('home');
+      setSelectedJoinType('beneficiary');
+      setBeneficiaryStep(1);
+      setIsJoinModalOpen(true);
+      return;
+    }
+
+    if (cleanPath === '/register/volunteer') {
+      const teamParam = params.get('teamId') || '';
+      setCurrentPublicPage('home');
+      setSelectedJoinType('volunteer');
+      setVolunteerStep(1);
+      if (teamParam) {
+        setRegTeam(teamParam);
+      }
+      setIsJoinModalOpen(true);
+      return;
+    }
+
+    if (cleanPath === '/opportunities') {
+      setCurrentPublicPage('opportunities');
+      setIsJoinModalOpen(false);
+      return;
+    }
+
+    if (cleanPath.startsWith('/opportunities/')) {
+      const oppId = decodeURIComponent(cleanPath.slice('/opportunities/'.length));
+      setCurrentPublicPage('opportunities');
+      const foundOpp = initiatives.find((i) => i.id === oppId || i.opportunityCode === oppId);
+      if (foundOpp) {
+        setSelectedInit(foundOpp);
+      }
+      return;
+    }
+
+    if (cleanPath === '/gallery') {
+      setCurrentPublicPage('gallery');
+      return;
+    }
+
+    if (cleanPath.startsWith('/teams/')) {
+      const tId = decodeURIComponent(cleanPath.slice('/teams/'.length));
+      setCurrentPublicPage('home');
+      const foundTeam = teams.find((t) => t.id === tId);
+      if (foundTeam) {
+        setSelectedTeamForDetails(foundTeam);
+      }
+      return;
+    }
+
+    if (cleanPath.startsWith('/news/')) {
+      const nId = decodeURIComponent(cleanPath.slice('/news/'.length));
+      setCurrentPublicPage('home');
+      const foundNews = newsList.find((n) => n.id === nId);
+      if (foundNews) {
+        setSelectedNews(foundNews);
+      }
+      return;
+    }
+  }, [initialRoutePath, teams, initiatives, newsList]);
 
   // Return to Dashboard details based on authenticated user's role
   const returnBtnDetails = useMemo(() => {
@@ -2538,18 +2611,73 @@ export function OfficialHomePage({
       {/* 13.5 Volunteer Teams Carousel (فرقنا التطوعية - أسفل الصفحة الرئيسية وقبل التذييل) */}
       <VolunteerTeamsCarousel
         teams={teams}
-        volunteers={volunteers}
+        volunteers={volunteers.filter((v) => !v.isArchived && v.status !== 'archived' && v.status !== 'deactivated')}
         initiatives={initiatives}
         lang={lang}
         isDark={isDark}
-        onSelectTeam={(team) => setSelectedTeamForDetails(team)}
+        onSelectTeam={(team) => {
+          setSelectedTeamForDetails(team);
+          onNavigatePath?.(`/teams/${encodeURIComponent(team.id)}`);
+        }}
         onJoinTeamClick={(team) => {
           setRegTeam(team.id);
           setSelectedJoinType("volunteer");
           setIsJoinModalOpen(true);
+          onNavigatePath?.(`/register/volunteer?teamId=${encodeURIComponent(team.id)}`);
         }}
         onOpenTeamRegistrationModal={() => setIsTeamModalOpen(true)}
       />
+
+      {/* Optional Quick Registration & Login Section when enabled in Admin Settings */}
+      {settings?.showRegistrationLinksOnHome && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
+          <div className="bg-gradient-to-l from-navy-950 via-navy-900 to-royal-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl border border-white/10 flex flex-col lg:flex-row items-center justify-between gap-6">
+            <div>
+              <h3 className="text-lg sm:text-xl font-black">
+                {lang === "ar" ? "بوابات التسجيل والانضمام السريع" : "Quick Registration & Portal Links"}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                {lang === "ar"
+                  ? "انتقل مباشرة إلى بوابة تسجيل الدخول أو نماذج الانضمام كمستفيد أو متطوع"
+                  : "Access login, beneficiary, and volunteer registration directly."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
+              <button
+                type="button"
+                onClick={() => onOpenLogin('volunteer')}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold border border-white/20 transition-all cursor-pointer"
+              >
+                تسجيل الدخول
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedJoinType("beneficiary");
+                  setBeneficiaryStep(1);
+                  setIsJoinModalOpen(true);
+                  onNavigatePath?.('/register/beneficiary');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold transition-all cursor-pointer"
+              >
+                الانضمام كمستفيد
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedJoinType("volunteer");
+                  setVolunteerStep(1);
+                  setIsJoinModalOpen(true);
+                  onNavigatePath?.('/register/volunteer');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-royal-600 hover:bg-royal-500 text-white text-xs font-extrabold transition-all cursor-pointer"
+              >
+                الانضمام كمتطوع
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
       </main>
 
       {/* 14. Footer (الفوتر الرسمي) */}

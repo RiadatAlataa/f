@@ -19,6 +19,7 @@ import { CardTemplateEditor } from "./CardTemplateEditor";
 import { CardRenderer } from "./CardRenderer";
 import { VolunteerProfileCardSection } from "./VolunteerProfileCardSection";
 import { TeamSupportManager } from "./TeamSupportManager";
+import { getAuthHeaders } from "../utils/authHeaders";
 
 interface LeaderDashboardProps {
   currentTeam: VolunteerTeam;
@@ -126,12 +127,13 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   const fetchLeaderRequests = async () => {
     setIsLoadingLeaderRequests(true);
     try {
+      const authHeaders = getAuthHeaders();
       const [tRes, pRes] = await Promise.all([
         fetch(`/api/db/volunteerTransfers?teamId=${currentTeam.id}&userRole=leader`, {
-          headers: { 'x-user-role': 'leader' }
+          headers: { ...authHeaders, 'x-user-role': 'leader' }
         }),
         fetch(`/api/db/passwordResetRequests?teamId=${currentTeam.id}&userRole=leader`, {
-          headers: { 'x-user-role': 'leader' }
+          headers: { ...authHeaders, 'x-user-role': 'leader' }
         })
       ]);
       if (tRes.ok) {
@@ -457,8 +459,10 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   const [editWearingVest, setEditWearingVest] = useState(true);
   const [editSuccessMessage, setEditSuccessMessage] = useState("");
 
-  // Get current team members
-  const teamMembers = volunteers.filter(v => v.teamId === currentTeam.id);
+  // Get current active team members (exclude archived / deactivated accounts)
+  const teamMembers = volunteers.filter(
+    v => v.teamId === currentTeam.id && !v.isArchived && v.status !== 'archived' && v.status !== 'deactivated'
+  );
 
   // Get initiatives for this team
   const teamInitiatives = initiatives.filter(i => i.teamId === currentTeam.id);
@@ -481,12 +485,15 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
     setTimeout(() => setBroadcastSuccess(false), 4000);
   };
 
+  const [transferConfirmed, setTransferConfirmed] = useState(false);
+
   const handleOpenTransferModal = (vol: Volunteer, type: 'transfer' | 'terminate_affiliation') => {
     setTargetVolForTransfer(vol);
     setTransferRequestType(type);
     setTransferReason('');
     setTransferNotes('');
     setTransferFeedback(null);
+    setTransferConfirmed(false);
     setTransferSuggestedTeamId(teams.filter(t => t.id !== currentTeam.id)[0]?.id || '');
     setShowTransferModal(true);
   };
@@ -494,7 +501,11 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   const handleSubmitFormalTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetVolForTransfer || !transferReason.trim()) {
-      setTransferFeedback({ type: 'error', text: 'يرجى كتابة سبب طلب النقل أو إنهاء الارتباط بشكل واضح.' });
+      setTransferFeedback({ type: 'error', text: 'يرجى كتابة سبب طلب النقل أو الإزالة من الفريق بشكل واضح.' });
+      return;
+    }
+    if (transferRequestType === 'terminate_affiliation' && !transferConfirmed) {
+      setTransferFeedback({ type: 'error', text: 'يرجى تأكيد طلب إزالة المتطوع من الفريق عبر خانة التأكيد.' });
       return;
     }
 
@@ -506,6 +517,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
           'x-user-role': 'leader'
         },
         body: JSON.stringify({
@@ -565,6 +577,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
           'x-user-role': 'leader'
         },
         body: JSON.stringify({
@@ -1316,11 +1329,11 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => handleOpenTransferModal(v, 'terminate_affiliation')}
-                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
-                          title="رفع طلب رسمي لإدارة التطوع لإنهاء ارتباط المتطوع بالفريق"
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                          title="رفع طلب رسمي لإدارة التطوع لإزالة المتطوع من هذا الفريق فقط دون حذف حسابه من الجمعية"
                         >
                           <UserMinus className="w-3 h-3 text-rose-600" />
-                          <span>طلب إنهاء الارتباط بالفريق</span>
+                          <span>إزالة من الفريق</span>
                         </button>
 
                         <button
@@ -2631,7 +2644,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                 className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-bold"
               >
                 <option value="transfer">طلب نقل إلى فريق تطوعي آخر</option>
-                <option value="terminate_affiliation">طلب إنهاء الارتباط بالفريق الحالي (تفريغ العضو)</option>
+                <option value="terminate_affiliation">إزالة من الفريق (إنهاء الارتباط بالفريق الحالي فقط)</option>
               </select>
             </div>
 
@@ -2659,14 +2672,14 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             {/* Reason */}
             <div className="space-y-1.5 text-xs">
               <label className="font-bold text-neutral-700 dark:text-slate-300 block">
-                سبب النقل أو إنهاء الارتباط: <span className="text-rose-500">*</span>
+                {transferRequestType === 'terminate_affiliation' ? 'سبب الإزالة من الفريق:' : 'سبب النقل أو إنهاء الارتباط:'} <span className="text-rose-500">*</span>
               </label>
               <textarea
                 required
                 rows={3}
                 value={transferReason}
                 onChange={(e) => setTransferReason(e.target.value)}
-                placeholder="وضح مبررات النقل أو رغبة المتطوع أو أسباب إنهاء الارتباط بالفريق بالتفصيل..."
+                placeholder="وضح مبررات النقل أو رغبة المتطوع أو أسباب الإزالة من الفريق بالتفصيل..."
                 className="w-full bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-medium focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -2688,9 +2701,23 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200/50 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
               <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
               <p>
-                <strong>حوكمة الانتقال:</strong> لا يتم تغيير الفريق تلقائياً. ستقوم إدارة التطوع بمراجعة الطلب واعتماد النقل وتحديث قوائم الفريقين وتوثيق العملية في السجل التاريخي.
+                <strong>حوكمة الفريق:</strong> لا يتم تغيير الفريق أو حذف حساب المتطوع من الجمعية. عند الموافقة من إدارة التطوع سيتم إزالة ارتباطه بهذا الفريق فقط مع احتفاظ المتطوع بحسابه وساعاته وشهاداته.
               </p>
             </div>
+
+            {transferRequestType === 'terminate_affiliation' && (
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50 border border-rose-200 cursor-pointer text-[11px] text-rose-900 font-bold">
+                <input
+                  type="checkbox"
+                  checked={transferConfirmed}
+                  onChange={(e) => setTransferConfirmed(e.target.checked)}
+                  className="mt-0.5 accent-rose-600"
+                />
+                <span>
+                  أؤكد رغبتي في رفع طلب إزالة المتطوع ({targetVolForTransfer.name}) من فريق {currentTeam.nameAr} لإدارة التطوع للاعتماد النهائي.
+                </span>
+              </label>
+            )}
 
             {transferFeedback && (
               <div className={`p-3 rounded-xl text-xs font-bold ${
@@ -2703,7 +2730,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
             <div className="flex gap-2 pt-2 border-t border-neutral-150 dark:border-slate-700">
               <button
                 type="submit"
-                disabled={isSubmittingTransfer}
+                disabled={isSubmittingTransfer || (transferRequestType === 'terminate_affiliation' && !transferConfirmed)}
                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5"
               >
                 <Send className="w-3.5 h-3.5" />

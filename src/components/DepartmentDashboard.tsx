@@ -76,6 +76,8 @@ import { TeamSupportManager } from './TeamSupportManager';
 import { DashboardErrorBoundary } from './DashboardErrorBoundary';
 import { AccessDeniedCard } from './AccessDeniedCard';
 import { HRDashboard } from './HRDashboard';
+import { ArchivesDirectoryPanel } from './ArchivesDirectoryPanel';
+import { Archive } from 'lucide-react';
 
 export interface DepartmentDashboardProps {
   currentUser?: any;
@@ -121,6 +123,10 @@ export interface DepartmentDashboardProps {
   onCancelHandover?: (handoverId: string) => Promise<boolean>;
   onAddBeneficiary?: (data: Partial<Beneficiary>) => Promise<boolean>;
   onUpdateBeneficiaryStatus?: (id: string, status: "approved" | "pending" | "rejected") => Promise<boolean>;
+  onArchiveOrDeleteBeneficiary?: (payload: { beneficiaryId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreBeneficiary?: (beneficiaryId: string) => Promise<{ ok: boolean; error?: string }>;
+  onArchiveOrDeleteVolunteer?: (payload: { volunteerId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreVolunteer?: (volunteerId: string) => Promise<{ ok: boolean; error?: string }>;
   onSubmitOfficialLetter?: (letter: Partial<OfficialLetter>) => Promise<{ success: boolean; letter?: OfficialLetter; message?: string }>;
   onAddExpense?: (exp: any) => Promise<boolean>;
   onAddProject?: (proj: any) => Promise<boolean>;
@@ -178,6 +184,10 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   onCancelHandover = async () => false,
   onAddBeneficiary,
   onUpdateBeneficiaryStatus,
+  onArchiveOrDeleteBeneficiary,
+  onRestoreBeneficiary,
+  onArchiveOrDeleteVolunteer,
+  onRestoreVolunteer,
   onSubmitOfficialLetter,
   onAddExpense,
   onAddProject,
@@ -287,6 +297,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     if (isVolunteerDept) {
       tabs.push({ id: 'volunteer_ops', label: 'الفرص والمبادرات التطوعية' });
       tabs.push({ id: 'volunteer_transfers', label: 'طلبات نقل وإنهاء ارتباط المتطوعين' });
+      tabs.push({ id: 'volunteers_archive', label: 'أرشيف المتطوعين' });
       tabs.push({ id: 'requests', label: 'طلبات الانضمام والتطوع' });
       tabs.push({ id: 'team_support', label: 'الدعم الفني للفرق والمتطوعين' });
     }
@@ -387,9 +398,18 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     (d.assignedToDirectorId && d.assignedToDirectorId === currentUser?.id)
   );
 
+  const activeBeneficiariesList = useMemo(
+    () => (beneficiaries || []).filter(b => !b.isArchived && b.status !== 'archived' && b.status !== 'deactivated'),
+    [beneficiaries]
+  );
+  const activeVolunteersList = useMemo(
+    () => (volunteers || []).filter(v => !v.isArchived && v.status !== 'archived' && v.status !== 'deactivated'),
+    [volunteers]
+  );
+
   const myTeams = teams.filter(t => t.departmentId === currentDept.id || !t.departmentId);
   const myTeamIds = myTeams.map(t => t.id);
-  const myVolunteers = volunteers.filter(v => v.departmentId === currentDept.id || myTeamIds.includes(v.teamId || ''));
+  const myVolunteers = activeVolunteersList.filter(v => v.departmentId === currentDept.id || myTeamIds.includes(v.teamId || ''));
   const myEmployees = employees.filter(e => e.departmentId === currentDept.id || e.departmentName === currentDept.nameAr);
 
   // Department-specific letters
@@ -836,6 +856,21 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
             </button>
           )}
 
+          {isVolunteerDept && isPageAllowed('volunteers_archive') && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('volunteers_archive')}
+              className={`px-5 py-3 rounded-t-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'volunteers_archive'
+                  ? 'bg-emerald-600 text-white shadow-lg border-b-2 border-emerald-400'
+                  : 'bg-slate-900/80 text-emerald-300 hover:bg-slate-800 border-t border-x border-slate-800'
+              }`}
+            >
+              <Archive className="w-4 h-4 text-emerald-300" />
+              <span>أرشيف المتطوعين</span>
+            </button>
+          )}
+
           {isExecutiveDept && (
             <button
               type="button"
@@ -897,7 +932,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
               <HeartHandshake className="w-4 h-4 text-emerald-300" />
               <span>إدارة المستفيدين والتوزيعات</span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-900/90 text-[10px] font-mono font-bold text-emerald-300 border border-emerald-700">
-                {beneficiaries.length} مستفيد
+                {activeBeneficiariesList.length} مستفيد
               </span>
             </button>
           )}
@@ -1210,11 +1245,25 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
           <div className="space-y-6">
             <VolunteerTeamTransferManager
               teams={teams}
-              volunteers={volunteers}
+              volunteers={activeVolunteersList}
               currentUser={currentUser}
               userRole={effectiveRole}
+              onRefreshData={onRefreshGlobalData}
             />
           </div>
+        )}
+
+        {/* 2.1B VOLUNTEERS ARCHIVE DIRECTORY FOR VOLUNTEER DEPT */}
+        {activeTab === 'volunteers_archive' && (
+          <ArchivesDirectoryPanel
+            mode="volunteers"
+            volunteers={volunteers}
+            teams={teams}
+            onRestore={async (volunteerId) => {
+              if (onRestoreVolunteer) return await onRestoreVolunteer(volunteerId);
+              return { ok: false, error: 'تعذر استعادة المتطوع' };
+            }}
+          />
         )}
 
         {/* BENEFICIARIES & OPERATIONS REAL-TIME STATISTICS TAB (Requirement 1) */}
@@ -1255,14 +1304,14 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
                   <p className="text-xs text-slate-400 font-bold">إجمالي المستفيدين المسجلين</p>
-                  <p className="text-2xl font-black text-white mt-1 font-mono">{beneficiaries.length}</p>
+                  <p className="text-2xl font-black text-white mt-1 font-mono">{activeBeneficiariesList.length}</p>
                   <p className="text-[10px] text-emerald-400 mt-1">سجل رقمي موحد ومعتمد</p>
                 </div>
 
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
                   <p className="text-xs text-slate-400 font-bold">المستفيدون النشطون</p>
                   <p className="text-2xl font-black text-emerald-400 mt-1 font-mono">
-                    {beneficiaries.filter(b => b.status === 'approved').length}
+                    {activeBeneficiariesList.filter(b => b.status === 'approved').length}
                   </p>
                   <p className="text-[10px] text-slate-400 mt-1">معتمدون لاستحقاق المساعدات</p>
                 </div>
@@ -1270,7 +1319,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
                   <p className="text-xs text-slate-400 font-bold">قيد المراجعة والتدقيق</p>
                   <p className="text-2xl font-black text-amber-400 mt-1 font-mono">
-                    {beneficiaries.filter(b => b.status === 'pending').length}
+                    {activeBeneficiariesList.filter(b => b.status === 'pending').length}
                   </p>
                   <p className="text-[10px] text-slate-400 mt-1">بانتظار استكمال الوثائق</p>
                 </div>
@@ -1296,31 +1345,31 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">المتزوجون والمتزوجات</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.maritalStatus === 'متزوج' || b.maritalStatus === 'متزوجة').length}
+                        {activeBeneficiariesList.filter(b => b.maritalStatus === 'متزوج' || b.maritalStatus === 'متزوجة').length}
                       </span>
                     </div>
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">العزاب والعازبات</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.maritalStatus === 'أعزب' || b.maritalStatus === 'عزباء').length}
+                        {activeBeneficiariesList.filter(b => b.maritalStatus === 'أعزب' || b.maritalStatus === 'عزباء').length}
                       </span>
                     </div>
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">الأرامل</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.maritalStatus === 'أرمل' || b.maritalStatus === 'أرملة').length}
+                        {activeBeneficiariesList.filter(b => b.maritalStatus === 'أرمل' || b.maritalStatus === 'أرملة').length}
                       </span>
                     </div>
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">المطلقون والمطلقات</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.maritalStatus === 'مطلق' || b.maritalStatus === 'مطلقة').length}
+                        {activeBeneficiariesList.filter(b => b.maritalStatus === 'مطلق' || b.maritalStatus === 'مطلقة').length}
                       </span>
                     </div>
                     <div className="p-3 bg-emerald-950/40 rounded-xl border border-emerald-500/30 flex justify-between items-center col-span-2">
                       <span className="text-emerald-300 font-bold">الأيتام واليتيمات (صفة مستقلة)</span>
                       <span className="font-black text-emerald-400 font-mono text-sm">
-                        {beneficiaries.filter(b => b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة').length}
+                        {activeBeneficiariesList.filter(b => b.orphanStatus === 'يتيم' || b.orphanStatus === 'يتيمة').length}
                       </span>
                     </div>
                   </div>
@@ -1336,19 +1385,19 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">المواطنون السعوديون</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.residencyStatus === 'مواطن سعودي' || (!b.residencyStatus && b.nationalId?.startsWith('1'))).length}
+                        {activeBeneficiariesList.filter(b => b.residencyStatus === 'مواطن سعودي' || (!b.residencyStatus && b.nationalId?.startsWith('1'))).length}
                       </span>
                     </div>
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">المقيمون</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.residencyStatus === 'مقيم' || (!b.residencyStatus && b.nationalId?.startsWith('2'))).length}
+                        {activeBeneficiariesList.filter(b => b.residencyStatus === 'مقيم' || (!b.residencyStatus && b.nationalId?.startsWith('2'))).length}
                       </span>
                     </div>
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
                       <span className="text-slate-300">أبناء وبنات المواطنات السعوديات</span>
                       <span className="font-bold text-white font-mono">
-                        {beneficiaries.filter(b => b.residencyStatus === 'ابن أو ابنة مواطنة سعودية' || b.residencyStatus?.includes('مواطنة')).length}
+                        {activeBeneficiariesList.filter(b => b.residencyStatus === 'ابن أو ابنة مواطنة سعودية' || b.residencyStatus?.includes('مواطنة')).length}
                       </span>
                     </div>
                   </div>
@@ -1375,7 +1424,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
               currentUser={currentUser}
               userRole={effectiveRole}
               teams={teams}
-              teamVolunteers={volunteers}
+              teamVolunteers={activeVolunteersList}
             />
           </div>
         )}
@@ -1482,6 +1531,8 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
             onCancelHandover={onCancelHandover}
             onUpdateBeneficiaryStatus={onUpdateBeneficiaryStatus}
             onAddBeneficiary={onAddBeneficiary}
+            onArchiveOrDeleteBeneficiary={onArchiveOrDeleteBeneficiary}
+            onRestoreBeneficiary={onRestoreBeneficiary}
             onRefreshGlobalData={onRefreshGlobalData}
             lang="ar"
           />
@@ -2691,7 +2742,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
         <BeneficiariesStatisticsModal
           isOpen={isBenStatsModalOpen}
           onClose={() => setIsBenStatsModalOpen(false)}
-          beneficiaries={beneficiaries}
+          beneficiaries={activeBeneficiariesList}
           distributions={distributions}
           handoverRecords={distributionHandovers}
           currentUser={currentUser}

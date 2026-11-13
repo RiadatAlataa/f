@@ -36,7 +36,8 @@ import {
   AlertTriangle,
   RefreshCw,
   TrendingUp,
-  Inbox
+  Inbox,
+  Archive
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { 
@@ -54,6 +55,9 @@ import { BeneficiaryFormFields, BeneficiaryFormData } from './BeneficiaryFormFie
 import { CreateAidDistributionModal } from './CreateAidDistributionModal';
 import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
 import { OfficialLetterheadTemplate } from './OfficialLetterheadTemplate';
+import { AccountArchiveActionModal } from './AccountArchiveActionModal';
+import { ArchivesDirectoryPanel } from './ArchivesDirectoryPanel';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 interface BeneficiariesMasterDashboardProps {
   beneficiaries: Beneficiary[];
@@ -75,6 +79,8 @@ interface BeneficiariesMasterDashboardProps {
   onCancelHandover: (handoverId: string) => Promise<boolean>;
   onUpdateBeneficiaryStatus?: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
   onAddBeneficiary?: (data: Partial<Beneficiary>) => Promise<boolean>;
+  onArchiveOrDeleteBeneficiary?: (payload: { beneficiaryId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreBeneficiary?: (beneficiaryId: string) => Promise<{ ok: boolean; error?: string }>;
   onRefreshGlobalData?: () => void | Promise<any>;
   lang?: 'ar' | 'en';
 }
@@ -83,6 +89,7 @@ type TabType =
   | 'overview' 
   | 'allocations'
   | 'beneficiaries' 
+  | 'archive'
   | 'distributions' 
   | 'eligibilities' 
   | 'handover_ledger' 
@@ -107,6 +114,8 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   onCancelHandover,
   onUpdateBeneficiaryStatus,
   onAddBeneficiary,
+  onArchiveOrDeleteBeneficiary,
+  onRestoreBeneficiary,
   onRefreshGlobalData,
   lang = 'ar'
 }) => {
@@ -150,20 +159,10 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       }
 
       const headers: Record<string, string> = {
+        ...getAuthHeaders(),
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
       };
-      try {
-        const stored = localStorage.getItem('reyadat_session_auth');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed?.sessionToken) headers['x-session-token'] = parsed.sessionToken;
-          if (parsed?.role) headers['x-user-role'] = parsed.role;
-          if (parsed?.user?.id) headers['x-user-id'] = parsed.user.id;
-          if (parsed?.user?.departmentId) headers['x-department-id'] = parsed.user.departmentId;
-          if (parsed?.user?.nationalId) headers['x-national-id'] = parsed.user.nationalId;
-        }
-      } catch {}
 
       const res = await fetch("/api/db/beneficiaries", { headers });
 
@@ -206,6 +205,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [distToPrint, setDistToPrint] = useState<AidDistribution | null>(null);
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
+  const [archiveTargetBen, setArchiveTargetBen] = useState<Beneficiary | null>(null);
   const [isAddBenModalOpen, setIsAddBenModalOpen] = useState(false);
   const [manualBarcodeQuery, setManualBarcodeQuery] = useState('');
   const [quickHandoverMsg, setQuickHandoverMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -259,10 +259,79 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [ledgerSearchQuery, setLedgerSearchQuery] = useState('');
   const [ledgerDistFilter, setLedgerDistFilter] = useState('all');
 
-  // Statistics Calculations
+  // Raw vs active-only vs archived-only beneficiaries
+  const allRawBeneficiaries = useMemo(() => {
+    return (internalBeneficiaries && internalBeneficiaries.length > 0) ? internalBeneficiaries : (beneficiaries || []);
+  }, [internalBeneficiaries, beneficiaries]);
+
+  const effectiveBeneficiaries = useMemo(() => {
+    return allRawBeneficiaries.filter(
+      (b) => !b.isArchived && b.status !== 'archived' && b.status !== 'deactivated'
+    );
+  }, [allRawBeneficiaries]);
+
+  const archivedBeneficiariesList = useMemo(() => {
+    return allRawBeneficiaries.filter(
+      (b) => b.isArchived === true || b.status === 'archived' || b.status === 'deactivated'
+    );
+  }, [allRawBeneficiaries]);
+
+  const canManageBeneficiaryArchive = useMemo(() => {
+    const role = currentUser?.role || '';
+    if (['admin', 'operations_manager', 'department_admin'].includes(role)) return true;
+    return currentUser?.departmentId === 'dep-4';
+  }, [currentUser]);
+
+  const handleArchiveBeneficiaryAction = async (payload: {
+    beneficiaryId: string;
+    actionType: 'archive' | 'deactivate' | 'permanent_delete';
+    reason: string;
+  }) => {
+    if (onArchiveOrDeleteBeneficiary) {
+      const res = await onArchiveOrDeleteBeneficiary(payload);
+      if (res.ok) await fetchDirectBeneficiaries(true);
+      return res;
+    }
+    try {
+      const res = await fetch('/api/db/beneficiaries/archive-or-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: json?.error || 'تعذر تنفيذ الإجراء.' };
+      await fetchDirectBeneficiaries(true);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'تعذر الاتصال بالخادم.' };
+    }
+  };
+
+  const handleRestoreBeneficiaryAction = async (beneficiaryId: string) => {
+    if (onRestoreBeneficiary) {
+      const res = await onRestoreBeneficiary(beneficiaryId);
+      if (res.ok) await fetchDirectBeneficiaries(true);
+      return res;
+    }
+    try {
+      const res = await fetch('/api/db/beneficiaries/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ beneficiaryId })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: json?.error || 'تعذر استعادة المستفيد.' };
+      await fetchDirectBeneficiaries(true);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'تعذر الاتصال بالخادم.' };
+    }
+  };
+
+  // Statistics Calculations (active beneficiaries only)
   const stats = useMemo(() => {
-    const totalBeneficiaries = beneficiaries.length;
-    const approvedBeneficiaries = beneficiaries.filter(b => b.status === 'approved').length;
+    const totalBeneficiaries = effectiveBeneficiaries.length;
+    const approvedBeneficiaries = effectiveBeneficiaries.filter(b => b.status === 'approved').length;
     const totalDistributions = distributions.length;
     const activeDistributions = distributions.filter(d => d.status === 'active').length;
     const completedDistributions = distributions.filter(d => d.status === 'completed').length;
@@ -293,7 +362,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       totalAllocatedStock,
       completionRate
     };
-  }, [beneficiaries, distributions, handoverRecords]);
+  }, [effectiveBeneficiaries, distributions, handoverRecords]);
 
   // Available warehouse items for linking
   const availableInventoryItems = useMemo(() => {
@@ -307,11 +376,6 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       };
     });
   }, [inventoryItems]);
-
-  // Effective beneficiaries list prioritizing fresh internal fetch
-  const effectiveBeneficiaries = useMemo(() => {
-    return (internalBeneficiaries && internalBeneficiaries.length > 0) ? internalBeneficiaries : (beneficiaries || []);
-  }, [internalBeneficiaries, beneficiaries]);
 
   // Filtered beneficiaries
   const filteredBeneficiaries = useMemo(() => {
@@ -738,7 +802,8 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           {[
             { id: 'overview', label: 'إدارة المستفيدين', icon: Building2 },
             { id: 'allocations', label: 'تخصيص المساعدات للمستفيدين', icon: Layers, badge: availableInventoryItems.filter(i => i.availableStock > 0).length },
-            { id: 'beneficiaries', label: 'المستفيدون', icon: Users, badge: beneficiaries.length },
+            { id: 'beneficiaries', label: 'المستفيدون', icon: Users, badge: effectiveBeneficiaries.length },
+            { id: 'archive', label: 'أرشيف المستفيدين', icon: Archive, badge: archivedBeneficiariesList.length },
             { id: 'distributions', label: 'كشوف التوزيع وأوامر الصرف', icon: Package, badge: distributions.length },
             { id: 'eligibilities', label: 'الاستحقاقات', icon: CheckSquare },
             { id: 'handover_ledger', label: 'سجل الاستلام', icon: FileText, badge: handoverRecords.length },
@@ -1497,6 +1562,17 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                             <Package className="w-3.5 h-3.5" />
                             <span>سجل الاستلام ({handoverRecords.filter(h => h.beneficiaryId === ben.id || (h.nationalId && h.nationalId === ben.nationalId)).length})</span>
                           </button>
+                          {canManageBeneficiaryArchive && (
+                            <button
+                              type="button"
+                              onClick={() => setArchiveTargetBen(ben)}
+                              className="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                              title="حذف أو أرشفة ملف المستفيد"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>حذف المستفيد</span>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1506,6 +1582,17 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
             </table>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2B: BENEFICIARIES ARCHIVE DIRECTORY (أرشيف المستفيدين)              */}
+      {/* ========================================================================= */}
+      {activeTab === 'archive' && (
+        <ArchivesDirectoryPanel
+          mode="beneficiaries"
+          beneficiaries={allRawBeneficiaries}
+          onRestore={handleRestoreBeneficiaryAction}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -2679,6 +2766,43 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           </div>
         </OfficialLetterheadTemplate>
       )}
+
+      {/* SAFE BENEFICIARY ARCHIVE / DELETE MODAL */}
+      {archiveTargetBen && (() => {
+        const benHandovers = (handoverRecords || []).filter(
+          h => h.beneficiaryId === archiveTargetBen.id || (h.nationalId && h.nationalId === archiveTargetBen.nationalId)
+        ).length;
+        const benTargetedDist = (distributions || []).filter(
+          d => Array.isArray(d.targetedBeneficiaryIds) && d.targetedBeneficiaryIds.includes(archiveTargetBen.id)
+        ).length;
+        const benAidHist = Array.isArray((archiveTargetBen as any).aidHistory) ? (archiveTargetBen as any).aidHistory.length : 0;
+        const hasHistory = benHandovers > 0 || benTargetedDist > 0 || benAidHist > 0;
+        const parts: string[] = [];
+        if (benHandovers > 0) parts.push(`${benHandovers} سند استلام`);
+        if (benTargetedDist > 0) parts.push(`${benTargetedDist} حملة توزيع`);
+        if (benAidHist > 0) parts.push(`${benAidHist} سجل مساعدة سابق`);
+
+        return (
+          <AccountArchiveActionModal
+            isOpen={true}
+            entityType="beneficiary"
+            entityName={archiveTargetBen.name}
+            fileNumber={archiveTargetBen.beneficiaryNumber || archiveTargetBen.barcodeId}
+            secondaryLabel={`${archiveTargetBen.category || 'أسر متعففة'} • ${archiveTargetBen.phone || ''}`}
+            canPermanentDelete={true}
+            hasLinkedHistory={hasHistory}
+            linkedHistorySummary={hasHistory ? `يمتلك المستفيد سجلات تاريخية موثقة (${parts.join('، ')}). يُمنع الحذف النهائي لحماية سندات الصرف والصور ويُطبق الأرشفة الآمنة.` : undefined}
+            onClose={() => setArchiveTargetBen(null)}
+            onConfirm={async ({ actionType, reason }) => {
+              return await handleArchiveBeneficiaryAction({
+                beneficiaryId: archiveTargetBen.id,
+                actionType,
+                reason
+              });
+            }}
+          />
+        );
+      })()}
     </div>
   );
 };

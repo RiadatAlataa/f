@@ -74,9 +74,15 @@ export const CreateAidDistributionModal: React.FC<CreateAidDistributionModalProp
     return Math.max(0, cur - res);
   }, [selectedInventoryItem]);
 
+  const activeBeneficiaries = useMemo(() => {
+    return (beneficiaries || []).filter(
+      (b) => !b.isArchived && b.status !== 'archived' && b.status !== 'deactivated'
+    );
+  }, [beneficiaries]);
+
   // Compute matched beneficiaries for Category Filter mode
   const categoryMatchedBeneficiaries = useMemo(() => {
-    return beneficiaries.filter((b) => {
+    return activeBeneficiaries.filter((b) => {
       // Must be approved / active
       if (b.status !== 'approved') return false;
 
@@ -122,19 +128,19 @@ export const CreateAidDistributionModal: React.FC<CreateAidDistributionModalProp
         return conds.every(Boolean);
       }
     });
-  }, [beneficiaries, selectedMaritalStatuses, selectedOrphanStatuses, selectedResidencyStatuses, selectedCity, selectedDistrict, selectedNationality, filterLogic]);
+  }, [activeBeneficiaries, selectedMaritalStatuses, selectedOrphanStatuses, selectedResidencyStatuses, selectedCity, selectedDistrict, selectedNationality, filterLogic]);
 
   // Compute final effective beneficiaries based on mode
   const finalTargetedBeneficiaries = useMemo(() => {
     if (distributionMode === 'manual_selection') {
-      return beneficiaries.filter(b => manuallySelectedIds.has(b.id));
+      return activeBeneficiaries.filter(b => manuallySelectedIds.has(b.id));
     }
     if (distributionMode === 'all_eligible') {
-      return beneficiaries.filter(b => b.status === 'approved' && !excludedIds.has(b.id));
+      return activeBeneficiaries.filter(b => b.status === 'approved' && !excludedIds.has(b.id));
     }
     // Category match
     return categoryMatchedBeneficiaries.filter(b => !excludedIds.has(b.id));
-  }, [distributionMode, beneficiaries, manuallySelectedIds, categoryMatchedBeneficiaries, excludedIds]);
+  }, [distributionMode, activeBeneficiaries, manuallySelectedIds, categoryMatchedBeneficiaries, excludedIds]);
 
   const targetCount = finalTargetedBeneficiaries.length;
   const totalRequiredQuantity = targetCount * (Number(unitQuantityPerBeneficiary) || 1);
@@ -167,15 +173,16 @@ export const CreateAidDistributionModal: React.FC<CreateAidDistributionModalProp
 
   // Filter for manual picker
   const manualFilteredList = useMemo(() => {
-    if (!manualSearchQuery.trim()) return beneficiaries.filter(b => b.status === 'approved');
+    const eligible = activeBeneficiaries.filter(b => b.status === 'approved');
+    if (!manualSearchQuery.trim()) return eligible;
     const q = manualSearchQuery.trim().toLowerCase();
-    return beneficiaries.filter(b => 
+    return eligible.filter(b => 
       b.name.toLowerCase().includes(q) ||
       (b.nationalId && b.nationalId.includes(q)) ||
       (b.beneficiaryNumber && b.beneficiaryNumber.toLowerCase().includes(q)) ||
       (b.barcodeId && b.barcodeId.toLowerCase().includes(q))
     );
-  }, [beneficiaries, manualSearchQuery]);
+  }, [activeBeneficiaries, manualSearchQuery]);
 
   // Available districts for city
   const cityDistricts = useMemo(() => {

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /auth
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /portal
+Disallow: /api/
+
+Sitemap: https://www.riadataleata.com/sitemap.xml

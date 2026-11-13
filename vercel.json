@@ -3,7 +3,23 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "headers": [
+    {
+      "source": "/(login|auth|admin|dashboard|portal)(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/sitemap.xml",
+      "destination": "https://riadataleata-api.onrender.com/sitemap.xml"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "https://riadataleata-api.onrender.com/robots.txt"
+    },
     {
       "source": "/api/(.*)",
       "destination": "https://riadataleata-api.onrender.com/api/$1"

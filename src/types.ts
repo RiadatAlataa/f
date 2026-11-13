@@ -220,7 +220,19 @@ export interface Volunteer {
   departmentId: string;
   titleAr?: string;
   titleEn?: string;
-  status: 'active' | 'inactive' | 'suspended';
+  status: 'active' | 'inactive' | 'suspended' | 'deactivated' | 'archived';
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archivedById?: string;
+  archiveReason?: string;
+  accountActionType?: 'deactivate' | 'archive' | 'permanent_delete' | string;
+  previousStatus?: string;
+  deactivatedAt?: string;
+  deactivatedBy?: string;
+  restoredAt?: string;
+  restoredBy?: string;
+  loginDisabled?: boolean;
   points: number;
   qrCode?: string; // text representation
   barcode: string; // text representation
@@ -925,6 +937,7 @@ export interface HomeSettings {
       canIssueOfficialLetters?: boolean;
     }[];
   };
+  showRegistrationLinksOnHome?: boolean;
   sectionVisibility: {
     about: boolean;
     orgChart?: boolean;
@@ -1262,7 +1275,19 @@ export interface Beneficiary {
   category?: string; // e.g. "أيتام", "أرامل", "أسر متعففة", "ذوي الاحتياجات", إلخ
   notes?: string;
   photo?: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'deactivated' | 'archived';
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archivedById?: string;
+  archiveReason?: string;
+  accountActionType?: 'deactivate' | 'archive' | 'permanent_delete' | string;
+  previousStatus?: string;
+  deactivatedAt?: string;
+  deactivatedBy?: string;
+  restoredAt?: string;
+  restoredBy?: string;
+  loginDisabled?: boolean;
   createdAt: string;
   updatedAt?: string;
   password?: string;

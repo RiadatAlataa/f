@@ -46,7 +46,9 @@ import {
   Pencil,
   UserCheck,
   Heart,
-  BarChart3
+  BarChart3,
+  Archive,
+  Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
@@ -59,6 +61,9 @@ import { BeneficiaryFormFields, BeneficiaryFormData } from './BeneficiaryFormFie
 import { normalizeLegacyBeneficiaryData, ResidencyStatus } from '../data/beneficiaryRegistryData';
 import { CreateAidDistributionModal } from './CreateAidDistributionModal';
 import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
+import { AccountArchiveActionModal } from './AccountArchiveActionModal';
+import { ArchivesDirectoryPanel } from './ArchivesDirectoryPanel';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 interface BeneficiariesManagerProps {
   beneficiaries: Beneficiary[];
@@ -68,8 +73,11 @@ interface BeneficiariesManagerProps {
   lang?: "ar" | "en";
   currentUserRole?: string;
   currentUserName?: string;
+  userPermissions?: string[];
   onAddNewBeneficiary?: (ben: Partial<Beneficiary>) => Promise<boolean>;
   onImportBeneficiaries?: (beneficiaries: Partial<Beneficiary>[], fileType: 'excel' | 'pdf') => Promise<boolean>;
+  onArchiveOrDeleteBeneficiary?: (payload: { beneficiaryId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreBeneficiary?: (beneficiaryId: string) => Promise<{ ok: boolean; error?: string }>;
   onNavigateToDistributions?: () => void;
   activeDistributionsCount?: number;
   distributions?: AidDistribution[];
@@ -88,8 +96,11 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   lang = "ar",
   currentUserRole = "admin",
   currentUserName = "الإدارة العامة",
+  userPermissions = [],
   onAddNewBeneficiary,
   onImportBeneficiaries,
+  onArchiveOrDeleteBeneficiary,
+  onRestoreBeneficiary,
   onNavigateToDistributions,
   activeDistributionsCount = 0,
   distributions = [],
@@ -101,6 +112,9 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   // Beneficiary Aid History Modal State
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
+  // Safe Archive / Delete & Archive Directory states
+  const [sectionView, setSectionView] = useState<'active' | 'archive'>('active');
+  const [archiveTargetBen, setArchiveTargetBen] = useState<Beneficiary | null>(null);
 
   // Direct Beneficiaries Data Hydration & Anti-Stale State Engine
   const [internalBeneficiaries, setInternalBeneficiaries] = useState<Beneficiary[]>(beneficiaries);
@@ -125,20 +139,10 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       }
 
       const headers: Record<string, string> = {
+        ...getAuthHeaders(),
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
       };
-      try {
-        const stored = localStorage.getItem('reyadat_session_auth');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed?.sessionToken) headers['x-session-token'] = parsed.sessionToken;
-          if (parsed?.role) headers['x-user-role'] = parsed.role;
-          if (parsed?.user?.id) headers['x-user-id'] = parsed.user.id;
-          if (parsed?.user?.departmentId) headers['x-department-id'] = parsed.user.departmentId;
-          if (parsed?.user?.nationalId) headers['x-national-id'] = parsed.user.nationalId;
-        }
-      } catch {}
 
       const res = await fetch("/api/db/beneficiaries", { headers });
 
@@ -283,14 +287,85 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
   // Security Check: Authorized roles (Requirement 6)
   const isAuthorizedToExport = useMemo(() => {
-    const authorizedRoles = ["admin", "department_admin", "supervisor", "leader", "staff"];
+    const authorizedRoles = ["admin", "operations_manager", "department_admin", "supervisor", "leader", "staff"];
     return authorizedRoles.includes(currentUserRole);
   }, [currentUserRole]);
 
-  // Effective beneficiaries list prioritizing fresh live data
-  const effectiveBeneficiaries = useMemo(() => {
+  const canManageBeneficiaryArchive = useMemo(() => {
+    const allowedRoles = ["admin", "operations_manager", "department_admin"];
+    if (allowedRoles.includes(currentUserRole)) return true;
+    const perms = Array.isArray(userPermissions) ? userPermissions : [];
+    return perms.some((p) =>
+      ["super_admin", "all_permissions", "delete_data", "edit_data", "beneficiaries_delete"].includes(p)
+    );
+  }, [currentUserRole, userPermissions]);
+
+  // All raw beneficiaries vs active-only vs archived-only
+  const allRawBeneficiaries = useMemo(() => {
     return (internalBeneficiaries && internalBeneficiaries.length > 0) ? internalBeneficiaries : (beneficiaries || []);
   }, [internalBeneficiaries, beneficiaries]);
+
+  const effectiveBeneficiaries = useMemo(() => {
+    return allRawBeneficiaries.filter(
+      (b) => !b.isArchived && b.status !== 'archived' && b.status !== 'deactivated'
+    );
+  }, [allRawBeneficiaries]);
+
+  const archivedBeneficiariesList = useMemo(() => {
+    return allRawBeneficiaries.filter(
+      (b) => b.isArchived === true || b.status === 'archived' || b.status === 'deactivated'
+    );
+  }, [allRawBeneficiaries]);
+
+  const handleArchiveBeneficiaryAction = async (payload: {
+    beneficiaryId: string;
+    actionType: 'archive' | 'deactivate' | 'permanent_delete';
+    reason: string;
+  }) => {
+    if (onArchiveOrDeleteBeneficiary) {
+      const res = await onArchiveOrDeleteBeneficiary(payload);
+      if (res.ok) await fetchDirectBeneficiaries();
+      return res;
+    }
+    try {
+      const res = await fetch('/api/db/beneficiaries/archive-or-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: json?.error || 'تعذر تنفيذ الإجراء.' };
+      }
+      await fetchDirectBeneficiaries();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'تعذر الاتصال بالخادم.' };
+    }
+  };
+
+  const handleRestoreBeneficiaryAction = async (beneficiaryId: string) => {
+    if (onRestoreBeneficiary) {
+      const res = await onRestoreBeneficiary(beneficiaryId);
+      if (res.ok) await fetchDirectBeneficiaries();
+      return res;
+    }
+    try {
+      const res = await fetch('/api/db/beneficiaries/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ beneficiaryId })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: json?.error || 'تعذر استعادة المستفيد.' };
+      }
+      await fetchDirectBeneficiaries();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'تعذر الاتصال بالخادم.' };
+    }
+  };
 
   // Unique categories extracted from existing data
   const availableCategories = useMemo(() => {
@@ -422,7 +497,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
         return sortOrder === 'asc' ? comparison : -comparison;
       });
-  }, [beneficiaries, statusFilter, dateFilter, familySizeFilter, categoryFilter, residencyFilter, orphanFilter, searchTerm, sortField, sortOrder]);
+  }, [effectiveBeneficiaries, statusFilter, dateFilter, familySizeFilter, categoryFilter, residencyFilter, orphanFilter, searchTerm, sortField, sortOrder]);
 
   // Reset page when filters change
   React.useEffect(() => {
@@ -894,6 +969,30 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
           {/* ACTION BUTTONS: IMPORT, DISTRIBUTIONS, ADD BENEFICIARY & EXPORT */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* ACTIVE / ARCHIVE SECTION SWITCHER */}
+            <div className="inline-flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+              <button
+                type="button"
+                onClick={() => setSectionView('active')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  sectionView === 'active' ? "bg-white text-emerald-700 shadow-2xs" : "text-neutral-600 hover:text-neutral-900"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>المستفيدون النشطون ({effectiveBeneficiaries.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSectionView('archive')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  sectionView === 'archive' ? "bg-slate-800 text-white shadow-2xs" : "text-neutral-600 hover:text-neutral-900"
+                }`}
+              >
+                <Archive className="w-3.5 h-3.5" />
+                <span>أرشيف المستفيدين ({archivedBeneficiariesList.length})</span>
+              </button>
+            </div>
+
             {/* VIEW MODE TOGGLE */}
             <div className="hidden sm:inline-flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200">
               <button
@@ -1275,7 +1374,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           {isFiltered && (
             <div className="text-[11px] bg-emerald-50/60 border border-emerald-200 p-2.5 rounded-xl flex items-center justify-between">
               <span className="text-emerald-950 font-medium">
-                تم تطبيق الفلاتر: عرض <strong>{filteredBeneficiaries.length}</strong> من أصل <strong>{beneficiaries.length}</strong> مستفيد.
+                تم تطبيق الفلاتر: عرض <strong>{filteredBeneficiaries.length}</strong> من أصل <strong>{effectiveBeneficiaries.length}</strong> مستفيد.
               </span>
               <span className="text-[10.5px] text-emerald-800 font-bold">
                 جاهز للتصدير والعرض
@@ -1286,9 +1385,15 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* BENEFICIARIES DATA TABLE / CARDS VIEW (Requirement 1 & 2)     */}
+      {/* BENEFICIARIES ARCHIVE DIRECTORY OR DATA TABLE / CARDS VIEW    */}
       {/* ------------------------------------------------------------- */}
-      {viewMode === 'table' ? (
+      {sectionView === 'archive' ? (
+        <ArchivesDirectoryPanel
+          mode="beneficiaries"
+          beneficiaries={allRawBeneficiaries}
+          onRestore={handleRestoreBeneficiaryAction}
+        />
+      ) : viewMode === 'table' ? (
         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xs overflow-hidden">
           {/* HORIZONTAL SCROLL CONTAINER */}
           <div className="overflow-x-auto w-full">
@@ -1684,20 +1789,34 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                               اعتماد
                             </button>
 
-                            {/* Reject / Suspend */}
-                            <button
-                              onClick={() => onUpdateBeneficiaryStatus(ben.id, "rejected")}
-                              title="إيقاف ملف المستفيد"
-                              className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
-                                ben.status === "rejected"
-                                  ? "bg-rose-600 text-white border-rose-600 shadow-2xs"
-                                  : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border-rose-300 dark:border-rose-800"
-                              }`}
-                            >
-                              إيقاف
-                            </button>
-                          </div>
-                        </td>
+                              {/* Reject / Suspend */}
+                              <button
+                                onClick={() => onUpdateBeneficiaryStatus(ben.id, "rejected")}
+                                title="إيقاف ملف المستفيد"
+                                className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                  ben.status === "rejected"
+                                    ? "bg-rose-600 text-white border-rose-600 shadow-2xs"
+                                    : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border-rose-300 dark:border-rose-800"
+                                }`}
+                              >
+                                إيقاف
+                              </button>
+
+                              {/* Delete / Archive Beneficiary */}
+                              {canManageBeneficiaryArchive && (
+                                <button
+                                  type="button"
+                                  id={`btn-delete-ben-${ben.id}`}
+                                  onClick={() => setArchiveTargetBen(ben)}
+                                  title="حذف أو أرشفة ملف المستفيد"
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 transition-all cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>حذف المستفيد</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
                       </tr>
                     );
                   })
@@ -1906,7 +2025,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
                       <button
                         onClick={() => onUpdateBeneficiaryStatus(ben.id, "approved")}
                         className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
@@ -1923,6 +2042,16 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                       >
                         إيقاف
                       </button>
+                      {canManageBeneficiaryArchive && (
+                        <button
+                          type="button"
+                          onClick={() => setArchiveTargetBen(ben)}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>حذف المستفيد</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2881,7 +3010,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
         <CreateAidDistributionModal
           isOpen={isCreateDistributionOpen}
           onClose={() => setIsCreateDistributionOpen(false)}
-          beneficiaries={beneficiaries}
+          beneficiaries={effectiveBeneficiaries}
           inventoryItems={inventoryItems}
           currentUser={{ name: currentUserName || "مدير إدارة المستفيدين", role: currentUserRole }}
           onSuccess={() => {
@@ -2899,13 +3028,50 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
         <BeneficiariesStatisticsModal
           isOpen={isStatsModalOpen}
           onClose={() => setIsStatsModalOpen(false)}
-          beneficiaries={beneficiaries}
+          beneficiaries={effectiveBeneficiaries}
           distributions={distributions}
           handoverRecords={handoverRecords}
           currentUser={{ name: currentUserName, role: currentUserRole }}
           lang={lang}
         />
       )}
+
+      {/* SAFE BENEFICIARY ARCHIVE / DELETE MODAL */}
+      {archiveTargetBen && (() => {
+        const benHandovers = (handoverRecords || []).filter(
+          h => h.beneficiaryId === archiveTargetBen.id || (h.nationalId && h.nationalId === archiveTargetBen.nationalId)
+        ).length;
+        const benTargetedDist = (distributions || []).filter(
+          d => Array.isArray(d.targetedBeneficiaryIds) && d.targetedBeneficiaryIds.includes(archiveTargetBen.id)
+        ).length;
+        const benAidHist = Array.isArray((archiveTargetBen as any).aidHistory) ? (archiveTargetBen as any).aidHistory.length : 0;
+        const hasHistory = benHandovers > 0 || benTargetedDist > 0 || benAidHist > 0;
+        const parts: string[] = [];
+        if (benHandovers > 0) parts.push(`${benHandovers} سند استلام`);
+        if (benTargetedDist > 0) parts.push(`${benTargetedDist} حملة توزيع`);
+        if (benAidHist > 0) parts.push(`${benAidHist} سجل مساعدة سابق`);
+
+        return (
+          <AccountArchiveActionModal
+            isOpen={true}
+            entityType="beneficiary"
+            entityName={archiveTargetBen.name}
+            fileNumber={archiveTargetBen.beneficiaryNumber || archiveTargetBen.barcodeId}
+            secondaryLabel={`${archiveTargetBen.category || 'أسر متعففة'} • ${archiveTargetBen.phone || ''}`}
+            canPermanentDelete={true}
+            hasLinkedHistory={hasHistory}
+            linkedHistorySummary={hasHistory ? `يمتلك المستفيد سجلات تاريخية موثقة (${parts.join('، ')}). يُمنع الحذف النهائي لحماية سندات الصرف والصور ويُطبق الأرشفة الآمنة.` : undefined}
+            onClose={() => setArchiveTargetBen(null)}
+            onConfirm={async ({ actionType, reason }) => {
+              return await handleArchiveBeneficiaryAction({
+                beneficiaryId: archiveTargetBen.id,
+                actionType,
+                reason
+              });
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

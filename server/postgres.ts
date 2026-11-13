@@ -1359,4 +1359,52 @@ export async function listAllSystemFiles(limit: number = 1000): Promise<SystemFi
   }
 }
 
+export async function recordSqlAuditLog(entry: {
+  id?: string;
+  actorId?: string;
+  actorName?: string;
+  actorRole?: string;
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  departmentId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  status?: 'success' | 'denied' | 'failed';
+  details?: Record<string, any>;
+}): Promise<boolean> {
+  const p = getPostgresPool();
+  if (!p) return false;
+
+  try {
+    const id = String(entry.id || `sql-audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).slice(0, 64);
+    await p.query(
+      `INSERT INTO audit_logs (
+        id, timestamp, actor_id, actor_name, actor_role, action,
+        entity_type, entity_id, department_id, ip_address, user_agent, status, details
+      ) VALUES (
+        $1, CURRENT_TIMESTAMP, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10, $11, $12::jsonb
+      ) ON CONFLICT (id) DO NOTHING;`,
+      [
+        id,
+        entry.actorId ? String(entry.actorId).slice(0, 64) : null,
+        entry.actorName ? String(entry.actorName).slice(0, 100) : null,
+        entry.actorRole ? String(entry.actorRole).slice(0, 50) : null,
+        String(entry.action || 'unknown').slice(0, 100),
+        entry.entityType ? String(entry.entityType).slice(0, 50) : null,
+        entry.entityId ? String(entry.entityId).slice(0, 64) : null,
+        entry.departmentId ? String(entry.departmentId).slice(0, 50) : null,
+        entry.ipAddress ? String(entry.ipAddress).slice(0, 50) : null,
+        entry.userAgent ? String(entry.userAgent).slice(0, 500) : null,
+        String(entry.status || 'success').slice(0, 20),
+        JSON.stringify(entry.details || {})
+      ]
+    );
+    return true;
+  } catch (err: any) {
+    console.error('[PostgreSQL recordSqlAuditLog Error]:', err?.message || err);
+    return false;
+  }
+}
 

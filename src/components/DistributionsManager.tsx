@@ -249,9 +249,16 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
     return map;
   }, [currentDist, handoverRecords]);
 
+  // Exclude archived / deactivated beneficiaries from active distributions & handovers
+  const activeBeneficiaries = useMemo(() => {
+    return (beneficiaries || []).filter(
+      b => !b.isArchived && b.status !== 'archived' && b.status !== 'deactivated'
+    );
+  }, [beneficiaries]);
+
   // Beneficiaries table rows enriched with receipt status
   const enrichedBeneficiaries = useMemo(() => {
-    return beneficiaries.map(ben => {
+    return activeBeneficiaries.map(ben => {
       const handover = handoversMap.get(ben.id);
       return {
         ...ben,
@@ -259,7 +266,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
         handoverRecord: handover
       };
     });
-  }, [beneficiaries, handoversMap]);
+  }, [activeBeneficiaries, handoversMap]);
 
   // Statistics for Current Distribution
   const stats = useMemo(() => {
@@ -300,11 +307,11 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   // Unique categories
   const categoriesList = useMemo(() => {
     const set = new Set<string>();
-    beneficiaries.forEach(b => {
+    activeBeneficiaries.forEach(b => {
       if (b.category) set.add(b.category);
     });
     return Array.from(set);
-  }, [beneficiaries]);
+  }, [activeBeneficiaries]);
 
   // Export to Excel
   const handleExportExcel = () => {

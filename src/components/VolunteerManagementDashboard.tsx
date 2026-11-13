@@ -31,11 +31,15 @@ import {
   Mail,
   User,
   AlertCircle,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Archive,
+  Trash2
 } from 'lucide-react';
 import { Initiative, OpportunityRequest, Volunteer, VolunteerTeam, VolunteerApplication } from '../types';
 import { InitiativeTeamEvaluationModal } from './InitiativeTeamEvaluationModal';
 import { VolunteerTeamTransferManager } from './VolunteerTeamTransferManager';
+import { AccountArchiveActionModal } from './AccountArchiveActionModal';
+import { ArchivesDirectoryPanel } from './ArchivesDirectoryPanel';
 
 interface VolunteerManagementDashboardProps {
   initiatives: Initiative[];
@@ -53,6 +57,9 @@ interface VolunteerManagementDashboardProps {
     evaluatorName?: string;
     evaluatorRole?: string;
   }) => Promise<boolean>;
+  onArchiveOrDeleteVolunteer?: (payload: { volunteerId: string; actionType: 'archive' | 'deactivate' | 'permanent_delete'; reason: string }) => Promise<{ ok: boolean; error?: string }>;
+  onRestoreVolunteer?: (volunteerId: string) => Promise<{ ok: boolean; error?: string }>;
+  canManageArchive?: boolean;
 }
 
 export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboardProps> = ({
@@ -64,13 +71,30 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
   onAcceptApplication,
   onRejectApplication,
   onReviewOpportunity,
-  onEvaluateTeamPoints
+  onEvaluateTeamPoints,
+  onArchiveOrDeleteVolunteer,
+  onRestoreVolunteer,
+  canManageArchive = false
 }) => {
-  const [dashboardView, setDashboardView] = useState<'opportunities' | 'transfers'>('opportunities');
+  const [dashboardView, setDashboardView] = useState<'opportunities' | 'transfers' | 'volunteers' | 'archive'>('opportunities');
   const [activeFilter, setActiveFilter] = useState<'all' | 'public' | 'private' | 'open' | 'full'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [evaluationTargetInit, setEvaluationTargetInit] = useState<Initiative | null>(null);
+  const [archiveTargetVol, setArchiveTargetVol] = useState<Volunteer | null>(null);
+
+  // Active-only volunteers vs archived volunteers
+  const activeVolunteersList = useMemo(() => {
+    return (Array.isArray(volunteers) ? volunteers : []).filter(
+      v => !v.isArchived && v.status !== 'archived' && v.status !== 'deactivated'
+    );
+  }, [volunteers]);
+
+  const archivedVolunteersList = useMemo(() => {
+    return (Array.isArray(volunteers) ? volunteers : []).filter(
+      v => v.isArchived === true || v.status === 'archived' || v.status === 'deactivated'
+    );
+  }, [volunteers]);
 
   // Applicants Modal State
   const [selectedOppForApplicants, setSelectedOppForApplicants] = useState<Initiative | null>(null);
@@ -84,7 +108,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
   const stats = useMemo(() => {
     const safeInits = Array.isArray(initiatives) ? initiatives : [];
     const safeOpps = Array.isArray(opportunityRequests) ? opportunityRequests : [];
-    const safeVols = Array.isArray(volunteers) ? volunteers : [];
+    const safeVols = activeVolunteersList;
 
     const totalOpportunities = safeInits.length;
     const pendingRequests = safeOpps.filter(r => r.status === 'pending').length;
@@ -117,7 +141,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
       activeVolunteers,
       occupancyRate: totalNeededSeats > 0 ? Math.round((totalOccupiedSeats / totalNeededSeats) * 100) : 0
     };
-  }, [initiatives, opportunityRequests, volunteers]);
+  }, [initiatives, opportunityRequests, activeVolunteersList]);
 
   // Filtered Initiatives List
   const filteredInitiatives = useMemo(() => {
@@ -179,7 +203,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
       </div>
 
       {/* Top Tab Switcher */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-2 pb-1" dir="rtl">
+      <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-800 gap-2 pb-1" dir="rtl">
         <button
           onClick={() => setDashboardView('opportunities')}
           className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black transition-all cursor-pointer rounded-xl border ${
@@ -203,14 +227,106 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
           <ArrowRightLeft className="w-4 h-4" />
           <span>طلبات نقل وإنهاء ارتباط المتطوعين</span>
         </button>
+
+        {canManageArchive && (
+          <>
+            <button
+              onClick={() => setDashboardView('volunteers')}
+              className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black transition-all cursor-pointer rounded-xl border ${
+                dashboardView === 'volunteers'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>سجل المتطوعين ({activeVolunteersList.length})</span>
+            </button>
+
+            <button
+              onClick={() => setDashboardView('archive')}
+              className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black transition-all cursor-pointer rounded-xl border ${
+                dashboardView === 'archive'
+                  ? 'bg-slate-800 text-white border-slate-800 shadow-md'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              <span>أرشيف المتطوعين ({archivedVolunteersList.length})</span>
+            </button>
+          </>
+        )}
       </div>
 
       {dashboardView === 'transfers' ? (
         <VolunteerTeamTransferManager
           teams={teams}
-          volunteers={volunteers}
+          volunteers={activeVolunteersList}
           userRole="department_admin"
         />
+      ) : dashboardView === 'archive' ? (
+        <ArchivesDirectoryPanel
+          mode="volunteers"
+          volunteers={volunteers}
+          teams={teams}
+          onRestore={async (volunteerId) => {
+            if (onRestoreVolunteer) return await onRestoreVolunteer(volunteerId);
+            return { ok: false, error: 'تعذر استعادة المتطوع' };
+          }}
+        />
+      ) : dashboardView === 'volunteers' ? (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-black text-slate-900 dark:text-white">المتطوعون النشطون وإدارة الأرشفة</h3>
+              <p className="text-xs text-slate-500">عرض كافة المتطوعين النشطين وإتاحة الأرشفة الآمنة أو التعطيل وفق الصلاحيات المعتمدة.</p>
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="بحث بالاسم أو العضوية أو الجوال..."
+              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs w-full sm:w-64"
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-700">
+                  <th className="p-3">المتطوع</th>
+                  <th className="p-3">رقم العضوية</th>
+                  <th className="p-3">الفريق</th>
+                  <th className="p-3">النقاط / الساعات</th>
+                  <th className="p-3 text-center">الإجراء</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {activeVolunteersList
+                  .filter(v => !searchQuery.trim() || (v.name || '').includes(searchQuery.trim()) || (v.membershipNumber || '').includes(searchQuery.trim()) || (v.phone || '').includes(searchQuery.trim()))
+                  .map(v => {
+                    const tObj = teams.find(t => t.id === v.teamId);
+                    return (
+                      <tr key={v.id}>
+                        <td className="p-3 font-bold text-slate-800 dark:text-white">{v.name}</td>
+                        <td className="p-3 font-mono text-slate-600">{v.membershipNumber || '-'}</td>
+                        <td className="p-3">{tObj?.nameAr || 'متطوع مستقل'}</td>
+                        <td className="p-3 font-mono">{v.points || 0} نقطة / {v.hours || 0} س</td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setArchiveTargetVol(v)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>حذف المتطوع</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         <>
           {/* KPI Cards */}
@@ -242,7 +358,7 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
             <Users className="w-4 h-4 text-blue-600" />
           </div>
           <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">{stats.activeVolunteers}</p>
-          <span className="text-[10px] text-slate-400 font-bold block mt-1.5">من أصل {volunteers.length} متطوع</span>
+          <span className="text-[10px] text-slate-400 font-bold block mt-1.5">من أصل {activeVolunteersList.length} متطوع</span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -898,6 +1014,34 @@ export const VolunteerManagementDashboard: React.FC<VolunteerManagementDashboard
       )}
         </>
       )}
+
+      {archiveTargetVol && (() => {
+        const volTeam = teams.find(t => t.id === archiveTargetVol.teamId);
+        const hasHistory = (Number(archiveTargetVol.points) || 0) > 0 || (Number(archiveTargetVol.hours) || 0) > 0;
+        return (
+          <AccountArchiveActionModal
+            isOpen={true}
+            entityType="volunteer"
+            entityName={archiveTargetVol.name}
+            fileNumber={archiveTargetVol.fileNumber || archiveTargetVol.membershipNumber}
+            secondaryLabel={`${volTeam?.nameAr || 'متطوع مستقل'} • ${archiveTargetVol.phone || ''}`}
+            canPermanentDelete={true}
+            hasLinkedHistory={hasHistory}
+            linkedHistorySummary={hasHistory ? `يمتلك المتطوع (${archiveTargetVol.points || 0} نقطة و ${archiveTargetVol.hours || 0} ساعة). يتم تطبيق الأرشفة الآمنة لحماية سجلات التطوع.` : undefined}
+            onClose={() => setArchiveTargetVol(null)}
+            onConfirm={async ({ actionType, reason }) => {
+              if (onArchiveOrDeleteVolunteer) {
+                return await onArchiveOrDeleteVolunteer({
+                  volunteerId: archiveTargetVol.id,
+                  actionType,
+                  reason
+                });
+              }
+              return { ok: false, error: 'معالج الأرشفة غير متاح' };
+            }}
+          />
+        );
+      })()}
     </div>
   );
 };
