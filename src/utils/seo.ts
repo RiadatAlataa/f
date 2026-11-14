@@ -2,14 +2,17 @@ import { HomeSettings, NewsItem, VolunteerTeam, Initiative } from '../types';
 
 export const CANONICAL_ORIGIN = 'https://www.riadataleata.com';
 
+export const OFFICIAL_ASSOCIATION_NAME = 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة';
+
 export interface RouteSeoConfig {
   title: string;
   description: string;
+  siteName?: string;
   canonicalPath: string;
   robots: 'index, follow' | 'noindex, nofollow';
   ogType?: 'website' | 'article';
   imageUrl?: string;
-  structuredData?: Record<string, any>[];
+  structuredData?: Record<string, any> | Record<string, any>[];
 }
 
 function upsertMeta(attrName: 'name' | 'property', key: string, content: string) {
@@ -34,10 +37,11 @@ function upsertCanonical(href: string) {
   link.setAttribute('href', href);
 }
 
-function upsertJsonLd(schemas: Record<string, any>[]) {
+function upsertJsonLd(schemas: Record<string, any> | Record<string, any>[] | undefined) {
   if (typeof document === 'undefined') return;
   const existing = document.getElementById('riadat-seo-jsonld');
-  if (schemas.length === 0) {
+  const isEmpty = !schemas || (Array.isArray(schemas) && schemas.length === 0);
+  if (isEmpty) {
     if (existing) existing.remove();
     return;
   }
@@ -48,11 +52,13 @@ function upsertJsonLd(schemas: Record<string, any>[]) {
     script.type = 'application/ld+json';
     document.head.appendChild(script);
   }
-  script.textContent = JSON.stringify(schemas.length === 1 ? schemas[0] : schemas);
+  script.textContent = JSON.stringify(
+    Array.isArray(schemas) && schemas.length === 1 ? schemas[0] : schemas
+  );
 }
 
 export function buildVerifiedOrganizationSchema(settings?: HomeSettings) {
-  const name = settings?.associationNameAr || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة';
+  const name = settings?.associationNameAr || OFFICIAL_ASSOCIATION_NAME;
   const email = settings?.contactEmail || 'info@riadataleata.org.sa';
   const phone = settings?.contactPhone || '0541820904';
   const address = settings?.contactLocationAr || 'مكة المكرمة - مخطط العسيلة';
@@ -66,11 +72,10 @@ export function buildVerifiedOrganizationSchema(settings?: HomeSettings) {
     .map((s) => s.url);
 
   const org: Record<string, any> = {
-    '@context': 'https://schema.org',
     '@type': 'NGO',
     '@id': `${CANONICAL_ORIGIN}/#organization`,
     name,
-    alternateName: settings?.associationNameEn || 'Riadat Al-Ata Association',
+    alternateName: settings?.associationNameEn || 'Reyadat Al-Ata Association for Human Services in Al-Asilah',
     url: CANONICAL_ORIGIN,
     logo: logoRaw,
     description:
@@ -91,16 +96,18 @@ export function buildVerifiedOrganizationSchema(settings?: HomeSettings) {
   }
 
   const website: Record<string, any> = {
-    '@context': 'https://schema.org',
     '@type': 'WebSite',
     '@id': `${CANONICAL_ORIGIN}/#website`,
     url: CANONICAL_ORIGIN,
-    name: settings?.siteNameAr || 'ريادة العطاء',
+    name,
     inLanguage: 'ar-SA',
     publisher: { '@id': `${CANONICAL_ORIGIN}/#organization` },
   };
 
-  return [org, website];
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [org, website],
+  };
 }
 
 export function resolveRouteSeo(params: {
@@ -232,17 +239,22 @@ export function resolveRouteSeo(params: {
 export function applyRouteSeo(config: RouteSeoConfig) {
   if (typeof document === 'undefined') return;
   const canonicalUrl = `${CANONICAL_ORIGIN}${config.canonicalPath === '/' ? '/' : config.canonicalPath}`;
+  const siteName = config.siteName || OFFICIAL_ASSOCIATION_NAME;
   document.title = config.title;
   upsertMeta('name', 'description', config.description);
   upsertMeta('name', 'robots', config.robots);
+  upsertMeta('property', 'og:site_name', siteName);
   upsertMeta('property', 'og:title', config.title);
   upsertMeta('property', 'og:description', config.description);
   upsertMeta('property', 'og:url', canonicalUrl);
   upsertMeta('property', 'og:type', config.ogType || 'website');
   upsertMeta('property', 'og:locale', 'ar_SA');
+  upsertMeta('name', 'twitter:card', 'summary_large_image');
+  upsertMeta('name', 'twitter:title', config.title);
+  upsertMeta('name', 'twitter:description', config.description);
   if (config.imageUrl) {
     upsertMeta('property', 'og:image', config.imageUrl);
   }
   upsertCanonical(canonicalUrl);
-  upsertJsonLd(config.structuredData || []);
+  upsertJsonLd(config.structuredData);
 }

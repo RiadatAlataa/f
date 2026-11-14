@@ -9,6 +9,7 @@ export type OperationType =
   | 'edit' 
   | 'delete' 
   | 'approve' 
+  | 'reject'
   | 'disburse' 
   | 'receive' 
   | 'print' 
@@ -38,14 +39,15 @@ export const OPERATION_TYPE_CONFIG: Record<OperationType, { label: string; badge
   view: { label: 'عرض', badgeClass: 'bg-blue-50 text-blue-700 border-blue-200', icon: 'Eye' },
   create: { label: 'إضافة', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: 'Plus' },
   edit: { label: 'تعديل', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200', icon: 'Edit' },
-  delete: { label: 'حذف', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200', icon: 'Trash2' },
+  delete: { label: 'حذف / أرشفة', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200', icon: 'Trash2' },
   approve: { label: 'اعتماد', badgeClass: 'bg-purple-50 text-purple-700 border-purple-200', icon: 'CheckCircle' },
+  reject: { label: 'رفض', badgeClass: 'bg-red-50 text-red-700 border-red-200', icon: 'XCircle' },
   disburse: { label: 'صرف', badgeClass: 'bg-orange-50 text-orange-700 border-orange-200', icon: 'ArrowUpRight' },
   receive: { label: 'استلام', badgeClass: 'bg-teal-50 text-teal-700 border-teal-200', icon: 'ArrowDownLeft' },
   print: { label: 'طباعة', badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: 'Printer' },
   export: { label: 'تصدير', badgeClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', icon: 'Download' },
   reports: { label: 'تقارير', badgeClass: 'bg-sky-50 text-sky-700 border-sky-200', icon: 'BarChart3' },
-  manage: { label: 'إدارة وتنسيق', badgeClass: 'bg-slate-50 text-slate-700 border-slate-200', icon: 'Settings' }
+  manage: { label: 'إدارة الموظفين والمهام', badgeClass: 'bg-slate-50 text-slate-700 border-slate-200', icon: 'Settings' }
 };
 
 // Base registry mapped to actual departments
@@ -110,6 +112,7 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
       { id: 'vol_delete_volunteer', label: 'حذف متطوع', operationType: 'delete', departmentId: 'dep-5', legacyKeys: ['delete_data'] },
       { id: 'vol_manage_opportunities', label: 'إدارة الفرص التطوعية', operationType: 'manage', departmentId: 'dep-5', legacyKeys: ['create_initiatives', 'create_data', 'edit_data'] },
       { id: 'vol_approve_opportunities', label: 'اعتماد الفرص', operationType: 'approve', departmentId: 'dep-5', legacyKeys: ['approve_data'] },
+      { id: 'vol_reject_opportunity', label: 'رفض طلبات التطوع / الفرص', operationType: 'reject', departmentId: 'dep-5', legacyKeys: ['reject_data'] },
       { id: 'vol_manage_registrations', label: 'إدارة التسجيلات', operationType: 'manage', departmentId: 'dep-5', legacyKeys: ['approve_data', 'manage_tasks'] },
       { id: 'vol_attendance', label: 'الحضور', operationType: 'manage', departmentId: 'dep-5', legacyKeys: ['confirm_attendance'] },
       { id: 'vol_points', label: 'النقاط', operationType: 'edit', departmentId: 'dep-5', legacyKeys: ['edit_data'] },
@@ -131,8 +134,9 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
       { id: 'ben_view_beneficiaries', label: 'عرض المستفيدين', operationType: 'view', departmentId: 'dep-4', legacyKeys: ['view_department'] },
       { id: 'ben_add_beneficiary', label: 'إضافة مستفيد', operationType: 'create', departmentId: 'dep-4', legacyKeys: ['create_data'] },
       { id: 'ben_edit_beneficiary', label: 'تعديل بيانات المستفيد', operationType: 'edit', departmentId: 'dep-4', legacyKeys: ['edit_data'] },
-      { id: 'ben_delete_beneficiary', label: 'حذف مستفيد', operationType: 'delete', departmentId: 'dep-4', legacyKeys: ['delete_data'] },
+      { id: 'ben_delete_beneficiary', label: 'حذف / أرشفة مستفيد', operationType: 'delete', departmentId: 'dep-4', legacyKeys: ['delete_data'] },
       { id: 'ben_assistance_requests', label: 'طلبات المساعدة', operationType: 'view', departmentId: 'dep-4', legacyKeys: ['view_department', 'approve_data'] },
+      { id: 'ben_reject_request', label: 'رفض طلبات المساعدة / المستفيدين', operationType: 'reject', departmentId: 'dep-4', legacyKeys: ['reject_data'] },
       { id: 'ben_manage_assistance', label: 'إدارة المساعدات', operationType: 'manage', departmentId: 'dep-4', legacyKeys: ['create_data', 'edit_data'] },
       { id: 'ben_record_receipt', label: 'تسجيل الاستلام', operationType: 'disburse', departmentId: 'dep-4', legacyKeys: ['disburse_data', 'receive_data'] },
       { id: 'ben_barcode', label: 'الباركود', operationType: 'manage', departmentId: 'dep-4', legacyKeys: ['print_data'] },
@@ -154,8 +158,9 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
       { id: 'fin_view_records', label: 'عرض السجلات المالية والميزانية', operationType: 'view', departmentId: 'dep-2', legacyKeys: ['view_department'] },
       { id: 'fin_add_voucher', label: 'إضافة سند مالي / قيد', operationType: 'create', departmentId: 'dep-2', legacyKeys: ['create_data'] },
       { id: 'fin_edit_records', label: 'تعديل السجلات المالية', operationType: 'edit', departmentId: 'dep-2', legacyKeys: ['edit_data'] },
-      { id: 'fin_delete_voucher', label: 'حذف سند / قيد', operationType: 'delete', departmentId: 'dep-2', legacyKeys: ['delete_data'] },
+      { id: 'fin_delete_voucher', label: 'حذف / أرشفة سند / قيد', operationType: 'delete', departmentId: 'dep-2', legacyKeys: ['delete_data'] },
       { id: 'fin_approve_expenses', label: 'اعتماد القيود والمصروفات', operationType: 'approve', departmentId: 'dep-2', legacyKeys: ['approve_data'] },
+      { id: 'fin_reject_voucher', label: 'رفض سندات / مصروفات', operationType: 'reject', departmentId: 'dep-2', legacyKeys: ['reject_data'] },
       { id: 'fin_disburse_funds', label: 'صرف المبالغ والعهد', operationType: 'disburse', departmentId: 'dep-2', legacyKeys: ['disburse_data'] },
       { id: 'fin_receive_revenues', label: 'استلام الإيرادات والتبرعات', operationType: 'receive', departmentId: 'dep-2', legacyKeys: ['receive_data'] },
       { id: 'fin_manage_salaries', label: 'إدارة الرواتب والعهد', operationType: 'manage', departmentId: 'dep-2', legacyKeys: ['manage_tasks', 'disburse_data'] },
@@ -176,8 +181,9 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
       { id: 'proj_view_projects', label: 'عرض البرامج والمشاريع', operationType: 'view', departmentId: 'dep-3', legacyKeys: ['view_department'] },
       { id: 'proj_add_project', label: 'إضافة مشروع أو مبادرة', operationType: 'create', departmentId: 'dep-3', legacyKeys: ['create_data'] },
       { id: 'proj_edit_project', label: 'تعديل بيانات المشروع', operationType: 'edit', departmentId: 'dep-3', legacyKeys: ['edit_data'] },
-      { id: 'proj_delete_project', label: 'حذف مشروع', operationType: 'delete', departmentId: 'dep-3', legacyKeys: ['delete_data'] },
+      { id: 'proj_delete_project', label: 'حذف / أرشفة مشروع', operationType: 'delete', departmentId: 'dep-3', legacyKeys: ['delete_data'] },
       { id: 'proj_approve_milestones', label: 'اعتماد خطط الإنجاز', operationType: 'approve', departmentId: 'dep-3', legacyKeys: ['approve_data'] },
+      { id: 'proj_reject_project', label: 'رفض مقترح مشروع', operationType: 'reject', departmentId: 'dep-3', legacyKeys: ['reject_data'] },
       { id: 'proj_track_kpis', label: 'متابعة مؤشرات الأداء والأنشطة', operationType: 'manage', departmentId: 'dep-3', legacyKeys: ['manage_tasks'] },
       { id: 'proj_reports', label: 'التقارير', operationType: 'reports', departmentId: 'dep-3', legacyKeys: ['view_reports'] },
       { id: 'proj_print', label: 'الطباعة', operationType: 'print', departmentId: 'dep-3', legacyKeys: ['print_data'] },
@@ -196,13 +202,34 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
       { id: 'partners_view_partners', label: 'عرض الشراكات والجهات المانحة', operationType: 'view', departmentId: 'dep-7', legacyKeys: ['view_department'] },
       { id: 'partners_add_partner', label: 'إضافة شريك أو اتفاقية جديدة', operationType: 'create', departmentId: 'dep-7', legacyKeys: ['create_data'] },
       { id: 'partners_edit_partner', label: 'تعديل بيانات الشراكات', operationType: 'edit', departmentId: 'dep-7', legacyKeys: ['edit_data'] },
-      { id: 'partners_delete_partner', label: 'حذف شراكة / رعاية', operationType: 'delete', departmentId: 'dep-7', legacyKeys: ['delete_data'] },
+      { id: 'partners_delete_partner', label: 'حذف / أرشفة شراكة / رعاية', operationType: 'delete', departmentId: 'dep-7', legacyKeys: ['delete_data'] },
       { id: 'partners_approve_agreements', label: 'اعتماد الاتفاقيات ومذكرات التفاهم', operationType: 'approve', departmentId: 'dep-7', legacyKeys: ['approve_data'] },
+      { id: 'partners_reject_agreement', label: 'رفض اتفاقية / شراكة', operationType: 'reject', departmentId: 'dep-7', legacyKeys: ['reject_data'] },
       { id: 'partners_receive_grants', label: 'استلام المنح ومتابعة التبرعات', operationType: 'receive', departmentId: 'dep-7', legacyKeys: ['receive_data'] },
       { id: 'partners_manage_campaigns', label: 'إدارة الحملات والمبادرات الداعمة', operationType: 'manage', departmentId: 'dep-7', legacyKeys: ['manage_tasks'] },
       { id: 'partners_reports', label: 'التقارير', operationType: 'reports', departmentId: 'dep-7', legacyKeys: ['view_reports'] },
       { id: 'partners_print', label: 'الطباعة', operationType: 'print', departmentId: 'dep-7', legacyKeys: ['print_data'] },
       { id: 'partners_export', label: 'التصدير', operationType: 'export', departmentId: 'dep-7', legacyKeys: ['export_excel', 'export_pdf'] }
+    ]
+  },
+
+  // 8. إدارة العلاقات العامة والإعلام (dep-6)
+  {
+    departmentId: 'dep-6',
+    departmentNameAr: 'إدارة العلاقات العامة والإعلام',
+    departmentNameEn: 'Public Relations & Media',
+    iconName: 'Megaphone',
+    description: 'المركز الإعلامي، الأخبار، التغطيات الميدانية، والمعرض المرئي.',
+    permissions: [
+      { id: 'media_view', label: 'عرض المحتوى الإعلامي والأخبار', operationType: 'view', departmentId: 'dep-6', legacyKeys: ['view_department', 'view_media'] },
+      { id: 'media_create', label: 'إضافة خبر أو مادة إعلامية', operationType: 'create', departmentId: 'dep-6', legacyKeys: ['create_data', 'create_media'] },
+      { id: 'media_edit', label: 'تعديل المواد الإعلامية', operationType: 'edit', departmentId: 'dep-6', legacyKeys: ['edit_data', 'edit_media'] },
+      { id: 'media_publish', label: 'اعتماد ونشر المواد الإعلامية', operationType: 'approve', departmentId: 'dep-6', legacyKeys: ['approve_data', 'publish_media'] },
+      { id: 'media_reject', label: 'رفض نشر مادة إعلامية', operationType: 'reject', departmentId: 'dep-6', legacyKeys: ['reject_data'] },
+      { id: 'media_delete', label: 'حذف / أرشفة مادة إعلامية', operationType: 'delete', departmentId: 'dep-6', legacyKeys: ['delete_data', 'delete_media', 'archive_media'] },
+      { id: 'media_reports', label: 'التقارير الإعلامية', operationType: 'reports', departmentId: 'dep-6', legacyKeys: ['view_reports'] },
+      { id: 'media_print', label: 'الطباعة', operationType: 'print', departmentId: 'dep-6', legacyKeys: ['print_data'] },
+      { id: 'media_export', label: 'التصدير', operationType: 'export', departmentId: 'dep-6', legacyKeys: ['export_excel', 'export_pdf'] }
     ]
   },
 
@@ -217,9 +244,11 @@ const BASE_DEPARTMENT_PERMISSIONS: DepartmentPermissionGroup[] = [
       { id: 'exec_view_directives', label: 'عرض القرارات والخطط العامة', operationType: 'view', departmentId: 'dep-1', legacyKeys: ['view_department'] },
       { id: 'exec_add_directive', label: 'إضافة تكليف أو قرار إداري', operationType: 'create', departmentId: 'dep-1', legacyKeys: ['create_data'] },
       { id: 'exec_edit_directive', label: 'تعديل التوجيهات والخطط', operationType: 'edit', departmentId: 'dep-1', legacyKeys: ['edit_data'] },
-      { id: 'exec_delete_directive', label: 'حذف قرار إداري', operationType: 'delete', departmentId: 'dep-1', legacyKeys: ['delete_data'] },
+      { id: 'exec_delete_directive', label: 'حذف / أرشفة قرار إداري', operationType: 'delete', departmentId: 'dep-1', legacyKeys: ['delete_data'] },
       { id: 'exec_approve_directives', label: 'اعتماد التوجيهات الرسمية', operationType: 'approve', departmentId: 'dep-1', legacyKeys: ['approve_data'] },
+      { id: 'exec_reject_directive', label: 'رفض مقترح أو خطاب', operationType: 'reject', departmentId: 'dep-1', legacyKeys: ['reject_data'] },
       { id: 'exec_manage_letters', label: 'إدارة الخطابات والمراسلات', operationType: 'manage', departmentId: 'dep-1', legacyKeys: ['manage_tasks'] },
+      { id: 'exec_manage_staff', label: 'إدارة الموظفين والكوادر التنفيذية', operationType: 'manage', departmentId: 'dep-1', legacyKeys: ['manage_staff'] },
       { id: 'exec_reports', label: 'التقارير التنفيذية الشاملة', operationType: 'reports', departmentId: 'dep-1', legacyKeys: ['view_reports'] },
       { id: 'exec_print', label: 'الطباعة', operationType: 'print', departmentId: 'dep-1', legacyKeys: ['print_data'] },
       { id: 'exec_export', label: 'التصدير', operationType: 'export', departmentId: 'dep-1', legacyKeys: ['export_excel', 'export_pdf'] }

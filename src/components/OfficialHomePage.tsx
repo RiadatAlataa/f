@@ -1593,7 +1593,7 @@ export function OfficialHomePage({
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8 }}
               src={settings?.logoUrl || "/logo.png"} 
-              alt="شعار جمعية ريادة العطاء" 
+              alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" 
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover shadow-2xl mb-3 sm:mb-4 border border-white/20 bg-white"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = "/logo.png";
@@ -2689,7 +2689,7 @@ export function OfficialHomePage({
             <div className="flex items-center gap-2">
               <img 
                 src={settings?.logoUrl || "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=120&h=120&fit=crop"} 
-                alt="ريادة العطاء" 
+                alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" 
                 className="w-10 h-10 rounded-full object-cover"
               />
               <span className="text-xs font-bold tracking-wider text-white select-text">

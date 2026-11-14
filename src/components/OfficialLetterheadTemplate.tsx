@@ -156,7 +156,7 @@ export const OfficialLetterheadTemplate: React.FC<OfficialLetterheadProps> = ({
             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-emerald-200/60 p-1 bg-white shadow-2xs flex items-center justify-center">
               <img 
                 src={logoUrl} 
-                alt="شعار جمعية ريادة العطاء" 
+                alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" 
                 className="w-full h-full object-contain"
                 onError={(e) => {
                   // Fallback emblem if local asset missing
@@ -166,11 +166,11 @@ export const OfficialLetterheadTemplate: React.FC<OfficialLetterheadProps> = ({
               />
               <div className="hidden fallback-logo:flex flex-col items-center justify-center text-emerald-800 text-center">
                 <Building2 className="w-8 h-8 text-emerald-700" />
-                <span className="text-[8px] font-black mt-1">ريادة العطاء</span>
+                <span className="text-[7px] font-black mt-1 leading-tight">جمعية ريادة العطاء</span>
               </div>
             </div>
             <span className="text-[9px] font-bold text-emerald-800 tracking-wider mt-1">
-              خدمة الإنسان بالعسيلة
+              لخدمة الإنسان بالعسيلة
             </span>
           </div>
 

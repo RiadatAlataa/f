@@ -346,7 +346,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const orgName = homeSettings?.siteNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
+    const orgName = homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
 
     const rowsHtml = enrichedBeneficiaries.map((b, idx) => `
       <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f8fafc'}">

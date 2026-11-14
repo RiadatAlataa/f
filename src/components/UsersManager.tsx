@@ -2,6 +2,16 @@ import React, { useState, useEffect, useMemo } from "react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { generateStrongPassword, evaluatePasswordStrength } from "../utils/passwordSecurity";
 import { buildApiUrl, getAuthHeaders } from "../config/api";
+import { UserComprehensiveEditModal } from "./UserComprehensiveEditModal";
+import { UserDeleteArchiveModal } from "./UserDeleteArchiveModal";
+import { UserFullDetailsModal } from "./UserFullDetailsModal";
+import {
+  SystemUser,
+  DepartmentItem,
+  TeamItem,
+  UserManagementScope,
+  USER_PERMISSION_CATEGORIES
+} from "./userManagementTypes";
 import {
   Users,
   UserPlus,
@@ -40,178 +50,25 @@ import {
   FileSpreadsheet,
   Download,
   Info,
-  Send
+  Send,
+  RotateCcw,
+  Archive
 } from "lucide-react";
 
-export interface SystemUser {
-  id: string;
-  userId: string;
-  username: string;
-  name: string;
-  email: string;
-  phone: string;
-  nationalId?: string;
-  role: string;
-  jobTitle: string;
-  departmentId: string;
-  departmentName: string;
-  permissions: string[];
-  allowedDepartmentIds?: string[];
-  allowedPages?: string[];
-  status: "active" | "suspended" | "inactive" | "pending" | "rejected";
-  mustChangePassword?: boolean;
-  lastLogin?: string | null;
-  lastActivity?: string | null;
-  createdAt?: string;
-  emailVerified?: boolean;
-  identityVerified?: boolean;
-  notes?: string;
-  beneficiaryNumber?: string;
-  category?: string;
-  familySize?: number;
-  monthlyIncome?: number;
-  housingType?: string;
-  address?: string;
-  membershipNumber?: string;
-  hours?: number;
-  teamId?: string;
-  teamName?: string;
-  rejectionReason?: string;
-  approvedBy?: string;
-  approvedAt?: string;
-  linkedProfiles?: any[];
-  primarySource?: string;
-  loginDisabled?: boolean;
-  hasLoginAccount?: boolean;
-}
-
-interface Department {
-  id: string;
-  nameAr: string;
-  nameEn?: string;
-}
+export type { SystemUser };
 
 interface UsersManagerProps {
   currentUser?: any;
   currentUserRole?: string;
-  departments?: Department[];
+  departments?: DepartmentItem[];
   onOpenDepartment?: (deptId: string) => void;
   onRefreshDatabase?: () => Promise<void>;
 }
 
-// Categorized System Permissions
-export const PERMISSION_CATEGORIES: {
-  id: string;
-  nameAr: string;
-  icon: any;
-  color: string;
-  permissions: { key: string; labelAr: string; descAr: string }[];
-}[] = [
-  {
-    id: "dashboard",
-    nameAr: "لوحة التحكم والمؤشرات (Dashboard)",
-    icon: Activity,
-    color: "from-blue-600 to-indigo-600",
-    permissions: [
-      { key: "view_department", labelAr: "عرض لوحة القيادة", descAr: "مشاهدة الإحصائيات العامة والمؤشرات التشغيلية" },
-      { key: "view_reports", labelAr: "استعراض التقارير", descAr: "الاطلاع على تقارير الأداء والمخرجات الدورية" },
-      { key: "export_pdf", labelAr: "تصدير تقارير PDF", descAr: "طباعة وتحميل التقارير الرسمية بصيغة PDF" },
-      { key: "export_excel", labelAr: "تصدير جداول Excel", descAr: "تحميل واستخراج البيانات في ملفات Excel وCSV" }
-    ]
-  },
-  {
-    id: "volunteering",
-    nameAr: "إدارة التطوع والمبادرات (Volunteering)",
-    icon: Sparkles,
-    color: "from-emerald-600 to-teal-600",
-    permissions: [
-      { key: "view_volunteer_portal", labelAr: "بوابة التطوع", descAr: "الوصول لبوابة إدارة المتطوعين والفرص" },
-      { key: "manage_volunteers", labelAr: "إدارة المتطوعين", descAr: "قبول وتعديل ملفات المتطوعين وسجلاتهم" },
-      { key: "create_initiatives", labelAr: "إطلاق المبادرات", descAr: "إنشاء المبادرات والبرامج التطوعية الجديدة" },
-      { key: "edit_initiatives", labelAr: "تعديل المبادرات", descAr: "تحديث شروط وأوقات وتفاصيل المبادرات" },
-      { key: "manage_teams", labelAr: "إدارة الفرق التطوعية", descAr: "اعتماد الفرق وتعيين القادة وتعديل الأعضاء" }
-    ]
-  },
-  {
-    id: "hr",
-    nameAr: "الموارد البشرية والكوادر (HR)",
-    icon: Briefcase,
-    color: "from-cyan-600 to-blue-700",
-    permissions: [
-      { key: "manage_staff", labelAr: "إدارة شؤون الموظفين", descAr: "إضافة وتعديل بيانات الكوادر والموظفين" },
-      { key: "manage_tasks", labelAr: "التكليفات والمهام", descAr: "إسناد المهام ومتابعة إنجاز الفريق" },
-      { key: "approve_leaves", labelAr: "اعتماد الإجازات والطلبات", descAr: "الموافقة على طلبات الإجازة والبدلات" }
-    ]
-  },
-  {
-    id: "partnerships",
-    nameAr: "تنمية الموارد المالية والشراكات (Fundraising & Partnerships)",
-    icon: Sparkles,
-    color: "from-purple-600 to-indigo-600",
-    permissions: [
-      { key: "manage_partners", labelAr: "إدارة الشراكات والرعايات", descAr: "إضافة وتوثيق مذكرات التفاهم وعقود الرعاية والداعمين" },
-      { key: "manage_campaigns", labelAr: "إدارة الحملات والمبادرات الداعمة", descAr: "إعداد وتنفيذ حملات تنمية الموارد والتمويل" },
-      { key: "manage_grants", labelAr: "متابعة المنح والتمويل", descAr: "متابعة المنح الحكومية والخاصة وتنمية الاستدامة المالية" }
-    ]
-  },
-  {
-    id: "operations",
-    nameAr: "دور مدير العمليات المستقل (Operations Role)",
-    icon: Sliders,
-    color: "from-amber-600 to-orange-600",
-    permissions: [
-      { key: "operations_manager", labelAr: "صلاحيات مدير العمليات الكاملة", descAr: "أعلى مستوى تشغيلي للإشراف على كافة الإدارات كدور إداري مستقل" },
-      { key: "cross_department_access", labelAr: "الوصول العابر للإدارات", descAr: "الدخول والتنقل بين كافة الإدارات بدون قيود" },
-      { key: "manage_directives", labelAr: "إدارة التوجيهات والتعاميم", descAr: "إصدار التوجيهات التشغيلية للإدارات" }
-    ]
-  },
-  {
-    id: "beneficiaries",
-    nameAr: "إدارة المستفيدين والخدمات (Beneficiaries)",
-    icon: Users,
-    color: "from-rose-600 to-red-600",
-    permissions: [
-      { key: "manage_beneficiaries", labelAr: "ملفات المستفيدين", descAr: "تسجيل واعتماد طلبات المساعدات للمستفيدين" },
-      { key: "approve_aid", labelAr: "اعتماد صرف المساعدات", descAr: "الموافقة على صرف السلال والمساعدات النقدية" },
-      { key: "manage_distributions", labelAr: "إدارة التوزيع والتسليم", descAr: "مسح وتوثيق تسليم المعونات للمستفيدين" }
-    ]
-  },
-  {
-    id: "support_services",
-    nameAr: "إدارة الخدمات المساندة (Support Services)",
-    icon: Building2,
-    color: "from-emerald-700 to-teal-800",
-    permissions: [
-      { key: "manage_it", labelAr: "إدارة تقنية المعلومات والأنظمة", descAr: "الإشراف على البنية التحتية والأنظمة التقنية وتوفير الاحتياجات" },
-      { key: "view_stock", labelAr: "إدارة المستودعات والعهد", descAr: "مراقبة أرصدة الأصناف ومستويات التخزين والعهد" },
-      { key: "receive_data", labelAr: "استلام وتوريد أصناف", descAr: "تسجيل أذونات الإدخال وسندات الاستلام" },
-      { key: "disburse_data", labelAr: "صرف وتسليم أصناف", descAr: "تسجيل أذونات الإخراج وسندات الصرف" },
-      { key: "manage_facilities", labelAr: "النقل والصيانة والمرافق والأمن", descAr: "الإشراف على النقل والصيانة الدورية والمرافق والأمن والسلامة" }
-    ]
-  },
-  {
-    id: "attendance",
-    nameAr: "الحضور والانصراف والنقاط (Attendance & Points)",
-    icon: CheckCircle2,
-    color: "from-teal-600 to-emerald-700",
-    permissions: [
-      { key: "scan_attendance", labelAr: "مسح وتأكيد الحضور", descAr: "تسجيل الحضور والانصراف بالباركود وQR" },
-      { key: "manage_points", labelAr: "رصيد النقاط والتقييم", descAr: "احتساب وتعديل الساعات والنقاط المكتسبة" }
-    ]
-  },
-  {
-    id: "security_users",
-    nameAr: "إدارة المستخدمين والصلاحيات والأمان (Users & Security)",
-    icon: KeyRound,
-    color: "from-slate-800 to-slate-950",
-    permissions: [
-      { key: "manage_users", labelAr: "إدارة المستخدمين والحسابات", descAr: "إنشاء وتعديل وتجميد حسابات المستخدمين" },
-      { key: "reset_passwords", labelAr: "إعادة تعيين كلمات المرور", descAr: "تغيير كلمات المرور وفرض التحديث الإلزامي" },
-      { key: "manage_permissions", labelAr: "إدارة مصفوفة الصلاحيات", descAr: "تخصيص الصلاحيات والأدوار ونطاق الإدارات" },
-      { key: "view_audit_logs", labelAr: "سجل التدقيق والنشاط الأمني", descAr: "مراقبة كافة عمليات الدخول وتغييرات البيانات" }
-    ]
-  }
-];
+// Categorized System Permissions (Re-exported for compatibility)
+export const PERMISSION_CATEGORIES = USER_PERMISSION_CATEGORIES;
+type Department = DepartmentItem;
+// (Permission categories imported from ./userManagementTypes)
 
 export const UsersManager: React.FC<UsersManagerProps> = ({
   currentUser,
@@ -221,36 +78,60 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
   onRefreshDatabase
 }) => {
   const [users, setUsers] = useState<SystemUser[]>([]);
+  const [serverDepartments, setServerDepartments] = useState<DepartmentItem[]>([]);
+  const [teams, setTeams] = useState<TeamItem[]>([]);
+  const [userScope, setUserScope] = useState<UserManagementScope | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [errorToast, setErrorToast] = useState<string | null>(null);
 
   // Filters
   const [activeCategoryTab, setActiveCategoryTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [mustChangeFilter, setMustChangeFilter] = useState(false);
   const [pendingOnlyFilter, setPendingOnlyFilter] = useState(false);
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<SystemUser | null>(null);
+  const [editModalInitialSection, setEditModalInitialSection] = useState<"personal" | "account" | "role_dept" | "volunteer" | "beneficiary">("personal");
+  const [selectedUserForDelete, setSelectedUserForDelete] = useState<SystemUser | null>(null);
   const [selectedUserForDetails, setSelectedUserForDetails] = useState<SystemUser | null>(null);
   const [selectedUserForReset, setSelectedUserForReset] = useState<SystemUser | null>(null);
   const [selectedUserForActivity, setSelectedUserForActivity] = useState<SystemUser | null>(null);
   const [resetLinkModal, setResetLinkModal] = useState<{ user: SystemUser; resetLink: string; userEmail: string } | null>(null);
+  const [rejectModalUser, setRejectModalUser] = useState<SystemUser | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState("عدم استيفاء الشروط المعتمدة");
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    tone: "emerald" | "amber" | "rose";
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
-  // Modals Form States
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const effectiveDepartments = serverDepartments.length > 0 ? serverDepartments : departments;
 
-  // Auto-hide toast
+  // Auto-hide toasts
   useEffect(() => {
     if (successToast) {
-      const timer = setTimeout(() => setSuccessToast(null), 4000);
+      const timer = setTimeout(() => setSuccessToast(null), 4500);
       return () => clearTimeout(timer);
     }
   }, [successToast]);
+
+  useEffect(() => {
+    if (errorToast) {
+      const timer = setTimeout(() => setErrorToast(null), 5500);
+      return () => clearTimeout(timer);
+    }
+  }, [errorToast]);
 
   // Fetch Users
   const fetchUsers = async () => {
@@ -259,38 +140,45 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
     try {
       const url = buildApiUrl("/api/db/users");
       const headers = {
-        'Accept': 'application/json',
+        Accept: "application/json",
         ...getAuthHeaders()
       };
-      console.log(`[UsersManager] Fetching users from: ${url}`);
       const res = await fetch(url, {
         headers,
-        cache: 'no-store'
+        cache: "no-store"
       });
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
         const status = res.status;
-        console.error(`[UsersManager] API returned error ${status}:`, data);
         if (status === 401) {
           throw new Error("انتهت الجلسة أو يجب تسجيل الدخول بحساب مصرح (401 Unauthorized)");
         } else if (status === 403) {
-          throw new Error(data?.error || "ليس لديك الصلاحية المطلوبة (manage_staff) لعرض وإدارة المستخدمين (403 Forbidden). يتطلب حساب الإدارة العليا أو مدير العمليات.");
+          throw new Error(data?.error || "ليس لديك الصلاحية المطلوبة لعرض وإدارة المستخدمين (403 Forbidden).");
         } else if (status === 404) {
-          throw new Error("مسار واجهة المستخدمين غير موجود على الخادم (404 Not Found). يرجى التأكد من تشغيل الـBackend.");
+          throw new Error("مسار واجهة المستخدمين غير موجود على الخادم (404 Not Found).");
         } else if (status >= 500) {
-          throw new Error(`خطأ في خادم التطبيق (${status}): ${data?.error || data?.message || 'يرجى مراجعة سجلات الخادم.'}`);
+          throw new Error(`خطأ في خادم التطبيق (${status}): ${data?.error || data?.message || "يرجى مراجعة سجلات الخادم."}`);
         } else {
-          throw new Error(data?.error || data?.message || `فشل جلب قائمة المستخدمين من الخادم (كود الاستجابة: ${status}).`);
+          throw new Error(data?.error || data?.message || `فشل جلب قائمة المستخدمين من الخادم (${status}).`);
         }
       }
 
       setUsers(data?.users || []);
+      if (Array.isArray(data?.departments)) setServerDepartments(data.departments);
+      if (Array.isArray(data?.teams)) setTeams(data.teams);
+      if (data?.scope) setUserScope(data.scope);
     } catch (err: any) {
-      console.error("[UsersManager] Exception in fetchUsers:", err);
       setError(err.message || "حدث خطأ أثناء جلب بيانات المستخدمين من الخادم.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshAllData = async () => {
+    await fetchUsers();
+    if (onRefreshDatabase) {
+      await onRefreshDatabase().catch(() => {});
     }
   };
 
@@ -316,17 +204,23 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchesName = u.name?.toLowerCase().includes(q);
-        const matchesUsername = u.username?.toLowerCase().includes(q);
-        const matchesEmail = u.email?.toLowerCase().includes(q);
-        const matchesPhone = u.phone?.includes(q);
-        const matchesNat = u.nationalId?.includes(q);
-        const matchesTitle = u.jobTitle?.toLowerCase().includes(q);
-        const matchesBenNum = u.beneficiaryNumber?.toLowerCase().includes(q);
-        const matchesVolNum = u.membershipNumber?.toLowerCase().includes(q);
-        const matchesTeam = u.teamName?.toLowerCase().includes(q);
-        const matchesCategory = u.category?.toLowerCase().includes(q);
-        if (!matchesName && !matchesUsername && !matchesEmail && !matchesPhone && !matchesNat && !matchesTitle && !matchesBenNum && !matchesVolNum && !matchesTeam && !matchesCategory) {
+        const searchable = [
+          u.name,
+          u.username,
+          u.email,
+          u.phone,
+          u.nationalId,
+          u.jobTitle,
+          u.beneficiaryNumber,
+          u.membershipNumber,
+          u.fileNumber,
+          u.employeeNumber,
+          u.teamName,
+          u.category
+        ]
+          .filter(Boolean)
+          .map((s) => String(s).toLowerCase());
+        if (!searchable.some((s) => s.includes(q))) {
           return false;
         }
       }
@@ -350,9 +244,16 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         return false;
       }
 
-      // Status filter
-      if (statusFilter !== "all" && u.status !== statusFilter) {
+      // Team filter
+      if (teamFilter !== "all" && u.teamId !== teamFilter) {
         return false;
+      }
+
+      // Status filter
+      if (statusFilter !== "all") {
+        if (statusFilter === "archived" && !(u.status === "archived" || u.isArchived)) return false;
+        else if (statusFilter === "inactive" && !(u.status === "inactive" || u.status === "deactivated")) return false;
+        else if (statusFilter !== "archived" && statusFilter !== "inactive" && u.status !== statusFilter) return false;
       }
 
       // Must change password filter
@@ -367,7 +268,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
 
       return true;
     });
-  }, [users, activeCategoryTab, searchQuery, roleFilter, deptFilter, statusFilter, mustChangeFilter, pendingOnlyFilter]);
+  }, [users, activeCategoryTab, searchQuery, roleFilter, deptFilter, teamFilter, statusFilter, mustChangeFilter, pendingOnlyFilter]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -376,8 +277,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       active: users.filter((u) => u.status === "active").length,
       pending: users.filter((u) => u.status === "pending").length,
       suspended: users.filter((u) => u.status === "suspended").length,
+      archived: users.filter((u) => u.status === "archived" || u.isArchived).length,
       rejected: users.filter((u) => u.status === "rejected").length,
-      inactive: users.filter((u) => u.status === "inactive").length,
+      inactive: users.filter((u) => u.status === "inactive" || u.status === "deactivated").length,
       mustChange: users.filter((u) => u.mustChangePassword).length,
       adminsAndOps: users.filter((u) => u.role === "admin" || u.role === "operations_manager").length,
       deptHeadsAndSupervisors: users.filter((u) => u.role === "department_admin" || u.role === "supervisor").length,
@@ -389,6 +291,25 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       support: users.filter((u) => u.role.includes("support")).length
     };
   }, [users]);
+
+  const canManageTargetRow = (u: SystemUser): boolean => {
+    const isTargetAdmin = u.role === "admin" || u.userId === "admin-user" || u.userId === "mosa";
+    if (!userScope || userScope.fullAccess) {
+      if (isTargetAdmin && userScope && !userScope.isTopSuperAdmin && currentUser?.role !== "admin") {
+        return false;
+      }
+      return true;
+    }
+    return !["admin", "operations_manager"].includes(u.role);
+  };
+
+  const canDeleteTargetRow = (u: SystemUser): boolean => {
+    if (!canManageTargetRow(u)) return false;
+    const myId = currentUser?.userId || currentUser?.id;
+    if (myId && (u.userId === myId || u.id === myId)) return false;
+    if (["admin-user", "ops-manager", "mosa", "perm-mosa", "sup-1"].includes(u.userId)) return false;
+    return true;
+  };
 
   // Role Badge Styling
   const getRoleBadge = (role: string) => {
@@ -477,6 +398,12 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
           bg: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900",
           icon: XCircle
         };
+      case "archived":
+        return {
+          label: "مؤرشف",
+          bg: "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800",
+          icon: Archive
+        };
       case "rejected":
         return {
           label: "مرفوض",
@@ -485,89 +412,91 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         };
       default:
         return {
-          label: "غير مفعل",
+          label: "معطل مؤقتاً",
           bg: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
           icon: Info
         };
     }
   };
 
-  // Approve Pending User (e.g. Beneficiary or Volunteer)
-  const handleApproveUser = async (user: SystemUser) => {
-    if (!window.confirm(`هل أنت متأكد من رغبتك في اعتماد وتفعيل حساب (${user.name})؟`)) return;
-
-    try {
-      const res = await fetch(buildApiUrl("/api/db/users/approve"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ userId: user.userId || user.id })
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "فشل اعتماد الحساب.");
-
-      setSuccessToast(data.message || `تم اعتماد وتفعيل حساب (${user.name}) بنجاح.`);
-      fetchUsers();
-    } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء اعتماد الحساب.");
-    }
+  // Approve Pending User
+  const handleApproveUser = (user: SystemUser) => {
+    setConfirmModal({
+      title: "اعتماد وتفعيل الحساب",
+      message: `هل أنت متأكد من رغبتك في اعتماد وتفعيل حساب (${user.name})؟`,
+      confirmLabel: "اعتماد وتفعيل",
+      tone: "emerald",
+      onConfirm: async () => {
+        const res = await fetch(buildApiUrl("/api/db/users/approve"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ userId: user.userId || user.id })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "فشل اعتماد الحساب.");
+        setSuccessToast(data.message || `تم اعتماد وتفعيل حساب (${user.name}) بنجاح.`);
+        await refreshAllData();
+      }
+    });
   };
 
-  // Reject Pending User
-  const handleRejectUser = async (user: SystemUser) => {
-    const reason = window.prompt(`يرجى كتابة سبب رفض طلب (${user.name}):`, "عدم استيفاء الشروط المعتمدة");
-    if (reason === null) return;
+  // Reject Pending User (via modal)
+  const handleRejectUser = (user: SystemUser) => {
+    setRejectReasonInput("عدم استيفاء الشروط المعتمدة");
+    setRejectModalUser(user);
+  };
 
+  const handleSubmitRejectUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectModalUser) return;
+    setIsSubmittingAction(true);
     try {
       const res = await fetch(buildApiUrl("/api/db/users/reject"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ userId: user.userId || user.id, reason: reason.trim() || undefined })
+        body: JSON.stringify({
+          userId: rejectModalUser.userId || rejectModalUser.id,
+          reason: rejectReasonInput.trim() || undefined
+        })
       });
-
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "فشل رفض الطلب.");
-
-      setSuccessToast(data.message || `تم تسجيل رفض الطلب للمستخدم (${user.name}).`);
-      fetchUsers();
+      setSuccessToast(data.message || `تم تسجيل رفض الطلب للمستخدم (${rejectModalUser.name}).`);
+      setRejectModalUser(null);
+      await refreshAllData();
     } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء رفض الطلب.");
+      setErrorToast(err.message || "حدث خطأ أثناء رفض الطلب.");
+    } finally {
+      setIsSubmittingAction(false);
     }
   };
 
-  // Helper to sanitize CSV cells against CSV Formula Injection (CWE-1236 / Excel Macro Injection)
+  // Helper to sanitize CSV cells against CSV Formula Injection (CWE-1236)
   const sanitizeCsvCell = (val: any): string => {
     if (val === null || val === undefined) return '""';
     let str = String(val);
-
-    // Strip leading whitespace and ASCII control characters (including tabs and newlines) to inspect real trigger
-    const trimmedLeading = str.replace(/^[\s\u0000-\u001F\u007F-\u009F]+/, '');
-    const formulaTriggers = ['=', '+', '-', '@', '\t', '\r', '%', '|'];
-
+    const trimmedLeading = str.replace(/^[\s\u0000-\u001F\u007F-\u009F]+/, "");
+    const formulaTriggers = ["=", "+", "-", "@", "\t", "\r", "%", "|"];
     if (
       formulaTriggers.some((prefix) => str.startsWith(prefix)) ||
       (trimmedLeading.length > 0 && formulaTriggers.some((prefix) => trimmedLeading.startsWith(prefix)))
     ) {
-      // Prefix with single quote to force spreadsheet processors (Excel, Calc, Sheets) to treat as literal text
       str = `'${str}`;
     }
-
-    // Escape internal double quotes by doubling them per RFC 4180
     return `"${str.replace(/"/g, '""')}"`;
   };
 
-  // Export Filtered Users to CSV (مع حماية Formula Injection ودعم كامل للعربية)
+  // Export Filtered Users to CSV
   const handleExportCsv = () => {
-    // Check permission to export
-    const hasExportPerm = 
-      currentUser?.role === 'admin' || 
-      currentUser?.role === 'operations_manager' || 
-      currentUser?.permissions?.includes('export_excel') || 
-      currentUser?.permissions?.includes('super_admin') || 
-      currentUser?.permissions?.includes('all_permissions');
+    const hasExportPerm =
+      currentUser?.role === "admin" ||
+      currentUser?.role === "operations_manager" ||
+      currentUser?.permissions?.includes("export_excel") ||
+      currentUser?.permissions?.includes("super_admin") ||
+      currentUser?.permissions?.includes("all_permissions");
 
     if (!hasExportPerm) {
-      alert("ليس لديك صلاحية تصدير البيانات (export_excel). يرجى مراجعة إدارة النظام.");
+      setErrorToast("ليس لديك صلاحية تصدير البيانات (export_excel). يرجى مراجعة إدارة النظام.");
       return;
     }
 
@@ -601,7 +530,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         sanitizeCsvCell(u.departmentName || ""),
         sanitizeCsvCell(getStatusBadge(u.status).label),
         sanitizeCsvCell(u.loginDisabled || u.hasLoginAccount === false ? "حساب دخول معطل" : "مفعل"),
-        sanitizeCsvCell(u.role === 'volunteer' ? (u.hours || 0) : u.role === 'beneficiary' ? (u.familySize || 1) : ""),
+        sanitizeCsvCell(u.role === "volunteer" ? (u.hours || 0) : u.role === "beneficiary" ? (u.familySize || 1) : ""),
         sanitizeCsvCell(u.notes || ""),
         sanitizeCsvCell(u.createdAt ? new Date(u.createdAt).toLocaleDateString("ar-SA") : "")
       ]);
@@ -617,73 +546,67 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       setSuccessToast(`تم تصدير (${rows.length}) سجل مستخدم بنجاح بصيغة CSV آمنة.`);
-    } catch (err) {
-      alert("حدث خطأ أثناء تصدير ملف CSV.");
+    } catch {
+      setErrorToast("حدث خطأ أثناء تصدير ملف CSV.");
     }
   };
 
   // Toggle user status
-  const handleToggleStatus = async (user: SystemUser) => {
+  const handleToggleStatus = (user: SystemUser) => {
     const nextStatus = user.status === "active" ? "suspended" : "active";
-    const confirmMessage = nextStatus === "suspended" 
-      ? `هل أنت متأكد من رغبتك في تجميد حساب المستخدم (${user.name})؟ لن يتمكن من تسجيل الدخول.`
-      : `هل أنت متأكد من إعادة تفعيل حساب المستخدم (${user.name})؟`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    try {
-      const res = await fetch(buildApiUrl("/api/db/users/toggle-status"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({
-          userId: user.userId || user.id,
-          status: nextStatus,
-          reason: `تغيير الحالة بواسطة المسؤول (${currentUser?.name || 'الإدارة المركزية'})`
-        })
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "فشل تغيير حالة الحساب.");
-
-      setSuccessToast(data.message || `تم تحديث حالة المستخدم (${user.name}) بنجاح.`);
-      fetchUsers();
-    } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء تعديل حالة الحساب.");
-    }
+    setConfirmModal({
+      title: nextStatus === "suspended" ? "تجميد / إيقاف الحساب مؤقتاً" : "إعادة تفعيل الحساب",
+      message:
+        nextStatus === "suspended"
+          ? `هل أنت متأكد من رغبتك في إيقاف حساب المستخدم (${user.name})؟ سيتم إنهاء جلساته النشطة ولن يتمكن من تسجيل الدخول.`
+          : `هل أنت متأكد من إعادة تفعيل حساب المستخدم (${user.name})؟`,
+      confirmLabel: nextStatus === "suspended" ? "تأكيد الإيقاف" : "تفعيل الحساب",
+      tone: nextStatus === "suspended" ? "rose" : "emerald",
+      onConfirm: async () => {
+        const res = await fetch(buildApiUrl("/api/db/users/toggle-status"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({
+            userId: user.userId || user.id,
+            status: nextStatus,
+            reason: `تغيير الحالة بواسطة المسؤول (${currentUser?.name || "الإدارة المركزية"})`
+          })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "فشل تغيير حالة الحساب.");
+        setSuccessToast(data.message || `تم تحديث حالة المستخدم (${user.name}) بنجاح.`);
+        await refreshAllData();
+      }
+    });
   };
 
-  // Delete / Revoke User Login Account (إلغاء حساب الدخول مع الحفاظ على ملف وسجلات الشخص)
-  const handleDeleteUser = async (user: SystemUser) => {
-    if (user.userId === "admin-user" || user.userId === "ops-manager" || user.userId === "mosa" || user.userId === "perm-mosa") {
-      alert("لا يمكن تعطيل أو إلغاء حساب الإدارة العليا أو مدير العمليات الرئيسي للحفاظ على استقرار النظام.");
-      return;
-    }
+  // Restore archived / deactivated user
+  const handleRestoreUser = (user: SystemUser) => {
+    setConfirmModal({
+      title: "استعادة وتفعيل الحساب",
+      message: `هل تريد استعادة حساب (${user.name}) من الأرشيف أو التعطيل وإعادة تفعيل تسجيل الدخول؟`,
+      confirmLabel: "استعادة الحساب",
+      tone: "emerald",
+      onConfirm: async () => {
+        const res = await fetch(buildApiUrl("/api/db/users/restore"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({
+            userId: user.userId || user.id,
+            reason: `استعادة الحساب بواسطة (${currentUser?.name || "الإدارة"})`
+          })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "تعذر استعادة الحساب.");
+        setSuccessToast(data.message || `تمت استعادة وتفعيل حساب (${user.name}) بنجاح.`);
+        await refreshAllData();
+      }
+    });
+  };
 
-    const confirmMessage = user.role === "beneficiary"
-      ? `هل أنت متأكد من إلغاء حساب تسجيل الدخول للمستفيد (${user.name})؟\n\nتنبيه أمان: سيتم تعطيل إمكانية تسجيل الدخول فقط، مع الاحتفاظ الكامل بملف المستفيد ورقم رعايته وطلبات الإعانة وسجل الصرف والمرفقات في سجلات الجمعية دون أي حذف.`
-      : user.role === "volunteer"
-      ? `هل أنت متأكد من إلغاء حساب تسجيل الدخول للمتطوع (${user.name})؟\n\nتنبيه أمان: سيتم تعطيل إمكانية تسجيل الدخول فقط، مع الاحتفاظ الكامل بملف المتطوع وسجل ساعاته التطوعية (${user.hours || 0} ساعة) وعضويته وسجلات الفعاليات.`
-      : `هل أنت متأكد من إلغاء حساب تسجيل الدخول للمستخدم (${user.name})؟\n\nتنبيه أمان: سيتم إيقاف صلاحية الدخول فوراً مع الحفاظ التام على كامل السجلات والبيانات الإدارية المرتبطة.`;
-
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-
-    try {
-      const res = await fetch(buildApiUrl("/api/db/users/delete"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ userId: user.userId || user.id })
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "فشل إلغاء حساب الدخول.");
-
-      setSuccessToast(data?.message || `تم إلغاء حساب الدخول للمستخدم (${user.name}) بنجاح مع الاحتفاظ بكافة سجلاته.`);
-      fetchUsers();
-    } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء إلغاء حساب الدخول.");
-    }
+  // Open Delete / Archive Modal
+  const handleDeleteUser = (user: SystemUser) => {
+    setSelectedUserForDelete(user);
   };
 
   // Send Password Reset Link
@@ -704,7 +627,7 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       });
       setSuccessToast(`تم توليد رابط إعادة تعيين كلمة المرور بنجاح للمستخدم (${user.name}).`);
     } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء توليد رابط استعادة كلمة المرور.");
+      setErrorToast(err.message || "حدث خطأ أثناء توليد رابط استعادة كلمة المرور.");
     }
   };
 
@@ -721,19 +644,27 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
       if (!res.ok) throw new Error(data?.error || "فشل تحديث حالة التحقق من البريد.");
 
       setSuccessToast(data.message || `تم تحديث حالة التحقق من البريد للمستخدم (${user.name}).`);
-      fetchUsers();
+      await refreshAllData();
     } catch (err: any) {
-      alert(err.message || "حدث خطأ أثناء تحديث حالة البريد.");
+      setErrorToast(err.message || "حدث خطأ أثناء تحديث حالة البريد.");
     }
   };
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Toast Notification */}
+      {/* Success Toast */}
       {successToast && (
         <div className="fixed bottom-6 left-6 z-50 bg-emerald-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-emerald-700/80 flex items-center gap-3 animate-slide-up">
           <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
           <span className="text-xs font-bold">{successToast}</span>
+        </div>
+      )}
+
+      {/* Error Toast */}
+      {errorToast && (
+        <div className="fixed bottom-20 left-6 z-50 bg-rose-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-rose-700/80 flex items-center gap-3 animate-slide-up">
+          <AlertTriangle className="w-5 h-5 text-rose-300 shrink-0" />
+          <span className="text-xs font-bold">{errorToast}</span>
         </div>
       )}
 
@@ -900,13 +831,13 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="البحث بالاسم، الهوية، الجوال، اسم المستخدم، رقم المستفيد، العضوية..."
+              placeholder="البحث بالاسم، رقم الملف/العضوية، الهوية، الجوال، البريد..."
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-2.5 pr-10 pl-4 text-xs font-sans text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             />
           </div>
 
           {/* Role Filter */}
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
@@ -927,16 +858,32 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
           </div>
 
           {/* Department Filter */}
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-2.5 px-3 text-xs font-sans text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
             >
               <option value="all">كافة الإدارات والأقسام</option>
-              {departments.map((d) => (
+              {effectiveDepartments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.nameAr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Volunteer Team Filter */}
+          <div className="md:col-span-2">
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-2.5 px-3 text-xs font-sans text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+            >
+              <option value="all">كافة الفرق التطوعية</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nameAr}
                 </option>
               ))}
             </select>
@@ -953,8 +900,9 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
               <option value="active">نشط (Active)</option>
               <option value="pending">بانتظار المراجعة (Pending)</option>
               <option value="suspended">موقوف (Suspended)</option>
+              <option value="inactive">معطل مؤقتاً (Inactive)</option>
+              <option value="archived">مؤرشف ({stats.archived})</option>
               <option value="rejected">مرفوض (Rejected)</option>
-              <option value="inactive">غير مفعل (Inactive)</option>
             </select>
           </div>
         </div>
@@ -1021,257 +969,437 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
             <p className="text-xs text-slate-400">يرجى تعديل مصطلحات البحث أو إعادة ضبط الفلاتر المطبقة أعلاه.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  <th className="p-4">المستخدم والحساب</th>
-                  <th className="p-4">الدور والتصنيف</th>
-                  <th className="p-4">الإدارة / الفريق التابع</th>
-                  <th className="p-4">معلومات الاتصال والتحقق</th>
-                  <th className="p-4">حالة الحساب والأمان</th>
-                  <th className="p-4">تاريخ التسجيل والنشاط</th>
-                  <th className="p-4 text-center">الإجراءات والقرارات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-                {filteredUsers.map((u) => {
-                  const roleBadge = getRoleBadge(u.role);
-                  const statusBadge = getStatusBadge(u.status);
-                  const StatusIcon = statusBadge.icon;
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-right border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="p-4">المستخدم والحساب</th>
+                    <th className="p-4">الدور والتصنيف</th>
+                    <th className="p-4">الإدارة / الفريق التابع</th>
+                    <th className="p-4">معلومات الاتصال والتحقق</th>
+                    <th className="p-4">حالة الحساب والأمان</th>
+                    <th className="p-4">تاريخ التسجيل والنشاط</th>
+                    <th className="p-4 text-center">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                  {filteredUsers.map((u) => {
+                    const roleBadge = getRoleBadge(u.role);
+                    const statusBadge = getStatusBadge(u.status);
+                    const StatusIcon = statusBadge.icon;
+                    const allowManage = canManageTargetRow(u);
+                    const allowDelete = canDeleteTargetRow(u);
+                    const isArchivedOrDeactivated = u.status === "archived" || u.status === "inactive" || u.status === "deactivated" || Boolean(u.isArchived);
 
-                  return (
-                    <tr 
-                      key={u.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
-                    >
-                      {/* Name & Username */}
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="relative">
-                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center font-black text-sm shadow-xs shrink-0">
-                              {u.name ? u.name.trim().charAt(0) : "م"}
-                            </div>
-                            <span 
-                              className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
-                                u.status === 'active' ? 'bg-emerald-500' : u.status === 'pending' ? 'bg-amber-500' : u.status === 'suspended' ? 'bg-rose-500' : 'bg-slate-400'
-                              }`} 
-                              title={statusBadge.label}
-                            />
-                          </div>
-
-                          <div className="space-y-0.5">
-                            <div className="font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                              <span>{u.name}</span>
-                              {u.role === "operations_manager" && (
-                                <span className="bg-amber-100 text-amber-950 text-[10px] font-black px-1.5 py-0.2 rounded-md">
-                                  عمليات
-                                </span>
+                    return (
+                      <tr
+                        key={u.id}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
+                      >
+                        {/* Name & Username */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              {u.avatarUrl ? (
+                                <img
+                                  src={u.avatarUrl}
+                                  alt={u.name}
+                                  className="w-10 h-10 rounded-2xl object-cover shadow-xs shrink-0 border border-slate-200 dark:border-slate-700"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center font-black text-sm shadow-xs shrink-0">
+                                  {u.name ? u.name.trim().charAt(0) : "م"}
+                                </div>
                               )}
-                              {u.beneficiaryNumber && (
-                                <span className="bg-rose-100 text-rose-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
-                                  #{u.beneficiaryNumber}
-                                </span>
-                              )}
-                              {u.membershipNumber && (
-                                <span className="bg-teal-100 text-teal-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
-                                  #{u.membershipNumber}
-                                </span>
-                              )}
+                              <span
+                                className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
+                                  u.status === "active"
+                                    ? "bg-emerald-500"
+                                    : u.status === "pending"
+                                    ? "bg-amber-500"
+                                    : u.status === "suspended"
+                                    ? "bg-rose-500"
+                                    : "bg-slate-400"
+                                }`}
+                                title={statusBadge.label}
+                              />
                             </div>
-                            <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
-                              <span>@{u.username}</span>
-                              {u.nationalId && <span>• {u.nationalId}</span>}
+
+                            <div className="space-y-0.5">
+                              <div className="font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                                <span>{u.name}</span>
+                                {u.role === "operations_manager" && (
+                                  <span className="bg-amber-100 text-amber-950 text-[10px] font-black px-1.5 py-0.2 rounded-md">
+                                    عمليات
+                                  </span>
+                                )}
+                                {u.beneficiaryNumber && (
+                                  <span className="bg-rose-100 text-rose-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
+                                    #{u.beneficiaryNumber}
+                                  </span>
+                                )}
+                                {u.membershipNumber && (
+                                  <span className="bg-teal-100 text-teal-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
+                                    #{u.membershipNumber}
+                                  </span>
+                                )}
+                                {u.employeeNumber && !u.membershipNumber && !u.beneficiaryNumber && (
+                                  <span className="bg-blue-100 text-blue-800 text-[10px] font-mono px-1.5 py-0.2 rounded-md font-bold">
+                                    #{u.employeeNumber}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+                                <span>@{u.username}</span>
+                                {u.nationalId && <span>• {u.nationalId}</span>}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Role */}
-                      <td className="p-4">
-                        <div className="space-y-1">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-black border ${roleBadge.bg}`}>
-                            {roleBadge.label}
-                          </span>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {u.category ? `فئة: ${u.category}` : u.jobTitle || "مسجل في النظام"}
+                        {/* Role */}
+                        <td className="p-4">
+                          <div className="space-y-1">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-black border ${roleBadge.bg}`}>
+                              {roleBadge.label}
+                            </span>
+                            <div className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold">
+                              {u.positionTitle || u.jobTitle || (u.category ? `فئة: ${u.category}` : "مسجل في النظام")}
+                            </div>
+                            {Array.isArray(u.permissions) && u.permissions.length > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
+                                <Shield className="w-3 h-3" />
+                                <span>{u.permissions.length} صلاحية</span>
+                              </span>
+                            )}
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Department / Team */}
-                      <td className="p-4">
-                        <div className="font-semibold text-slate-800 dark:text-slate-200">
-                          {u.teamName ? `فريق ${u.teamName}` : u.departmentName || "الإدارة العامة"}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {u.hours !== undefined ? `${u.hours} ساعة تطوعية` : u.familySize !== undefined ? `أسرة من ${u.familySize} أفراد` : u.departmentId}
-                        </div>
-                      </td>
+                        {/* Department / Team */}
+                        <td className="p-4">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200">
+                            {u.teamName ? `فريق ${u.teamName}` : u.departmentName || "الإدارة العامة"}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {u.hours !== undefined ? `${u.hours} ساعة تطوعية` : u.familySize !== undefined ? `أسرة من ${u.familySize} أفراد` : u.departmentId}
+                          </div>
+                        </td>
 
-                      {/* Contact */}
-                      <td className="p-4 space-y-1">
-                        {u.email && (
-                          <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
-                            <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[130px]" title={u.email}>{u.email}</span>
+                        {/* Contact */}
+                        <td className="p-4 space-y-1">
+                          {u.email && (
+                            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
+                              <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[130px]" title={u.email}>{u.email}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleEmailVerification(u)}
+                                title={u.emailVerified ? "البريد مؤكد وموثق (انقر لتغيير الحالة)" : "انقر لتأكيد والتحقق من البريد"}
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-colors ${
+                                  u.emailVerified
+                                    ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                    : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                                }`}
+                              >
+                                {u.emailVerified ? "موثق ✓" : "غير موثق"}
+                              </button>
+                            </div>
+                          )}
+                          {u.phone && (
+                            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px] font-mono">
+                              <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>{u.phone}</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Status & Security */}
+                        <td className="p-4">
+                          <div className="space-y-1.5">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.bg}`}>
+                              <StatusIcon className="w-3 h-3" />
+                              <span>{statusBadge.label}</span>
+                            </span>
+
+                            {u.mustChangePassword && (
+                              <div>
+                                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/40">
+                                  <KeyRound className="w-3 h-3 text-amber-500" />
+                                  <span>يلزم تغيير كلمة المرور</span>
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Last Activity */}
+                        <td className="p-4 text-[11px] text-slate-500 dark:text-slate-400">
+                          {u.lastLogin ? (
+                            <div className="space-y-0.5">
+                              <div className="font-semibold text-slate-700 dark:text-slate-300">
+                                {new Date(u.lastLogin).toLocaleDateString("ar-SA")}
+                              </div>
+                              <div className="font-mono text-[10px] text-slate-400">
+                                {new Date(u.lastLogin).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}
+                              </div>
+                            </div>
+                          ) : u.createdAt ? (
+                            <span className="text-slate-400">مسجل: {new Date(u.createdAt).toLocaleDateString("ar-SA")}</span>
+                          ) : (
+                            <span className="text-slate-400">لم يسجل دخول بعد</span>
+                          )}
+                        </td>
+
+                        {/* Actions Column («الإجراءات») */}
+                        <td className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            {/* Quick Approval / Rejection for Pending Users */}
+                            {u.status === "pending" && allowManage && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveUser(u)}
+                                  className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 transition-colors cursor-pointer"
+                                  title="اعتماد وقبول الحساب"
+                                >
+                                  <Check className="w-4 h-4 text-emerald-600" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectUser(u)}
+                                  className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-300 transition-colors cursor-pointer"
+                                  title="رفض الطلب مع إدخال السبب"
+                                >
+                                  <XCircle className="w-4 h-4 text-red-600" />
+                                </button>
+                              </>
+                            )}
+
+                            {/* زر «تعديل» بأيقونة القلم */}
+                            {allowManage && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditModalInitialSection("personal");
+                                    setSelectedUserForEdit(u);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-bold transition-colors cursor-pointer"
+                                  title="تعديل كافة بيانات المستخدم وصلاحياته"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                  <span>تعديل</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditModalInitialSection("role_dept");
+                                    setSelectedUserForEdit(u);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-300 dark:border-indigo-800 text-[11px] font-bold transition-colors cursor-pointer"
+                                  title="إدارة صلاحيات المستخدم والإدارة"
+                                >
+                                  <Shield className="w-3.5 h-3.5" />
+                                  <span>الصلاحيات</span>
+                                </button>
+                              </>
+                            )}
+
+                            {/* زر «عرض التفاصيل» بأيقونة العين */}
                             <button
                               type="button"
-                              onClick={() => handleToggleEmailVerification(u)}
-                              title={u.emailVerified ? "البريد مؤكد وموثق (انقر لتغيير الحالة)" : "انقر لتأكيد والتحقق من البريد"}
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-colors ${
-                                u.emailVerified
-                                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                              }`}
+                              onClick={() => setSelectedUserForDetails(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
+                              title="عرض التفاصيل الكاملة والملفات المرتبطة"
                             >
-                              {u.emailVerified ? "موثق ✓" : "غير موثق"}
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>التفاصيل</span>
+                            </button>
+
+                            {/* زر «حذف / أرشفة» بأيقونة سلة المهملات */}
+                            {allowDelete && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-300 dark:border-rose-800 text-[11px] font-bold transition-colors cursor-pointer"
+                                title="حذف أو أرشفة أو تعطيل المستخدم"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف</span>
+                              </button>
+                            )}
+
+                            {/* زر استعادة للأرشفة / التعطيل */}
+                            {isArchivedOrDeactivated && allowManage && (
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreUser(u)}
+                                className="p-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition-colors cursor-pointer"
+                                title="استعادة وتفعيل الحساب"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Reset Password Quick Trigger */}
+                            {allowManage && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedUserForReset(u)}
+                                className="p-2 rounded-xl bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                                title="إعادة تعيين كلمة المرور"
+                              >
+                                <KeyRound className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Activity Logs Trigger */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUserForActivity(u)}
+                              className="p-2 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                              title="سجل نشاط المستخدم"
+                            >
+                              <History className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                        )}
-                        {u.phone && (
-                          <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px] font-mono">
-                            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>{u.phone}</span>
-                          </div>
-                        )}
-                      </td>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-                      {/* Status & Security */}
-                      <td className="p-4">
-                        <div className="space-y-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.bg}`}>
-                            <StatusIcon className="w-3 h-3" />
-                            <span>{statusBadge.label}</span>
-                          </span>
+            {/* Responsive Mobile Cards (< 768px) — clean zero-overlap layout */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredUsers.map((u) => {
+                const roleBadge = getRoleBadge(u.role);
+                const statusBadge = getStatusBadge(u.status);
+                const StatusIcon = statusBadge.icon;
+                const allowManage = canManageTargetRow(u);
+                const allowDelete = canDeleteTargetRow(u);
+                const isArchivedOrDeactivated = u.status === "archived" || u.status === "inactive" || u.status === "deactivated" || Boolean(u.isArchived);
 
-                          {u.mustChangePassword && (
-                            <div>
-                              <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/40">
-                                <KeyRound className="w-3 h-3 text-amber-500" />
-                                <span>يلزم تغيير كلمة المرور</span>
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Last Activity */}
-                      <td className="p-4 text-[11px] text-slate-500 dark:text-slate-400">
-                        {u.lastLogin ? (
-                          <div className="space-y-0.5">
-                            <div className="font-semibold text-slate-700 dark:text-slate-300">
-                              {new Date(u.lastLogin).toLocaleDateString("ar-SA")}
-                            </div>
-                            <div className="font-mono text-[10px] text-slate-400">
-                              {new Date(u.lastLogin).toLocaleTimeString("ar-SA", { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                        ) : u.createdAt ? (
-                          <span className="text-slate-400">مسجل: {new Date(u.createdAt).toLocaleDateString("ar-SA")}</span>
+                return (
+                  <div key={u.id} className="p-4 space-y-3 bg-white dark:bg-slate-900">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {u.avatarUrl ? (
+                          <img src={u.avatarUrl} alt={u.name} className="w-11 h-11 rounded-2xl object-cover border border-slate-200 shrink-0" />
                         ) : (
-                          <span className="text-slate-400">لم يسجل دخول بعد</span>
+                          <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-black text-sm shrink-0">
+                            {u.name ? u.name.trim().charAt(0) : "م"}
+                          </div>
                         )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {/* Quick Approval / Rejection for Pending Users */}
-                          {u.status === "pending" && (
-                            <>
-                              <button
-                                onClick={() => handleApproveUser(u)}
-                                className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 transition-colors cursor-pointer"
-                                title="اعتماد وقبول الحساب"
-                              >
-                                <Check className="w-4 h-4 text-emerald-600" />
-                              </button>
-                              <button
-                                onClick={() => handleRejectUser(u)}
-                                className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-300 transition-colors cursor-pointer"
-                                title="رفض الطلب مع إدخال السبب"
-                              >
-                                <XCircle className="w-4 h-4 text-red-600" />
-                              </button>
-                            </>
-                          )}
-
-                          {/* Details & Permissions Modal Trigger */}
-                          <button
-                            onClick={() => setSelectedUserForDetails(u)}
-                            className="p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                            title="عرض تفاصيل الحساب الكاملة والملفات المرتبطة"
-                          >
-                            <Shield className="w-4 h-4" />
-                          </button>
-
-                          {/* Reset Password Trigger */}
-                          <button
-                            onClick={() => setSelectedUserForReset(u)}
-                            className="p-2 rounded-xl bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                            title="إعادة تعيين كلمة المرور"
-                          >
-                            <KeyRound className="w-4 h-4" />
-                          </button>
-
-                          {/* Send Password Reset Link */}
-                          <button
-                            onClick={() => handleSendResetLink(u)}
-                            className="p-2 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                            title="إرسال رابط تغيير كلمة المرور"
-                          >
-                            <Send className="w-4 h-4" />
-                          </button>
-
-                          {/* Toggle Active / Suspended (for non-pending users) */}
-                          {u.status !== "pending" && (
-                            <button
-                              onClick={() => handleToggleStatus(u)}
-                              className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                                u.status === 'active'
-                                  ? 'bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-slate-700'
-                                  : 'bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 dark:bg-slate-800 dark:hover:bg-slate-700'
-                              }`}
-                              title={u.status === 'active' ? 'تعطيل / تجميد الحساب' : 'إعادة تفعيل الحساب'}
-                            >
-                              {u.status === 'active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                            </button>
-                          )}
-
-                          {/* Activity Logs Trigger */}
-                          <button
-                            onClick={() => setSelectedUserForActivity(u)}
-                            className="p-2 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                            title="سجل نشاط المستخدم"
-                          >
-                            <History className="w-4 h-4" />
-                          </button>
-
-                          {/* Revoke / Disable Login Account (Safe Deletion with Profile Preservation) */}
-                          {u.userId !== "admin-user" && u.userId !== "ops-manager" && (
-                            <button
-                              onClick={() => handleDeleteUser(u)}
-                              className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                              title={
-                                u.role === 'beneficiary'
-                                  ? 'إلغاء حساب الدخول (مع الاحتفاظ بملف الرعاية والطلبات)'
-                                  : u.role === 'volunteer'
-                                  ? 'إلغاء حساب الدخول (مع الاحتفاظ بساعات وسجل التطوع)'
-                                  : 'إلغاء حساب الدخول (مع الاحتفاظ بكامل السجلات)'
-                              }
-                            >
-                              <UserX className="w-4 h-4" />
-                            </button>
-                          )}
+                        <div className="min-w-0">
+                          <div className="font-black text-sm text-slate-900 dark:text-white truncate">{u.name}</div>
+                          <div className="text-[11px] font-mono text-slate-400 truncate">
+                            @{u.username} {u.nationalId ? `• ${u.nationalId}` : ""}
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${statusBadge.bg}`}>
+                        <StatusIcon className="w-3 h-3" />
+                        <span>{statusBadge.label}</span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className={`px-2.5 py-0.5 rounded-full font-black border ${roleBadge.bg}`}>
+                        {roleBadge.label}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-400 font-semibold">
+                        {u.teamName ? `فريق ${u.teamName}` : u.departmentName || "الإدارة العامة"}
+                      </span>
+                      {(u.beneficiaryNumber || u.membershipNumber || u.employeeNumber) && (
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-mono text-[10px] font-bold">
+                          #{u.beneficiaryNumber || u.membershipNumber || u.employeeNumber}
+                        </span>
+                      )}
+                    </div>
+
+                    {(u.phone || u.email) && (
+                      <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 font-mono">
+                        {u.phone && <span>📞 {u.phone}</span>}
+                        {u.email && <span className="truncate">✉️ {u.email}</span>}
+                      </div>
+                    )}
+
+                    {/* Touch-friendly Actions Bar */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2">
+                      {allowManage && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditModalInitialSection("personal");
+                              setSelectedUserForEdit(u);
+                            }}
+                            className="flex-1 min-w-[85px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                            <span>تعديل</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditModalInitialSection("role_dept");
+                              setSelectedUserForEdit(u);
+                            }}
+                            className="flex-1 min-w-[90px] py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                            <span>الصلاحيات</span>
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserForDetails(u)}
+                        className="flex-1 min-w-[90px] py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>التفاصيل</span>
+                      </button>
+                      {allowDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(u)}
+                          className="flex-1 min-w-[85px] py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف</span>
+                        </button>
+                      )}
+                      {isArchivedOrDeactivated && allowManage && (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreUser(u)}
+                          className="py-2 px-3 rounded-xl bg-teal-50 text-teal-700 border border-teal-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>استعادة</span>
+                        </button>
+                      )}
+                      {allowManage && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserForReset(u)}
+                          className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 cursor-pointer"
+                          title="إعادة تعيين كلمة المرور"
+                        >
+                          <KeyRound className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -1282,61 +1410,183 @@ export const UsersManager: React.FC<UsersManagerProps> = ({
         <CreateUserModal
           isOpen={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
-          departments={departments}
+          departments={effectiveDepartments}
           currentUser={currentUser}
+          onToast={(msg) => setSuccessToast(msg)}
           onSuccess={(msg) => {
             setSuccessToast(msg);
             setIsCreateModalOpen(false);
-            fetchUsers();
+            refreshAllData();
           }}
         />
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: USER DETAILS & PERMISSIONS (تفاصيل المستخدم ومصفوفة الصلاحيات) */}
+      {/* MODAL 2: COMPREHENSIVE USER EDIT (شاشة تعديل المستخدم الشاملة) */}
       {/* ========================================================================= */}
-      {selectedUserForDetails && (
-        <UserDetailsModal
-          user={selectedUserForDetails}
-          departments={departments}
+      {selectedUserForEdit && (
+        <UserComprehensiveEditModal
+          user={selectedUserForEdit}
+          departments={effectiveDepartments}
+          teams={teams}
+          scope={userScope}
           currentUser={currentUser}
-          currentUserRole={currentUserRole}
+          initialSection={editModalInitialSection}
           onOpenResetPassword={(u) => setSelectedUserForReset(u)}
-          onApproveUser={handleApproveUser}
-          onRejectUser={handleRejectUser}
-          onClose={() => setSelectedUserForDetails(null)}
+          onClose={() => setSelectedUserForEdit(null)}
           onSuccess={(msg) => {
             setSuccessToast(msg);
-            setSelectedUserForDetails(null);
-            fetchUsers();
+            setSelectedUserForEdit(null);
+            refreshAllData();
           }}
         />
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: RESET PASSWORD (إعادة تعيين كلمة المرور مع فرض التغيير) */}
+      {/* MODAL 3: USER DELETE / ARCHIVE / DEACTIVATE (نافذة الحذف والأرشفة الآمنة) */}
+      {/* ========================================================================= */}
+      {selectedUserForDelete && (
+        <UserDeleteArchiveModal
+          user={selectedUserForDelete}
+          scope={userScope}
+          onClose={() => setSelectedUserForDelete(null)}
+          onSuccess={(msg) => {
+            setSuccessToast(msg);
+            setSelectedUserForDelete(null);
+            refreshAllData();
+          }}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: FULL USER DETAILS VIEW (عرض التفاصيل الكاملة) */}
+      {/* ========================================================================= */}
+      {selectedUserForDetails && (
+        <UserFullDetailsModal
+          user={selectedUserForDetails}
+          canEdit={canManageTargetRow(selectedUserForDetails)}
+          onEditClick={(u) => setSelectedUserForEdit(u)}
+          onActivityClick={(u) => setSelectedUserForActivity(u)}
+          onClose={() => setSelectedUserForDetails(null)}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: RESET PASSWORD (إعادة تعيين كلمة المرور مع فرض التغيير) */}
       {/* ========================================================================= */}
       {selectedUserForReset && (
         <ResetPasswordModal
           user={selectedUserForReset}
           currentUser={currentUser}
+          onToast={(msg) => setSuccessToast(msg)}
           onClose={() => setSelectedUserForReset(null)}
           onSuccess={(msg) => {
             setSuccessToast(msg);
             setSelectedUserForReset(null);
-            fetchUsers();
+            refreshAllData();
           }}
         />
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 4: USER ACTIVITY AUDIT LOG (سجل نشاط المستخدم) */}
+      {/* MODAL 6: USER ACTIVITY AUDIT LOG (سجل نشاط المستخدم) */}
       {/* ========================================================================= */}
       {selectedUserForActivity && (
         <UserActivityModal
           user={selectedUserForActivity}
           onClose={() => setSelectedUserForActivity(null)}
         />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: CONFIRM ACTION MODAL (تأكيد العمليات الإدارية) */}
+      {/* ========================================================================= */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in" dir="rtl">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+            <h3 className="text-base font-black text-slate-900 dark:text-white">{confirmModal.title}</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{confirmModal.message}</p>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isSubmittingAction}
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingAction}
+                onClick={async () => {
+                  setIsSubmittingAction(true);
+                  try {
+                    await confirmModal.onConfirm();
+                    setConfirmModal(null);
+                  } catch (err: any) {
+                    setErrorToast(err.message || "تعذر تنفيذ العملية.");
+                    setConfirmModal(null);
+                  } finally {
+                    setIsSubmittingAction(false);
+                  }
+                }}
+                className={`px-5 py-2 rounded-xl text-xs font-black text-white cursor-pointer disabled:opacity-50 ${
+                  confirmModal.tone === "rose"
+                    ? "bg-rose-600 hover:bg-rose-700"
+                    : confirmModal.tone === "amber"
+                    ? "bg-amber-600 hover:bg-amber-700"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {isSubmittingAction ? "جاري التنفيذ..." : confirmModal.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: REJECT USER MODAL */}
+      {/* ========================================================================= */}
+      {rejectModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in" dir="rtl">
+          <form
+            onSubmit={handleSubmitRejectUser}
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4"
+          >
+            <h3 className="text-base font-black text-rose-700 dark:text-rose-300">
+              رفض طلب حساب ({rejectModalUser.name})
+            </h3>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                سبب الرفض:
+              </label>
+              <textarea
+                rows={3}
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+                required
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2.5 text-xs text-slate-900 dark:text-white"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setRejectModalUser(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingAction}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+              >
+                {isSubmittingAction ? "جاري الحفظ..." : "تأكيد الرفض"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* ========================================================================= */}
@@ -1419,6 +1669,7 @@ interface CreateUserModalProps {
   onClose: () => void;
   departments: Department[];
   currentUser: any;
+  onToast?: (msg: string) => void;
   onSuccess: (msg: string) => void;
 }
 
@@ -1427,6 +1678,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
   onClose,
   departments,
   currentUser,
+  onToast,
   onSuccess
 }) => {
   const [name, setName] = useState("");
@@ -1706,7 +1958,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({
                 type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(password);
-                  alert("تم نسخ كلمة المرور إلى الحافظة.");
+                  if (onToast) onToast("تم نسخ كلمة المرور إلى الحافظة.");
                 }}
                 className="absolute left-2.5 top-1/2 -translate-y-1/2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold px-2 py-1 rounded-lg cursor-pointer flex items-center gap-1"
               >
@@ -2504,12 +2756,10 @@ const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   );
 };
 
-// =============================================================================
-// SUB-COMPONENT: RESET PASSWORD MODAL
-// =============================================================================
 interface ResetPasswordModalProps {
   user: SystemUser;
   currentUser: any;
+  onToast?: (msg: string) => void;
   onClose: () => void;
   onSuccess: (msg: string) => void;
 }
@@ -2517,6 +2767,7 @@ interface ResetPasswordModalProps {
 const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
   user,
   currentUser,
+  onToast,
   onClose,
   onSuccess
 }) => {
@@ -2637,7 +2888,7 @@ const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                   type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(newPassword);
-                    alert("تم نسخ كلمة المرور إلى الحافظة.");
+                    if (onToast) onToast("تم نسخ كلمة المرور إلى الحافظة.");
                   }}
                   className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-bold px-2 py-1 rounded-lg cursor-pointer"
                   title="نسخ"

@@ -29,7 +29,8 @@ import {
   Lock,
   Sparkles,
   Building2,
-  AlertCircle
+  AlertCircle,
+  XCircle
 } from 'lucide-react';
 import {
   getAllDepartmentPermissions,
@@ -55,6 +56,8 @@ interface DepartmentPermissionsManagerProps {
   saveSuccess?: boolean;
   saveMessage?: string;
   isSuperAdmin?: boolean;
+  allowedPermissionIds?: string[]; // Delegation ceiling for non-super-admins
+  hideSaveButton?: boolean;
 }
 
 export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManagerProps> = ({
@@ -69,7 +72,9 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
   isSaving = false,
   saveSuccess = false,
   saveMessage = '',
-  isSuperAdmin = true
+  isSuperAdmin = true,
+  allowedPermissionIds,
+  hideSaveButton = false
 }) => {
   // 1. Department Selection state ("اختر الإدارة أولاً")
   // Defaults to user's assigned department, or first department, or 'all' if super admin allows
@@ -158,6 +163,7 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
       case 'edit': return <Edit className="w-3.5 h-3.5" />;
       case 'delete': return <Trash2 className="w-3.5 h-3.5" />;
       case 'approve': return <CheckCircle className="w-3.5 h-3.5" />;
+      case 'reject': return <XCircle className="w-3.5 h-3.5" />;
       case 'disburse': return <ArrowUpRight className="w-3.5 h-3.5" />;
       case 'receive': return <ArrowDownLeft className="w-3.5 h-3.5" />;
       case 'print': return <Printer className="w-3.5 h-3.5" />;
@@ -168,8 +174,15 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
     }
   };
 
+  const canDelegatePerm = (permId: string) => {
+    if (isSuperAdmin || !allowedPermissionIds || allowedPermissionIds.length === 0) return true;
+    if (allowedPermissionIds.includes('super_admin') || allowedPermissionIds.includes('all_permissions')) return true;
+    return allowedPermissionIds.includes(permId);
+  };
+
   // Permission item checkbox toggle
   const handleTogglePermission = (perm: PermissionDefinition) => {
+    if (!canDelegatePerm(perm.id)) return;
     const isChecked = selectedPermissions.includes(perm.id);
     let updated: string[];
     if (isChecked) {
@@ -182,7 +195,7 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
 
   // 4. صلاحيات مدير الإدارة: تحديد جميع صلاحيات الإدارة
   const handleSelectAllDepartmentPermissions = (deptId: string) => {
-    const deptPermIds = getDepartmentPermissionIds(deptId, departments);
+    const deptPermIds = getDepartmentPermissionIds(deptId, departments).filter(canDelegatePerm);
     const set = new Set([...selectedPermissions, ...deptPermIds]);
     onChangePermissions(Array.from(set));
   };
@@ -199,6 +212,7 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
     const visibleIds: string[] = [];
     displayedGroups.forEach(g => {
       g.permissions.forEach(p => {
+        if (!canDelegatePerm(p.id)) return;
         if (selectedOperationFilter === 'all' || p.operationType === selectedOperationFilter) {
           if (!searchQuery || p.label.toLowerCase().includes(searchQuery.toLowerCase())) {
             visibleIds.push(p.id);
@@ -429,15 +443,17 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
         </div>
 
         {/* زر حفظ الصلاحيات الرئيسي */}
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={onSave}
-          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black py-2 px-5 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0"
-        >
-          <Shield className="w-4 h-4" />
-          <span>{isSaving ? 'جارٍ الحفظ...' : 'حفظ الصلاحيات'}</span>
-        </button>
+        {!hideSaveButton && (
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={onSave}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black py-2 px-5 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0"
+          >
+            <Shield className="w-4 h-4" />
+            <span>{isSaving ? 'جارٍ الحفظ...' : 'حفظ الصلاحيات'}</span>
+          </button>
+        )}
       </div>
 
       {/* رسالة النجاح الواضحة (المعيار #8: تم حفظ صلاحيات المستخدم بنجاح) */}
@@ -553,21 +569,25 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                     {filteredPerms.map(perm => {
                       const isChecked = selectedPermissions.includes(perm.id);
+                      const isAllowedToGrant = canDelegatePerm(perm.id);
                       const opConfig = OPERATION_TYPE_CONFIG[perm.operationType] || OPERATION_TYPE_CONFIG.manage;
 
                       return (
                         <label
                           key={perm.id}
-                          className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer select-none text-xs ${
-                            isChecked
-                              ? 'bg-emerald-50/70 border-emerald-500/70 shadow-xs'
-                              : 'bg-neutral-50/60 border-neutral-200/80 hover:bg-neutral-100/70 hover:border-neutral-300'
+                          className={`flex items-center justify-between p-3 rounded-xl border transition-all select-none text-xs ${
+                            !isAllowedToGrant
+                              ? 'opacity-50 bg-neutral-100 border-neutral-200 cursor-not-allowed'
+                              : isChecked
+                              ? 'bg-emerald-50/70 border-emerald-500/70 shadow-xs cursor-pointer'
+                              : 'bg-neutral-50/60 border-neutral-200/80 hover:bg-neutral-100/70 hover:border-neutral-300 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <input
                               type="checkbox"
                               checked={isChecked}
+                              disabled={!isAllowedToGrant}
                               onChange={() => handleTogglePermission(perm)}
                               className="w-4 h-4 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
                             />
@@ -605,22 +625,24 @@ export const DepartmentPermissionsManager: React.FC<DepartmentPermissionsManager
       </div>
 
       {/* Sticky Bottom Save Action Bar */}
-      <div className="border-t border-neutral-200 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="text-xs text-neutral-500">
-          <span>الصلاحيات المحددة جاهزة للاعتماد: </span>
-          <span className="font-bold text-neutral-800">{selectedPermissions.length} صلاحية تشغيلية</span>
-        </div>
+      {!hideSaveButton && (
+        <div className="border-t border-neutral-200 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-xs text-neutral-500">
+            <span>الصلاحيات المحددة جاهزة للاعتماد: </span>
+            <span className="font-bold text-neutral-800">{selectedPermissions.length} صلاحية تشغيلية</span>
+          </div>
 
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={onSave}
-          className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs py-3 px-8 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-md"
-        >
-          <Shield className="w-4 h-4" />
-          <span>{isSaving ? 'جارٍ حفظ الصلاحيات ومزامنتها...' : 'حفظ الصلاحيات الآن'}</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={onSave}
+            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs py-3 px-8 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-md"
+          >
+            <Shield className="w-4 h-4" />
+            <span>{isSaving ? 'جارٍ حفظ الصلاحيات ومزامنتها...' : 'حفظ الصلاحيات الآن'}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

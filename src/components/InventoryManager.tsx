@@ -3941,13 +3941,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1">كلمة المرور *</label>
+                  <label className="block font-bold mb-1">
+                    {editingStorekeeper.id ? "تعيين كلمة مرور جديدة (اختياري)" : "كلمة المرور *"}
+                  </label>
                   <input
-                    type="text"
-                    required
-                    value={editingStorekeeper.password || "123"}
+                    type="password"
+                    required={!editingStorekeeper.id}
+                    value={editingStorekeeper.password || ""}
                     onChange={e => setEditingStorekeeper({ ...editingStorekeeper, password: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-700 border font-mono"
+                    placeholder={editingStorekeeper.id ? "تُترك فارغة للإبقاء على كلمة المرور الحالية" : "أدخل كلمة مرور قوية"}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-700 border font-mono text-xs"
                   />
                 </div>
               </div>

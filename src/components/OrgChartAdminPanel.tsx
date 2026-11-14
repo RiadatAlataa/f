@@ -5,11 +5,14 @@ import {
   Search, Check, X, AlertCircle, Sparkles, RefreshCw,
   HelpCircle, UserCheck, Briefcase
 } from "lucide-react";
-import { OrgMember } from "../types";
+import { AdministrativeTask, Department, Employee, OrgMember } from "../types";
 import { ImageUploadField } from "./ImageUploadField";
 
 interface OrgChartAdminPanelProps {
   members: OrgMember[];
+  departments?: Department[];
+  employees?: Employee[];
+  administrativeTasks?: AdministrativeTask[];
   onAddMember: (member: Partial<OrgMember>) => Promise<boolean>;
   onDeleteMember: (id: string) => Promise<boolean>;
   onToggleMemberActive: (id: string, isActive?: boolean) => Promise<boolean>;
@@ -20,6 +23,9 @@ interface OrgChartAdminPanelProps {
 
 export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
   members = [],
+  departments = [],
+  employees = [],
+  administrativeTasks = [],
   onAddMember,
   onDeleteMember,
   onToggleMemberActive,
@@ -32,6 +38,9 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<OrgMember | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<OrgMember | null>(null);
+  const [detailMember, setDetailMember] = useState<OrgMember | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -86,6 +95,7 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
 
   // Reset and open modal for new member
   const handleOpenAdd = () => {
+    setFormError(null);
     setEditingMember(null);
     setFormData({
       name: "",
@@ -107,6 +117,7 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
 
   // Open modal to edit existing member
   const handleOpenEdit = (member: OrgMember) => {
+    setFormError(null);
     setEditingMember(member);
     setFormData({
       id: member.id,
@@ -130,8 +141,9 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
   // Submit member add/edit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!formData.name.trim() || !formData.roleTitle.trim()) {
-      alert(lang === "ar" ? "يرجى كتابة اسم الشخص والمسمى الوظيفي" : "Please provide name and job title");
+      setFormError(lang === "ar" ? "يرجى كتابة اسم الشخص والمسمى الوظيفي" : "Please provide name and job title");
       return;
     }
 
@@ -171,6 +183,8 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
       const ok = await onAddMember(payload);
       if (ok) {
         setIsModalOpen(false);
+      } else {
+        setFormError(lang === "ar" ? "تعذر حفظ بيانات العضو في الهيكل الإداري." : "Failed to save member.");
       }
     } finally {
       setIsSaving(false);
@@ -196,16 +210,20 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
     await onBatchUpdateMembers(updated);
   };
 
-  // Import existing directors
-  const handleImport = async () => {
+  // Import existing directors via in-app confirmation modal
+  const handleImport = () => {
     if (!onImportDirectors) return;
-    if (confirm(lang === "ar" ? "هل ترغب في استيراد مدراء الإدارات المسجلين حالياً بالنظام كأعضاء في المستوى الثالث تلقائياً؟" : "Import directors from departments?")) {
-      setIsImporting(true);
-      try {
-        await onImportDirectors();
-      } finally {
-        setIsImporting(false);
-      }
+    setShowImportConfirm(true);
+  };
+
+  const confirmImportDirectors = async () => {
+    if (!onImportDirectors) return;
+    setShowImportConfirm(false);
+    setIsImporting(true);
+    try {
+      await onImportDirectors();
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -520,6 +538,14 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
+                            onClick={() => setDetailMember(member)}
+                            className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 transition-colors cursor-pointer"
+                            title={lang === "ar" ? "عرض التفاصيل الإدارية والصلاحيات" : "Details"}
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenEdit(member)}
                             className="p-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-700 hover:bg-emerald-50 hover:text-emerald-600 text-neutral-600 dark:text-neutral-300 transition-colors cursor-pointer"
                             title={lang === "ar" ? "تعديل البيانات" : "Edit"}
@@ -570,6 +596,12 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
 
             {/* Modal Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
               {/* Photo Upload with ImageUploadField */}
               <div>
                 <ImageUploadField
@@ -821,6 +853,210 @@ export const OrgChartAdminPanel: React.FC<OrgChartAdminPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* In-App Confirmation Modal for Importing Department Directors */}
+      {showImportConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+          onClick={() => setShowImportConfirm(false)}
+          dir={lang === "ar" ? "rtl" : "ltr"}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl p-6 shadow-2xl border border-neutral-200 dark:border-neutral-700 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-emerald-700 dark:text-emerald-400">
+              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-neutral-900 dark:text-white">
+                  {lang === "ar" ? "استيراد ومزامنة مدراء الإدارات" : "Import Department Directors"}
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  {lang === "ar" ? "مزامنة مباشرة مع بيانات الإدارات المعتمدة" : "Sync with approved departments"}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-700 dark:text-neutral-300 bg-neutral-50 dark:bg-neutral-800 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700 leading-relaxed">
+              {lang === "ar"
+                ? "سيتم استيراد مدراء الإدارات النشطين تلقائياً وربطهم بالإدارات المعنية داخل الهيكل الإداري دون حذف الأعضاء الحاليين."
+                : "Active department directors will be synced to level 3 without overwriting existing members."}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setShowImportConfirm(false)}
+                className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 text-xs font-bold cursor-pointer"
+              >
+                {lang === "ar" ? "إلغاء" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={confirmImportDirectors}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{lang === "ar" ? "بدء المزامنة" : "Sync Now"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Internal Admin Governance Detail Modal (Strict separation from public view) */}
+      {detailMember && (() => {
+        const linkedDept = departments.find(
+          (d) =>
+            (detailMember.departmentId && d.id === detailMember.departmentId) ||
+            (detailMember.department && d.nameAr === detailMember.department)
+        );
+        const linkedEmp = employees.find(
+          (emp) =>
+            (detailMember.userId && (emp.userId === detailMember.userId || emp.id === detailMember.userId)) ||
+            (emp.name === detailMember.name && linkedDept && emp.departmentId === linkedDept.id)
+        );
+        const memberPerms: string[] = Array.isArray(linkedEmp?.permissions)
+          ? linkedEmp.permissions!
+          : Array.isArray(linkedDept?.permissions) && linkedDept.directorName === detailMember.name
+          ? linkedDept.permissions!
+          : [];
+        const memberTasks = (administrativeTasks || []).filter(
+          (t) =>
+            (detailMember.userId && t.assigneeUserId === detailMember.userId) ||
+            (linkedDept && t.departmentId === linkedDept.id && (t.assigneeName === detailMember.name || !t.assigneeUserId))
+        );
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs"
+            onClick={() => setDetailMember(null)}
+            dir="rtl"
+          >
+            <div
+              className="w-full max-w-2xl max-h-[90vh] bg-white dark:bg-neutral-900 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-2xl overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-5 bg-gradient-to-l from-slate-900 via-emerald-950 to-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+                    {detailMember.imageUrl ? (
+                      <img src={detailMember.imageUrl} alt={detailMember.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Users className="w-6 h-6 text-emerald-300" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black">{detailMember.name}</h3>
+                    <p className="text-xs text-emerald-300 font-bold">
+                      {detailMember.positionTitle || detailMember.roleTitle}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailMember(null)}
+                  className="p-1.5 rounded-full hover:bg-white/15 text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
+                    <span className="text-[10px] font-bold text-neutral-400 block">الإدارة المرتبطة</span>
+                    <strong className="text-neutral-900 dark:text-white font-black mt-0.5 block">
+                      {linkedDept?.nameAr || detailMember.department || "غير محدد"}
+                    </strong>
+                    {linkedDept?.departmentType && (
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
+                        {linkedDept.departmentType}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
+                    <span className="text-[10px] font-bold text-neutral-400 block">حالة التكليف والظهور العام</span>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        {detailMember.assignmentStatus || linkedEmp?.assignmentStatus || "active"}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        detailMember.isActive !== false ? "bg-blue-100 text-blue-800" : "bg-neutral-200 text-neutral-700"
+                      }`}>
+                        {detailMember.isActive !== false ? "منشور بالهيكل العام" : "مخفي عن العامة"}
+                      </span>
+                    </div>
+                  </div>
+                  {detailMember.nationalId && (
+                    <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
+                      <span className="text-[10px] font-bold text-neutral-400 block">رقم الهوية (للمخولين فقط)</span>
+                      <span className="font-mono font-bold text-neutral-800 dark:text-neutral-200 mt-0.5 block">
+                        {detailMember.nationalId}
+                      </span>
+                    </div>
+                  )}
+                  <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">
+                    <span className="text-[10px] font-bold text-neutral-400 block">المستوى الإداري ومعرف الحساب</span>
+                    <span className="font-bold text-neutral-800 dark:text-neutral-200 mt-0.5 block">
+                      {detailMember.levelName || `المستوى ${detailMember.level}`}
+                    </span>
+                    {detailMember.userId && (
+                      <span className="font-mono text-[10px] text-neutral-400 block mt-0.5">{detailMember.userId}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-900/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-indigo-600" />
+                      <span>الصلاحيات المسندة ({memberPerms.length})</span>
+                    </span>
+                  </div>
+                  {memberPerms.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {memberPerms.slice(0, 14).map((p) => (
+                        <span key={p} className="px-2 py-0.5 rounded-lg bg-white dark:bg-neutral-900 border border-indigo-200 text-indigo-800 dark:text-indigo-300 font-mono text-[10px]">
+                          {p}
+                        </span>
+                      ))}
+                      {memberPerms.length > 14 && (
+                        <span className="px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-900 text-[10px] font-bold">
+                          +{memberPerms.length - 14} أخرى
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-neutral-500">لا توجد صلاحيات تشغيلية مخصصة لهذا السجل.</p>
+                  )}
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 space-y-2">
+                  <div className="font-black text-neutral-900 dark:text-white flex items-center gap-1.5">
+                    <Briefcase className="w-4 h-4 text-emerald-600" />
+                    <span>المهام والتكليفات المسجلة ({memberTasks.length})</span>
+                  </div>
+                  {memberTasks.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {memberTasks.map((t) => (
+                        <li key={t.id} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/70 dark:border-neutral-700">
+                          <span className="font-bold text-neutral-800 dark:text-neutral-200">{t.title}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 shrink-0">
+                            {t.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[11px] text-neutral-500">لا توجد مهام تشغيلية مسجلة حالياً.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

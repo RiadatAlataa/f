@@ -8,16 +8,53 @@ export interface Department {
   nameAr: string;
   nameEn: string;
   name?: string; // alias for nameAr
+  departmentType?: string; // نوع الإدارة (تنفيذية، مالية، تطوع، مستفيدين، إلخ)
   directorName: string;
+  directorUserId?: string; // ربط مباشر بحساب المدير في userDepartmentAccess
+  positionTitle?: string; // المنصب الرسمي للمدير المسؤول
+  username?: string;
+  avatarUrl?: string;
   nationalId?: string;
-  password?: string;
+  password?: string; // deprecated: never populated in API/UI
   email?: string;
   phone?: string;
+  assignmentDate?: string;
+  assignmentStartDate?: string;
+  assignmentEndDate?: string;
+  assignmentStatus?: 'active' | 'inactive' | 'terminated';
+  publishToPublic?: boolean;
+  permissions?: string[];
   supervisorIds?: string[];
   descriptionAr?: string;
   descriptionEn?: string;
   tasks?: string[];
   icon?: string;
+  status?: 'active' | 'inactive' | 'archived';
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
+  updatedAt?: string;
+}
+
+export interface AdministrativeTask {
+  id: string;
+  taskNumber?: string;
+  departmentId: string;
+  departmentNameAr?: string;
+  title: string;
+  description?: string;
+  assigneeUserId?: string;
+  assigneeName?: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  startDate?: string;
+  endDate?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'archived';
+  notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  archivedAt?: string;
 }
 
 export interface DepartmentDirective {
@@ -953,8 +990,11 @@ export interface HomeSettings {
 
 export interface OrgMember {
   id: string;
+  userId?: string; // ربط مباشر بسجل المستخدم
+  departmentId?: string; // ربط مباشر بالإدارة
   name: string;
-  roleTitle: string; // المسمى الوظيفي
+  roleTitle: string; // المسمى الوظيفي / المنصب
+  positionTitle?: string;
   level: number; // 1: مجلس الإدارة, 2: الإدارة التنفيذية, 3: الإدارات والأقسام, 4: الموظفون والمسؤولون
   levelName?: string;
   parentId?: string | null; // الشخص الأعلى / الرئيس المباشر
@@ -963,9 +1003,14 @@ export interface OrgMember {
   description?: string;
   order: number;
   isActive: boolean;
+  publishToPublic?: boolean;
+  assignmentStatus?: 'active' | 'inactive' | 'terminated';
   department?: string;
-  email?: string;
-  phone?: string;
+  nationalId?: string; // Internal admin-only field, strictly stripped from public responses
+  email?: string; // Internal admin-only field, strictly stripped from public responses
+  phone?: string; // Internal admin-only field, strictly stripped from public responses
+  tasks?: string[]; // Internal admin-only
+  permissions?: string[]; // Internal admin-only
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1030,18 +1075,32 @@ export interface VolunteerApplication {
 
 export interface Employee {
   id: string;
+  userId?: string;
   name: string;
   employeeNumber: string;
   departmentId: string;
   departmentName?: string;
   jobTitle: string;
+  positionTitle?: string;
   nationalId: string;
   phone: string;
   email: string;
   photo?: string;
+  avatarUrl?: string;
   hireDate: string;
   expiryDate: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'archived' | 'suspended';
+  assignmentStatus?: 'active' | 'inactive' | 'terminated';
+  assignmentDate?: string;
+  publishToPublic?: boolean;
+  supervisorId?: string;
+  supervisorName?: string;
+  tasks?: string[];
+  permissions?: string[];
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
   qrCode?: string;
   barcode?: string;
   activeCardId?: string;
@@ -1072,6 +1131,7 @@ export interface Employee {
   approvedBy?: string;
   approvedAt?: string;
   requestId?: string;
+  updatedAt?: string;
 }
 
 export interface HRLeaveRequest {

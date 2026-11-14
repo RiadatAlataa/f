@@ -64,12 +64,16 @@ import {
   DistributionHandoverRecord, 
   InventoryItem, 
   Notification,
-  DepartmentPermissionKey
+  DepartmentPermissionKey,
+  AdministrativeTask
 } from '../types';
+import { buildApiUrl, getAuthHeaders } from '../config/api';
 import { InventoryManager } from './InventoryManager';
 import { BeneficiariesMasterDashboard } from './BeneficiariesMasterDashboard';
 import { SendLetterModal } from './SendLetterModal';
 import { DepartmentStaffManager } from './DepartmentStaffManager';
+import { DepartmentStaffModal } from './DepartmentStaffModal';
+import { DepartmentTasksModal } from './DepartmentTasksModal';
 import { VolunteerTeamTransferManager } from './VolunteerTeamTransferManager';
 import { PasswordResetRequestsManager } from './PasswordResetRequestsManager';
 import { TeamSupportManager } from './TeamSupportManager';
@@ -77,6 +81,7 @@ import { DashboardErrorBoundary } from './DashboardErrorBoundary';
 import { AccessDeniedCard } from './AccessDeniedCard';
 import { HRDashboard } from './HRDashboard';
 import { ArchivesDirectoryPanel } from './ArchivesDirectoryPanel';
+import { UsersManager } from './UsersManager';
 import { Archive } from 'lucide-react';
 
 export interface DepartmentDashboardProps {
@@ -105,8 +110,9 @@ export interface DepartmentDashboardProps {
   heroSlides?: any[];
   notifications?: Notification[];
   letters?: OfficialLetter[];
+  administrativeTasks?: AdministrativeTask[];
   homeSettings?: any;
-  onRefreshGlobalData?: () => void;
+  onRefreshGlobalData?: (updatedDb?: any) => void;
   onSubmitEmployeeRequest?: (req: Partial<EmployeeRequest>) => Promise<boolean>;
   onUpdateEmployeeRequest?: (req: Partial<EmployeeRequest>) => Promise<boolean>;
   onApproveEmployeeRequest?: (id: string) => Promise<boolean>;
@@ -166,6 +172,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   heroSlides = [],
   notifications = [],
   letters = [],
+  administrativeTasks = [],
   homeSettings,
   onRefreshGlobalData,
   onSubmitEmployeeRequest,
@@ -232,15 +239,26 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   const isExecutiveDept = deptId === 'dep-1' || deptNameAr.includes('تنفيذية') || effectiveRole === 'admin' || effectiveRole === 'operations_manager';
 
   // Role & Granular RBAC Permissions
-  const isDirector = effectiveRole === 'department_admin' || effectiveRole === 'admin' || effectiveRole === 'operations_manager' || effectiveRole === 'storekeeper';
-  const userPermissions: string[] = currentUser?.permissions || (isDirector ? [
-    'view_department', 'create_data', 'edit_data', 'delete_data', 'approve_data', 
-    'disburse_data', 'receive_data', 'print_data', 'export_pdf', 'export_excel', 
-    'manage_staff', 'manage_tasks', 'view_reports', 'super_admin'
-  ] : ['view_department']);
+  const isTopExecutive = effectiveRole === 'admin' || effectiveRole === 'operations_manager';
+  const isDirector = isTopExecutive || effectiveRole === 'department_admin' || effectiveRole === 'storekeeper';
+  const userPermissions: string[] = Array.isArray(currentUser?.permissions)
+    ? currentUser.permissions
+    : isTopExecutive
+    ? [
+        'view_department', 'create_data', 'edit_data', 'delete_data', 'approve_data', 'reject_data',
+        'disburse_data', 'receive_data', 'print_data', 'export_pdf', 'export_excel',
+        'manage_staff', 'manage_tasks', 'view_reports', 'super_admin'
+      ]
+    : isDirector
+    ? [
+        'view_department', 'create_data', 'edit_data', 'delete_data', 'approve_data', 'reject_data',
+        'disburse_data', 'receive_data', 'print_data', 'export_pdf', 'export_excel',
+        'manage_staff', 'manage_tasks', 'view_reports'
+      ]
+    : ['view_department'];
 
   const hasPermission = (permKey: DepartmentPermissionKey | string): boolean => {
-    if (isDirector || userPermissions.includes('super_admin') || userPermissions.includes('all_permissions')) return true;
+    if (isTopExecutive || userPermissions.includes('super_admin') || userPermissions.includes('all_permissions')) return true;
     if (userPermissions.includes(permKey as any)) return true;
 
     // Granular alias checks
@@ -259,6 +277,9 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
       }
       if (permKey === 'approve_data') {
         return p.includes('_approve_') || p.includes('_evaluations') || p.includes('_leaves');
+      }
+      if (permKey === 'reject_data') {
+        return p.includes('_reject_') || p === 'reject_data';
       }
       if (permKey === 'disburse_data') {
         return p.includes('_disburse') || p === 'outbound' || p.includes('_payroll') || p.includes('_record_receipt');
@@ -287,9 +308,13 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
   const allowedPages: string[] = currentUser?.allowedPages || [];
   const isPageAllowed = (pageKey: string): boolean => {
-    if (isDirector || userPermissions.includes('super_admin') || allowedPages.length === 0) return true;
+    if (isTopExecutive || userPermissions.includes('super_admin') || allowedPages.length === 0) return true;
     return allowedPages.includes(pageKey);
   };
+
+  const canManageDepartmentUsers =
+    (isBeneficiaryDept || isVolunteerDept || isHRDept) &&
+    (isDirector || hasPermission('manage_staff') || hasPermission('edit_data'));
 
   const allDepartmentTabs = useMemo(() => {
     const tabs: { id: string; label: string }[] = [];
@@ -307,6 +332,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     }
     if (isBeneficiaryDept) tabs.push({ id: 'beneficiaries', label: 'إدارة المستفيدين والتوزيعات' });
     if (isHRDept) tabs.push({ id: 'hr_staff', label: 'إدارة الموارد البشرية والكوادر (15 نظامًا)' });
+    if (canManageDepartmentUsers) tabs.push({ id: 'dept_users', label: 'إدارة المستخدمين والصلاحيات' });
     if (isFinanceDept) tabs.push({ id: 'finance_ledger', label: 'المعاملات وسندات الصرف والقبض' });
     if (isProjectsDept) tabs.push({ id: 'projects_list', label: 'المشاريع والبرامج التنموية' });
     if (isMediaDept) {
@@ -319,7 +345,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     tabs.push({ id: 'letters', label: 'الخطابات والمراسلات' });
     tabs.push({ id: 'credentials', label: 'بيانات الاعتماد' });
     return tabs;
-  }, [isWarehouseDept, isVolunteerDept, isBeneficiaryDept, isHRDept, isFinanceDept, isProjectsDept, isMediaDept, isExecutiveDept]);
+  }, [isWarehouseDept, isVolunteerDept, isBeneficiaryDept, isHRDept, isFinanceDept, isProjectsDept, isMediaDept, isExecutiveDept, canManageDepartmentUsers]);
 
   const allowedDepartmentTabs = useMemo(() => {
     return allDepartmentTabs.filter(t => isPageAllowed(t.id));
@@ -353,6 +379,11 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
   // Operational Tasks State
   const [deptTasks, setDeptTasks] = useState<string[]>(currentDept.tasks || []);
   const [newTaskInput, setNewTaskInput] = useState('');
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [showTasksModal, setShowTasksModal] = useState(false);
+  const [deptActionNotice, setDeptActionNotice] = useState<string | null>(null);
+  const [deptActionError, setDeptActionError] = useState<string | null>(null);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
 
   // Opportunities & Initiatives state (For Volunteer Management)
   const [showAddInitiativeModal, setShowAddInitiativeModal] = useState(false);
@@ -421,10 +452,44 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     l.departmentName === currentDept.nameAr
   );
 
+  const myAdministrativeTasks = useMemo(() => {
+    const deptTasksList = (administrativeTasks || []).filter((t) => t && t.departmentId === currentDept.id);
+    if (isTopExecutive || hasPermission('manage_tasks')) return deptTasksList;
+    return deptTasksList.filter(
+      (t) =>
+        !t.assigneeUserId ||
+        t.assigneeUserId === currentUser?.id ||
+        t.assigneeName === currentUser?.name
+    );
+  }, [administrativeTasks, currentDept.id, currentUser?.id, currentUser?.name, isTopExecutive]);
+
+  const handleUpdateAdminTaskStatus = async (taskId: string, status: 'pending' | 'in_progress' | 'completed' | 'archived') => {
+    setUpdatingTaskId(taskId);
+    setDeptActionError(null);
+    try {
+      const res = await fetch(buildApiUrl('/api/db/admin-tasks/status'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ taskId, status })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeptActionError(json.error || 'تعذر تحديث حالة المهمة.');
+        return;
+      }
+      setDeptActionNotice(json.message || 'تم تحديث حالة المهمة بنجاح.');
+      onRefreshGlobalData?.(json.db);
+    } catch {
+      setDeptActionError('تعذر الاتصال بالخادم لتحديث المهمة.');
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  };
+
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!hasPermission('manage_tasks') && !hasPermission('create_data')) {
-      alert("عذراً، لا تملك صلاحية إضافة مهام تشغيلية جديدة.");
+      setDeptActionError("عذراً، لا تملك صلاحية إضافة مهام تشغيلية جديدة.");
       return;
     }
     if (!newTaskInput.trim()) return;
@@ -438,7 +503,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
   const handleRemoveTask = (idx: number) => {
     if (!hasPermission('manage_tasks') && !hasPermission('delete_data')) {
-      alert("عذراً، لا تملك صلاحية حذف المهام التشغيلية.");
+      setDeptActionError("عذراً، لا تملك صلاحية حذف المهام التشغيلية.");
       return;
     }
     const updated = deptTasks.filter((_, i) => i !== idx);
@@ -952,6 +1017,21 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
               <span className="px-2 py-0.5 rounded-full bg-emerald-900/90 text-[10px] font-mono font-bold text-emerald-300 border border-emerald-700">
                 {employees.length} موظف
               </span>
+            </button>
+          )}
+
+          {canManageDepartmentUsers && isPageAllowed('dept_users') && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('dept_users')}
+              className={`px-5 py-3 rounded-t-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'dept_users'
+                  ? 'bg-emerald-600 text-white shadow-lg border-b-2 border-emerald-400'
+                  : 'bg-slate-900/80 text-emerald-300 hover:bg-slate-800 border-t border-x border-slate-800'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+              <span>إدارة المستخدمين والصلاحيات</span>
             </button>
           )}
 
@@ -2138,65 +2218,144 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
         {/* 10. TASKS TAB */}
         {activeTab === 'tasks' && (
           <div className="space-y-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            {deptActionNotice && (
+              <div className="p-3 rounded-2xl bg-emerald-950/60 border border-emerald-700 text-emerald-200 text-xs font-bold flex items-center justify-between">
+                <span>{deptActionNotice}</span>
+                <button type="button" onClick={() => setDeptActionNotice(null)} className="text-emerald-300 cursor-pointer"><X className="w-4 h-4" /></button>
+              </div>
+            )}
+            {deptActionError && (
+              <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-700 text-rose-200 text-xs font-bold flex items-center justify-between">
+                <span>{deptActionError}</span>
+                <button type="button" onClick={() => setDeptActionError(null)} className="text-rose-300 cursor-pointer"><X className="w-4 h-4" /></button>
+              </div>
+            )}
+
+            {/* Relational Administrative Tasks Section */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <CheckSquare className="w-6 h-6 text-emerald-400" />
-                    المهام والتكليفات التشغيلية المعتمدة لـ ({currentDept.nameAr})
+                    المهام والتكليفات المعتمدة لـ ({currentDept.nameAr})
                   </h2>
                   <p className="text-slate-400 text-xs mt-1">
-                    قائمة المهام والواجبات اليومية لكوادر الإدارة.
+                    تتبع المهام الفردية والتكليفات التشغيلية وتحديث حالة التنفيذ مباشرة.
                   </p>
                 </div>
+                {hasPermission('manage_tasks') && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTasksModal(true)}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إدارة وتوزيع المهام</span>
+                  </button>
+                )}
               </div>
 
+              {myAdministrativeTasks.length > 0 ? (
+                <div className="space-y-3">
+                  {myAdministrativeTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black text-sm text-white">{t.title}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            t.status === 'completed'
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : t.status === 'in_progress'
+                              ? 'bg-blue-500/20 text-blue-300'
+                              : t.status === 'archived'
+                              ? 'bg-slate-700 text-slate-300'
+                              : 'bg-amber-500/20 text-amber-300'
+                          }`}>
+                            {t.status === 'completed' ? 'مكتملة' : t.status === 'in_progress' ? 'قيد التنفيذ' : t.status === 'archived' ? 'مؤرشفة' : 'قيد الانتظار'}
+                          </span>
+                        </div>
+                        {t.description && <p className="text-xs text-slate-400">{t.description}</p>}
+                        {t.assigneeName && (
+                          <div className="text-[11px] text-slate-400">
+                            المكلف: <span className="text-emerald-300 font-bold">{t.assigneeName}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(['pending', 'in_progress', 'completed'] as const).map((st) => (
+                          <button
+                            key={st}
+                            type="button"
+                            disabled={updatingTaskId === t.id || t.status === st}
+                            onClick={() => handleUpdateAdminTaskStatus(t.id, st)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer disabled:opacity-40 ${
+                              t.status === st
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                            }`}
+                          >
+                            {st === 'pending' ? 'انتظار' : st === 'in_progress' ? 'تنفيذ' : 'إنجاز'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                  لا توجد مهام مسجلة حالياً ضمن التكليفات المتابعة لهذه الإدارة.
+                </p>
+              )}
+
+              {deptTasks.length > 0 && (
+                <div className="pt-4 border-t border-slate-800 space-y-2.5">
+                  <div className="text-xs font-bold text-slate-300">المهام التشغيلية العامة للإدارة:</div>
+                  {deptTasks.map((task, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between bg-slate-950/80 border border-slate-800 rounded-xl p-3.5"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-lg bg-emerald-950/80 border border-emerald-800 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold">
+                          {idx + 1}
+                        </div>
+                        <p className="text-slate-200 text-xs font-medium leading-relaxed">{task}</p>
+                      </div>
+                      {hasPermission('manage_tasks') && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTask(idx)}
+                          className="text-rose-400 hover:text-rose-300 text-xs px-2.5 py-1 rounded-lg bg-rose-950/40 border border-rose-900/60 cursor-pointer"
+                        >
+                          حذف
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {hasPermission('manage_tasks') && (
-                <form onSubmit={handleAddTask} className="flex gap-2 mb-6">
+                <form onSubmit={handleAddTask} className="flex gap-2 pt-2">
                   <input
                     type="text"
                     value={newTaskInput}
                     onChange={(e) => setNewTaskInput(e.target.value)}
-                    placeholder="أدخل مهمة أو تكليف إداري جديد للإدارة..."
+                    placeholder="إضافة بند تشغيلي سريع للإدارة..."
                     className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-400"
                   />
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 flex items-center gap-2 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
-                    إضافة مهمة
+                    <span>إضافة سريعة</span>
                   </button>
                 </form>
               )}
-
-              <div className="space-y-3">
-                {deptTasks.map((task, idx) => (
-                  <div 
-                    key={idx}
-                    className="flex items-center justify-between bg-slate-950/80 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-emerald-950/80 border border-emerald-800 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold mt-0.5">
-                        {idx + 1}
-                      </div>
-                      <p className="text-slate-200 text-sm font-medium leading-relaxed">
-                        {task}
-                      </p>
-                    </div>
-
-                    {hasPermission('manage_tasks') && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTask(idx)}
-                        className="text-rose-400 hover:text-rose-300 text-xs px-2.5 py-1 rounded-lg bg-rose-950/40 border border-rose-900/60 transition-all cursor-pointer"
-                      >
-                        حذف
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         )}
@@ -2270,13 +2429,31 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
         {/* 12. STAFF & RECRUITMENT TAB (COMMON) */}
         {activeTab === 'staff' && (
-          <DepartmentStaffManager
-            currentDepartment={currentDept}
-            employees={employees}
-            employeeRequests={employeeRequests}
-            onSubmitRequest={onSubmitEmployeeRequest || (async () => false)}
-            onUpdateRequest={onUpdateEmployeeRequest || (async () => false)}
-          />
+          <div className="space-y-4">
+            {hasPermission('manage_staff') && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-white">إضافة وتعيين موظفي الإدارة ({currentDept.nameAr})</h3>
+                  <p className="text-xs text-slate-400">إسناد موظف جديد أو حالي مع تحديد صلاحياته ضمن نطاق صلاحياتك المعتمدة.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowStaffModal(true)}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إضافة موظف للإدارة</span>
+                </button>
+              </div>
+            )}
+            <DepartmentStaffManager
+              currentDepartment={currentDept}
+              employees={employees}
+              employeeRequests={employeeRequests}
+              onSubmitRequest={onSubmitEmployeeRequest || (async () => false)}
+              onUpdateRequest={onUpdateEmployeeRequest || (async () => false)}
+            />
+          </div>
         )}
 
         {/* 13. CREDENTIALS TAB */}
@@ -2300,12 +2477,12 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-slate-800">
                     <span className="text-slate-400">رقم الهوية الإدارية:</span>
-                    <span className="font-mono text-emerald-400 font-bold">{currentUser?.nationalId || currentDept.nationalId || '1010000008'}</span>
+                    <span className="font-mono text-emerald-400 font-bold">{currentUser?.nationalId || currentDept.nationalId || '—'}</span>
                   </div>
 
                   <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-slate-800">
                     <span className="text-slate-400">كلمة المرور:</span>
-                    <span className="font-mono text-emerald-400 font-bold">123</span>
+                    <span className="font-mono text-emerald-400 font-bold">•••••••••• (مشفرة ومحمية بالكامل)</span>
                   </div>
 
                   <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-slate-800">
@@ -2342,11 +2519,26 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
           </div>
         )}
 
+        {/* 14. SCOPED DEPARTMENT USERS MANAGEMENT TAB */}
+        {activeTab === 'dept_users' && canManageDepartmentUsers && (
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6">
+            <UsersManager
+              currentUser={currentUser}
+              currentUserRole={effectiveRole}
+              departments={departments}
+              onRefreshDatabase={async () => {
+                if (onRefreshGlobalData) await onRefreshGlobalData();
+              }}
+            />
+          </div>
+        )}
+
         {/* Fallback for unmapped tabs */}
         {![
-          'inventory', 'volunteer_ops', 'requests', 'beneficiaries', 'hr_staff',
-          'finance_ledger', 'projects_list', 'media_news', 'directives', 'tasks',
-          'staff', 'letters', 'credentials'
+          'inventory', 'volunteer_ops', 'volunteer_transfers', 'volunteers_archive',
+          'team_support', 'beneficiary_stats', 'password_resets', 'requests',
+          'beneficiaries', 'hr_staff', 'dept_users', 'finance_ledger', 'projects_list',
+          'media_news', 'media_gallery', 'directives', 'tasks', 'staff', 'letters', 'credentials'
         ].includes(activeTab) && (
           <AccessDeniedCard
             pageTitle={activeTab}
@@ -2747,6 +2939,34 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
           handoverRecords={distributionHandovers}
           currentUser={currentUser}
           lang="ar"
+        />
+      )}
+
+      {/* DEPARTMENT STAFF MANAGEMENT MODAL */}
+      {showStaffModal && (
+        <DepartmentStaffModal
+          department={currentDept}
+          employees={employees}
+          currentUser={currentUser}
+          onClose={() => setShowStaffModal(false)}
+          onSuccess={(updatedDb, msg) => {
+            if (msg) setDeptActionNotice(msg);
+            onRefreshGlobalData?.(updatedDb);
+          }}
+        />
+      )}
+
+      {/* DEPARTMENT ADMINISTRATIVE TASKS MODAL */}
+      {showTasksModal && (
+        <DepartmentTasksModal
+          department={currentDept}
+          employees={employees}
+          administrativeTasks={administrativeTasks}
+          onClose={() => setShowTasksModal(false)}
+          onSuccess={(updatedDb, msg) => {
+            if (msg) setDeptActionNotice(msg);
+            onRefreshGlobalData?.(updatedDb);
+          }}
         />
       )}
 

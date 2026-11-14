@@ -192,7 +192,7 @@ export function BeneficiaryDashboard({
     printWindow.document.write(`
       <html dir="rtl" lang="ar">
       <head>
-        <title>طلب الاستفادة - ريادة العطاء</title>
+        <title>طلب الاستفادة - جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
         <style>
           body { font-family: 'Inter', sans-serif; padding: 40px; color: #333; }

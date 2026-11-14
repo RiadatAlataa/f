@@ -85,7 +85,7 @@ export const BeneficiaryBarcodeCard: React.FC<BeneficiaryBarcodeCardProps> = ({
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const orgName = homeSettings?.siteNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
+    const orgName = homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة";
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -225,7 +225,7 @@ export const BeneficiaryBarcodeCard: React.FC<BeneficiaryBarcodeCardProps> = ({
       ctx.fillStyle = '#065f46';
       ctx.font = 'bold 16px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(homeSettings?.siteNameAr || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة', canvas.width / 2, 45);
+      ctx.fillText(homeSettings?.associationNameAr || 'جمعية ريادة العطاء لخدمة الإنسان بالعسيلة', canvas.width / 2, 45);
 
       ctx.fillStyle = '#059669';
       ctx.font = '12px Arial';
@@ -319,7 +319,7 @@ export const BeneficiaryBarcodeCard: React.FC<BeneficiaryBarcodeCardProps> = ({
           <div className="text-center pb-3 border-b border-dashed border-emerald-200 dark:border-emerald-800/60">
             <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1.5">
               <Building2 className="w-3.5 h-3.5" />
-              <span>{homeSettings?.siteNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}</span>
+              <span>{homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}</span>
             </div>
             <div className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5">
               نظام إدارة التوزيعات والمساعدات الإنسانية الذكي

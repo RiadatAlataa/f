@@ -59,7 +59,14 @@ import { encryptBackupPayload, decryptBackupPayload, calculateSha256 } from "../
 import { RegistrationLinksPanel } from "./RegistrationLinksPanel";
 import { AccountArchiveActionModal } from "./AccountArchiveActionModal";
 import { ArchivesDirectoryPanel } from "./ArchivesDirectoryPanel";
-import { Link2 } from "lucide-react";
+import { Link2, ListTodo, UserCog } from "lucide-react";
+import { AdministrativeTask } from "../types";
+import { buildApiUrl, getAuthHeaders } from "../config/api";
+import { DepartmentDirectorModal } from "./DepartmentDirectorModal";
+import { DepartmentPermissionsModal } from "./DepartmentPermissionsModal";
+import { DepartmentStaffModal } from "./DepartmentStaffModal";
+import { DepartmentTasksModal } from "./DepartmentTasksModal";
+import { DepartmentDeleteModal } from "./DepartmentDeleteModal";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   logoUrl: "/logo.png",
@@ -226,7 +233,7 @@ interface AdminDashboardProps {
   onRequestEmployeeModification?: (requestId: string, reviewerName: string, modificationNotes: string) => Promise<boolean>;
   initialSubTab?: string;
   onSubTabChange?: (tab: string) => void;
-  onRefreshGlobalData?: () => void;
+  onRefreshGlobalData?: (updatedDb?: any) => void;
   onBackToHome?: () => void;
   authenticatedUser?: any;
   onToggleMaintenance?: (enabled: boolean, message?: string) => Promise<boolean | { success: boolean; error?: string }>;
@@ -631,6 +638,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Department Modal State
   const [showDepModal, setShowDepModal] = useState(false);
   const [editingDep, setEditingDep] = useState<Partial<Department> | null>(null);
+  const [depSaving, setDepSaving] = useState(false);
+  const [depModalError, setDepModalError] = useState<string | null>(null);
+  const [depActionToast, setDepActionToast] = useState<string | null>(null);
+  const [directorModalDep, setDirectorModalDep] = useState<Department | null>(null);
+  const [permsModalDep, setPermsModalDep] = useState<Department | null>(null);
+  const [staffModalDep, setStaffModalDep] = useState<Department | null>(null);
+  const [tasksModalDep, setTasksModalDep] = useState<Department | null>(null);
+  const [deleteModalDep, setDeleteModalDep] = useState<Department | null>(null);
+  const [depUsersList, setDepUsersList] = useState<any[]>([]);
 
   // Board Directives Modal State
   const [showDirectiveModal, setShowDirectiveModal] = useState(false);
@@ -720,12 +736,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [volTeamFilter, setVolTeamFilter] = useState<string>("all");
   const [logSearch, setLogSearch] = useState("");
 
-  const handleSaveDepartment = (e: React.FormEvent) => {
+  const handleOpenDirectorModal = async (dep: Department) => {
+    setDirectorModalDep(dep);
+    try {
+      const res = await fetch(buildApiUrl("/api/db/users"), {
+        headers: { Accept: "application/json", ...getAuthHeaders() },
+        cache: "no-store"
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.users)) setDepUsersList(json.users);
+      }
+    } catch {
+      // Fallback gracefully to existing employees list if needed
+    }
+  };
+
+  const handleSaveDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingDep) {
-      onAddDepartment(editingDep);
+    if (!editingDep) return;
+    setDepModalError(null);
+    setDepSaving(true);
+    try {
+      const cleanPayload = {
+        id: editingDep.id || `dep-${Date.now()}`,
+        nameAr: (editingDep.nameAr || "").trim(),
+        nameEn: (editingDep.nameEn || "").trim(),
+        departmentType: (editingDep.departmentType || "إدارة تنفيذية").trim(),
+        descriptionAr: (editingDep.descriptionAr || "").trim(),
+        descriptionEn: (editingDep.descriptionEn || "").trim(),
+        publishToPublic: editingDep.publishToPublic !== false,
+        tasks: Array.isArray(editingDep.tasks) ? editingDep.tasks : []
+      };
+      const res = await fetch(buildApiUrl("/api/db/departments/save"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(cleanPayload)
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDepModalError(json.error || "تعذر حفظ بيانات الإدارة.");
+        return;
+      }
       setShowDepModal(false);
       setEditingDep(null);
+      if (json.db) onRefreshGlobalData?.(json.db);
+      else onAddDepartment(cleanPayload);
+      setDepActionToast(json.message || "تم حفظ بيانات الإدارة ومزامنتها بنجاح.");
+      setTimeout(() => setDepActionToast(null), 5000);
+    } catch (err: any) {
+      setDepModalError(err?.message || "حدث خطأ أثناء الاتصال بالخادم.");
+    } finally {
+      setDepSaving(false);
     }
   };
 
@@ -1881,21 +1943,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* SECTION B: EXECUTIVE DEPARTMENTS CARDS & CREDENTIALS */}
+              {/* SECTION B: EXECUTIVE DEPARTMENTS CARDS & GOVERNANCE */}
               <div className="space-y-4">
+                {depActionToast && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center justify-between gap-2 shadow-2xs">
+                    <span className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{depActionToast}</span>
+                    </span>
+                    <button type="button" onClick={() => setDepActionToast(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
                   <div>
-                    <h3 className="text-md font-black text-emerald-950">الهيكلة التنفيذية والحسابات الإدارية (8 إدارات معتمدة)</h3>
-                    <p className="text-xs text-emerald-800/80 mt-0.5">تقسيم وتوزيع المهام والتكليفات الإدارية وحسابات تسجيل دخول المدراء</p>
+                    <h3 className="text-md font-black text-emerald-950">
+                      الهيكلة التنفيذية والإدارات المعتمدة ({(data.departments || []).length} إدارة)
+                    </h3>
+                    <p className="text-xs text-emerald-800/80 mt-0.5">
+                      ربط مباشر بين الإدارات والمدراء والحسابات والصلاحيات والمهام والهيكل الإداري دون عرض أي كلمات مرور.
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       id="btn-add-dep"
+                      type="button"
                       onClick={() => {
-                        setEditingDep({ nameAr: "", nameEn: "", directorName: "", descriptionAr: "", descriptionEn: "", tasks: [], nationalId: "1010000009", password: "123" });
+                        setDepModalError(null);
+                        setEditingDep({
+                          nameAr: "",
+                          nameEn: "",
+                          departmentType: "إدارة تنفيذية",
+                          descriptionAr: "",
+                          descriptionEn: "",
+                          publishToPublic: true,
+                          tasks: []
+                        });
                         setShowDepModal(true);
                       }}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
                     >
                       <Plus className="w-4 h-4" />
                       <span>إضافة إدارة جديدة</span>
@@ -1904,95 +1992,210 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Grid of Executive Departments */}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
-                  {(data.departments || []).map((d, index) => (
-                    <div key={d.id} className="border border-neutral-150 bg-white p-5 rounded-2xl flex flex-col justify-between hover:border-emerald-500 transition-all shadow-2xs hover:shadow-md space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-start gap-2 border-b border-neutral-100 pb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-xl bg-emerald-600 text-white text-xs font-black font-mono flex items-center justify-center shrink-0 shadow-2xs">
-                              #{index + 1}
-                            </span>
-                            <div>
-                              <h4 className="text-sm font-black text-neutral-900">{d.nameAr}</h4>
-                              <span className="text-[10.5px] bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-md font-mono mt-0.5 inline-block">{d.nameEn}</span>
+                <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-5">
+                  {(data.departments || []).map((d, index) => {
+                    const canViewIdentity = Boolean(
+                      authenticatedUser?.role === "admin" ||
+                        authenticatedUser?.role === "operations_manager" ||
+                        authenticatedUser?.permissions?.includes("super_admin") ||
+                        authenticatedUser?.permissions?.includes("manage_users") ||
+                        authenticatedUser?.permissions?.includes("manage_departments")
+                    );
+                    const deptEmployees = (employees || []).filter(
+                      (e) => e.departmentId === d.id || e.departmentName === d.nameAr
+                    );
+                    const deptAdminTasks: AdministrativeTask[] = ((data as any).administrativeTasks || []).filter(
+                      (t: AdministrativeTask) => t.departmentId === d.id && t.status !== "archived"
+                    );
+                    const permsCount = Array.isArray(d.permissions) ? d.permissions.length : 0;
+                    const deptTypeLabel = d.departmentType || "إدارة تنفيذية";
+
+                    return (
+                      <div
+                        key={d.id}
+                        className={`border bg-white p-5 rounded-2xl flex flex-col justify-between transition-all shadow-2xs hover:shadow-md space-y-4 ${
+                          d.isArchived
+                            ? "border-amber-200 bg-amber-50/20 opacity-85"
+                            : "border-neutral-200/80 hover:border-emerald-500"
+                        }`}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-start gap-2 border-b border-neutral-100 pb-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white text-xs font-black font-mono flex items-center justify-center shrink-0 shadow-2xs">
+                                #{index + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <h4 className="text-sm font-black text-neutral-900 truncate">{d.nameAr}</h4>
+                                <span className="text-[10.5px] bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-md font-mono mt-0.5 inline-block truncate max-w-full">
+                                  {d.nameEn}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full font-bold">
+                                {deptTypeLabel}
+                              </span>
+                              {d.isArchived && (
+                                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
+                                  مؤرشفة
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full font-bold shrink-0">
-                            إدارة تنفيذية
-                          </span>
-                        </div>
 
-                        {/* Director and Login Credentials Badge */}
-                        <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-100 space-y-2">
-                          <div className="text-xs font-bold text-neutral-800 flex items-center justify-between">
-                            <span className="text-neutral-600">المدير المسؤول:</span>
-                            <span className="text-emerald-950 font-black">{d.directorName}</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-emerald-100/80 text-[11px] font-mono">
-                            <div className="bg-white p-1.5 rounded-lg border border-emerald-200/60 text-center">
-                              <span className="text-[9.5px] text-neutral-500 font-sans block font-bold">الهوية الوطنية / اليوزر:</span>
-                              <strong className="text-emerald-900 font-bold block">{d.nationalId || `101000000${index + 1}`}</strong>
+                          {/* Director & Authorized Identity Info (ZERO plaintext passwords) */}
+                          <div className="bg-emerald-50/60 p-3.5 rounded-xl border border-emerald-100 space-y-2 text-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-neutral-600 font-bold">المدير المسؤول:</span>
+                              <span className="text-emerald-950 font-black truncate">{d.directorName || "غير معين"}</span>
                             </div>
-                            <div className="bg-white p-1.5 rounded-lg border border-emerald-200/60 text-center">
-                              <span className="text-[9.5px] text-neutral-500 font-sans block font-bold">كلمة المرور:</span>
-                              <strong className="text-emerald-900 font-bold block">{d.password || "123"}</strong>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-neutral-600 font-bold">المنصب:</span>
+                              <span className="text-neutral-800 font-bold truncate">{d.positionTitle || `مدير ${d.nameAr}`}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-emerald-100/80 text-[11px]">
+                              <span className="text-neutral-600 font-bold">رقم الهوية / اسم المستخدم:</span>
+                              {canViewIdentity ? (
+                                <span className="font-mono font-bold text-emerald-900">
+                                  {d.nationalId || "—"} {d.username ? `/ @${d.username}` : ""}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-500 font-semibold">يعرض للمخولين فقط</span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-neutral-600 font-bold">الصلاحيات:</span>
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                                {permsCount > 0 ? `${permsCount} صلاحية مخصصة` : "الصلاحيات الافتراضية للإدارة"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-neutral-600 font-bold">الكوادر المسجلة:</span>
+                              <span className="px-2 py-0.5 rounded-full bg-white text-neutral-800 border border-emerald-200 font-bold">
+                                {deptEmployees.length} موظف
+                              </span>
                             </div>
                           </div>
-                        </div>
 
-                        <p className="text-xs text-neutral-600 leading-relaxed bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">{d.descriptionAr || "لا يوجد وصف عربي حالياً."}</p>
-
-                        {/* Executive Tasks List */}
-                        <div className="space-y-2 pt-1">
-                          <span className="text-[11px] font-black text-neutral-800 block flex items-center gap-1.5">
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>المهام والتكليفات الإدارية المعتمدة:</span>
-                          </span>
-                          {d.tasks && d.tasks.length > 0 ? (
-                            <ul className="space-y-1.5 pr-1">
-                              {d.tasks.map((task, tIdx) => (
-                                <li key={tIdx} className="text-[11px] text-neutral-700 flex items-start gap-2 bg-neutral-50/60 p-2 rounded-lg border border-neutral-100/80">
-                                  <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                                    {tIdx + 1}
-                                  </span>
-                                  <span className="leading-tight font-medium">{task}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-[10.5px] text-neutral-400 italic pr-2">لا توجد مهام مسجلة تفصيلياً حالياً لهذه الإدارة.</p>
+                          {d.descriptionAr && (
+                            <p className="text-xs text-neutral-600 leading-relaxed bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
+                              {d.descriptionAr}
+                            </p>
                           )}
+
+                          {/* Administrative Tasks & Directives Summary */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-[11px] font-black text-neutral-800">
+                              <span className="flex items-center gap-1.5">
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>المهام والتكليفات:</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                {deptAdminTasks.length > 0 ? `${deptAdminTasks.length} مهمة نشطة` : `${(d.tasks || []).length} بند`}
+                              </span>
+                            </div>
+                            {deptAdminTasks.length > 0 ? (
+                              <ul className="space-y-1">
+                                {deptAdminTasks.slice(0, 3).map((t, tIdx) => (
+                                  <li key={t.id} className="text-[11px] text-neutral-700 flex items-center justify-between gap-2 bg-neutral-50/70 p-2 rounded-lg border border-neutral-100">
+                                    <span className="truncate font-medium">
+                                      {tIdx + 1}. {t.title}
+                                    </span>
+                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-white border border-neutral-200 text-neutral-600 shrink-0">
+                                      {t.status === "completed" ? "مكتملة" : t.status === "in_progress" ? "تنفيذ" : "انتظار"}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : d.tasks && d.tasks.length > 0 ? (
+                              <ul className="space-y-1">
+                                {d.tasks.slice(0, 3).map((task, tIdx) => (
+                                  <li key={tIdx} className="text-[11px] text-neutral-700 flex items-start gap-2 bg-neutral-50/60 p-2 rounded-lg border border-neutral-100/80">
+                                    <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                      {tIdx + 1}
+                                    </span>
+                                    <span className="leading-tight font-medium">{task}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-[10.5px] text-neutral-400 italic pr-2">
+                                لا توجد مهام مسجلة حالياً لهذه الإدارة.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 6 Governance Action Buttons */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-3 border-t border-neutral-100">
+                          <button
+                            id={`btn-edit-dep-${d.id}`}
+                            type="button"
+                            onClick={() => {
+                              setDepModalError(null);
+                              setEditingDep(d);
+                              setShowDepModal(true);
+                            }}
+                            className="text-neutral-700 hover:text-emerald-800 hover:bg-emerald-50 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-neutral-200 whitespace-nowrap"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                            <span>تعديل بيانات الإدارة</span>
+                          </button>
+
+                          <button
+                            id={`btn-director-dep-${d.id}`}
+                            type="button"
+                            onClick={() => handleOpenDirectorModal(d)}
+                            className="text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-emerald-200 whitespace-nowrap"
+                          >
+                            <UserCog className="w-3.5 h-3.5 shrink-0" />
+                            <span>تعديل المدير والحساب</span>
+                          </button>
+
+                          <button
+                            id={`btn-perms-dep-${d.id}`}
+                            type="button"
+                            onClick={() => setPermsModalDep(d)}
+                            className="text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-indigo-200 whitespace-nowrap"
+                          >
+                            <Shield className="w-3.5 h-3.5 shrink-0" />
+                            <span>إدارة الصلاحيات</span>
+                          </button>
+
+                          <button
+                            id={`btn-tasks-dep-${d.id}`}
+                            type="button"
+                            onClick={() => setTasksModalDep(d)}
+                            className="text-teal-800 bg-teal-50 hover:bg-teal-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-teal-200 whitespace-nowrap"
+                          >
+                            <ListTodo className="w-3.5 h-3.5 shrink-0" />
+                            <span>إدارة المهام والتكليفات</span>
+                          </button>
+
+                          <button
+                            id={`btn-staff-dep-${d.id}`}
+                            type="button"
+                            onClick={() => setStaffModalDep(d)}
+                            className="text-sky-800 bg-sky-50 hover:bg-sky-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-sky-200 whitespace-nowrap"
+                          >
+                            <Users className="w-3.5 h-3.5 shrink-0" />
+                            <span>عرض الموظفين</span>
+                          </button>
+
+                          <button
+                            id={`btn-delete-dep-${d.id}`}
+                            type="button"
+                            onClick={() => setDeleteModalDep(d)}
+                            className="text-rose-700 hover:text-rose-900 hover:bg-rose-50 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-rose-200 whitespace-nowrap"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>حذف الإدارة</span>
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex gap-2 justify-end pt-3 border-t border-neutral-100">
-                        <button
-                          id={`btn-edit-dep-${d.id}`}
-                          onClick={() => {
-                            setEditingDep(d);
-                            setShowDepModal(true);
-                          }}
-                          className="text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 p-2 rounded-xl transition-all text-xs font-bold flex items-center gap-1 cursor-pointer border border-neutral-150"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>تعديل الحساب والمهام</span>
-                        </button>
-                        <button
-                          id={`btn-delete-dep-${d.id}`}
-                          onClick={() => {
-                            if(confirm("هل أنت متأكد من رغبتك بحذف هذه الإدارة وكافة الفرق التابعة لها؟")) {
-                              onDeleteDepartment(d.id);
-                            }
-                          }}
-                          className="text-rose-600 hover:text-rose-800 hover:bg-rose-50 p-2 rounded-xl transition-all text-xs font-bold flex items-center gap-1 cursor-pointer border border-neutral-150"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>حذف</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -3690,6 +3893,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeSubTab === 'org_chart' && (
             <OrgChartAdminPanel
               members={data.orgMembers || data.homeSettings?.orgMembers || []}
+              departments={data.departments || []}
+              employees={employees || []}
+              administrativeTasks={(data as any).administrativeTasks || []}
               onAddMember={onAddOrgMember || (async () => false)}
               onDeleteMember={onDeleteOrgMember || (async () => false)}
               onToggleMemberActive={onToggleOrgMemberActive || (async () => false)}
@@ -4085,112 +4291,103 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* MODALS */}
 
-      {/* Department Modal */}
+      {/* Department Metadata Modal (Clean — NO plaintext password or duplicated credentials) */}
       {showDepModal && editingDep && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in">
           <form 
             onSubmit={handleSaveDepartment}
-            className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 border border-neutral-100 shadow-xl"
+            className="bg-white rounded-2xl max-w-lg w-full p-6 text-right space-y-4 border border-neutral-100 shadow-xl"
             dir="rtl"
           >
-            <h3 className="text-md font-black text-neutral-800">{editingDep.id ? "تعديل بيانات الإدارة" : "إضافة إدارة جديدة"}</h3>
-            
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <h3 className="text-md font-black text-neutral-800">
+                {editingDep.id ? "تعديل البيانات التعريفية للإدارة" : "إضافة إدارة معتمدة جديدة"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDepModal(false)}
+                className="p-1 rounded-lg hover:bg-neutral-100 text-neutral-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {depModalError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                {depModalError}
+              </div>
+            )}
+
             <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-400">اسم الإدارة بالعربية:</label>
-                <input
-                  id="modal-dep-name-ar"
-                  type="text"
-                  required
-                  value={editingDep.nameAr}
-                  onChange={(e) => setEditingDep({ ...editingDep, nameAr: e.target.value })}
-                  className="w-full border border-neutral-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-400">اسم الإدارة بالإنجليزية:</label>
-                <input
-                  id="modal-dep-name-en"
-                  type="text"
-                  required
-                  value={editingDep.nameEn}
-                  onChange={(e) => setEditingDep({ ...editingDep, nameEn: e.target.value })}
-                  className="w-full border border-neutral-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-400">اسم مدير الإدارة المسؤول:</label>
-                <input
-                  id="modal-dep-director"
-                  type="text"
-                  required
-                  value={editingDep.directorName}
-                  onChange={(e) => setEditingDep({ ...editingDep, directorName: e.target.value })}
-                  className="w-full border border-neutral-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-emerald-900">رقم الهوية الوطنية / اسم المستخدم:</label>
+                  <label className="text-[11px] font-bold text-neutral-600">اسم الإدارة بالعربية *</label>
                   <input
-                    id="modal-dep-nationalid"
+                    id="modal-dep-name-ar"
                     type="text"
                     required
-                    value={editingDep.nationalId || ''}
-                    onChange={(e) => setEditingDep({ ...editingDep, nationalId: e.target.value })}
-                    placeholder="101000000X"
-                    className="w-full border border-emerald-200 rounded-lg p-2 text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-emerald-500/20"
+                    value={editingDep.nameAr || ""}
+                    onChange={(e) => setEditingDep({ ...editingDep, nameAr: e.target.value })}
+                    className="w-full border border-neutral-200 rounded-xl p-2 text-xs focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-emerald-900">كلمة المرور:</label>
+                  <label className="text-[11px] font-bold text-neutral-600">اسم الإدارة بالإنجليزية *</label>
                   <input
-                    id="modal-dep-password"
+                    id="modal-dep-name-en"
                     type="text"
                     required
-                    value={editingDep.password || ''}
-                    onChange={(e) => setEditingDep({ ...editingDep, password: e.target.value })}
-                    placeholder="123"
-                    className="w-full border border-emerald-200 rounded-lg p-2 text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-emerald-500/20"
+                    value={editingDep.nameEn || ""}
+                    onChange={(e) => setEditingDep({ ...editingDep, nameEn: e.target.value })}
+                    className="w-full border border-neutral-200 rounded-xl p-2 text-xs focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-neutral-400">رقم الجوال:</label>
-                  <input
-                    type="text"
-                    value={editingDep.phone || ''}
-                    onChange={(e) => setEditingDep({ ...editingDep, phone: e.target.value })}
-                    placeholder="0500000000"
-                    className="w-full border border-neutral-200 rounded-lg p-2 text-xs font-mono"
-                  />
+                  <label className="text-[11px] font-bold text-neutral-600">نوع الإدارة</label>
+                  <select
+                    value={editingDep.departmentType || "إدارة تنفيذية"}
+                    onChange={(e) => setEditingDep({ ...editingDep, departmentType: e.target.value })}
+                    className="w-full border border-neutral-200 rounded-xl p-2 text-xs font-bold bg-white"
+                  >
+                    <option value="إدارة تنفيذية">إدارة تنفيذية</option>
+                    <option value="إدارة مالية">إدارة مالية</option>
+                    <option value="إدارة برامج ومشاريع">إدارة برامج ومشاريع</option>
+                    <option value="إدارة مستفيدين">إدارة مستفيدين</option>
+                    <option value="إدارة تطوعية">إدارة تطوعية</option>
+                    <option value="إدارة إعلام وعلاقات عامة">إدارة إعلام وعلاقات عامة</option>
+                    <option value="إدارة لوجستية ومستودعات">إدارة لوجستية ومستودعات</option>
+                    <option value="إدارة مساندة">إدارة مساندة</option>
+                  </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-neutral-400">البريد الإلكتروني الرسمي:</label>
-                  <input
-                    type="email"
-                    value={editingDep.email || ''}
-                    onChange={(e) => setEditingDep({ ...editingDep, email: e.target.value })}
-                    placeholder="dept@reyada.sa"
-                    className="w-full border border-neutral-200 rounded-lg p-2 text-xs font-mono"
-                  />
+
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 text-xs font-bold text-neutral-700 cursor-pointer bg-neutral-50 px-3 py-2 rounded-xl border border-neutral-200 w-full">
+                    <input
+                      type="checkbox"
+                      checked={editingDep.publishToPublic !== false}
+                      onChange={(e) => setEditingDep({ ...editingDep, publishToPublic: e.target.checked })}
+                      className="rounded accent-emerald-600"
+                    />
+                    <span>إظهار الإدارة في الموقع العام</span>
+                  </label>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-400">الوصف التعريفي للنشاط:</label>
+                <label className="text-[11px] font-bold text-neutral-600">الوصف التعريفي للنشاط</label>
                 <textarea
                   id="modal-dep-description"
                   value={editingDep.descriptionAr || ""}
                   onChange={(e) => setEditingDep({ ...editingDep, descriptionAr: e.target.value })}
-                  className="w-full border border-neutral-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-emerald-500/20 h-16 resize-none"
+                  className="w-full border border-neutral-200 rounded-xl p-2 text-xs focus:ring-2 focus:ring-emerald-500/20 h-16 resize-none"
                 />
               </div>
+
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-400">المهام والتكليفات الإدارية (مهمة واحدة في كل سطر):</label>
+                <label className="text-[11px] font-bold text-neutral-600">ملخص المهام الإدارية (سطر لكل مهمة)</label>
                 <textarea
                   id="modal-dep-tasks"
                   value={(editingDep.tasks || []).join("\n")}
@@ -4199,23 +4396,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     setEditingDep({ ...editingDep, tasks: taskList });
                   }}
                   placeholder="مثال:&#10;تنفيذ قرارات مجلس الإدارة.&#10;إعداد الخطط التشغيلية ومتابعة تنفيذها."
-                  className="w-full border border-neutral-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-emerald-500/20 h-28 resize-none font-sans"
+                  className="w-full border border-neutral-200 rounded-xl p-2 text-xs focus:ring-2 focus:ring-emerald-500/20 h-24 resize-none font-sans"
                 />
               </div>
+
+              <p className="text-[11px] text-emerald-800 bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-100">
+                لتعيين أو تعديل المدير المسؤول وكلمة المرور المشفرة، استخدم زر <strong>«تعديل المدير والحساب»</strong> مباشرة من بطاقة الإدارة.
+              </p>
             </div>
 
-            <div className="flex gap-2 pt-3">
+            <div className="flex gap-2 pt-3 border-t border-neutral-100">
               <button
                 id="modal-dep-submit"
                 type="submit"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-lg cursor-pointer"
+                disabled={depSaving}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer disabled:opacity-50"
               >
-                حفظ التعديلات
+                {depSaving ? "جاري الحفظ..." : "حفظ بيانات الإدارة"}
               </button>
               <button
                 type="button"
                 onClick={() => setShowDepModal(false)}
-                className="flex-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2 rounded-lg cursor-pointer"
+                className="flex-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
               >
                 إلغاء
               </button>
@@ -5534,6 +5736,82 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           />
         );
       })()}
+
+      {/* 5 RELATIONAL DEPARTMENT GOVERNANCE MODALS */}
+      {directorModalDep && (
+        <DepartmentDirectorModal
+          department={directorModalDep}
+          existingUsers={depUsersList}
+          onClose={() => setDirectorModalDep(null)}
+          onSuccess={(updatedDb, msg) => {
+            onRefreshGlobalData?.(updatedDb);
+            if (msg) {
+              setDepActionToast(msg);
+              setTimeout(() => setDepActionToast(null), 5000);
+            }
+          }}
+        />
+      )}
+
+      {permsModalDep && (
+        <DepartmentPermissionsModal
+          department={permsModalDep}
+          onClose={() => setPermsModalDep(null)}
+          onSuccess={(updatedDb, msg) => {
+            onRefreshGlobalData?.(updatedDb);
+            if (msg) {
+              setDepActionToast(msg);
+              setTimeout(() => setDepActionToast(null), 5000);
+            }
+          }}
+        />
+      )}
+
+      {staffModalDep && (
+        <DepartmentStaffModal
+          department={staffModalDep}
+          employees={employees || []}
+          currentUser={authenticatedUser}
+          onClose={() => setStaffModalDep(null)}
+          onSuccess={(updatedDb, msg) => {
+            onRefreshGlobalData?.(updatedDb);
+            if (msg) {
+              setDepActionToast(msg);
+              setTimeout(() => setDepActionToast(null), 5000);
+            }
+          }}
+        />
+      )}
+
+      {tasksModalDep && (
+        <DepartmentTasksModal
+          department={tasksModalDep}
+          employees={employees || []}
+          administrativeTasks={(data as any).administrativeTasks || []}
+          onClose={() => setTasksModalDep(null)}
+          onSuccess={(updatedDb, msg) => {
+            onRefreshGlobalData?.(updatedDb);
+            if (msg) {
+              setDepActionToast(msg);
+              setTimeout(() => setDepActionToast(null), 5000);
+            }
+          }}
+        />
+      )}
+
+      {deleteModalDep && (
+        <DepartmentDeleteModal
+          department={deleteModalDep}
+          onClose={() => setDeleteModalDep(null)}
+          onSuccess={(updatedDb, msg) => {
+            onRefreshGlobalData?.(updatedDb);
+            if (msg) {
+              setDepActionToast(msg);
+              setTimeout(() => setDepActionToast(null), 5000);
+            }
+          }}
+        />
+      )}
 
     </div>
   );

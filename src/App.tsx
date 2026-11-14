@@ -414,8 +414,12 @@ export default function App() {
     setAdminSubTab(newTab);
   }, []);
 
-  const handleRefreshGlobalData = useCallback(() => {
-    fetchDatabase(true);
+  const handleRefreshGlobalData = useCallback((updatedDb?: any) => {
+    if (updatedDb && typeof updatedDb === 'object' && Array.isArray(updatedDb.departments)) {
+      setDbData(updatedDb);
+    } else {
+      fetchDatabase(true);
+    }
   }, []);
 
   // Backend Connection & Health Check States
@@ -781,15 +785,17 @@ export default function App() {
   // CRUD & Interactive Event Handlers
 
   const handleAddDepartment = async (dep: Partial<Department>) => {
+    const cleanDep = { ...dep };
+    if (!cleanDep.password) delete (cleanDep as any).password;
     const payload = {
-      ...dep,
-      id: dep.id || "dep-" + Date.now()
+      ...cleanDep,
+      id: cleanDep.id || "dep-" + Date.now()
     };
-    await syncWithServer("/api/db/departments/add", payload, "إضافة إدارة");
+    await syncWithServer("/api/db/departments/save", payload, "حفظ بيانات الإدارة");
   };
 
-  const handleDeleteDepartment = async (id: string) => {
-    await syncWithServer("/api/db/departments/delete", { id }, "حذف إدارة");
+  const handleDeleteDepartment = async (id: string, actionType: 'archive' | 'permanent_delete' | 'restore' = 'archive', reason = 'قرار إداري') => {
+    await syncWithServer("/api/db/departments/delete", { id, actionType, reason }, "إدارة أرشفة أو حذف الإدارة");
   };
 
   const handleAddTeam = async (team: Partial<VolunteerTeam>) => {
@@ -1920,14 +1926,14 @@ export default function App() {
               {/* Right Side: Association Identity & Return to Public Site (Desktop) */}
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white border border-slate-200 dark:border-[#1e3a66] flex items-center justify-center p-0.5 shadow-xs shrink-0 overflow-hidden">
-                  <img src="/logo.png" alt="شعار جمعية ريادة العطاء" className="w-full h-full object-contain" />
+                  <img src="/logo.png" alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" className="w-full h-full object-contain" />
                 </div>
                 <div className="text-right min-w-0">
-                  <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[150px] min-[390px]:max-w-[210px] sm:max-w-none">
-                    ريادة العطاء
+                  <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[170px] min-[390px]:max-w-[230px] sm:max-w-none">
+                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
                   </h1>
                   <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block truncate">
-                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                    البوابة الإدارية والتطوعية الموحدة
                   </p>
                 </div>
 
@@ -2346,9 +2352,10 @@ export default function App() {
                       onDeleteNewsItem={handleDeleteNewsItem}
                       onAddPartnerItem={handleAddPartnerItem}
                       onDeletePartnerItem={handleDeletePartnerItem}
+                      administrativeTasks={(dbData as any)?.administrativeTasks || []}
                       onAddGalleryItem={handleAddGalleryItem}
                       onDeleteGalleryItem={handleDeleteGalleryItem}
-                      onRefreshGlobalData={fetchDatabase}
+                      onRefreshGlobalData={handleRefreshGlobalData}
                       onLogout={handleLogout}
                       onBackToHome={handleNavigateToPublicHome}
                     />
