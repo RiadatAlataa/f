@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, ShieldCheck, Heart, Sparkles, Smartphone, 
   Moon, Sun, HelpCircle, Bot, RefreshCw, Layers, ChevronRight, CheckCircle2,
   AlertCircle, BookOpen, ExternalLink, Award, Globe, HeartHandshake, Boxes, Shield,
-  LogOut, ArrowRight, Settings, Sliders, X, Menu
+  LogOut, ArrowRight, Settings, Sliders, X, Menu, Mail
 } from "lucide-react";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, JoinRequest, 
@@ -1911,256 +1911,379 @@ export default function App() {
   return (
     <div className={`min-h-screen ${isDark ? 'bg-[#081426] text-slate-100' : 'bg-[#f8fafc] text-[#071c43]'}`} dir="rtl">
       
-      {/* INTERNAL PORTAL HEADER (Shown only when in management portal AND authenticated, and never for blocked users during maintenance) */}
-      {currentRole !== 'public' && authenticatedUser && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
-        <header 
-          style={{
-            paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
-          }}
-          className="bg-white dark:bg-[#0e213d] border-b border-slate-200 dark:border-[#1e3a66] shadow-xs sticky top-0 z-[999] no-print max-w-full box-border"
-        >
-          <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-2.5">
-            {/* Main Header Bar */}
-            <div className="flex justify-between items-center gap-2 sm:gap-4">
-              
-              {/* Right Side: Association Identity & Return to Public Site (Desktop) */}
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white border border-slate-200 dark:border-[#1e3a66] flex items-center justify-center p-0.5 shadow-xs shrink-0 overflow-hidden">
-                  <img src="/logo.png" alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" className="w-full h-full object-contain" />
+      {/* INTERNAL PORTAL EXECUTIVE HEADER (Shown only when in management portal AND authenticated, and never for blocked users during maintenance) */}
+      {currentRole !== 'public' && authenticatedUser && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (() => {
+        const unreadLettersCount = (dbData?.letters || []).filter((l: any) => !l.isRead && l.status !== 'archived').length;
+        const formattedArabicDate = new Date().toLocaleDateString('ar-SA-u-nu-latn', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+        const licenseNumber = dbData?.homeSettings?.licenseNumber || '1000888600';
+        const userDisplayTitle =
+          authenticatedUser?.positionTitle ||
+          authenticatedUser?.jobTitle ||
+          (currentRole === 'admin'
+            ? 'المدير العام للنظام'
+            : currentRole === 'operations_manager'
+            ? 'مدير العمليات'
+            : currentRole === 'department_admin'
+            ? 'مدير إدارة'
+            : currentRole === 'storekeeper'
+            ? 'أمين المستودع'
+            : currentRole === 'leader'
+            ? 'قائد فريق تطوعي'
+            : currentRole === 'volunteer'
+            ? 'متطوع'
+            : currentRole === 'beneficiary'
+            ? 'مستفيد'
+            : 'موظف');
+
+        const canOpenQuickMessages =
+          currentRole === 'admin' ||
+          currentRole === 'operations_manager' ||
+          currentRole === 'department_admin' ||
+          currentRole === 'employee' ||
+          currentRole === 'storekeeper';
+
+        const handleOpenQuickMessages = () => {
+          setActiveMainTab('system');
+          if (currentRole === 'admin' || currentRole === 'operations_manager') {
+            setAdminSubTab('letters');
+          } else {
+            window.dispatchEvent(new CustomEvent('reyadat:navigate-dept-tab', { detail: 'letters' }));
+          }
+          setIsPortalMobileMenuOpen(false);
+        };
+
+        return (
+          <header
+            style={{
+              paddingTop: 'calc(8px + env(safe-area-inset-top, 0px))',
+            }}
+            className="bg-white/95 dark:bg-[#0e213d]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#1e3a66] shadow-xs sticky top-0 z-[999] no-print max-w-full box-border"
+          >
+            <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-5 lg:px-8 py-2">
+              <div className="flex justify-between items-center gap-2 sm:gap-3">
+
+                {/* Right Side: Official Logo + Association Name (Lyon Font) + License & Live Date */}
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white border border-slate-200 dark:border-[#244577] flex items-center justify-center p-1 shadow-xs shrink-0 overflow-hidden">
+                    <img
+                      src="/logo.png"
+                      alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="text-right min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h1 className="font-lyon text-sm sm:text-base font-black text-[#071C43] dark:text-white leading-tight truncate max-w-[190px] min-[390px]:max-w-[235px] sm:max-w-none">
+                        {dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
+                      </h1>
+                      <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-[#eaf3ff] dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 border border-blue-200 dark:border-[#244577] shrink-0">
+                        ترخيص: {licenseNumber}
+                      </span>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300 font-medium mt-0.5 truncate">
+                      <span className="flex items-center gap-1 text-[#0754C7] dark:text-blue-300 font-bold">
+                        <Calendar className="w-3 h-3 shrink-0" />
+                        <span>{formattedArabicDate}</span>
+                      </span>
+                      <span className="text-slate-300 dark:text-slate-600 hidden md:inline xl:hidden">•</span>
+                      <span className="hidden md:inline xl:hidden text-slate-600 dark:text-slate-300">
+                        ترخيص: <strong className="font-mono">{licenseNumber}</strong>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right min-w-0">
-                  <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[170px] min-[390px]:max-w-[230px] sm:max-w-none">
-                    جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
-                  </h1>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block truncate">
-                    البوابة الإدارية والتطوعية الموحدة
-                  </p>
-                </div>
 
-                <button 
-                  onClick={handleNavigateToPublicHome}
-                  className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200/60 dark:border-blue-800 transition-all cursor-pointer shrink-0"
-                  title="العودة إلى الصفحة الرئيسية للجمعية مع الحفاظ على تسجيل الدخول"
-                >
-                  <ArrowRight className="w-3.5 h-3.5" />
-                  <span>الرئيسية</span>
-                </button>
-              </div>
-
-              {/* Center: Core System Navigation Switcher (Desktop: md and up) */}
-              <div className="hidden md:flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl gap-1 border border-slate-200/70 dark:border-slate-700/70 shadow-2xs shrink-0">
-                <button
-                  id="main-tab-system"
-                  onClick={() => setActiveMainTab('system')}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeMainTab === 'system'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 border border-slate-200/60 dark:border-slate-600 shadow-xs font-black'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>النظام الإداري</span>
-                </button>
-                <button
-                  id="main-tab-ai"
-                  onClick={() => setActiveMainTab('ai')}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeMainTab === 'ai'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 border border-slate-200/60 dark:border-slate-600 shadow-xs font-black'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Bot className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-                  <span>المساعد الذكي</span>
-                </button>
-              </div>
-
-              {/* Left Side: Actions, Utilities & Mobile Hamburger Menu */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <NotificationBell
-                  notifications={dbData?.notifications || []}
-                  currentUserId={authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : (currentRole as string) === 'supervisor' ? 'supervisor' : (currentRole as string) === 'support' ? 'support' : 'all')}
-                  currentUserRole={currentRole}
-                  onMarkRead={handleMarkNotificationRead}
-                  onDelete={handleDeleteNotification}
-                  onOpenUserSettings={() => setIsUserSettingsOpen(true)}
-                />
-
-                {/* User Settings & Preferences Button (Desktop) */}
-                <button
-                  id="btn-header-user-settings"
-                  onClick={() => setIsUserSettingsOpen(true)}
-                  className="hidden md:flex text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer items-center justify-center text-xs"
-                  title="إعدادات وتفضيلات المستخدم والتنبيهات الصوتية"
-                  aria-label="إعدادات وتفضيلات المستخدم"
-                >
-                  <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                </button>
-
-                {/* System Settings for Admin / Operations (Desktop) */}
-                {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                {/* Center: Core System Navigation Switcher (Desktop: lg and up) */}
+                <div className="hidden lg:flex bg-slate-100 dark:bg-[#142d50] p-1 rounded-xl gap-1 border border-slate-200/80 dark:border-[#244577] shadow-2xs shrink-0">
                   <button
-                    id="btn-header-settings"
-                    onClick={() => {
-                      setActiveMainTab('system');
-                      setAdminSubTab('system_settings');
-                    }}
-                    className="hidden md:flex text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer items-center justify-center text-xs"
-                    title="إعدادات النظام الشاملة"
-                    aria-label="إعدادات النظام"
-                  >
-                    <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                  </button>
-                )}
-
-                {/* Theme Toggle */}
-                <button
-                  id="btn-dark-toggle"
-                  onClick={() => setIsDark(!isDark)}
-                  className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center text-xs shrink-0"
-                  title={isDark ? "تفعيل الوضع المضيء ☀️" : "تفعيل الوضع الليلي 🌙"}
-                  aria-label="تبديل مظهر العرض"
-                >
-                  {isDark ? (
-                    <Sun className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
-                  ) : (
-                    <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                  )}
-                </button>
-
-                {/* PWA App Install Button */}
-                <PWAInstallButton variant="header" className="hidden sm:inline-flex" />
-
-                {/* User Logout Button (Desktop) */}
-                {authenticatedUser && (
-                  <button
-                    onClick={handleLogout}
-                    className="hidden md:flex bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer items-center gap-1.5 shadow-2xs shrink-0"
-                    title="تسجيل الخروج من النظام"
-                  >
-                    <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                    <span>خروج ({authenticatedUser.name.split(" ")[0]})</span>
-                  </button>
-                )}
-
-                {/* Clean Mobile Hamburger Menu Button (max-width: 768px / md:hidden) */}
-                <button
-                  onClick={() => setIsPortalMobileMenuOpen(prev => !prev)}
-                  className="md:hidden flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 shadow-2xs transition-all cursor-pointer active:scale-95 shrink-0"
-                  title="القائمة"
-                  aria-label="القائمة"
-                >
-                  {isPortalMobileMenuOpen ? (
-                    <X className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <Menu className="w-5 h-5 text-slate-700 dark:text-slate-200" />
-                  )}
-                </button>
-              </div>
-
-            </div>
-
-            {/* Mobile Collapsible Navigation Menu (max-width: 768px) */}
-            {isPortalMobileMenuOpen && (
-              <div className="md:hidden mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 animate-fadeIn">
-                {/* Core Navigation Switcher */}
-                <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70">
-                  <button
-                    onClick={() => {
-                      setActiveMainTab('system');
-                      setIsPortalMobileMenuOpen(false);
-                    }}
-                    className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    id="main-tab-system"
+                    onClick={() => setActiveMainTab('system')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       activeMainTab === 'system'
-                        ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs font-black'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        ? 'bg-[#0754C7] text-white shadow-xs font-black'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
                     }`}
                   >
-                    <Layers className="w-4 h-4 text-emerald-600" />
+                    <Layers className="w-3.5 h-3.5" />
                     <span>النظام الإداري</span>
                   </button>
                   <button
-                    onClick={() => {
-                      setActiveMainTab('ai');
-                      setIsPortalMobileMenuOpen(false);
-                    }}
-                    className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    id="main-tab-ai"
+                    onClick={() => setActiveMainTab('ai')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       activeMainTab === 'ai'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-xs font-black'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        ? 'bg-[#0754C7] text-white shadow-xs font-black'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
                     }`}
                   >
-                    <Bot className="w-4 h-4 text-indigo-500" />
+                    <Bot className="w-3.5 h-3.5" />
                     <span>المساعد الذكي</span>
                   </button>
                 </div>
 
-                {/* Return to Public Home */}
-                <button
-                  onClick={() => {
-                    handleNavigateToPublicHome();
-                    setIsPortalMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200/60 dark:border-emerald-800 transition-all cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    <ArrowRight className="w-4 h-4 text-emerald-600" />
-                    <span>العودة إلى الصفحة الرئيسية للجمعية</span>
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-emerald-500 rtl:rotate-180" />
-                </button>
+                {/* Left Side: User Identity + Quick Messages + Notifications + Theme + Settings + Home + Logout + Mobile Hamburger */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Logged-in User & Position Display (Desktop xl+) */}
+                  <div className="hidden xl:flex items-center gap-2 bg-slate-50 dark:bg-[#142d50] border border-slate-200 dark:border-[#244577] px-2.5 py-1 rounded-xl shrink-0">
+                    <div className="w-7 h-7 rounded-lg bg-[#071C43] dark:bg-[#0754C7] text-white text-xs font-black flex items-center justify-center shrink-0">
+                      {(authenticatedUser.name || 'م').trim().charAt(0)}
+                    </div>
+                    <div className="text-right leading-tight max-w-[155px]">
+                      <div className="text-[11px] font-black text-[#071C43] dark:text-white truncate">
+                        {authenticatedUser.name}
+                      </div>
+                      <div className="text-[10px] font-bold text-[#0754C7] dark:text-blue-300 truncate">
+                        {userDisplayTitle}
+                      </div>
+                    </div>
+                  </div>
 
-                {/* User Settings */}
-                <button
-                  onClick={() => {
-                    setIsUserSettingsOpen(true);
-                    setIsPortalMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-slate-700/70 transition-all cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>إعدادات وتفضيلات المستخدم والتنبيهات الصوتية</span>
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
-                </button>
+                  {/* Quick Messages / Official Letters Shortcut */}
+                  {canOpenQuickMessages && (
+                    <button
+                      id="btn-header-quick-messages"
+                      type="button"
+                      onClick={handleOpenQuickMessages}
+                      className="relative flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-[#142d50] px-2.5 py-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer text-xs font-bold shrink-0"
+                      title="الخطابات والمراسلات السريعة"
+                      aria-label="الخطابات والمراسلات"
+                    >
+                      <Mail className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
+                      <span className="hidden 2xl:inline">الرسائل</span>
+                      {unreadLettersCount > 0 && (
+                        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-mono font-black flex items-center justify-center">
+                          {unreadLettersCount}
+                        </span>
+                      )}
+                    </button>
+                  )}
 
-                {/* Admin System Settings */}
-                {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                  <NotificationBell
+                    notifications={dbData?.notifications || []}
+                    currentUserId={authenticatedUser?.id || (currentRole === 'admin' ? 'admin' : currentRole === 'leader' ? 'leader' : (currentRole as string) === 'supervisor' ? 'supervisor' : (currentRole as string) === 'support' ? 'support' : 'all')}
+                    currentUserRole={currentRole}
+                    onMarkRead={handleMarkNotificationRead}
+                    onDelete={handleDeleteNotification}
+                    onOpenUserSettings={() => setIsUserSettingsOpen(true)}
+                  />
+
+                  {/* Theme Toggle */}
+                  <button
+                    id="btn-dark-toggle"
+                    onClick={() => setIsDark(!isDark)}
+                    className="text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#142d50] p-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer flex items-center justify-center text-xs shrink-0"
+                    title={isDark ? "تفعيل الوضع المضيء ☀️" : "تفعيل الوضع الليلي 🌙"}
+                    aria-label="تبديل مظهر العرض"
+                  >
+                    {isDark ? (
+                      <Sun className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
+                    ) : (
+                      <Moon className="w-4 h-4 text-[#071C43]" />
+                    )}
+                  </button>
+
+                  {/* User Preferences Settings (Desktop) */}
+                  <button
+                    id="btn-header-user-settings"
+                    onClick={() => setIsUserSettingsOpen(true)}
+                    className="hidden md:flex text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#142d50] p-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer items-center justify-center text-xs shrink-0"
+                    title="إعدادات وتفضيلات المستخدم والتنبيهات الصوتية"
+                    aria-label="إعدادات وتفضيلات المستخدم"
+                  >
+                    <Sliders className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
+                  </button>
+
+                  {/* System Settings for Admin / Operations (Desktop) */}
+                  {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                    <button
+                      id="btn-header-settings"
+                      onClick={() => {
+                        setActiveMainTab('system');
+                        setAdminSubTab('system_settings');
+                      }}
+                      className="hidden md:flex text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#142d50] p-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer items-center justify-center text-xs shrink-0"
+                      title="إعدادات النظام الشاملة"
+                      aria-label="إعدادات النظام"
+                    >
+                      <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                    </button>
+                  )}
+
+                  {/* Return to Public Site */}
+                  <button
+                    onClick={handleNavigateToPublicHome}
+                    className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-[#0754C7] dark:text-blue-200 hover:text-white bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-[#0754C7] dark:hover:bg-[#0754C7] px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-[#244577] transition-all cursor-pointer shrink-0"
+                    title="العودة إلى الموقع العام للجمعية"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>الموقع العام</span>
+                  </button>
+
+                  {/* PWA App Install Button */}
+                  <PWAInstallButton variant="header" className="hidden 2xl:inline-flex" />
+
+                  {/* User Logout Button (Desktop) */}
+                  <button
+                    onClick={handleLogout}
+                    className="hidden md:flex bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/70 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer items-center gap-1.5 shadow-2xs shrink-0"
+                    title="تسجيل الخروج من النظام"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                    <span>خروج</span>
+                  </button>
+
+                  {/* Compact Mobile Hamburger Menu Button */}
+                  <button
+                    onClick={() => setIsPortalMobileMenuOpen(prev => !prev)}
+                    className="md:hidden flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#142d50] dark:hover:bg-[#1b3a66] text-[#071C43] dark:text-white border border-slate-200 dark:border-[#244577] shadow-2xs transition-all cursor-pointer active:scale-95 shrink-0"
+                    title="القائمة"
+                    aria-label="القائمة"
+                  >
+                    {isPortalMobileMenuOpen ? (
+                      <X className="w-5 h-5 text-[#0754C7] dark:text-blue-300" />
+                    ) : (
+                      <Menu className="w-5 h-5 text-[#071C43] dark:text-slate-100" />
+                    )}
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Mobile Collapsible Executive Drawer Menu (max-width: 768px) */}
+              {isPortalMobileMenuOpen && (
+                <div className="md:hidden mt-2.5 pt-2.5 border-t border-slate-200 dark:border-[#1e3a66] space-y-2 animate-fadeIn">
+                  {/* Mobile User Identity + Date + License Strip */}
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#eaf3ff]/70 dark:bg-[#142d50] border border-blue-200/70 dark:border-[#244577]">
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-[#071C43] dark:text-white truncate">
+                        {authenticatedUser.name}
+                      </div>
+                      <div className="text-[11px] font-bold text-[#0754C7] dark:text-blue-300 truncate">
+                        {userDisplayTitle} • ترخيص {licenseNumber}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 shrink-0">
+                      {new Date().toLocaleDateString('ar-SA-u-nu-latn')}
+                    </span>
+                  </div>
+
+                  {/* Core Navigation Switcher */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-[#142d50] p-1.5 rounded-xl border border-slate-200/70 dark:border-[#244577]">
+                    <button
+                      onClick={() => {
+                        setActiveMainTab('system');
+                        setIsPortalMobileMenuOpen(false);
+                      }}
+                      className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        activeMainTab === 'system'
+                          ? 'bg-[#0754C7] text-white shadow-xs font-black'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                      <span>النظام الإداري</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveMainTab('ai');
+                        setIsPortalMobileMenuOpen(false);
+                      }}
+                      className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        activeMainTab === 'ai'
+                          ? 'bg-[#0754C7] text-white shadow-xs font-black'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
+                      }`}
+                    >
+                      <Bot className="w-4 h-4" />
+                      <span>المساعد الذكي</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Messages Shortcut in Mobile */}
+                  {canOpenQuickMessages && (
+                    <button
+                      type="button"
+                      onClick={handleOpenQuickMessages}
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#142d50]/70 dark:hover:bg-[#142d50] text-[#071C43] dark:text-white font-bold text-xs border border-slate-200 dark:border-[#244577] transition-all cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
+                        <span>الخطابات والمراسلات ({unreadLettersCount} غير مقروءة)</span>
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                    </button>
+                  )}
+
+                  {/* Return to Public Home */}
                   <button
                     onClick={() => {
-                      setActiveMainTab('system');
-                      setAdminSubTab('system_settings');
+                      handleNavigateToPublicHome();
                       setIsPortalMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-slate-700/70 transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-blue-100 text-[#0754C7] dark:text-blue-200 font-bold text-xs border border-blue-200 dark:border-[#244577] transition-all cursor-pointer"
                   >
                     <span className="flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                      <span>إعدادات النظام الشاملة</span>
+                      <ArrowRight className="w-4 h-4" />
+                      <span>العودة إلى الموقع العام للجمعية</span>
+                    </span>
+                    <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+                  </button>
+
+                  {/* User Settings */}
+                  <button
+                    onClick={() => {
+                      setIsUserSettingsOpen(true);
+                      setIsPortalMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#142d50]/70 dark:hover:bg-[#142d50] text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-[#244577] transition-all cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sliders className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
+                      <span>إعدادات وتفضيلات المستخدم والتنبيهات الصوتية</span>
                     </span>
                     <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
                   </button>
-                )}
 
-                {/* User Logout Button */}
-                {authenticatedUser && (
+                  {/* Admin System Settings */}
+                  {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                    <button
+                      onClick={() => {
+                        setActiveMainTab('system');
+                        setAdminSubTab('system_settings');
+                        setIsPortalMobileMenuOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#142d50]/70 dark:hover:bg-[#142d50] text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-[#244577] transition-all cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                        <span>إعدادات النظام الشاملة</span>
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                    </button>
+                  )}
+
+                  {/* User Logout Button */}
                   <button
                     onClick={() => {
                       handleLogout();
                       setIsPortalMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800/80 transition-all cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800/80 transition-all cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                     <span>تسجيل الخروج ({authenticatedUser.name})</span>
                   </button>
-                )}
-              </div>
-            )}
-          </div>
-        </header>
-      )}
+                </div>
+              )}
+            </div>
+          </header>
+        );
+      })()}
 
       {/* MAIN LAYOUT CONTAINER */}
       <main className={(currentRole === 'public' || !authenticatedUser) ? "w-full overflow-x-hidden" : "w-full max-w-[1860px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-10 py-4 md:py-6"}>
@@ -2627,9 +2750,9 @@ export default function App() {
 
       {/* INTERNAL DASHBOARD FOOTER (Only shown for authenticated internal management views, NEVER on public website or during maintenance) */}
       {currentRole !== 'public' && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (
-        <footer className="border-t border-neutral-100 bg-white py-6 mt-12 text-center text-xs text-neutral-400 no-print">
-          <p className="font-bold">© {new Date().getFullYear()} جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة.</p>
-          <p className="text-[10px] text-neutral-400 mt-1">جميع الحقوق محفوظة للنظام التقني الموحد لإدارة التطوع • ترخيص وزارة الموارد البشرية والتنمية الاجتماعية: 100088868</p>
+        <footer className="border-t border-slate-200 dark:border-[#1e3a66] bg-white dark:bg-[#0e213d] py-6 mt-12 text-center text-xs text-slate-500 dark:text-slate-400 no-print">
+          <p className="font-bold text-[#071C43] dark:text-slate-200">© {new Date().getFullYear()} جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة.</p>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">جميع الحقوق محفوظة للنظام التقني الموحد • ترخيص وزارة الموارد البشرية والتنمية الاجتماعية: {dbData?.homeSettings?.licenseNumber || '1000888600'}</p>
         </footer>
       )}
 

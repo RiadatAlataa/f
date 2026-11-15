@@ -4088,10 +4088,10 @@ export function readDb() {
         if (!db.homeSettings.heroSlides) db.homeSettings.heroSlides = db.heroSlides;
       }
 
-      // Enforce the 8 approved departments strictly (PR/Media and Operations as executive departments removed)
+      // Remove only retired legacy dep-6 if present, while preserving all approved & custom departments
       const approvedDeptIds = ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-7", "dep-8", "dep-9"];
-      if (Array.isArray(db.departments) && db.departments.some((d: any) => !approvedDeptIds.includes(d.id))) {
-        db.departments = db.departments.filter((d: any) => approvedDeptIds.includes(d.id));
+      if (Array.isArray(db.departments) && db.departments.some((d: any) => d && d.id === "dep-6")) {
+        db.departments = db.departments.filter((d: any) => d && d.id !== "dep-6");
         modified = true;
       }
 
@@ -13900,8 +13900,11 @@ app.post("/api/db/auth/login", (req, res) => {
     const v = val.trim().toLowerCase();
     const id = identifier.toLowerCase();
     if (v === id) return true;
-    
-    // Numeric matching for Phone / National ID (handles Saudi formats 05..., 9665..., +9665...)
+
+    // Numeric matching strictly for Phone / National ID (never match across emails or alphanumeric usernames)
+    const isNumericCandidate = (s: string) => /^[+\d\s\-()]+$/.test(s);
+    if (!isNumericCandidate(v) || !isNumericCandidate(id)) return false;
+
     const numV = v.replace(/[^0-9]/g, '');
     const numId = id.replace(/[^0-9]/g, '');
     if (numV.length >= 8 && numId.length >= 8) {
@@ -17374,163 +17377,277 @@ app.post("/api/db/gallery/delete", (req, res) => {
   res.json(db);
 });
 
-// 18.0 Org Members - Get All from Database
+// 18.0 Org Members - Get All from Database (Strict Public Privacy Split)
 app.get("/api/db/org-members", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   const db = readDb();
   if (!db.orgMembers || !Array.isArray(db.orgMembers)) {
     db.orgMembers = [];
     if (db.homeSettings) db.homeSettings.orgMembers = [];
   }
-  const members = db.orgMembers || [];
+
+  const context = getUserAccessContext(req);
+  const isTopAdmin = Boolean(
+    context.isAuthenticated &&
+    (context.isSuperAdmin || context.isOperationsManager || context.role === 'admin' || context.role === 'operations_manager')
+  );
+  const isDeptAdmin = Boolean(context.isAuthenticated && context.role === 'department_admin');
+  const allowedDepts: string[] = Array.isArray(context.allowedDepartmentIds)
+    ? context.allowedDepartmentIds
+    : (context.primaryDepartmentId ? [context.primaryDepartmentId] : []);
+
+  let members: any[] = [];
+  if (isTopAdmin) {
+    members = db.orgMembers.map((m: any) => sanitizeOrgMemberForAdmin(m, true));
+  } else if (isDeptAdmin) {
+    members = db.orgMembers
+      .filter((m: any) => (
+        m && (
+          (m.isActive !== false && m.publishToPublic !== false && (!m.assignmentStatus || m.assignmentStatus === 'active')) ||
+          (m.departmentId && allowedDepts.includes(m.departmentId))
+        )
+      ))
+      .map((m: any) => (
+        m.departmentId && allowedDepts.includes(m.departmentId)
+          ? sanitizeOrgMemberForAdmin(m, true)
+          : sanitizeOrgMemberForPublic(m)
+      ));
+  } else {
+    members = db.orgMembers
+      .filter((m: any) => m && m.isActive !== false && m.publishToPublic !== false && (!m.assignmentStatus || m.assignmentStatus === 'active'))
+      .map(sanitizeOrgMemberForPublic);
+  }
+
   res.json({ success: true, count: members.length, members });
 });
 
 // 18.0.1 Org Members - Clear All (حذف جميع أعضاء الهيكل الإداري ومجلس الإدارة دفعة واحدة)
-app.post("/api/db/org-members/clear-all", (req, res) => {
-  const db = readDb();
-  const previousCount = (db.orgMembers || []).length;
-  db.orgMembers = [];
-  if (db.homeSettings) db.homeSettings.orgMembers = [];
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "الإدارة العامة",
-    action: `تفريغ وحذف جميع بطاقات الهيكل الإداري ومجلس الإدارة بالكامل (${previousCount} عضو)`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json({ success: true, message: "تم تفريغ الهيكل الإداري ومجلس الإدارة بالكامل", members: [], count: 0, db });
+app.post("/api/db/org-members/clear-all", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'تفريغ الهيكل الإداري');
+  if (!auth.allowed) return;
+  try {
+    const outcome = await mutateDb((db) => {
+      const previousCount = (db.orgMembers || []).length;
+      db.orgMembers = [];
+      if (db.homeSettings) db.homeSettings.orgMembers = [];
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: auth.context.userName || "الإدارة العامة",
+        action: `تفريغ وحذف جميع بطاقات الهيكل الإداري ومجلس الإدارة بالكامل (${previousCount} عضو)`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "System").substring(0, 100)
+      });
+      return {
+        status: 200,
+        payload: { success: true, message: "تم تفريغ الهيكل الإداري ومجلس الإدارة بالكامل", members: [], count: 0, db: filterDatabaseForUser(db, auth.context) }
+      };
+    });
+    res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل تفريغ الهيكل الإداري.", details: err?.message });
+  }
 });
 
 // 18.1 Org Members - Add / Edit
-app.post("/api/db/org-members/add", (req, res) => {
-  const db = readDb();
-  if (!db.orgMembers) db.orgMembers = [];
-  const item = req.body;
-  if (!item.id) {
-    item.id = "org-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4);
-    item.createdAt = new Date().toISOString();
-    item.order = item.order ?? (db.orgMembers.length + 1);
-    if (item.isActive === undefined) item.isActive = true;
-    db.orgMembers.push(item);
-  } else {
-    const idx = db.orgMembers.findIndex((m: any) => m.id === item.id);
-    if (idx !== -1) {
-      db.orgMembers[idx] = { ...db.orgMembers[idx], ...item, updatedAt: new Date().toISOString() };
-    } else {
-      db.orgMembers.push(item);
-    }
-  }
-  if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
+app.post("/api/db/org-members/add", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'إضافة أو تعديل عضو في الهيكل الإداري');
+  if (!auth.allowed) return;
+  try {
+    const outcome = await mutateDb((db) => {
+      if (!db.orgMembers) db.orgMembers = [];
+      const item = sanitizeSecretFields(req.body || {});
+      const nowIso = new Date().toISOString();
+      if (item.positionTitle && !item.roleTitle) item.roleTitle = item.positionTitle;
+      if (item.roleTitle && !item.positionTitle) item.positionTitle = item.roleTitle;
+      if (item.publishToPublic === undefined && item.isActive !== undefined) {
+        item.publishToPublic = Boolean(item.isActive);
+      }
 
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "الإدارة العامة",
-    action: `إضافة/تعديل شخص في الهيكل الإداري: ${item.name} (${item.roleTitle || 'عضو'})`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+      if (!item.id) {
+        item.id = "org-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4);
+        item.createdAt = nowIso;
+        item.updatedAt = nowIso;
+        item.order = item.order ?? (db.orgMembers.length + 1);
+        if (item.isActive === undefined) item.isActive = true;
+        if (item.publishToPublic === undefined) item.publishToPublic = item.isActive !== false;
+        db.orgMembers.push(item);
+      } else {
+        const idx = db.orgMembers.findIndex((m: any) => m.id === item.id);
+        if (idx !== -1) {
+          db.orgMembers[idx] = { ...db.orgMembers[idx], ...item, updatedAt: nowIso };
+        } else {
+          db.orgMembers.push({ ...item, createdAt: nowIso, updatedAt: nowIso });
+        }
+      }
+      if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
+
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: nowIso,
+        user: auth.context.userName || "الإدارة العامة",
+        action: `إضافة/تعديل شخص في الهيكل الإداري: ${item.name} (${item.roleTitle || 'عضو'})`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "System").substring(0, 100)
+      });
+      return { status: 200, payload: filterDatabaseForUser(db, auth.context) };
+    });
+    res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل حفظ عضو الهيكل الإداري.", details: err?.message });
+  }
 });
 
 // 18.2 Org Members - Delete
-app.post("/api/db/org-members/delete", (req, res) => {
-  const db = readDb();
-  if (!db.orgMembers) db.orgMembers = [];
-  const { id } = req.body;
-  const target = db.orgMembers.find((m: any) => m.id === id);
-  db.orgMembers = db.orgMembers.filter((m: any) => m.id !== id);
-  db.orgMembers.forEach((m: any) => {
-    if (m.parentId === id) {
-      m.parentId = null;
-      m.parentName = "";
-    }
-  });
-  if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
+app.post("/api/db/org-members/delete", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'حذف عضو من الهيكل الإداري');
+  if (!auth.allowed) return;
+  try {
+    const { id } = req.body || {};
+    const outcome = await mutateDb((db) => {
+      if (!db.orgMembers) db.orgMembers = [];
+      const target = db.orgMembers.find((m: any) => m.id === id);
+      db.orgMembers = db.orgMembers.filter((m: any) => m.id !== id);
+      db.orgMembers.forEach((m: any) => {
+        if (m.parentId === id) {
+          m.parentId = null;
+          m.parentName = "";
+        }
+      });
+      if (target?.departmentId && String(target.id || '').startsWith('org-dep-') && Array.isArray(db.departments)) {
+        const dep = db.departments.find((d: any) => d.id === target.departmentId);
+        if (dep) {
+          dep.publishToPublic = false;
+          dep.updatedAt = new Date().toISOString();
+        }
+      }
+      if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
 
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "الإدارة العامة",
-    action: `حذف شخص من الهيكل الإداري: ${target ? target.name : id}`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: auth.context.userName || "الإدارة العامة",
+        action: `حذف شخص من الهيكل الإداري: ${target ? target.name : id}`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "System").substring(0, 100)
+      });
+      return { status: 200, payload: filterDatabaseForUser(db, auth.context) };
+    });
+    res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل حذف عضو الهيكل الإداري.", details: err?.message });
+  }
 });
 
 // 18.3 Org Members - Toggle Active/Hidden
-app.post("/api/db/org-members/toggle-active", (req, res) => {
-  const db = readDb();
-  if (!db.orgMembers) db.orgMembers = [];
-  const { id, isActive } = req.body;
-  const idx = db.orgMembers.findIndex((m: any) => m.id === id);
-  if (idx !== -1) {
-    db.orgMembers[idx].isActive = isActive !== undefined ? isActive : !db.orgMembers[idx].isActive;
-    db.orgMembers[idx].updatedAt = new Date().toISOString();
+app.post("/api/db/org-members/toggle-active", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'تعديل ظهور عضو في الهيكل الإداري');
+  if (!auth.allowed) return;
+  try {
+    const { id, isActive } = req.body || {};
+    const outcome = await mutateDb((db) => {
+      if (!db.orgMembers) db.orgMembers = [];
+      const nowIso = new Date().toISOString();
+      const idx = db.orgMembers.findIndex((m: any) => m.id === id);
+      if (idx !== -1) {
+        const nextActive = isActive !== undefined ? Boolean(isActive) : !db.orgMembers[idx].isActive;
+        db.orgMembers[idx].isActive = nextActive;
+        db.orgMembers[idx].publishToPublic = nextActive;
+        db.orgMembers[idx].updatedAt = nowIso;
+        const target = db.orgMembers[idx];
+        if (target?.departmentId && String(target.id || '').startsWith('org-dep-') && Array.isArray(db.departments)) {
+          const dep = db.departments.find((d: any) => d.id === target.departmentId);
+          if (dep) {
+            dep.publishToPublic = nextActive;
+            dep.updatedAt = nowIso;
+          }
+        }
+      }
+      if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
+      return { status: 200, payload: filterDatabaseForUser(db, auth.context) };
+    });
+    res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل تعديل حالة العضو.", details: err?.message });
   }
-  if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
-
-  writeDb(db);
-  res.json(db);
 });
 
-// 18.4 Org Members - Batch / Reorder
-app.post("/api/db/org-members/batch", (req, res) => {
-  const db = readDb();
-  const { members } = req.body;
-  if (Array.isArray(members)) {
-    db.orgMembers = members;
-    if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
-    writeDb(db);
+// 18.4 Org Members - Batch / Reorder (supports both /batch and /batch-update)
+const handleOrgMembersBatch = async (req: any, res: any) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'إعادة ترتيب أعضاء الهيكل الإداري');
+  if (!auth.allowed) return;
+  try {
+    const { members } = req.body || {};
+    const outcome = await mutateDb((db) => {
+      if (Array.isArray(members)) {
+        db.orgMembers = members.map((m: any) => sanitizeSecretFields(m));
+        if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
+      }
+      return { status: 200, payload: filterDatabaseForUser(db, auth.context) };
+    });
+    res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل تحديث ترتيب الهيكل الإداري.", details: err?.message });
   }
-  res.json(db);
-});
+};
+app.post("/api/db/org-members/batch", handleOrgMembersBatch);
+app.post("/api/db/org-members/batch-update", handleOrgMembersBatch);
 
 // 18.5 Org Members - Import Directors from Departments
-app.post("/api/db/org-members/import-directors", (req, res) => {
-  const db = readDb();
-  if (!db.orgMembers) db.orgMembers = [];
-  const deps = db.departments || [];
-  let addedCount = 0;
+app.post("/api/db/org-members/import-directors", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, undefined, 'super_admin', 'استيراد مدراء الإدارات إلى الهيكل');
+  if (!auth.allowed) return;
+  try {
+    const outcome = await mutateDb((db) => {
+      if (!db.orgMembers) db.orgMembers = [];
+      const deps = db.departments || [];
+      let addedCount = 0;
 
-  deps.forEach((dep: any) => {
-    if (dep.directorName && !db.orgMembers.some((m: any) => m.name === dep.directorName)) {
-      db.orgMembers.push({
-        id: "org-dep-" + dep.id,
-        name: dep.directorName,
-        roleTitle: `مدير ${dep.nameAr}`,
-        level: 3,
-        levelName: "مدراء الإدارات والأقسام",
-        parentId: null,
-        parentName: "",
-        department: dep.nameAr,
-        email: dep.email || "",
-        phone: dep.phone || "",
-        description: dep.descriptionAr || "",
-        order: (db.orgMembers.length + 1),
-        isActive: true,
-        createdAt: new Date().toISOString()
+      deps.forEach((dep: any) => {
+        if (!dep.isArchived && dep.directorName && !db.orgMembers.some((m: any) => m.id === `org-dep-${dep.id}` || m.name === dep.directorName)) {
+          syncOrgMemberRecord(db, {
+            orgId: `org-dep-${dep.id}`,
+            userId: dep.directorUserId || `depadmin-${dep.id}`,
+            departmentId: dep.id,
+            departmentName: dep.nameAr,
+            name: dep.directorName,
+            positionTitle: dep.positionTitle || `مدير ${dep.nameAr}`,
+            level: dep.id === 'dep-1' ? 2 : 3,
+            levelName: dep.id === 'dep-1' ? 'الإدارة التنفيذية' : 'مدراء الإدارات والأقسام',
+            email: dep.email || '',
+            phone: dep.phone || '',
+            nationalId: dep.nationalId || '',
+            imageUrl: dep.avatarUrl || '',
+            assignmentStatus: dep.assignmentStatus || 'active',
+            assignmentStartDate: dep.assignmentStartDate || '',
+            assignmentEndDate: dep.assignmentEndDate || '',
+            publishToPublic: dep.publishToPublic !== false,
+            isArchived: Boolean(dep.isArchived),
+            description: dep.descriptionAr || ''
+          });
+          addedCount++;
+        }
       });
-      addedCount++;
-    }
-  });
 
-  if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
-  db.logs.unshift({
-    id: "log-" + Date.now(),
-    timestamp: new Date().toISOString(),
-    user: "الإدارة العامة",
-    action: `استيراد تلقائي لـ ${addedCount} من مدراء الإدارات إلى الهيكل الإداري`,
-    ip: req.ip || "127.0.0.1",
-    device: req.headers["user-agent"] || "System"
-  });
-  writeDb(db);
-  res.json(db);
+      if (db.homeSettings) db.homeSettings.orgMembers = db.orgMembers;
+      db.logs = db.logs || [];
+      db.logs.unshift({
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        user: auth.context.userName || "الإدارة العامة",
+        action: `استيراد تلقائي لـ ${addedCount} من مدراء الإدارات إلى الهيكل الإداري`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "System").substring(0, 100)
+      });
+      return { status: 200, payload: filterDatabaseForUser(db, auth.context) };
+    });
+    res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل استيراد مدراء الإدارات.", details: err?.message });
+  }
 });
 
 // 18.6 Hero Slides - Add / Edit

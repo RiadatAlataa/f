@@ -942,23 +942,23 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
       )}
 
       {/* HEADER BAR & CONTROLS */}
-      <div className="bg-white p-5 sm:p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-5">
+      <div className="bg-white dark:bg-[#0e213d] p-5 sm:p-6 rounded-2xl border border-neutral-200 dark:border-[#1e3a66] shadow-xs space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="p-2.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100">
+              <span className="p-2.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-xl border border-emerald-100 dark:border-emerald-800/60">
                 <Users className="w-6 h-6" />
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base sm:text-lg font-black text-neutral-900">
+                  <h2 className="text-base sm:text-lg font-black text-neutral-900 dark:text-white">
                     {lang === "ar" ? "سجل وبيانات المستفيدين والدعم الاجتماعي" : "Beneficiaries & Social Care Registry"}
                   </h2>
-                  <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded-full font-mono">
+                  <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 text-[11px] font-bold px-2 py-0.5 rounded-full font-mono">
                     {beneficiaries.length} مستفيد
                   </span>
                 </div>
-                <p className="text-xs text-neutral-500 mt-0.5">
+                <p className="text-xs text-neutral-500 dark:text-slate-300 mt-0.5">
                   {lang === "ar" 
                     ? "إدارة وتدقيق ملفات المستحقين بمخطط العسيلة، الهوية الوطنية، فئات الدعم، وتصدير التقارير المعتمدة." 
                     : "Manage eligible family records, national IDs, support categories, and certified reports."}
@@ -970,12 +970,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
           {/* ACTION BUTTONS: IMPORT, DISTRIBUTIONS, ADD BENEFICIARY & EXPORT */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* ACTIVE / ARCHIVE SECTION SWITCHER */}
-            <div className="inline-flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+            <div className="inline-flex items-center bg-neutral-100 dark:bg-[#142d50] p-1 rounded-xl border border-neutral-200 dark:border-[#244577]">
               <button
                 type="button"
                 onClick={() => setSectionView('active')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  sectionView === 'active' ? "bg-white text-emerald-700 shadow-2xs" : "text-neutral-600 hover:text-neutral-900"
+                  sectionView === 'active' ? "bg-white dark:bg-[#0754C7] text-emerald-700 dark:text-white shadow-2xs" : "text-neutral-600 dark:text-slate-300 hover:text-neutral-900 dark:hover:text-white"
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
@@ -985,7 +985,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 type="button"
                 onClick={() => setSectionView('archive')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  sectionView === 'archive' ? "bg-slate-800 text-white shadow-2xs" : "text-neutral-600 hover:text-neutral-900"
+                  sectionView === 'archive' ? "bg-slate-800 text-white shadow-2xs" : "text-neutral-600 dark:text-slate-300 hover:text-neutral-900 dark:hover:text-white"
                 }`}
               >
                 <Archive className="w-3.5 h-3.5" />
@@ -994,12 +994,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             </div>
 
             {/* VIEW MODE TOGGLE */}
-            <div className="hidden sm:inline-flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+            <div className="hidden sm:inline-flex items-center bg-neutral-100 dark:bg-[#142d50] p-1 rounded-xl border border-neutral-200 dark:border-[#244577]">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'table' ? "bg-white text-emerald-700 shadow-2xs" : "text-neutral-600 hover:text-neutral-900"
+                  viewMode === 'table' ? "bg-white dark:bg-[#0754C7] text-emerald-700 dark:text-white shadow-2xs" : "text-neutral-600 dark:text-slate-300 hover:text-neutral-900 dark:hover:text-white"
                 }`}
                 title="عرض الجدول الكامل"
               >
@@ -1010,7 +1010,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 type="button"
                 onClick={() => setViewMode('cards')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  viewMode === 'cards' ? "bg-white text-emerald-700 shadow-2xs" : "text-neutral-600 hover:text-neutral-900"
+                  viewMode === 'cards' ? "bg-white dark:bg-[#0754C7] text-emerald-700 dark:text-white shadow-2xs" : "text-neutral-600 dark:text-slate-300 hover:text-neutral-900 dark:hover:text-white"
                 }`}
                 title="عرض البطاقات"
               >
@@ -1024,10 +1024,10 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setShowImportModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-black transition-all cursor-pointer border border-emerald-200 shadow-2xs"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs font-black transition-all cursor-pointer border border-emerald-200 dark:border-emerald-800/70 shadow-2xs"
                 title="استيراد بيانات المستفيدين من ملف Excel أو PDF وتوليد الباركود تلقائياً"
               >
-                <Upload className="w-4 h-4 text-emerald-700" />
+                <Upload className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
                 <span>{lang === "ar" ? "استيراد بيانات" : "Import"}</span>
               </button>
             )}
@@ -1048,10 +1048,10 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               type="button"
               onClick={fetchDirectBeneficiaries}
               disabled={isFetchingBeneficiaries}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-black transition-all cursor-pointer border border-neutral-200 shadow-2xs disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-[#142d50] dark:hover:bg-[#1b3a66] text-neutral-800 dark:text-slate-200 rounded-xl text-xs font-black transition-all cursor-pointer border border-neutral-200 dark:border-[#244577] shadow-2xs disabled:opacity-50"
               title="تحديث بيانات المستفيدين من الخادم مباشرة دون الحاجة لتحديث الصفحة"
             >
-              <RefreshCw className={`w-4 h-4 text-emerald-600 ${isFetchingBeneficiaries ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 text-emerald-600 dark:text-emerald-400 ${isFetchingBeneficiaries ? 'animate-spin' : ''}`} />
               <span>{lang === "ar" ? "تحديث" : "Refresh"}</span>
             </button>
 
@@ -1059,10 +1059,10 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             <button
               type="button"
               onClick={() => setIsStatsModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-850 rounded-xl text-xs font-black transition-all cursor-pointer border border-indigo-200 shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/70 text-indigo-800 dark:text-indigo-200 rounded-xl text-xs font-black transition-all cursor-pointer border border-indigo-200 dark:border-indigo-800/70 shadow-2xs"
               title="عرض إحصائيات المستفيدين المباشرة وتوزيعات الحالات الاجتماعية والجنسية"
             >
-              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              <BarChart3 className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
               <span>{lang === "ar" ? "إحصائيات المستفيدين" : "Beneficiary Statistics"}</span>
             </button>
 
@@ -1071,10 +1071,10 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               <button
                 type="button"
                 onClick={onNavigateToDistributions}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-900 hover:bg-black text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-900 hover:bg-black dark:bg-[#0754C7] dark:hover:bg-[#0644A3] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs"
                 title="الانتقال إلى نظام إدارة توزيعات المساعدات والمسح بالباركود"
               >
-                <Package className="w-4 h-4 text-emerald-400" />
+                <Package className="w-4 h-4 text-emerald-400 dark:text-blue-200" />
                 <span>{lang === "ar" ? "التوزيعات" : "Aid Distributions"}</span>
                 {activeDistributionsCount > 0 && (
                   <span className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
@@ -1088,9 +1088,9 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             {onAddNewBeneficiary && (
               <button
                 onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition-all cursor-pointer border border-neutral-200"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-[#142d50] dark:hover:bg-[#1b3a66] text-neutral-800 dark:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-neutral-200 dark:border-[#244577]"
               >
-                <UserPlus className="w-4 h-4 text-neutral-600" />
+                <UserPlus className="w-4 h-4 text-neutral-600 dark:text-blue-300" />
                 <span>{lang === "ar" ? "إضافة مستفيد" : "Add Beneficiary"}</span>
               </button>
             )}
@@ -1125,13 +1125,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               {/* DROPDOWN MENU */}
               {isExportMenuOpen && (
                 <div 
-                  className="absolute left-0 mt-2.5 w-72 bg-white rounded-2xl shadow-2xl border border-neutral-200 p-2 z-50 animate-fade-in text-right dropdown-menu-floating"
+                  className="absolute left-0 mt-2.5 w-72 bg-white dark:bg-[#0e213d] rounded-2xl shadow-2xl border border-neutral-200 dark:border-[#244577] p-2 z-50 animate-fade-in text-right dropdown-menu-floating"
                   dir="rtl"
                 >
-                  <div className="px-3 py-2 border-b border-neutral-100 mb-1">
-                    <p className="text-[11px] font-black text-neutral-800">خيارات تصدير التقرير الرسمي</p>
-                    <p className="text-[10px] text-neutral-500">
-                      سيتم تصدير <strong className="text-emerald-700">{filteredBeneficiaries.length}</strong> سجل مستفيد وفق الفلاتر الحالية
+                  <div className="px-3 py-2 border-b border-neutral-100 dark:border-[#1e3a66] mb-1">
+                    <p className="text-[11px] font-black text-neutral-800 dark:text-white">خيارات تصدير التقرير الرسمي</p>
+                    <p className="text-[10px] text-neutral-500 dark:text-slate-300">
+                      سيتم تصدير <strong className="text-emerald-700 dark:text-emerald-400">{filteredBeneficiaries.length}</strong> سجل مستفيد وفق الفلاتر الحالية
                     </p>
                   </div>
 
@@ -1188,39 +1188,39 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
         </div>
 
         {/* QUICK STATS TILES */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-3 border-t border-neutral-100">
-          <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
-            <span className="text-[10.5px] font-bold text-neutral-500 block">إجمالي المستفيدين</span>
-            <span className="text-lg font-black text-neutral-800 font-mono">{stats.total}</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-3 border-t border-neutral-100 dark:border-[#1e3a66]">
+          <div className="p-3 bg-neutral-50 dark:bg-[#142d50] rounded-xl border border-neutral-100 dark:border-[#244577]">
+            <span className="text-[10.5px] font-bold text-neutral-500 dark:text-slate-300 block">إجمالي المستفيدين</span>
+            <span className="text-lg font-black text-neutral-800 dark:text-white font-mono">{stats.total}</span>
           </div>
-          <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
-            <span className="text-[10.5px] font-bold text-emerald-700 block">معتمدون ونشطون</span>
-            <span className="text-lg font-black text-emerald-800 font-mono">{stats.approved}</span>
+          <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
+            <span className="text-[10.5px] font-bold text-emerald-700 dark:text-emerald-300 block">معتمدون ونشطون</span>
+            <span className="text-lg font-black text-emerald-800 dark:text-emerald-200 font-mono">{stats.approved}</span>
           </div>
-          <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-100">
-            <span className="text-[10.5px] font-bold text-amber-700 block">قيد الدراسة</span>
-            <span className="text-lg font-black text-amber-800 font-mono">{stats.pending}</span>
+          <div className="p-3 bg-amber-50/60 dark:bg-amber-950/40 rounded-xl border border-amber-100 dark:border-amber-800/50">
+            <span className="text-[10.5px] font-bold text-amber-700 dark:text-amber-300 block">قيد الدراسة</span>
+            <span className="text-lg font-black text-amber-800 dark:text-amber-200 font-mono">{stats.pending}</span>
           </div>
-          <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-100">
-            <span className="text-[10.5px] font-bold text-rose-700 block">موقوفون ومرفوضون</span>
-            <span className="text-lg font-black text-rose-800 font-mono">{stats.rejected}</span>
+          <div className="p-3 bg-rose-50/60 dark:bg-rose-950/40 rounded-xl border border-rose-100 dark:border-rose-800/50">
+            <span className="text-[10.5px] font-bold text-rose-700 dark:text-rose-300 block">موقوفون ومرفوضون</span>
+            <span className="text-lg font-black text-rose-800 dark:text-rose-200 font-mono">{stats.rejected}</span>
           </div>
-          <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
-            <span className="text-[10.5px] font-bold text-indigo-700 block">مواطنون سعوديون</span>
-            <span className="text-lg font-black text-indigo-800 font-mono">{stats.saudiCount}</span>
+          <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
+            <span className="text-[10.5px] font-bold text-indigo-700 dark:text-indigo-300 block">مواطنون سعوديون</span>
+            <span className="text-lg font-black text-indigo-800 dark:text-indigo-200 font-mono">{stats.saudiCount}</span>
           </div>
-          <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100">
-            <span className="text-[10.5px] font-bold text-purple-700 block">أيتام مسجلون</span>
-            <span className="text-lg font-black text-purple-800 font-mono">{stats.orphanCount}</span>
+          <div className="p-3 bg-purple-50/60 dark:bg-purple-950/40 rounded-xl border border-purple-100 dark:border-purple-800/50">
+            <span className="text-[10.5px] font-bold text-purple-700 dark:text-purple-300 block">أيتام مسجلون</span>
+            <span className="text-lg font-black text-purple-800 dark:text-purple-200 font-mono">{stats.orphanCount}</span>
           </div>
-          <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 col-span-2 sm:col-span-1">
-            <span className="text-[10.5px] font-bold text-blue-700 block">إجمالي أفراد الأسر</span>
-            <span className="text-lg font-black text-blue-800 font-mono">{stats.totalIndividuals} فرد</span>
+          <div className="p-3 bg-blue-50/60 dark:bg-blue-950/40 rounded-xl border border-blue-100 dark:border-blue-800/50 col-span-2 sm:col-span-1">
+            <span className="text-[10.5px] font-bold text-blue-700 dark:text-blue-300 block">إجمالي أفراد الأسر</span>
+            <span className="text-lg font-black text-blue-800 dark:text-blue-200 font-mono">{stats.totalIndividuals} فرد</span>
           </div>
         </div>
 
         {/* SEARCH & FILTERS TOOLBAR (Requirement 6) */}
-        <div className="pt-3 border-t border-neutral-100 space-y-3">
+        <div className="pt-3 border-t border-neutral-100 dark:border-[#1e3a66] space-y-3">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
             {/* SEARCH INPUT */}
             <div className="relative flex-1">
@@ -1230,12 +1230,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="ابحث بالاسم، الهوية، الجوال، المدينة، الحي، صفة المستفيد، أو اليتم..."
-                className="w-full pr-9 pl-8 py-2.5 bg-neutral-50 hover:bg-neutral-100/70 focus:bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 outline-none focus:border-emerald-500 transition-all placeholder:text-neutral-400"
+                className="w-full pr-9 pl-8 py-2.5 bg-neutral-50 dark:bg-[#142d50] hover:bg-neutral-100/70 dark:hover:bg-[#193861] focus:bg-white dark:focus:bg-[#142d50] border border-neutral-200 dark:border-[#244577] rounded-xl text-xs text-neutral-900 dark:text-white outline-none focus:border-emerald-500 transition-all placeholder:text-neutral-400"
               />
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm("")}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-1 cursor-pointer"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-slate-200 p-1 cursor-pointer"
                   title="مسح البحث"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -1246,13 +1246,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
             {/* FILTER CONTROLS GROUP */}
             <div className="flex items-center gap-2 flex-wrap">
               {/* STATUS FILTER */}
-              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                <Filter className="w-3.5 h-3.5 text-neutral-500" />
-                <span className="text-neutral-500 text-[11px] font-bold">الحالة:</span>
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                <Filter className="w-3.5 h-3.5 text-neutral-500 dark:text-slate-300" />
+                <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">الحالة:</span>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                  className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                 >
                   <option value="all">جميع الحالات ({beneficiaries.length})</option>
                   <option value="approved">معتمد نشط ({stats.approved})</option>
@@ -1262,12 +1262,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               </div>
 
               {/* RESIDENCY STATUS FILTER */}
-              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                <span className="text-neutral-500 text-[11px] font-bold">صفة المستفيد:</span>
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">صفة المستفيد:</span>
                 <select
                   value={residencyFilter}
                   onChange={(e) => setResidencyFilter(e.target.value)}
-                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                  className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                 >
                   <option value="all">كافة الصفات</option>
                   <option value="مواطن سعودي">مواطن سعودي</option>
@@ -1277,12 +1277,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               </div>
 
               {/* ORPHAN STATUS FILTER */}
-              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                <span className="text-neutral-500 text-[11px] font-bold">صفة اليتم:</span>
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">صفة اليتم:</span>
                 <select
                   value={orphanFilter}
                   onChange={(e) => setOrphanFilter(e.target.value)}
-                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                  className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                 >
                   <option value="all">الكل</option>
                   <option value="يتيم">يتيم</option>
@@ -1292,13 +1292,13 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               </div>
 
               {/* REGISTRATION DATE FILTER (Requirement 6) */}
-              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                <Calendar className="w-3.5 h-3.5 text-neutral-500" />
-                <span className="text-neutral-500 text-[11px] font-bold">التسجيل:</span>
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                <Calendar className="w-3.5 h-3.5 text-neutral-500 dark:text-slate-300" />
+                <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">التسجيل:</span>
                 <select
                   value={dateFilter}
                   onChange={(e) => setDateFilter(e.target.value as any)}
-                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                  className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                 >
                   <option value="all">كل التواريخ</option>
                   <option value="today">المسجلون اليوم</option>
@@ -1309,12 +1309,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               </div>
 
               {/* FAMILY SIZE FILTER */}
-              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                <span className="text-neutral-500 text-[11px] font-bold">الأسرة:</span>
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">الأسرة:</span>
                 <select
                   value={familySizeFilter}
                   onChange={(e) => setFamilySizeFilter(e.target.value as any)}
-                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                  className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                 >
                   <option value="all">كل الأحجام</option>
                   <option value="small">صغيرة (1 - 3 أفراد)</option>
@@ -1325,12 +1325,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
               {/* CATEGORY FILTER */}
               {availableCategories.length > 0 && (
-                <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                  <span className="text-neutral-500 text-[11px] font-bold">الفئة:</span>
+                <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                  <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">الفئة:</span>
                   <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                    className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                   >
                     <option value="all">كافة الفئات</option>
                     {availableCategories.map(cat => (
@@ -1341,12 +1341,12 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               )}
 
               {/* ROWS PER PAGE (Requirement 6) */}
-              <div className="inline-flex items-center gap-1.5 bg-neutral-50 px-2.5 py-1.5 rounded-xl border border-neutral-200 text-xs">
-                <span className="text-neutral-500 text-[11px] font-bold">عرض:</span>
+              <div className="inline-flex items-center gap-1.5 bg-neutral-50 dark:bg-[#142d50] px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-[#244577] text-xs">
+                <span className="text-neutral-500 dark:text-slate-300 text-[11px] font-bold">عرض:</span>
                 <select
                   value={rowsPerPage}
                   onChange={(e) => setRowsPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                  className="bg-transparent font-bold text-neutral-800 outline-none cursor-pointer text-xs"
+                  className="bg-transparent font-bold text-neutral-800 dark:text-slate-100 outline-none cursor-pointer text-xs"
                 >
                   <option value={10}>10 صفوف</option>
                   <option value={25}>25 صفاً</option>
@@ -1360,7 +1360,7 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
               {isFiltered && (
                 <button
                   onClick={resetFilters}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-rose-200"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all cursor-pointer border border-rose-200 dark:border-rose-800/60"
                   title="إلغاء جميع الفلاتر المطبقة"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -1372,11 +1372,11 @@ export const BeneficiariesManager: React.FC<BeneficiariesManagerProps> = ({
 
           {/* ACTIVE FILTER STATUS STRIP */}
           {isFiltered && (
-            <div className="text-[11px] bg-emerald-50/60 border border-emerald-200 p-2.5 rounded-xl flex items-center justify-between">
-              <span className="text-emerald-950 font-medium">
+            <div className="text-[11px] bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 p-2.5 rounded-xl flex items-center justify-between">
+              <span className="text-emerald-950 dark:text-emerald-100 font-medium">
                 تم تطبيق الفلاتر: عرض <strong>{filteredBeneficiaries.length}</strong> من أصل <strong>{effectiveBeneficiaries.length}</strong> مستفيد.
               </span>
-              <span className="text-[10.5px] text-emerald-800 font-bold">
+              <span className="text-[10.5px] text-emerald-800 dark:text-emerald-300 font-bold">
                 جاهز للتصدير والعرض
               </span>
             </div>

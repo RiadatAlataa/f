@@ -125,21 +125,21 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
       dir="rtl"
     >
       {/* 1. Header Section */}
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-900/95 shrink-0">
+      <div className="p-4 border-b border-slate-200/80 dark:border-[#1e3a66] bg-gradient-to-l from-[#071C43] via-[#0644A3] to-[#0754C7] text-white shrink-0">
         <div className="flex items-center justify-between gap-2">
           {/* Logo & System Brand */}
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-linear-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-sm shrink-0">
-              <Sparkles className="w-5 h-5 text-emerald-100" />
+            <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-sm border border-white/40 shrink-0 overflow-hidden">
+              <img src="/logo.png" alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0 truncate">
               <div className="flex items-center gap-1.5">
-                <h2 className="text-xs font-bold text-slate-900 dark:text-white truncate font-lyon association-brand-text">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h2>
-                <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0">
+                <h2 className="text-xs font-bold text-white truncate font-lyon association-brand-text">جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</h2>
+                <span className="bg-white/15 text-white border border-white/25 text-[9px] font-mono font-extrabold px-1.5 py-0.5 rounded shrink-0">
                   1000888600
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">لوحة الإدارة والتحكم الشاملة</p>
+              <p className="text-[10px] text-blue-100/90 truncate">معًا… نُحدث أثرًا • بوابة التحكم الشاملة</p>
             </div>
           </div>
 
@@ -148,11 +148,11 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
             <button
               id="sidebar-close-btn"
               onClick={onClose}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-700 hover:text-rose-600 dark:text-slate-200 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-700 transition-all font-bold text-xs cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-rose-600 text-white border border-white/25 transition-all font-bold text-xs cursor-pointer shadow-xs"
               title="إغلاق القائمة (Esc)"
               aria-label="إغلاق الشريط الجانبي"
             >
-              <X className="w-4 h-4 text-rose-500" />
+              <X className="w-4 h-4" />
               <span>إغلاق</span>
             </button>
           </div>
@@ -166,13 +166,13 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ابحث في الأقسام والقوائم..."
-            className="w-full bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pr-8 pl-8 text-xs font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-xs"
+            className="w-full bg-white/95 dark:bg-[#081426]/90 border border-white/30 dark:border-[#1e3a66] rounded-xl py-2 pr-8 pl-8 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-white/50 transition-all shadow-xs"
           />
           <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
               title="مسح البحث"
             >
               <X className="w-3 h-3" />
@@ -189,7 +189,7 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
             <p className="text-xs font-bold">لم يتم العثور على نتائج لـ "{searchQuery}"</p>
             <button
               onClick={() => setSearchQuery("")}
-              className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+              className="text-[11px] text-[#0754C7] dark:text-blue-400 font-bold hover:underline"
             >
               عرض جميع الأقسام
             </button>
@@ -202,10 +202,10 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
                 {/* Category Header */}
                 <button
                   onClick={() => toggleCategory(group.category)}
-                  className="w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer group"
+                  className="w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider hover:text-[#071C43] dark:hover:text-white transition-colors cursor-pointer group"
                 >
                   <span className="flex items-center gap-1.5 truncate">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0"></span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0754C7] dark:bg-blue-400 shrink-0"></span>
                     <span className="truncate">{group.category}</span>
                   </span>
                   <ChevronDown className={`w-3 h-3 transition-transform duration-200 shrink-0 ${isCategoryCollapsed ? '-rotate-90 text-slate-400' : 'rotate-0 text-slate-400'}`} />
@@ -224,8 +224,8 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
                           onClick={() => handleItemClick(item.id)}
                           className={`w-full group flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
                             isActive
-                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-black"
-                              : "text-slate-700 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white"
+                              ? "bg-[#0754C7] text-white shadow-md shadow-[#0754C7]/25 font-black"
+                              : "text-slate-700 dark:text-slate-300 hover:bg-[#eaf3ff] dark:hover:bg-[#142d50] hover:text-[#071C43] dark:hover:text-white"
                           }`}
                         >
                           {/* Active Indicator Bar on right in RTL */}
@@ -236,7 +236,7 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
                           <div className="flex items-center gap-2.5 min-w-0 pr-1">
                             <IconComponent 
                               className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-110 ${
-                                isActive ? "text-white" : "text-slate-500 dark:text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400"
+                                isActive ? "text-white" : "text-slate-500 dark:text-slate-400 group-hover:text-[#0754C7] dark:group-hover:text-blue-400"
                               }`} 
                             />
                             <span className="truncate">{item.label}</span>
@@ -245,11 +245,11 @@ export const ModernAppSidebar: React.FC<ModernAppSidebarProps> = ({
                           {/* Badge / Counter */}
                           {item.badge !== undefined && (
                             <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold shrink-0 transition-colors ${
+                              className={`text-[10px] px-2 py-0.5 rounded-md font-mono font-bold shrink-0 transition-colors ${
                                 isActive
                                   ? "bg-white/20 text-white"
                                   : typeof item.badge === "number" && item.badge > 0
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300"
+                                  ? "bg-[#eaf3ff] text-[#0754C7] dark:bg-blue-950/80 dark:text-blue-300"
                                   : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                               }`}
                             >

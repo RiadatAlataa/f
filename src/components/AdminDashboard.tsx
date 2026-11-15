@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, BarChart3, Database, FileSpreadsheet, FileDown, 
   Trash2, Plus, Edit3, Shield, Copy, Archive, Check, AlertTriangle, 
   Moon, Sun, Search, Printer, RefreshCw, Smartphone, ShieldAlert, Lock, Trophy, Send, Eye, Settings, Activity, FileText, Globe, X,
-  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2
+  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2, MoreHorizontal
 } from "lucide-react";
 import { ExecutiveKpiDashboard } from "./ExecutiveKpiDashboard";
 import { 
@@ -395,12 +395,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const prevInitialSubTabRef = useRef(initialSubTab);
   useEffect(() => {
-    if (initialSubTab && initialSubTab !== prevInitialSubTabRef.current && initialSubTab !== activeSubTab) {
+    if (initialSubTab && initialSubTab !== prevInitialSubTabRef.current) {
       prevInitialSubTabRef.current = initialSubTab;
-      setActiveSubTab(initialSubTab as any);
-      try {
-        localStorage.setItem('reyadat_admin_subtab', initialSubTab);
-      } catch {}
+      if (initialSubTab !== activeSubTab) {
+        setActiveSubTab(initialSubTab as any);
+        try {
+          localStorage.setItem('reyadat_admin_subtab', initialSubTab);
+        } catch {}
+      }
     }
   }, [initialSubTab, activeSubTab]);
 
@@ -414,9 +416,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, [onSubTabChange]);
   
-  // Modern Off-Canvas & Dockable Sidebar States
+  // Modern Off-Canvas & Dockable Sidebar + Executive Dropdown Nav States
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showKnightsModal, setShowKnightsModal] = useState(false);
+  const [openNavDropdownId, setOpenNavDropdownId] = useState<string | null>(null);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const navBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideOrEsc = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key === 'Escape') {
+          setOpenNavDropdownId(null);
+          setIsMoreMenuOpen(false);
+        }
+        return;
+      }
+      if (navBarRef.current && !navBarRef.current.contains(e.target as Node)) {
+        setOpenNavDropdownId(null);
+        setIsMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideOrEsc);
+    window.addEventListener('keydown', handleOutsideOrEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideOrEsc);
+      window.removeEventListener('keydown', handleOutsideOrEsc);
+    };
+  }, []);
 
   // Defensive fallbacks for all datasets to prevent any undefined filter/map runtime errors
   const safeOpportunityRequests = useMemo(() => Array.isArray(opportunityRequests) ? opportunityRequests : [], [opportunityRequests]);
@@ -440,8 +467,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const safeDepartmentDirectives = useMemo(() => Array.isArray(data?.departmentDirectives) ? data.departmentDirectives : [], [data?.departmentDirectives]);
   const safeNotifications = useMemo(() => Array.isArray(data?.notifications) ? data.notifications : [], [data?.notifications]);
 
-  // Define the Core Administrative Categories (Consolidated, Distinct, Well-Categorized)
-  const primaryCategories = useMemo(() => [
+  // Define the Core Administrative Categories (All Modules Preserved)
+  const allPrimaryCategories = useMemo(() => [
     {
       id: 'kpis' as const,
       label: "لوحة المؤشرات",
@@ -517,17 +544,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ]
     },
     {
-      id: 'support' as const,
-      label: "الدعم والتذاكر",
-      icon: Headphones,
-      description: "مركز خدمة المستفيدين والتذاكر الفنية",
-      badge: 'مباشر',
-      items: [
-        { id: 'support', label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: 'مباشر' },
-        { id: 'team_support', label: 'الدعم الفني للفرق والمتطوعين', icon: HelpCircle, badge: 'متكامل' }
-      ]
-    },
-    {
       id: 'finance' as const,
       label: "المالية والمشتريات",
       icon: Wallet,
@@ -538,6 +554,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'store_finance', label: 'المتجر والمالية للمشاريع', icon: ShoppingBag, badge: 'ربط مباشر' },
         { id: 'inventory', label: 'إدارة المخزون والجرد', icon: Boxes, badge: 'مستودع' },
         { id: 'custody', label: 'العهدة الإلكترونية والمستودع', icon: Shield, badge: 'جديد' }
+      ]
+    },
+    {
+      id: 'support' as const,
+      label: "الدعم والتذاكر",
+      icon: Headphones,
+      description: "مركز خدمة المستفيدين والتذاكر الفنية",
+      badge: 'مباشر',
+      items: [
+        { id: 'support', label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: 'مباشر' },
+        { id: 'team_support', label: 'الدعم الفني للفرق والمتطوعين', icon: HelpCircle, badge: 'متكامل' }
       ]
     },
     {
@@ -586,6 +613,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     isMaintenanceActive
   ]);
 
+  // Role & Permission-based Filtering (Preserves 100% for top admins, enforces allowedPages when scoped)
+  const primaryCategories = useMemo(() => {
+    const isFullExec =
+      !authenticatedUser ||
+      authenticatedUser.role === 'admin' ||
+      authenticatedUser.role === 'operations_manager' ||
+      authenticatedUser.permissions?.includes?.('super_admin') ||
+      authenticatedUser.permissions?.includes?.('all_permissions');
+    const allowedPages: string[] = Array.isArray(authenticatedUser?.allowedPages) ? authenticatedUser.allowedPages : [];
+    if (isFullExec || allowedPages.length === 0) return allPrimaryCategories;
+
+    return allPrimaryCategories
+      .map(cat => ({
+        ...cat,
+        items: cat.items.filter(item => item.id === 'stats' || allowedPages.includes(item.id))
+      }))
+      .filter(cat => cat.items.length > 0);
+  }, [allPrimaryCategories, authenticatedUser]);
+
+  // Partition into Primary Horizontal Nav Bar (first 6) & Organized «المزيد» Menu (remaining)
+  const visiblePrimaryNavCategories = useMemo(() => primaryCategories.slice(0, 6), [primaryCategories]);
+  const visibleMoreNavCategories = useMemo(() => primaryCategories.slice(6), [primaryCategories]);
+
   // Derive navGroups for ModernAppSidebar to maintain 100% synchronization
   const navGroups: NavGroup[] = useMemo(() => {
     return primaryCategories.map(cat => ({
@@ -621,7 +671,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const activeCategory = useMemo(() => {
     return primaryCategories.find(cat => cat.items.some(i => i.id === activeSubTab)) || primaryCategories[0];
   }, [primaryCategories, activeSubTab]);
-  const activeCategoryId = activeCategory.id;
+  const activeCategoryId = activeCategory?.id || 'kpis';
 
   // Opportunity Request Review Modal state
   const [reviewingOpp, setReviewingOpp] = useState<OpportunityRequest | null>(null);
@@ -1140,30 +1190,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Main Content Area */}
       <div className="w-full space-y-6">
-        {/* Modern Categorized Command Center & Navigation */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative z-10 overflow-hidden space-y-0">
+        {/* Modern Categorized Command Center & Horizontal Navigation */}
+        <div ref={navBarRef} className="bg-white dark:bg-[#0e213d] rounded-2xl border border-slate-200 dark:border-[#1e3a66] shadow-sm relative z-40 space-y-0">
           
           {/* Top Administrative Context & Fast Actions */}
-          <div className="p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/40 rounded-t-2xl">
+          <div className="p-3.5 sm:p-4 border-b border-slate-100 dark:border-[#1e3a66] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#081426]/60 rounded-t-2xl">
             {/* System Hierarchy Breadcrumbs */}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs font-black border border-emerald-200/60 dark:border-emerald-800/60">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eaf3ff] dark:bg-blue-950/60 text-[#071C43] dark:text-blue-200 text-xs font-black border border-blue-200/70 dark:border-blue-800/60">
+                <span className="w-2 h-2 rounded-full bg-[#0754C7] dark:bg-blue-400 animate-pulse"></span>
+                <span>إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</span>
               </span>
-              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="text-slate-300 dark:text-slate-600">/</span>
               <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300">
-                {activeCategory.label}
+                {activeCategory?.label}
               </span>
-              <span className="text-slate-300 dark:text-slate-700">/</span>
-              <span className="text-xs font-black text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-slate-700">
+              <span className="text-slate-300 dark:text-slate-600">/</span>
+              <span className="text-xs font-black text-[#071C43] dark:text-white bg-white dark:bg-[#142d50] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#244577]">
                 {getActiveTabTitle(activeSubTab)}
               </span>
             </div>
 
             {/* Top Quick Actions (Organized, Aligned) */}
             <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end flex-wrap">
-              {/* 🔧 وضع الصيانة المباشر ومؤشر الحالة الإدارية */}
+              {/* Maintenance Mode Control & Live Indicator */}
               <button
                 type="button"
                 id="btn-admin-maintenance-mode"
@@ -1172,22 +1222,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setMaintenanceFeedback(null);
                   setIsMaintenanceModalOpen(true);
                 }}
-                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95 shrink-0 ${
+                className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95 shrink-0 ${
                   isMaintenanceActive
                     ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500 shadow-rose-500/25 ring-2 ring-rose-400/40'
-                    : 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700/80'
+                    : 'bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-blue-100 dark:hover:bg-[#19355e] text-[#071C43] dark:text-blue-200 border-blue-200 dark:border-[#244577]'
                 }`}
                 title="التحكم في وضع صيانة الموقع العام وإغلاق/فتح البوابة للزوار"
               >
-                <Wrench className={`w-3.5 h-3.5 ${isMaintenanceActive ? 'text-white animate-bounce' : 'text-emerald-600 dark:text-emerald-400'}`} />
-                <span>🔧 وضع الصيانة</span>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                <Wrench className={`w-3.5 h-3.5 ${isMaintenanceActive ? 'text-white animate-bounce' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                <span>وضع الصيانة</span>
+                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md ${
                   isMaintenanceActive
                     ? 'bg-rose-950 text-rose-200 border border-rose-400/50'
-                    : 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60'
+                    : 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70'
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${isMaintenanceActive ? 'bg-rose-400 animate-ping' : 'bg-emerald-500'}`} />
-                  <span>{isMaintenanceActive ? '🔴 الموقع تحت الصيانة' : '🟢 الموقع يعمل'}</span>
+                  <span>{isMaintenanceActive ? 'تحت الصيانة' : 'يعمل'}</span>
                 </span>
               </button>
 
@@ -1197,62 +1247,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   type="button"
                   id="btn-admin-back-to-home"
                   onClick={onBackToHome}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700/80 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95 shrink-0"
+                  className="px-3 py-2 rounded-xl bg-white dark:bg-[#142d50] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e] text-[#071C43] dark:text-slate-100 border border-slate-200 dark:border-[#244577] font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0"
                   title="العودة إلى الصفحة التعريفية الرئيسية للموقع مع بقاء تسجيل الدخول نشطاً"
                 >
-                  <Home className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>العودة إلى الصفحة الرئيسية</span>
+                  <Home className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                  <span className="hidden sm:inline">الصفحة الرئيسية</span>
                 </button>
               )}
 
-              {/* Primary ☰ Comprehensive Sidebar Trigger */}
-              <button
-                id="btn-toggle-sidebar"
-                onClick={() => setIsSidebarOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95"
-                title="فتح القائمة الجانبية الشاملة لجميع أقسام النظام (☰)"
-              >
-                <Menu className="w-4 h-4" />
-                <span>القائمة الجانبية (☰)</span>
-                {totalPendingCount > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                    {totalPendingCount}
-                  </span>
-                )}
-              </button>
-
               {/* Fast Global Search Shortcut */}
               <button
+                type="button"
                 onClick={() => handleSelectTab('globalsearch')}
                 className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
                   activeSubTab === 'globalsearch'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-black'
-                    : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                    ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-xs font-black'
+                    : 'bg-white dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:bg-slate-50 dark:hover:bg-[#19355e]'
                 }`}
                 title="البحث الشامل في المتطوعين والفرق والمبادرات"
               >
-                <Search className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span className="hidden md:inline">البحث الشامل</span>
+                <Search className={`w-3.5 h-3.5 ${activeSubTab === 'globalsearch' ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                <span className="hidden lg:inline">البحث الشامل</span>
               </button>
 
               {/* Fast Support & Tickets Shortcut */}
               <button
+                type="button"
                 onClick={() => handleSelectTab('support')}
                 className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
                   activeSubTab === 'support'
-                    ? 'bg-red-600 text-white border-red-600 shadow-xs font-black'
-                    : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60 hover:bg-red-100'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-xs font-black'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/50'
                 }`}
                 title="إدارة الدعم الفني والتذاكر"
               >
-                <Headphones className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                <Headphones className={`w-3.5 h-3.5 ${activeSubTab === 'support' ? 'text-white' : 'text-rose-600 dark:text-rose-400'}`} />
                 <span>الدعم والتذاكر</span>
+              </button>
+
+              {/* Primary ☰ Comprehensive Sidebar Trigger */}
+              <button
+                id="btn-toggle-sidebar"
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-[#071C43] hover:bg-[#0754C7] text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
+                title="فتح القائمة الجانبية الشاملة لجميع أقسام النظام (☰)"
+              >
+                <Menu className="w-4 h-4" />
+                <span>جميع الأقسام</span>
+                {totalPendingCount > 0 && (
+                  <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                    {totalPendingCount}
+                  </span>
+                )}
               </button>
             </div>
           </div>
 
           {/* Mobile Responsive Category Bar (< md) */}
-          <div className="md:hidden p-2.5 bg-slate-50/90 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-800 overflow-x-auto scrollbar-none">
+          <div className="md:hidden p-2.5 bg-slate-50/90 dark:bg-[#081426]/80 border-b border-slate-100 dark:border-[#1e3a66] overflow-x-auto scrollbar-none">
             <div className="flex items-center gap-1.5 min-w-max pb-0.5">
               {primaryCategories.map(cat => {
                 const CatIcon = cat.icon;
@@ -1268,14 +1321,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all shrink-0 cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-black'
-                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-xs font-black'
+                        : 'bg-white dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577]'
                     }`}
                   >
-                    <CatIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                    <CatIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
                     <span>{cat.label}</span>
                     {cat.badge !== undefined && typeof cat.badge === 'number' && cat.badge > 0 && (
-                      <span className={`text-[9px] px-1 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-red-500 text-white font-bold'}`}>
+                      <span className={`text-[9px] px-1 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-rose-500 text-white font-bold'}`}>
                         {cat.badge}
                       </span>
                     )}
@@ -1285,53 +1338,209 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Primary Navigation Level: The 9 Clear Categories (Desktop & Tablet) */}
-          <div className="hidden md:block p-3 bg-slate-50/70 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800/80 relative z-10 overflow-hidden">
-            <div className="grid grid-cols-3 sm:grid-cols-5 xl:grid-cols-9 gap-1.5 sm:gap-2">
-              {primaryCategories.map((cat) => {
+          {/* Desktop Horizontal Navigation Bar with Icons, Submenu Dropdowns & Organized «المزيد» */}
+          <nav
+            aria-label="شريط التنقل الإداري الأفقي"
+            className="hidden md:flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/60 dark:bg-[#0b1b33] border-b border-slate-100 dark:border-[#1e3a66] relative z-50"
+          >
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {visiblePrimaryNavCategories.map((cat) => {
                 const CatIcon = cat.icon;
                 const isSelected = activeCategoryId === cat.id;
+                const isOpen = openNavDropdownId === cat.id;
+                const hasSubItems = cat.items.length > 1;
 
                 return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      if (!cat.items.some(i => i.id === activeSubTab)) {
-                        handleSelectTab(cat.items[0].id);
-                      }
-                    }}
-                    className={`h-11 px-2 rounded-xl text-xs font-bold flex items-center justify-between gap-1.5 border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm font-black scale-[1.01]'
-                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700/80 hover:border-emerald-500/60 hover:bg-emerald-50/50 dark:hover:bg-slate-750'
-                    }`}
-                    title={cat.description}
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0 truncate">
-                      <CatIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`} />
-                      <span className="truncate">{cat.label}</span>
-                    </div>
-
-                    {cat.badge !== undefined && (
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-bold shrink-0 ${
+                  <div key={cat.id} className="relative category-dropdown-group">
+                    <button
+                      type="button"
+                      id={`nav-cat-${cat.id}`}
+                      aria-expanded={hasSubItems ? isOpen : undefined}
+                      onClick={() => {
+                        setIsMoreMenuOpen(false);
+                        if (!cat.items.some(i => i.id === activeSubTab)) {
+                          handleSelectTab(cat.items[0].id);
+                          setOpenNavDropdownId(hasSubItems ? cat.id : null);
+                        } else if (hasSubItems) {
+                          setOpenNavDropdownId(prev => (prev === cat.id ? null : cat.id));
+                        }
+                      }}
+                      className={`h-10 px-3 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
                         isSelected
-                          ? 'bg-white/20 text-white'
-                          : typeof cat.badge === 'number' && cat.badge > 0
-                          ? 'bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-300'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                      }`}>
-                        {cat.badge}
-                      </span>
+                          ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-sm font-black'
+                          : 'bg-white dark:bg-[#142d50] text-[#071C43] dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:border-[#0754C7] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                      }`}
+                      title={cat.description}
+                    >
+                      <CatIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                      <span>{cat.label}</span>
+                      {cat.badge !== undefined && typeof cat.badge === 'number' && cat.badge > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono font-bold ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : 'bg-[#eaf3ff] text-[#0754C7] dark:bg-blue-950/80 dark:text-blue-300'
+                        }`}>
+                          {cat.badge}
+                        </span>
+                      )}
+                      {hasSubItems && (
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''} ${isSelected ? 'text-white/90' : 'text-slate-400'}`} />
+                      )}
+                    </button>
+
+                    {/* Elevated Category Submenu Dropdown (Never Clipped) */}
+                    {hasSubItems && isOpen && (
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full mt-1.5 w-72 rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-2 z-[140] space-y-1 dropdown-menu-floating animate-fadeIn"
+                      >
+                        <div className="px-2.5 py-1.5 border-b border-slate-100 dark:border-[#1e3a66] flex items-center justify-between text-[11px] font-black text-[#071C43] dark:text-blue-200">
+                          <span>أقسام {cat.label}</span>
+                          <span className="text-[10px] font-mono text-slate-400">{cat.items.length}</span>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto space-y-1 pt-1">
+                          {cat.items.map((subItem: any) => {
+                            const SubIcon = subItem.icon;
+                            const isSubActive = activeSubTab === subItem.id;
+                            return (
+                              <button
+                                key={subItem.id}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  handleSelectTab(subItem.id);
+                                  setOpenNavDropdownId(null);
+                                }}
+                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-right ${
+                                  isSubActive
+                                    ? 'bg-[#0754C7] text-white font-black'
+                                    : 'text-slate-700 dark:text-slate-200 hover:bg-[#eaf3ff] dark:hover:bg-[#142d50] hover:text-[#071C43] dark:hover:text-white'
+                                }`}
+                              >
+                                <span className="flex items-center gap-2 min-w-0 truncate">
+                                  <SubIcon className={`w-3.5 h-3.5 shrink-0 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                                  <span className="truncate">{subItem.label}</span>
+                                </span>
+                                {subItem.badge !== undefined && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
+                                    isSubActive
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-slate-100 dark:bg-[#19355e] text-slate-600 dark:text-blue-200'
+                                  }`}>
+                                    {subItem.badge}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
-          </div>
 
-          {/* Secondary Sub-Pages Level (Filtered cleanly by the chosen Category) */}
-          <div className="p-3 bg-white dark:bg-slate-900 border-t md:border-t-0 border-slate-100 dark:border-slate-800/80 rounded-b-2xl overflow-x-auto">
+            {/* Organized «المزيد» (More) Dropdown */}
+            <div className="relative shrink-0">
+              {(() => {
+                const isMoreActive = visibleMoreNavCategories.some(c => c.id === activeCategoryId);
+                return (
+                  <>
+                    <button
+                      type="button"
+                      id="nav-more-dropdown-btn"
+                      aria-expanded={isMoreMenuOpen}
+                      onClick={() => {
+                        setOpenNavDropdownId(null);
+                        setIsMoreMenuOpen(prev => !prev);
+                      }}
+                      className={`h-10 px-3.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
+                        isMoreActive || isMoreMenuOpen
+                          ? 'bg-[#071C43] text-white border-[#071C43] shadow-sm'
+                          : 'bg-white dark:bg-[#142d50] text-[#071C43] dark:text-white border-slate-200 dark:border-[#244577] hover:border-[#0754C7] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                      }`}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                      <span>المزيد</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isMoreMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isMoreMenuOpen && (
+                      <div
+                        role="menu"
+                        id="nav-more-dropdown-panel"
+                        className="absolute left-0 top-full mt-1.5 w-[360px] lg:w-[440px] rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-3 z-[150] space-y-3 dropdown-menu-floating animate-fadeIn max-h-[75vh] overflow-y-auto"
+                      >
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-[#1e3a66]">
+                          <span className="text-xs font-black text-[#071C43] dark:text-white">المزيد من الأقسام والأدوات</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsMoreMenuOpen(false);
+                              setIsSidebarOpen(true);
+                            }}
+                            className="text-[11px] font-bold text-[#0754C7] dark:text-blue-400 hover:underline cursor-pointer"
+                          >
+                            عرض القائمة الشاملة ☰
+                          </button>
+                        </div>
+
+                        {visibleMoreNavCategories.map(cat => {
+                          const CatIcon = cat.icon;
+                          return (
+                            <div key={cat.id} className="space-y-1.5">
+                              <div className="flex items-center gap-1.5 px-1 text-[11px] font-black text-slate-500 dark:text-blue-300">
+                                <CatIcon className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                                <span>{cat.label}</span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                {cat.items.map((subItem: any) => {
+                                  const SubIcon = subItem.icon;
+                                  const isSubActive = activeSubTab === subItem.id;
+                                  return (
+                                    <button
+                                      key={subItem.id}
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        handleSelectTab(subItem.id);
+                                        setIsMoreMenuOpen(false);
+                                      }}
+                                      className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-right ${
+                                        isSubActive
+                                          ? 'bg-[#0754C7] text-white border-[#0754C7] font-black'
+                                          : 'bg-slate-50 dark:bg-[#142d50]/70 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-[#1e3a66] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                                      }`}
+                                    >
+                                      <span className="flex items-center gap-1.5 min-w-0 truncate">
+                                        <SubIcon className={`w-3.5 h-3.5 shrink-0 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                                        <span className="truncate">{subItem.label}</span>
+                                      </span>
+                                      {subItem.badge !== undefined && (
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
+                                          isSubActive ? 'bg-white/20 text-white' : 'bg-white dark:bg-[#081426] text-slate-600 dark:text-blue-200'
+                                        }`}>
+                                          {subItem.badge}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </nav>
+
+          {/* Secondary Sub-Pages Level (Quick sibling page switchers inside the active category) */}
+          <div className="p-3 bg-white dark:bg-[#0e213d] border-t md:border-t-0 border-slate-100 dark:border-[#1e3a66] rounded-b-2xl overflow-x-auto">
             {(() => {
               const currentCat = primaryCategories.find(c => c.id === activeCategoryId) || activeCategory || primaryCategories[0];
               if (!currentCat) return null;
@@ -1339,8 +1548,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               return (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-                      <CurrentCatIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      <CurrentCatIcon className="w-4 h-4 text-[#0754C7] dark:text-blue-400" />
                       <span>صفحات قسم {currentCat.label}:</span>
                     </span>
                   </div>
@@ -1353,22 +1562,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button
                           key={subItem.id}
                           id={`subtab-${subItem.id}`}
+                          type="button"
                           onClick={() => handleSelectTab(subItem.id)}
                           className={`h-9 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap shadow-2xs ${
                             isSubActive
-                              ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs font-black scale-[1.01]'
-                              : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-emerald-700 dark:hover:text-emerald-300'
+                              ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-xs font-black'
+                              : 'bg-slate-50 dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e] hover:text-[#071C43] dark:hover:text-white'
                           }`}
                         >
-                          <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
+                          <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
                           <span>{subItem.label}</span>
                           {subItem.badge !== undefined && (
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono font-bold ${
                               isSubActive
                                 ? 'bg-white/20 text-white'
                                 : typeof subItem.badge === 'number' && subItem.badge > 0
-                                ? 'bg-red-500 text-white'
-                                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                ? 'bg-rose-500 text-white'
+                                : 'bg-slate-200 dark:bg-[#081426] text-slate-700 dark:text-slate-300'
                             }`}>
                               {subItem.badge}
                             </span>
@@ -1389,7 +1599,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="w-full bg-amber-500/15 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl p-3 sm:p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs animate-fadeIn">
             <div className="flex items-center gap-2.5 text-xs font-black text-amber-900 dark:text-amber-200">
               <Wrench className="w-4 h-4 text-amber-600 animate-bounce shrink-0" />
-              <span>⚠️ تنبيه إداري نشط: وضع الصيانة مفعل حالياً على الموقع العام — الموقع مغلق أمام الزوار والمتطوعين والمستفيدين</span>
+              <span>تنبيه إداري نشط: وضع الصيانة مفعل حالياً على الموقع العام — الموقع مغلق أمام الزوار والمتطوعين والمستفيدين</span>
             </div>
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
               {onBackToHome && (
@@ -1398,7 +1608,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onClick={onBackToHome}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 transition-all cursor-pointer shadow-2xs"
                 >
-                  👁️ معاينة صفحة الصيانة
+                  معاينة صفحة الصيانة
                 </button>
               )}
               <button
@@ -1408,7 +1618,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setMaintenanceFeedback(null);
                   setIsMaintenanceModalOpen(true);
                 }}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer shadow-xs"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#0754C7] hover:bg-[#0644A3] text-white transition-all cursor-pointer shadow-xs"
               >
                 إلغاء وضع الصيانة وإتاحة الموقع للجميع
               </button>
@@ -1416,13 +1626,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* Main Dynamic Panel Container */}
-        <div 
-          key={activeSubTab}
-          className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-right min-h-[420px] relative transition-opacity duration-150"
+        {/* Main Dynamic Panel Container (Stable key to avoid remount flash/flicker) */}
+        <div
+          className="bg-white dark:bg-[#0e213d] p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-[#1e3a66] shadow-sm text-right min-h-[420px] relative z-10"
         >
-          <DashboardErrorBoundary 
-            key={`boundary-${activeSubTab}`}
+          <DashboardErrorBoundary
             pageName={`قسم: ${getActiveTabTitle(activeSubTab)}`}
             onReset={() => setActiveSubTab('stats')}
           >
@@ -1608,50 +1816,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB: OPPORTUNITY REQUESTS REVIEW BY ADMIN */}
           {activeSubTab === 'opp_requests' && (
             <div className="space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-emerald-50/40 p-4 rounded-2xl border border-emerald-100">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#eaf3ff]/70 dark:bg-[#142d50] p-4 rounded-2xl border border-blue-100 dark:border-[#244577]">
                 <div>
-                  <h3 className="text-sm font-black text-emerald-950">مراجعة الفرص التطوعية</h3>
-                  <p className="text-xs text-emerald-800/80 mt-0.5">عرض ومراجعة الفرص التطوعية المقدمة من قادة الفرق، تعيين معرف الفرصة الرسمي، واعتمادها أو إعادتها للتصحيح أو رفضها.</p>
+                  <h3 className="text-sm font-black text-[#071C43] dark:text-white">مراجعة الفرص التطوعية</h3>
+                  <p className="text-xs text-slate-600 dark:text-blue-200 mt-0.5">عرض ومراجعة الفرص التطوعية المقدمة من قادة الفرق، تعيين معرف الفرصة الرسمي، واعتمادها أو إعادتها للتصحيح أو رفضها.</p>
                 </div>
-                <span className="text-xs font-mono font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-xl self-start md:self-auto">
+                <span className="text-xs font-mono font-bold bg-[#0754C7] text-white px-3 py-1.5 rounded-xl self-start md:self-auto">
                   إجمالي الفرص: {safeOpportunityRequests.length}
                 </span>
               </div>
 
               {/* Counter Stats */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-150 text-center">
-                  <strong className="text-lg font-black text-neutral-800 font-mono block">{safeOpportunityRequests.length}</strong>
-                  <span className="text-[11px] text-neutral-500 font-bold block">إجمالي الفرص</span>
+                <div className="bg-slate-50 dark:bg-[#142d50] p-3 rounded-xl border border-slate-200 dark:border-[#1e3a66] text-center">
+                  <strong className="text-lg font-black text-[#071C43] dark:text-white font-mono block">{safeOpportunityRequests.length}</strong>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-300 font-bold block">إجمالي الفرص</span>
                 </div>
-                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-center">
-                  <strong className="text-lg font-black text-amber-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'pending').length}</strong>
-                  <span className="text-[11px] text-amber-800 font-bold block">قيد المراجعة</span>
+                <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-800/60 text-center">
+                  <strong className="text-lg font-black text-amber-700 dark:text-amber-300 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'pending').length}</strong>
+                  <span className="text-[11px] text-amber-800 dark:text-amber-200 font-bold block">قيد المراجعة</span>
                 </div>
-                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
-                  <strong className="text-lg font-black text-emerald-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'accepted').length}</strong>
-                  <span className="text-[11px] text-emerald-800 font-bold block">مقبولة</span>
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 text-center">
+                  <strong className="text-lg font-black text-emerald-700 dark:text-emerald-300 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'accepted').length}</strong>
+                  <span className="text-[11px] text-emerald-800 dark:text-emerald-200 font-bold block">مقبولة</span>
                 </div>
-                <div className="bg-rose-50 p-3 rounded-xl border border-rose-200 text-center">
-                  <strong className="text-lg font-black text-rose-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'rejected').length}</strong>
-                  <span className="text-[11px] text-rose-800 font-bold block">مرفوضة</span>
+                <div className="bg-rose-50 dark:bg-rose-950/30 p-3 rounded-xl border border-rose-200 dark:border-rose-800/60 text-center">
+                  <strong className="text-lg font-black text-rose-700 dark:text-rose-300 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'rejected').length}</strong>
+                  <span className="text-[11px] text-rose-800 dark:text-rose-200 font-bold block">مرفوضة</span>
                 </div>
-                <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center col-span-2 md:col-span-1">
-                  <strong className="text-lg font-black text-blue-700 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'returned').length}</strong>
-                  <span className="text-[11px] text-blue-800 font-bold block">معادة للتصحيح</span>
+                <div className="bg-blue-50 dark:bg-blue-950/30 p-3 rounded-xl border border-blue-200 dark:border-blue-800/60 text-center col-span-2 md:col-span-1">
+                  <strong className="text-lg font-black text-blue-700 dark:text-blue-300 font-mono block">{safeOpportunityRequests.filter(r => r.status === 'returned').length}</strong>
+                  <span className="text-[11px] text-blue-800 dark:text-blue-200 font-bold block">معادة للتصحيح</span>
                 </div>
               </div>
 
               {/* Status Filter */}
-              <div className="flex border-b border-neutral-100 gap-2 overflow-x-auto pb-2">
+              <div className="flex border-b border-slate-200 dark:border-[#1e3a66] gap-2 overflow-x-auto pb-2">
                 {(['all', 'pending', 'accepted', 'returned', 'rejected'] as const).map(st => (
                   <button
                     key={st}
                     onClick={() => setOppStatusFilter(st)}
                     className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       oppStatusFilter === st 
-                        ? 'bg-emerald-600 text-white shadow-2xs' 
-                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                        ? 'bg-[#0754C7] text-white shadow-2xs' 
+                        : 'bg-slate-100 dark:bg-[#142d50] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#1c3a66]'
                     }`}
                   >
                     {st === 'all' ? `الكل (${safeOpportunityRequests.length})` :
@@ -1664,9 +1872,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Requests Table */}
-              <div className="border border-neutral-150 rounded-xl overflow-hidden overflow-x-auto shadow-2xs">
+              <div className="border border-slate-200 dark:border-[#1e3a66] rounded-xl overflow-hidden overflow-x-auto shadow-2xs">
                 <table className="w-full text-right text-xs">
-                  <thead className="bg-neutral-50 text-neutral-600 border-b border-neutral-150 font-bold">
+                  <thead className="bg-slate-50 dark:bg-[#142d50] text-[#071C43] dark:text-slate-100 border-b border-slate-200 dark:border-[#1e3a66] font-bold">
                     <tr>
                       <th className="p-3">معرف الفرصة</th>
                       <th className="p-3">اسم الفرصة</th>
@@ -1681,47 +1889,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="p-3 text-center">الإجراءات</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-100 font-medium">
+                  <tbody className="divide-y divide-slate-100 dark:divide-[#1e3a66] font-medium">
                     {safeOpportunityRequests
                       .filter(r => oppStatusFilter === 'all' || r.status === oppStatusFilter)
                       .map(r => (
-                        <tr key={r.id} className="hover:bg-neutral-50/50 transition-all">
+                        <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-[#142d50]/60 transition-all">
                           <td className="p-3 font-mono text-[11px]">
                             {r.opportunityCode ? (
-                              <span className="bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded-md border border-emerald-200">
+                              <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
                                 #{r.opportunityCode}
                               </span>
                             ) : (
-                              <span className="bg-neutral-100 text-neutral-400 text-[10px] px-2 py-0.5 rounded-md">
+                              <span className="bg-slate-100 dark:bg-[#142d50] text-slate-500 dark:text-slate-300 text-[10px] px-2 py-0.5 rounded-md">
                                 قيد التعيين
                               </span>
                             )}
                           </td>
-                          <td className="p-3 font-bold text-neutral-800">
+                          <td className="p-3 font-bold text-slate-800 dark:text-white">
                             <div>{r.title}</div>
-                            <span className="text-[10px] font-mono text-neutral-400">طلب: #{r.id}</span>
+                            <span className="text-[10px] font-mono text-slate-400">طلب: #{r.id}</span>
                           </td>
-                          <td className="p-3 text-neutral-700 font-bold">{r.leaderName || "قائد الفريق"}</td>
-                          <td className="p-3 text-neutral-600">{r.teamName || "فريق تطوعي"}</td>
+                          <td className="p-3 text-slate-700 dark:text-slate-200 font-bold">{r.leaderName || "قائد الفريق"}</td>
+                          <td className="p-3 text-slate-600 dark:text-slate-300">{r.teamName || "فريق تطوعي"}</td>
                           <td className="p-3">
-                            <span className="bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded-md text-[10.5px] font-bold inline-block">
+                            <span className="bg-slate-100 dark:bg-[#142d50] text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-[10.5px] font-bold inline-block">
                               {r.opportunityType}
                             </span>
                           </td>
-                          <td className="p-3 text-neutral-600">{r.domain}</td>
-                          <td className="p-3 text-center font-mono font-bold text-emerald-800">{r.neededCount} متطوع</td>
-                          <td className="p-3 text-neutral-500 font-mono text-[11px]">
+                          <td className="p-3 text-slate-600 dark:text-slate-300">{r.domain}</td>
+                          <td className="p-3 text-center font-mono font-bold text-[#0754C7] dark:text-blue-300">{r.neededCount} متطوع</td>
+                          <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
                             {r.createdAt ? new Date(r.createdAt).toLocaleDateString('ar-SA') : "-"}
                           </td>
-                          <td className="p-3 text-neutral-500 font-mono text-[11px]">
+                          <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
                             {r.updatedAt ? new Date(r.updatedAt).toLocaleDateString('ar-SA') : (r.createdAt ? new Date(r.createdAt).toLocaleDateString('ar-SA') : "-")}
                           </td>
                           <td className="p-3">
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold inline-block ${
-                              r.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' :
-                              r.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
-                              r.status === 'returned' ? 'bg-blue-100 text-blue-800' :
-                              r.status === 'draft' ? 'bg-neutral-100 text-neutral-600' : 'bg-amber-100 text-amber-800'
+                              r.status === 'accepted' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300' :
+                              r.status === 'rejected' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300' :
+                              r.status === 'returned' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300' :
+                              r.status === 'draft' ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
                             }`}>
                               {r.status === 'accepted' ? '✓ مقبولة' :
                                r.status === 'rejected' ? '❌ مرفوضة' :
@@ -1742,7 +1950,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 setOppActionType(r.status === 'returned' ? 'return' : r.status === 'rejected' ? 'reject' : 'accept');
                                 setOppModalError(null);
                               }}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+                              className="px-3 py-1.5 rounded-lg bg-[#0754C7] text-white hover:bg-[#0644A3] text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
                             >
                               مراجعة واتخاذ قرار
                             </button>
@@ -1751,7 +1959,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       ))}
                     {safeOpportunityRequests.filter(r => oppStatusFilter === 'all' || r.status === oppStatusFilter).length === 0 && (
                       <tr>
-                        <td colSpan={11} className="p-8 text-center text-neutral-400 text-xs">
+                        <td colSpan={11} className="p-8 text-center text-slate-400 text-xs">
                           لا توجد فرص تطوعية ضمن هذا التصنيف حالياً.
                         </td>
                       </tr>
@@ -1833,15 +2041,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="space-y-8">
               
               {/* SECTION A: BOARD OF DIRECTORS DIRECTIVES TO DEPARTMENTS */}
-              <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-200/80 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-200/60 pb-3">
+              <div className="bg-amber-50/40 dark:bg-[#142d50]/60 p-5 rounded-2xl border border-amber-200/80 dark:border-[#244577] space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-200/60 dark:border-[#1e3a66] pb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                       <Shield className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-black text-amber-950">إرسال وتوجيهات مجلس الإدارة للإدارات التنفيذية</h3>
-                      <p className="text-xs text-amber-800/80 mt-0.5">يمكن لمجلس الإدارة توجيه القرارات والتكليفات الرسمية مباشرة لكل مدير إدارة متابعة الإنجاز لحظياً</p>
+                      <h3 className="text-sm font-black text-amber-950 dark:text-amber-200">إرسال وتوجيهات مجلس الإدارة للإدارات التنفيذية</h3>
+                      <p className="text-xs text-amber-800/80 dark:text-slate-300 mt-0.5">يمكن لمجلس الإدارة توجيه القرارات والتكليفات الرسمية مباشرة لكل مدير إدارة متابعة الإنجاز لحظياً</p>
                     </div>
                   </div>
                   <button
@@ -1865,10 +2073,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Directives List Table */}
-                <div className="overflow-x-auto border border-amber-200/60 rounded-xl bg-white shadow-2xs">
+                <div className="overflow-x-auto border border-amber-200/60 dark:border-[#1e3a66] rounded-xl bg-white dark:bg-[#0e213d] shadow-2xs">
                   <table className="w-full text-right text-xs">
                     <thead>
-                      <tr className="bg-amber-100/50 text-amber-900 border-b border-amber-200/60 font-bold">
+                      <tr className="bg-amber-100/50 dark:bg-[#142d50] text-amber-900 dark:text-amber-200 border-b border-amber-200/60 dark:border-[#1e3a66] font-bold">
                         <th className="p-3">الإدارة المكلفة</th>
                         <th className="p-3">عنوان القرار والتكليف</th>
                         <th className="p-3 text-center">الأهمية</th>
@@ -1878,43 +2086,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <th className="p-3 text-center">الإجراء</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-amber-100 font-medium">
+                    <tbody className="divide-y divide-amber-100 dark:divide-[#1e3a66] font-medium">
                       {(data.departmentDirectives || []).length > 0 ? (
                         (data.departmentDirectives || []).map(dir => {
                           const targetDept = data.departments.find(d => d.id === dir.departmentId);
                           return (
-                            <tr key={dir.id} className="hover:bg-amber-50/30 transition-all">
-                              <td className="p-3 font-bold text-neutral-800">
+                            <tr key={dir.id} className="hover:bg-amber-50/30 dark:hover:bg-[#142d50]/60 transition-all">
+                              <td className="p-3 font-bold text-slate-800 dark:text-white">
                                 <div>
-                                  <span className="block text-emerald-800 font-black">{targetDept ? targetDept.nameAr : "إدارة عامة"}</span>
-                                  <span className="text-[10px] text-neutral-500 font-normal">{targetDept?.directorName}</span>
+                                  <span className="block text-[#0754C7] dark:text-blue-300 font-black">{targetDept ? targetDept.nameAr : "إدارة عامة"}</span>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">{targetDept?.directorName}</span>
                                 </div>
                               </td>
                               <td className="p-3">
-                                <span className="font-bold text-neutral-900 block">{dir.title}</span>
-                                <span className="text-[10.5px] text-neutral-600 line-clamp-1">{dir.description}</span>
+                                <span className="font-bold text-slate-900 dark:text-white block">{dir.title}</span>
+                                <span className="text-[10.5px] text-slate-600 dark:text-slate-300 line-clamp-1">{dir.description}</span>
                               </td>
                               <td className="p-3 text-center">
                                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                  dir.priority === 'urgent' ? 'bg-rose-100 text-rose-800' :
-                                  dir.priority === 'high' ? 'bg-amber-100 text-amber-900' :
-                                  'bg-neutral-100 text-neutral-700'
+                                  dir.priority === 'urgent' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300' :
+                                  dir.priority === 'high' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300' :
+                                  'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                                 }`}>
                                   {dir.priority === 'urgent' ? 'عاجل طارئ' : dir.priority === 'high' ? 'مرتفع' : 'عادي'}
                                 </span>
                               </td>
-                              <td className="p-3 text-center font-mono font-bold text-neutral-700">{dir.dueDate}</td>
+                              <td className="p-3 text-center font-mono font-bold text-slate-700 dark:text-slate-200">{dir.dueDate}</td>
                               <td className="p-3 text-center">
                                 <span className={`text-[10.5px] px-2.5 py-1 rounded-full font-bold inline-block ${
-                                  dir.status === 'completed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                                  dir.status === 'in_progress' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
-                                  'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                                  dir.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' :
+                                  dir.status === 'in_progress' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800' :
+                                  'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse'
                                 }`}>
                                   {dir.status === 'completed' ? 'مكتمل ومستلم' : dir.status === 'in_progress' ? 'قيد التنفيذ والعمل' : 'بانتظار البدء'}
                                 </span>
                               </td>
-                              <td className="p-3 text-xs text-neutral-600 italic">
-                                {dir.completionNotes ? dir.completionNotes : <span className="text-neutral-400 font-normal">لا توجد ملاحظات مرفوعة بعد</span>}
+                              <td className="p-3 text-xs text-slate-600 dark:text-slate-300 italic">
+                                {dir.completionNotes ? dir.completionNotes : <span className="text-slate-400 font-normal">لا توجد ملاحظات مرفوعة بعد</span>}
                               </td>
                               <td className="p-3 text-center">
                                 <button
@@ -1923,7 +2131,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       if(onDeleteDepartmentDirective) onDeleteDepartmentDirective(dir.id);
                                     }
                                   }}
-                                  className="text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition-all text-xs font-bold"
+                                  className="text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1.5 rounded-lg transition-all text-xs font-bold"
                                 >
                                   حذف
                                 </button>
@@ -1933,7 +2141,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         })
                       ) : (
                         <tr>
-                          <td colSpan={7} className="p-6 text-center text-neutral-500 font-bold">
+                          <td colSpan={7} className="p-6 text-center text-slate-500 dark:text-slate-400 font-bold">
                             لا توجد تكليفات نشطة مرسلة من مجلس الإدارة حالياً. اضغط أحدث زر أعلاه لإرسال تكليف جديد.
                           </td>
                         </tr>
@@ -1957,12 +2165,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 )}
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#eaf3ff]/70 dark:bg-[#142d50] p-4 rounded-2xl border border-blue-100 dark:border-[#244577]">
                   <div>
-                    <h3 className="text-md font-black text-emerald-950">
+                    <h3 className="text-md font-black text-[#071C43] dark:text-white">
                       الهيكلة التنفيذية والإدارات المعتمدة ({(data.departments || []).length} إدارة)
                     </h3>
-                    <p className="text-xs text-emerald-800/80 mt-0.5">
+                    <p className="text-xs text-slate-600 dark:text-blue-200 mt-0.5">
                       ربط مباشر بين الإدارات والمدراء والحسابات والصلاحيات والمهام والهيكل الإداري دون عرض أي كلمات مرور.
                     </p>
                   </div>
@@ -1983,7 +2191,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         });
                         setShowDepModal(true);
                       }}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                      className="bg-[#0754C7] hover:bg-[#0644A3] text-white text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
                     >
                       <Plus className="w-4 h-4" />
                       <span>إضافة إدارة جديدة</span>
@@ -2013,31 +2221,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     return (
                       <div
                         key={d.id}
-                        className={`border bg-white p-5 rounded-2xl flex flex-col justify-between transition-all shadow-2xs hover:shadow-md space-y-4 ${
+                        className={`border bg-white dark:bg-[#0e213d] p-5 rounded-2xl flex flex-col justify-between transition-all shadow-2xs hover:shadow-md space-y-4 ${
                           d.isArchived
-                            ? "border-amber-200 bg-amber-50/20 opacity-85"
-                            : "border-neutral-200/80 hover:border-emerald-500"
+                            ? "border-amber-200 dark:border-amber-800 bg-amber-50/20 dark:bg-amber-950/20 opacity-85"
+                            : "border-slate-200 dark:border-[#1e3a66] hover:border-[#0754C7]"
                         }`}
                       >
                         <div className="space-y-3">
-                          <div className="flex justify-between items-start gap-2 border-b border-neutral-100 pb-3">
+                          <div className="flex justify-between items-start gap-2 border-b border-slate-100 dark:border-[#1e3a66] pb-3">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white text-xs font-black font-mono flex items-center justify-center shrink-0 shadow-2xs">
+                              <span className="w-8 h-8 rounded-xl bg-[#0754C7] text-white text-xs font-black font-mono flex items-center justify-center shrink-0 shadow-2xs">
                                 #{index + 1}
                               </span>
                               <div className="min-w-0">
-                                <h4 className="text-sm font-black text-neutral-900 truncate">{d.nameAr}</h4>
-                                <span className="text-[10.5px] bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-md font-mono mt-0.5 inline-block truncate max-w-full">
+                                <h4 className="text-sm font-black text-[#071C43] dark:text-white truncate">{d.nameAr}</h4>
+                                <span className="text-[10.5px] bg-slate-100 dark:bg-[#142d50] text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md font-mono mt-0.5 inline-block truncate max-w-full">
                                   {d.nameEn}
                                 </span>
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full font-bold">
+                              <span className="text-[10px] bg-blue-50 dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 border border-blue-200 dark:border-[#244577] px-2.5 py-1 rounded-full font-bold">
                                 {deptTypeLabel}
                               </span>
                               {d.isArchived && (
-                                <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
+                                <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 px-2 py-0.5 rounded-full font-bold">
                                   مؤرشفة
                                 </span>
                               )}
@@ -2045,64 +2253,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           {/* Director & Authorized Identity Info (ZERO plaintext passwords) */}
-                          <div className="bg-emerald-50/60 p-3.5 rounded-xl border border-emerald-100 space-y-2 text-xs">
+                          <div className="bg-[#eaf3ff]/60 dark:bg-[#142d50] p-3.5 rounded-xl border border-blue-100 dark:border-[#244577] space-y-2 text-xs">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-neutral-600 font-bold">المدير المسؤول:</span>
-                              <span className="text-emerald-950 font-black truncate">{d.directorName || "غير معين"}</span>
+                              <span className="text-slate-600 dark:text-slate-300 font-bold">المدير المسؤول:</span>
+                              <span className="text-[#071C43] dark:text-white font-black truncate">{d.directorName || "غير معين"}</span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-neutral-600 font-bold">المنصب:</span>
-                              <span className="text-neutral-800 font-bold truncate">{d.positionTitle || `مدير ${d.nameAr}`}</span>
+                              <span className="text-slate-600 dark:text-slate-300 font-bold">المنصب:</span>
+                              <span className="text-slate-800 dark:text-slate-200 font-bold truncate">{d.positionTitle || `مدير ${d.nameAr}`}</span>
                             </div>
-                            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-emerald-100/80 text-[11px]">
-                              <span className="text-neutral-600 font-bold">رقم الهوية / اسم المستخدم:</span>
+                            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-blue-100/80 dark:border-[#1e3a66] text-[11px]">
+                              <span className="text-slate-600 dark:text-slate-300 font-bold">رقم الهوية / اسم المستخدم:</span>
                               {canViewIdentity ? (
-                                <span className="font-mono font-bold text-emerald-900">
+                                <span className="font-mono font-bold text-[#0754C7] dark:text-blue-300">
                                   {d.nationalId || "—"} {d.username ? `/ @${d.username}` : ""}
                                 </span>
                               ) : (
-                                <span className="text-neutral-500 font-semibold">يعرض للمخولين فقط</span>
+                                <span className="text-slate-500 dark:text-slate-400 font-semibold">يعرض للمخولين فقط</span>
                               )}
                             </div>
                             <div className="flex items-center justify-between gap-2 text-[11px]">
-                              <span className="text-neutral-600 font-bold">الصلاحيات:</span>
-                              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                              <span className="text-slate-600 dark:text-slate-300 font-bold">الصلاحيات:</span>
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold">
                                 {permsCount > 0 ? `${permsCount} صلاحية مخصصة` : "الصلاحيات الافتراضية للإدارة"}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-2 text-[11px]">
-                              <span className="text-neutral-600 font-bold">الكوادر المسجلة:</span>
-                              <span className="px-2 py-0.5 rounded-full bg-white text-neutral-800 border border-emerald-200 font-bold">
+                              <span className="text-slate-600 dark:text-slate-300 font-bold">الكوادر المسجلة:</span>
+                              <span className="px-2 py-0.5 rounded-full bg-white dark:bg-[#0e213d] text-slate-800 dark:text-slate-200 border border-blue-200 dark:border-[#1e3a66] font-bold">
                                 {deptEmployees.length} موظف
                               </span>
                             </div>
                           </div>
 
                           {d.descriptionAr && (
-                            <p className="text-xs text-neutral-600 leading-relaxed bg-neutral-50 p-2.5 rounded-xl border border-neutral-100">
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-[#142d50]/50 p-2.5 rounded-xl border border-slate-100 dark:border-[#1e3a66]">
                               {d.descriptionAr}
                             </p>
                           )}
 
                           {/* Administrative Tasks & Directives Summary */}
                           <div className="space-y-1.5 pt-1">
-                            <div className="flex items-center justify-between text-[11px] font-black text-neutral-800">
+                            <div className="flex items-center justify-between text-[11px] font-black text-slate-800 dark:text-slate-200">
                               <span className="flex items-center gap-1.5">
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <Check className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
                                 <span>المهام والتكليفات:</span>
                               </span>
-                              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              <span className="text-[10px] font-mono text-[#0754C7] dark:text-blue-300 bg-blue-50 dark:bg-[#142d50] px-2 py-0.5 rounded-md border border-blue-200 dark:border-[#244577]">
                                 {deptAdminTasks.length > 0 ? `${deptAdminTasks.length} مهمة نشطة` : `${(d.tasks || []).length} بند`}
                               </span>
                             </div>
                             {deptAdminTasks.length > 0 ? (
                               <ul className="space-y-1">
                                 {deptAdminTasks.slice(0, 3).map((t, tIdx) => (
-                                  <li key={t.id} className="text-[11px] text-neutral-700 flex items-center justify-between gap-2 bg-neutral-50/70 p-2 rounded-lg border border-neutral-100">
+                                  <li key={t.id} className="text-[11px] text-slate-700 dark:text-slate-200 flex items-center justify-between gap-2 bg-slate-50/70 dark:bg-[#142d50]/60 p-2 rounded-lg border border-slate-100 dark:border-[#1e3a66]">
                                     <span className="truncate font-medium">
                                       {tIdx + 1}. {t.title}
                                     </span>
-                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-white border border-neutral-200 text-neutral-600 shrink-0">
+                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#1e3a66] text-slate-600 dark:text-slate-300 shrink-0">
                                       {t.status === "completed" ? "مكتملة" : t.status === "in_progress" ? "تنفيذ" : "انتظار"}
                                     </span>
                                   </li>
@@ -2111,8 +2319,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ) : d.tasks && d.tasks.length > 0 ? (
                               <ul className="space-y-1">
                                 {d.tasks.slice(0, 3).map((task, tIdx) => (
-                                  <li key={tIdx} className="text-[11px] text-neutral-700 flex items-start gap-2 bg-neutral-50/60 p-2 rounded-lg border border-neutral-100/80">
-                                    <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                  <li key={tIdx} className="text-[11px] text-slate-700 dark:text-slate-200 flex items-start gap-2 bg-slate-50/60 dark:bg-[#142d50]/60 p-2 rounded-lg border border-slate-100/80 dark:border-[#1e3a66]">
+                                    <span className="w-4 h-4 rounded-full bg-blue-100 dark:bg-[#0754C7]/40 text-[#0754C7] dark:text-blue-200 font-mono text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
                                       {tIdx + 1}
                                     </span>
                                     <span className="leading-tight font-medium">{task}</span>
@@ -2120,7 +2328,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-[10.5px] text-neutral-400 italic pr-2">
+                              <p className="text-[10.5px] text-slate-400 italic pr-2">
                                 لا توجد مهام مسجلة حالياً لهذه الإدارة.
                               </p>
                             )}
@@ -2128,7 +2336,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         {/* 6 Governance Action Buttons */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-3 border-t border-neutral-100">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-3 border-t border-slate-100 dark:border-[#1e3a66]">
                           <button
                             id={`btn-edit-dep-${d.id}`}
                             type="button"
@@ -2137,7 +2345,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               setEditingDep(d);
                               setShowDepModal(true);
                             }}
-                            className="text-neutral-700 hover:text-emerald-800 hover:bg-emerald-50 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-neutral-200 whitespace-nowrap"
+                            className="text-slate-700 dark:text-slate-200 hover:text-[#0754C7] dark:hover:text-white hover:bg-blue-50 dark:hover:bg-[#142d50] px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-slate-200 dark:border-[#1e3a66] whitespace-nowrap"
                           >
                             <Edit3 className="w-3.5 h-3.5 shrink-0" />
                             <span>تعديل بيانات الإدارة</span>
@@ -2147,7 +2355,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             id={`btn-director-dep-${d.id}`}
                             type="button"
                             onClick={() => handleOpenDirectorModal(d)}
-                            className="text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-emerald-200 whitespace-nowrap"
+                            className="text-[#0754C7] dark:text-blue-300 bg-blue-50 dark:bg-[#142d50] hover:bg-blue-100 dark:hover:bg-[#1b3a66] px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-blue-200 dark:border-[#244577] whitespace-nowrap"
                           >
                             <UserCog className="w-3.5 h-3.5 shrink-0" />
                             <span>تعديل المدير والحساب</span>
@@ -2157,7 +2365,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             id={`btn-perms-dep-${d.id}`}
                             type="button"
                             onClick={() => setPermsModalDep(d)}
-                            className="text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-indigo-200 whitespace-nowrap"
+                            className="text-indigo-800 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-indigo-200 dark:border-indigo-800 whitespace-nowrap"
                           >
                             <Shield className="w-3.5 h-3.5 shrink-0" />
                             <span>إدارة الصلاحيات</span>
@@ -2167,7 +2375,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             id={`btn-tasks-dep-${d.id}`}
                             type="button"
                             onClick={() => setTasksModalDep(d)}
-                            className="text-teal-800 bg-teal-50 hover:bg-teal-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-teal-200 whitespace-nowrap"
+                            className="text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/50 hover:bg-teal-100 dark:hover:bg-teal-900/60 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-teal-200 dark:border-teal-800 whitespace-nowrap"
                           >
                             <ListTodo className="w-3.5 h-3.5 shrink-0" />
                             <span>إدارة المهام والتكليفات</span>
@@ -2177,7 +2385,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             id={`btn-staff-dep-${d.id}`}
                             type="button"
                             onClick={() => setStaffModalDep(d)}
-                            className="text-sky-800 bg-sky-50 hover:bg-sky-100 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-sky-200 whitespace-nowrap"
+                            className="text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-sky-200 dark:border-sky-800 whitespace-nowrap"
                           >
                             <Users className="w-3.5 h-3.5 shrink-0" />
                             <span>عرض الموظفين</span>
@@ -2187,7 +2395,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             id={`btn-delete-dep-${d.id}`}
                             type="button"
                             onClick={() => setDeleteModalDep(d)}
-                            className="text-rose-700 hover:text-rose-900 hover:bg-rose-50 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-rose-200 whitespace-nowrap"
+                            className="text-rose-700 dark:text-rose-300 hover:text-rose-900 dark:hover:text-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2 py-2 rounded-xl transition-all text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer border border-rose-200 dark:border-rose-800/70 whitespace-nowrap"
                           >
                             <Trash2 className="w-3.5 h-3.5 shrink-0" />
                             <span>حذف الإدارة</span>
