@@ -171,6 +171,30 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "50mb" }));
 
+// Lightweight HttpOnly Cookie Parser (Populates req.cookies for session & trusted device binding)
+app.use((req: any, _res, next) => {
+  const cookies: Record<string, string> = {};
+  const header = req.headers?.cookie;
+  if (typeof header === "string" && header.trim()) {
+    header.split(";").forEach((pair) => {
+      const idx = pair.indexOf("=");
+      if (idx > -1) {
+        const key = pair.slice(0, idx).trim();
+        const val = pair.slice(idx + 1).trim();
+        if (key) {
+          try {
+            cookies[key] = decodeURIComponent(val);
+          } catch {
+            cookies[key] = val;
+          }
+        }
+      }
+    });
+  }
+  req.cookies = cookies;
+  next();
+});
+
 // Write Freeze Barrier Middleware (Protects data consistency during snapshots/migrations)
 app.use((req, res, next) => {
   if (writeCoordinator.getIsWriteFrozen() && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
@@ -178,13 +202,15 @@ app.use((req, res, next) => {
     const isExempt = 
       p.startsWith('/api/admin/freeze') ||
       p.startsWith('/api/db/auth/login') ||
+      p.startsWith('/api/db/auth/pin/login') ||
+      p.startsWith('/api/db/auth/remember-status') ||
       p.startsWith('/api/db/restore') ||
       p.startsWith('/api/admin/restore');
 
     if (!isExempt) {
       return res.status(423).json({
         ok: false,
-        error: "عمليات الكتابة والتعديل مجمدة مؤقتاً لأغراض الصيانة وحماية البيانات وأخذ النسخة الاحتياطية. النظام حالياً في وضع القراءة فقط.",
+        error: "عمليات الكتابة والتعديل مجمدة مؤقتاً لأغراض الصيانة وحماية البيانات وأخذ النسخة الاحتياية. النظام حالياً في وضع القراءة فقط.",
         code: "WRITE_FROZEN_FOR_MAINTENANCE",
         timestamp: new Date().toISOString()
       });
@@ -225,6 +251,14 @@ app.use((req, res, next) => {
     req.path.startsWith('/api/health') ||
     req.path === '/api/ping' ||
     req.path === '/api/db/auth/login' ||
+    req.path === '/api/db/auth/login-remembered' ||
+    req.path === '/api/db/auth/pin/login' ||
+    req.path === '/api/db/auth/remember-status' ||
+    req.path === '/api/db/auth/google' ||
+    req.path.startsWith('/api/db/auth/forgot-password') ||
+    req.path === '/api/db/auth/verify-otp' ||
+    req.path === '/api/db/auth/verify-reset-token' ||
+    req.path === '/api/db/auth/reset-password-with-otp' ||
     req.path === '/api/db/auth/logout' ||
     req.path === '/api/db/auth/change-password' ||
     req.path === '/api/db/auth/self-change-password' ||
@@ -4491,6 +4525,12 @@ export interface ServerSession {
   departmentId?: string;
   nationalId?: string;
   teamId?: string;
+  authMethod?: 'password' | 'google' | 'pin';
+  passwordVerifiedAt?: number;
+  deviceId?: string;
+  trustedDeviceId?: string;
+  deviceLabel?: string;
+  ip?: string;
   createdAt: number;
   lastActive: number;
   expiresAt: number;
@@ -4498,9 +4538,21 @@ export interface ServerSession {
 
 const activeSessions = new Map<string, ServerSession>();
 
-export function createServerSession(user: any, role: string): ServerSession {
+export function createServerSession(
+  user: any,
+  role: string,
+  meta?: {
+    authMethod?: 'password' | 'google' | 'pin';
+    passwordVerifiedAt?: number;
+    deviceId?: string;
+    trustedDeviceId?: string;
+    deviceLabel?: string;
+    ip?: string;
+  }
+): ServerSession {
   const token = `sess_${Date.now()}_${crypto.randomBytes(32).toString("hex")}`;
   const now = Date.now();
+  const authMethod = meta?.authMethod || 'password';
   const session: ServerSession = {
     token,
     userId: user?.id || 'user',
@@ -4510,6 +4562,12 @@ export function createServerSession(user: any, role: string): ServerSession {
     departmentId: user?.departmentId || user?.primaryDepartmentId || '',
     nationalId: user?.nationalId || '',
     teamId: user?.teamId || '',
+    authMethod,
+    passwordVerifiedAt: meta?.passwordVerifiedAt || (authMethod === 'password' || authMethod === 'google' ? now : undefined),
+    deviceId: meta?.deviceId || '',
+    trustedDeviceId: meta?.trustedDeviceId || '',
+    deviceLabel: meta?.deviceLabel || '',
+    ip: meta?.ip || '',
     createdAt: now,
     lastActive: now,
     expiresAt: now + (7 * 24 * 60 * 60 * 1000) // 7 days persistent session
@@ -4563,13 +4621,24 @@ export function getServerSession(token?: string): ServerSession | null {
 export function destroyServerSession(token?: string): boolean {
   if (!token) return false;
   activeSessions.delete(token);
+  try {
+    const db = readDb();
+    if (db && Array.isArray(db.activeSessions)) {
+      const next = db.activeSessions.filter((s: any) => s && s.token !== token);
+      if (next.length !== db.activeSessions.length) {
+        db.activeSessions = next;
+        writeDb(db);
+      }
+    }
+  } catch {}
   return true;
 }
 
-export function invalidateUserSessions(userId: string): number {
+export function invalidateUserSessions(userId: string, exceptToken?: string): number {
   if (!userId) return 0;
   let count = 0;
   for (const [token, session] of activeSessions.entries()) {
+    if (exceptToken && token === exceptToken) continue;
     if (session.userId === userId || session.user?.id === userId || session.user?.nationalId === userId) {
       activeSessions.delete(token);
       count++;
@@ -4579,14 +4648,565 @@ export function invalidateUserSessions(userId: string): number {
     const db = readDb();
     if (db && Array.isArray(db.activeSessions)) {
       const initialLen = db.activeSessions.length;
-      db.activeSessions = db.activeSessions.filter((s: any) => 
-        s && s.userId !== userId && s.user?.id !== userId && s.user?.nationalId !== userId
-      );
-      count += (initialLen - db.activeSessions.length);
+      db.activeSessions = db.activeSessions.filter((s: any) => {
+        if (!s) return false;
+        if (exceptToken && s.token === exceptToken) return true;
+        return s.userId !== userId && s.user?.id !== userId && s.user?.nationalId !== userId;
+      });
+      count = Math.max(count, initialLen - db.activeSessions.length);
       writeDb(db);
     }
   } catch {}
   return count;
+}
+
+export function revokeAllTrustedDevicesForUser(db: any, userId: string, nationalId?: string): number {
+  if (!db || !Array.isArray(db.trustedDevices) || !userId) return 0;
+  const before = db.trustedDevices.length;
+  db.trustedDevices = db.trustedDevices.filter((td: any) => {
+    if (!td) return false;
+    const matchUser = td.userId === userId || (nationalId && td.nationalId && td.nationalId === nationalId);
+    return !matchUser;
+  });
+  return before - db.trustedDevices.length;
+}
+
+export function isWeakPin(pin: string): { weak: boolean; reason?: string } {
+  if (typeof pin !== "string" || !/^\d{6}$/.test(pin)) {
+    return { weak: true, reason: "يجب أن يتكون رمز الدخول السريع من 6 أرقام فقط." };
+  }
+  if (/^(\d)\1{5}$/.test(pin)) {
+    return { weak: true, reason: "الرمز ضعيف جداً (تكرار نفس الرقم غير مسموح مثل 000000 أو 111111)." };
+  }
+  const uniqueDigits = new Set(pin.split("")).size;
+  if (uniqueDigits <= 2) {
+    return { weak: true, reason: "الرمز ضعيف جداً، يرجى اختيار أرقام أكثر تنوعاً." };
+  }
+  const commonWeak = new Set([
+    "123456", "654321", "012345", "543210", "234567", "765432", "345678", "876543", "456789", "987654",
+    "112233", "332211", "121212", "212121", "123123", "321321", "123321", "102030", "010203", "000001", "111222"
+  ]);
+  if (commonWeak.has(pin)) {
+    return { weak: true, reason: "الرمز متسلسل أو شائع جداً وسهل التخمين، يرجى اختيار رمز أقوى." };
+  }
+  // Ascending or descending full sequence check
+  let isAsc = true;
+  let isDesc = true;
+  for (let i = 1; i < pin.length; i++) {
+    if (Number(pin[i]) !== Number(pin[i - 1]) + 1) isAsc = false;
+    if (Number(pin[i]) !== Number(pin[i - 1]) - 1) isDesc = false;
+  }
+  if (isAsc || isDesc) {
+    return { weak: true, reason: "لا يُسمح باستخدام أرقام متتالية تصاعدياً أو تنازلياً." };
+  }
+  // Pair repetition AABBCC or ABCABC
+  if ((pin[0] === pin[1] && pin[2] === pin[3] && pin[4] === pin[5]) || pin.slice(0, 3) === pin.slice(3, 6)) {
+    return { weak: true, reason: "الرمز يحتوي على نمط متكرر يسهل تخمينه، يرجى اختيار رمز آخر." };
+  }
+  return { weak: false };
+}
+
+function hashDeviceSecret(secret: string): string {
+  return crypto.createHash("sha256").update("reyadat_dev_trust_v1:" + secret).digest("hex");
+}
+
+function setDeviceTrustCookie(req: any, res: any, secretOrNull: string | null) {
+  const isHttps =
+    req.secure ||
+    String(req.headers["x-forwarded-proto"] || "").toLowerCase().includes("https") ||
+    String(req.headers.origin || "").toLowerCase().startsWith("https://");
+  const flags = isHttps ? "SameSite=None; Secure" : "SameSite=Lax";
+  if (secretOrNull) {
+    res.setHeader(
+      "Set-Cookie",
+      `reyadat_device_trust=${encodeURIComponent(secretOrNull)}; Path=/; HttpOnly; Max-Age=${90 * 24 * 60 * 60}; ${flags}`
+    );
+  } else {
+    res.setHeader(
+      "Set-Cookie",
+      `reyadat_device_trust=; Path=/; HttpOnly; Max-Age=0; ${flags}`
+    );
+  }
+}
+
+function extractFirstNameArabic(fullName?: string): string {
+  const clean = String(fullName || "").trim();
+  if (!clean) return "ضيفنا";
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length > 1 && (/^[أإآاابمجد]\.?$/.test(words[0]) || words[0].endsWith("."))) {
+    return words[1];
+  }
+  return words[0];
+}
+
+function getArabicRoleTitle(role: string, user?: any): string {
+  if (user?.jobTitle && typeof user.jobTitle === "string" && user.jobTitle.trim()) {
+    return user.jobTitle.trim();
+  }
+  const map: Record<string, string> = {
+    admin: "الإدارة العليا / مدير النظام",
+    operations_manager: "مدير العمليات والتشغيل",
+    department_admin: user?.departmentNameAr ? `مدير ${user.departmentNameAr}` : "مدير إدارة",
+    employee: user?.departmentName ? `موظف - ${user.departmentName}` : "موظف إداري",
+    storekeeper: "أمين المستودع",
+    leader: "قائد فريق تطوعي",
+    volunteer: "متطوع معتمد",
+    beneficiary: "مستفيد",
+    supervisor: "مشرف إداري",
+    support_manager: "مدير الدعم الفني",
+    support_agent: "موظف الدعم الفني"
+  };
+  return map[role] || "مستخدم مسجل";
+}
+
+function isUserActiveStatus(status?: string, isArchived?: boolean): { ok: boolean; error?: string } {
+  if (isArchived || status === "archived") {
+    return { ok: false, error: "هذا الحساب مؤرشف ولا يمكن تسجيل الدخول إليه. السجلات التاريخية محفوظة لدى الجمعية." };
+  }
+  if (status === "deactivated") {
+    return { ok: false, error: "تم تعطيل هذا الحساب من قِبل الإدارة، يرجى التواصل مع إدارة الجمعية." };
+  }
+  if (status === "suspended" || status === "banned" || status === "rejected") {
+    return { ok: false, error: "تم إيقاف الحساب مؤقتًا، يرجى التواصل مع الإدارة." };
+  }
+  if (status === "inactive" || status === "pending") {
+    return { ok: false, error: "حسابك غير مفعل حاليًا، يرجى التواصل مع إدارة الجمعية." };
+  }
+  return { ok: true };
+}
+
+function resolveLiveUserAccount(
+  db: any,
+  userId: string,
+  roleHint?: string,
+  nationalIdHint?: string
+): { found: boolean; active: boolean; error?: string; role?: string; user?: any; storedPasswordHash?: string } {
+  if (!db || !userId) return { found: false, active: false, error: "معرف المستخدم غير موجود." };
+  const uid = String(userId).trim();
+  const nid = String(nationalIdHint || "").trim();
+
+  // 1. Mosa temporary administrator
+  if (uid === "mosa" || uid === "perm-mosa") {
+    const mosaEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === "mosa" || u.username === "mosa" || u.id === "perm-mosa");
+    if (mosaEntry && (mosaEntry.loginDisabled || mosaEntry.hasLoginAccount === false)) {
+      return { found: true, active: false, error: "تم تعطيل حساب الدخول لهذا المستخدم." };
+    }
+    const sc = isUserActiveStatus(mosaEntry?.status || "active", Boolean(mosaEntry?.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const allDeptIds = (db.departments || []).map((d: any) => d.id);
+    const mosaUser = {
+      id: "mosa",
+      userId: "mosa",
+      username: "mosa",
+      name: mosaEntry?.userName || "موسى (مسؤول النظام Administrator)",
+      email: mosaEntry?.userEmail || "mosa@riadataleata.org.sa",
+      phone: mosaEntry?.phone || "0550000099",
+      nationalId: mosaEntry?.nationalId || "1000000099",
+      avatarUrl: mosaEntry?.avatarUrl || "",
+      role: "admin",
+      jobTitle: mosaEntry?.jobTitle || "مسؤول النظام (Administrator)",
+      primaryDepartmentId: "dep-1",
+      primaryDepartmentName: "الإدارة التنفيذية",
+      allowedDepartmentIds: allDeptIds,
+      permissions: [
+        "super_admin", "view_department", "create_data", "edit_data",
+        "delete_data", "export_pdf", "export_excel", "manage_staff",
+        "manage_tasks", "view_reports", "cross_department_access", "all_permissions"
+      ],
+      mustChangePassword: !!mosaEntry?.mustChangePassword,
+      status: mosaEntry?.status || "active"
+    };
+    return { found: true, active: true, role: "admin", user: mosaUser, storedPasswordHash: mosaEntry?.passwordHash || mosaEntry?.password || "mosa11" };
+  }
+
+  // 2. Primary Admin
+  if (uid === "admin-user" || uid === "admin") {
+    const adminCustom = (db.userDepartmentAccess || []).find((u: any) => u.userId === "admin-user" || u.role === "admin");
+    if (adminCustom && (adminCustom.loginDisabled || adminCustom.hasLoginAccount === false)) {
+      return { found: true, active: false, error: "تم تعطيل حساب الدخول." };
+    }
+    const sc = isUserActiveStatus(adminCustom?.status || "active", Boolean(adminCustom?.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const adminUser = {
+      id: "admin-user",
+      name: adminCustom?.userName || "مجلس الجمعية والمدير التنفيذي",
+      email: adminCustom?.userEmail || "admin@riadataleata.org.sa",
+      phone: adminCustom?.phone || "0550000000",
+      nationalId: adminCustom?.nationalId || "1000000000",
+      avatarUrl: adminCustom?.avatarUrl || "",
+      role: "admin",
+      jobTitle: adminCustom?.jobTitle || "المدير العام والمدير التنفيذي",
+      primaryDepartmentId: "dep-1",
+      primaryDepartmentName: "الإدارة التنفيذية",
+      allowedDepartmentIds: (db.departments || []).map((d: any) => d.id),
+      permissions: [
+        "super_admin", "view_department", "create_data", "edit_data",
+        "delete_data", "export_pdf", "export_excel", "manage_staff",
+        "manage_tasks", "view_reports", "cross_department_access", "all_permissions"
+      ],
+      mustChangePassword: !!adminCustom?.mustChangePassword,
+      status: adminCustom?.status || "active"
+    };
+    return { found: true, active: true, role: "admin", user: adminUser, storedPasswordHash: adminCustom?.passwordHash || adminCustom?.password || "123" };
+  }
+
+  // 3. Operations Manager
+  if (uid === "ops-manager") {
+    const opsCustom = (db.userDepartmentAccess || []).find((u: any) => u.userId === "ops-manager" || u.role === "operations_manager" || u.nationalId === "1020000000");
+    if (opsCustom && (opsCustom.loginDisabled || opsCustom.hasLoginAccount === false)) {
+      return { found: true, active: false, error: "تم تعطيل حساب الدخول." };
+    }
+    const sc = isUserActiveStatus(opsCustom?.status || "active", Boolean(opsCustom?.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const allDeptIds = (db.departments || []).map((d: any) => d.id);
+    const opsUser = {
+      id: "ops-manager",
+      name: opsCustom?.userName || "م. سلطان الزهراني (مدير العمليات والتشغيل)",
+      email: opsCustom?.userEmail || "operations@riadataleata.org.sa",
+      phone: opsCustom?.phone || "0559000000",
+      nationalId: opsCustom?.nationalId || "1020000000",
+      username: opsCustom?.username || "operations",
+      avatarUrl: opsCustom?.avatarUrl || "",
+      role: "operations_manager",
+      jobTitle: opsCustom?.jobTitle || "مدير العمليات والتشغيل",
+      primaryDepartmentId: "dep-1",
+      primaryDepartmentName: "إدارة العمليات والتشغيل",
+      allowedDepartmentIds: allDeptIds,
+      permissions: [
+        "super_admin", "operations_manager", "manage_users", "manage_permissions",
+        "view_department", "create_data", "edit_data", "delete_data",
+        "export_pdf", "export_excel", "manage_staff", "manage_tasks",
+        "view_reports", "cross_department_access", "all_permissions"
+      ],
+      mustChangePassword: !!opsCustom?.mustChangePassword,
+      status: opsCustom?.status || "active"
+    };
+    return { found: true, active: true, role: "operations_manager", user: opsUser, storedPasswordHash: opsCustom?.passwordHash || opsCustom?.password || "123" };
+  }
+
+  // 4. Supervisor sup-1
+  if (uid === "sup-1") {
+    return {
+      found: true,
+      active: true,
+      role: "supervisor",
+      user: {
+        id: "sup-1",
+        name: "أ. محمد العسيري (مشرف الإدارة)",
+        email: "supervisor@riadataleata.org.sa",
+        phone: "0552223344",
+        role: "supervisor",
+        departmentId: "dep-1",
+        status: "active"
+      }
+    };
+  }
+
+  // 5. userDepartmentAccess (excluding special ids above)
+  const accessUser = (db.userDepartmentAccess || []).find(
+    (u: any) => u && (u.userId === uid || u.id === uid || (nid && u.nationalId === nid))
+  );
+  if (accessUser && accessUser.userId !== "admin-user" && accessUser.userId !== "ops-manager" && (!roleHint || roleHint === accessUser.role || roleHint === "employee" || roleHint === "department_admin")) {
+    if (accessUser.loginDisabled || accessUser.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم تعطيل حساب تسجيل الدخول الخاص بك، يرجى مراجعة إدارة الجمعية." };
+    }
+    const sc = isUserActiveStatus(accessUser.status || "active", Boolean(accessUser.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const linkedEmp = (db.employees || []).find(
+      (e: any) => e && (e.id === accessUser.userId || e.userId === accessUser.userId || (accessUser.nationalId && e.nationalId === accessUser.nationalId))
+    );
+    if (linkedEmp) {
+      if (linkedEmp.loginDisabled || linkedEmp.hasLoginAccount === false || linkedEmp.assignmentStatus === "terminated") {
+        return { found: true, active: false, error: "تم تعطيل حساب تسجيل الدخول لهذا الموظف." };
+      }
+      const empSc = isUserActiveStatus(linkedEmp.status || "active", Boolean(linkedEmp.isArchived));
+      if (!empSc.ok) return { found: true, active: false, error: empSc.error };
+    }
+    const linkedVol = (db.volunteers || []).find(
+      (v: any) => v && (v.id === accessUser.userId || (accessUser.nationalId && v.nationalId === accessUser.nationalId))
+    );
+    if (linkedVol && accessUser.role === "volunteer") {
+      if (linkedVol.loginDisabled || linkedVol.hasLoginAccount === false) {
+        return { found: true, active: false, error: "تم تعطيل حساب المتطوع." };
+      }
+      const volSc = isUserActiveStatus(linkedVol.status, Boolean(linkedVol.isArchived));
+      if (!volSc.ok) return { found: true, active: false, error: volSc.error };
+    }
+    const linkedBen = (db.beneficiaries || []).find(
+      (b: any) => b && (b.id === accessUser.userId || (accessUser.nationalId && b.nationalId === accessUser.nationalId))
+    );
+    if (linkedBen && accessUser.role === "beneficiary") {
+      if (linkedBen.loginDisabled || linkedBen.hasLoginAccount === false) {
+        return { found: true, active: false, error: "تم تعطيل حساب المستفيد." };
+      }
+      const benSc = isUserActiveStatus(linkedBen.status === "rejected" ? "suspended" : linkedBen.status, Boolean(linkedBen.isArchived));
+      if (!benSc.ok) return { found: true, active: false, error: benSc.error };
+    }
+    const accessDep = accessUser.primaryDepartmentId
+      ? (db.departments || []).find((d: any) => d.id === accessUser.primaryDepartmentId)
+      : null;
+    const role = accessUser.role || "employee";
+    const loggedUser = {
+      id: accessUser.userId || accessUser.id,
+      userId: accessUser.userId || accessUser.id,
+      name: accessUser.userName || accessUser.name,
+      username: accessUser.username || accessUser.userId,
+      email: accessUser.userEmail || accessUser.email,
+      phone: accessUser.phone,
+      nationalId: accessUser.nationalId,
+      avatarUrl: accessUser.avatarUrl || accessDep?.avatarUrl || "",
+      role,
+      jobTitle: accessUser.jobTitle || accessUser.positionTitle || "موظف",
+      positionTitle: accessUser.positionTitle || accessUser.jobTitle || "",
+      departmentId: accessUser.primaryDepartmentId || "dep-1",
+      departmentName: accessUser.primaryDepartmentName || accessDep?.nameAr || "إدارة عامة",
+      departmentNameAr: accessDep?.nameAr || accessUser.primaryDepartmentName || "إدارة عامة",
+      departmentType: accessDep?.departmentType || undefined,
+      teamId: accessUser.teamId || (role === "leader" ? accessUser.userId : undefined),
+      permissions: Array.isArray(accessUser.permissions) ? accessUser.permissions : ["view_department"],
+      allowedDepartmentIds: accessUser.allowedDepartmentIds || [accessUser.primaryDepartmentId || "dep-1"],
+      allowedPages: accessUser.allowedPages || [],
+      mustChangePassword: !!accessUser.mustChangePassword,
+      status: accessUser.status || "active"
+    };
+    return { found: true, active: true, role, user: loggedUser, storedPasswordHash: accessUser.passwordHash || accessUser.password };
+  }
+
+  // 6. Department Directors
+  const depObj = (db.departments || []).find(
+    (d: any) => d && (`depadmin-${d.id}` === uid || d.id === uid || d.directorUserId === uid || (nid && d.nationalId === nid))
+  );
+  if (depObj && (!roleHint || roleHint === "department_admin")) {
+    if (depObj.loginDisabled || depObj.hasLoginAccount === false || depObj.assignmentStatus === "terminated") {
+      return { found: true, active: false, error: "تم تعطيل حساب تسجيل الدخول للإدارة، يرجى مراجعة الإدارة العليا." };
+    }
+    const sc = isUserActiveStatus(depObj.status || "active", Boolean(depObj.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const depAccessList = Array.isArray(db.userDepartmentAccess) ? db.userDepartmentAccess : [];
+    const access =
+      depAccessList.find(
+        (u: any) =>
+          (depObj.directorUserId && u.userId === depObj.directorUserId) ||
+          u.userId === `depadmin-${depObj.id}` ||
+          (depObj.nationalId && String(u.nationalId || "").trim() === String(depObj.nationalId).trim())
+      ) || depAccessList.find((u: any) => u.role === "department_admin" && u.primaryDepartmentId === depObj.id);
+    const perms = Array.isArray(access?.permissions)
+      ? access.permissions
+      : Array.isArray(depObj.permissions)
+      ? depObj.permissions
+      : getDefaultPermissionsForRole("department_admin");
+    const depUser = {
+      id: depObj.directorUserId || "depadmin-" + depObj.id,
+      userId: depObj.directorUserId || "depadmin-" + depObj.id,
+      departmentId: depObj.id,
+      departmentNameAr: depObj.nameAr,
+      departmentNameEn: depObj.nameEn,
+      departmentType: depObj.departmentType || "executive",
+      name: depObj.directorName,
+      directorName: depObj.directorName,
+      nationalId: depObj.nationalId || "",
+      email: depObj.email || "",
+      phone: depObj.phone || "",
+      avatarUrl: depObj.avatarUrl || access?.avatarUrl || "",
+      jobTitle: depObj.positionTitle || `مدير ${depObj.nameAr}`,
+      positionTitle: depObj.positionTitle || `مدير ${depObj.nameAr}`,
+      role: "department_admin",
+      permissions: perms,
+      allowedDepartmentIds: access?.allowedDepartmentIds || [depObj.id],
+      additionalDepartmentIds: access?.additionalDepartmentIds || [],
+      allowedPages: access?.allowedPages || [],
+      mustChangePassword: !!access?.mustChangePassword,
+      status: depObj.status || "active"
+    };
+    return { found: true, active: true, role: "department_admin", user: depUser, storedPasswordHash: access?.passwordHash || depObj.passwordHash || depObj.password };
+  }
+
+  // 7. Employees
+  const empObj = (db.employees || []).find(
+    (e: any) => e && (e.id === uid || e.userId === uid || (nid && e.nationalId === nid))
+  );
+  if (empObj && (!roleHint || roleHint === "employee")) {
+    if (empObj.loginDisabled || empObj.hasLoginAccount === false || empObj.assignmentStatus === "terminated") {
+      return { found: true, active: false, error: "تم تعطيل حساب تسجيل الدخول لهذا الموظف." };
+    }
+    const sc = isUserActiveStatus(empObj.status || "active", Boolean(empObj.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const access = (db.userDepartmentAccess || []).find(
+      (u: any) => u.userId === empObj.id || u.userId === empObj.userId || (empObj.nationalId && u.nationalId === empObj.nationalId)
+    );
+    const empUser = {
+      id: empObj.userId || empObj.id,
+      userId: empObj.userId || empObj.id,
+      name: empObj.name,
+      nationalId: empObj.nationalId,
+      employeeNumber: empObj.employeeNumber,
+      email: empObj.email,
+      phone: empObj.phone,
+      avatarUrl: empObj.avatarUrl || empObj.photo || "",
+      jobTitle: empObj.positionTitle || empObj.jobTitle,
+      positionTitle: empObj.positionTitle || empObj.jobTitle || "",
+      departmentId: empObj.departmentId,
+      departmentName: empObj.departmentName,
+      departmentNameAr: empObj.departmentName,
+      role: "employee",
+      permissions: Array.isArray(access?.permissions) ? access.permissions : Array.isArray(empObj.permissions) ? empObj.permissions : getDefaultPermissionsForRole("employee"),
+      allowedDepartmentIds: access?.allowedDepartmentIds || [empObj.departmentId],
+      additionalDepartmentIds: access?.additionalDepartmentIds || [],
+      allowedPages: access?.allowedPages || [],
+      mustChangePassword: !!access?.mustChangePassword,
+      status: empObj.status || "active"
+    };
+    return { found: true, active: true, role: "employee", user: empUser, storedPasswordHash: access?.passwordHash || empObj.passwordHash || empObj.password };
+  }
+
+  // 8. Storekeepers
+  const skObj = (db.storekeepers || []).find((s: any) => s && (s.id === uid || (nid && s.nationalId === nid)));
+  if (skObj && (!roleHint || roleHint === "storekeeper")) {
+    if (skObj.loginDisabled || skObj.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم تعطيل حساب تسجيل الدخول لأمين المستودع." };
+    }
+    const sc = isUserActiveStatus(skObj.status || "active", Boolean(skObj.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const skUser = {
+      id: skObj.id,
+      name: skObj.name,
+      nationalId: skObj.nationalId,
+      phone: skObj.phone,
+      email: skObj.email,
+      avatarUrl: skObj.avatarUrl || "",
+      jobTitle: "أمين المستودع الرئيسي",
+      departmentId: "dep-8",
+      departmentName: "إدارة الخدمات المساندة والمستودعات",
+      departmentNameAr: "إدارة الخدمات المساندة والمستودعات",
+      assignedWarehouseId: skObj.assignedWarehouseId || "wh-1",
+      assignedWarehouseName: skObj.assignedWarehouseName || "المستودع الرئيسي - العسيلة",
+      permissions: ["view_department", "create_data", "edit_data", "disburse_data", "receive_data", "print_data", "export_excel", "view_reports", "manage_tasks"],
+      allowedDepartmentIds: ["dep-8"],
+      allowedPages: ["inventory", "tasks", "directives", "reports"],
+      role: "storekeeper",
+      mustChangePassword: !!skObj.mustChangePassword,
+      status: skObj.status || "active"
+    };
+    return { found: true, active: true, role: "storekeeper", user: skUser, storedPasswordHash: skObj.passwordHash || skObj.password || "123" };
+  }
+
+  // 9. Volunteers
+  const volObj = (db.volunteers || []).find((v: any) => v && (v.id === uid || (nid && v.nationalId === nid)));
+  if (volObj && (!roleHint || roleHint === "volunteer")) {
+    if (volObj.isArchived || volObj.status === "archived" || volObj.status === "deactivated" || volObj.loginDisabled || volObj.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم أرشفة أو تعطيل حساب تسجيل الدخول لهذا المتطوع." };
+    }
+    const sc = isUserActiveStatus(volObj.status, volObj.isArchived);
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const volUser = { ...volObj, mustChangePassword: Boolean(volObj.mustChangePassword) };
+    delete volUser.password;
+    delete volUser.passwordHash;
+    return { found: true, active: true, role: volObj.role || "volunteer", user: volUser, storedPasswordHash: volObj.passwordHash || volObj.password };
+  }
+
+  // 10. Team Leaders
+  const teamObj = (db.teams || []).find((t: any) => t && (`leader-${t.id}` === uid || t.id === uid));
+  if (teamObj && (!roleHint || roleHint === "leader")) {
+    if (teamObj.loginDisabled || teamObj.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم تعطيل حساب قائد الفريق." };
+    }
+    const sc = isUserActiveStatus(teamObj.status || "active", Boolean(teamObj.isArchived));
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const leaderUser = {
+      id: "leader-" + teamObj.id,
+      name: teamObj.leaderName,
+      phone: teamObj.leaderPhone || "0551112233",
+      email: teamObj.leaderEmail || "leader@riadataleata.org.sa",
+      role: "leader",
+      teamId: teamObj.id,
+      departmentId: teamObj.departmentId,
+      status: teamObj.status || "active"
+    };
+    return { found: true, active: true, role: "leader", user: leaderUser, storedPasswordHash: teamObj.passwordHash || teamObj.password };
+  }
+
+  // 11. Beneficiaries
+  const benObj = (db.beneficiaries || []).find((b: any) => b && (b.id === uid || (nid && b.nationalId === nid)));
+  if (benObj && (!roleHint || roleHint === "beneficiary")) {
+    if (benObj.isArchived || benObj.status === "archived" || benObj.status === "deactivated" || benObj.loginDisabled || benObj.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم أرشفة أو تعطيل حساب المستفيد." };
+    }
+    const sc = isUserActiveStatus(benObj.status === "rejected" ? "suspended" : benObj.status, benObj.isArchived);
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    const benUser = { ...benObj, mustChangePassword: Boolean(benObj.mustChangePassword) };
+    delete benUser.password;
+    delete benUser.passwordHash;
+    return { found: true, active: true, role: "beneficiary", user: benUser, storedPasswordHash: benObj.passwordHash || benObj.password };
+  }
+
+  // 12. Support Managers
+  const smObj = (db.supportManagers || []).find((sm: any) => sm && sm.id === uid);
+  if (smObj) {
+    if (smObj.loginDisabled || smObj.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم تعطيل حساب مدير الدعم الفني." };
+    }
+    const sc = isUserActiveStatus(smObj.status || "active");
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    return {
+      found: true,
+      active: true,
+      role: "support_manager",
+      user: {
+        id: smObj.id,
+        name: smObj.name,
+        username: smObj.username,
+        email: smObj.email,
+        phone: smObj.phone,
+        role: "support_manager",
+        status: smObj.status || "active"
+      },
+      storedPasswordHash: smObj.passwordHash || smObj.password
+    };
+  }
+
+  // 13. Support Agents
+  const saObj = (db.supportAgents || []).find((sa: any) => sa && sa.id === uid);
+  if (saObj) {
+    if (saObj.loginDisabled || saObj.hasLoginAccount === false) {
+      return { found: true, active: false, error: "تم تعطيل حساب موظف الدعم الفني." };
+    }
+    const sc = isUserActiveStatus(saObj.status || "active");
+    if (!sc.ok) return { found: true, active: false, error: sc.error };
+    return {
+      found: true,
+      active: true,
+      role: "support_agent",
+      user: {
+        id: saObj.id,
+        name: saObj.name,
+        username: saObj.username,
+        email: saObj.email,
+        phone: saObj.phone,
+        role: "support_agent",
+        permissions: saObj.permissions || ["view_assigned_tasks", "reply_tickets", "close_tasks"],
+        managerId: saObj.managerId,
+        status: saObj.status || "active"
+      },
+      storedPasswordHash: saObj.passwordHash || saObj.password
+    };
+  }
+
+  return { found: false, active: false, error: "الحساب غير موجود في النظام." };
+}
+
+function deriveCanonicalLoginKey(user: any, role: string): string {
+  if (!user) return "";
+  if (user.id === "mosa") return "mosa";
+  if (user.id === "admin-user") return "admin";
+  if (user.id === "ops-manager") return "operations";
+  if (user.id === "sup-1") return "sup-1";
+  if (role === "department_admin") {
+    return user.nationalId || user.email || user.departmentId || user.id;
+  }
+  if (role === "leader") {
+    return user.teamId || user.leaderName || user.name || user.id;
+  }
+  return user.nationalId || user.username || user.email || user.phone || user.membershipNumber || user.id || "";
 }
 
 const CANONICAL_SITE_ORIGIN = "https://www.riadataleata.com";
@@ -4891,12 +5511,15 @@ interface RateLimitBucket {
 }
 const rateLimitStores: Record<string, Map<string, RateLimitBucket>> = {
   login: new Map(),
+  pinLogin: new Map(),
   forgotPassword: new Map(),
+  forgotIdentify: new Map(),
+  forgotSendOtp: new Map(),
   registration: new Map()
 };
 
 export function checkRateLimit(
-  bucket: 'login' | 'forgotPassword' | 'registration',
+  bucket: 'login' | 'pinLogin' | 'forgotPassword' | 'forgotIdentify' | 'forgotSendOtp' | 'registration',
   key: string,
   maxRequests: number,
   windowMs: number
@@ -8522,6 +9145,7 @@ app.post(["/api/db/users/reset-password", "/api/users/reset-password"], (req, re
     notes: `تمت إعادة تعيين كلمة مرور المستخدم (${targetUser.name || userId}) وتشفيرها مع فرض التغيير: ${mustChangePassword ? 'نعم' : 'لا'}`
   });
 
+  revokeAllTrustedDevicesForUser(db, userId, targetUser?.nationalId);
   writeDb(db);
   // Terminate any active sessions on password reset
   invalidateUserSessions(userId);
@@ -9531,6 +10155,7 @@ app.post("/api/db/auth/change-password", (req, res) => {
     notes: 'قام المستخدم بتحديث كلمة المرور الإلزامية بنجاح واعتماد التشفير وإلغاء متطلب التغيير'
   });
 
+  revokeAllTrustedDevicesForUser(db, userId, userEntry?.nationalId);
   writeDb(db);
   res.json({
     status: "success",
@@ -9617,9 +10242,20 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
     }
   }
 
-  // Fallback for default admin/ops accounts if default password applies
+  // Fallback for default admin/ops accounts or other collections via resolveLiveUserAccount
   if (!storedHash) {
-    if (userId === 'admin' || userId === 'admin-user' || userId === '1000000000') {
+    const liveSelf = resolveLiveUserAccount(db, userId);
+    if (liveSelf.found && liveSelf.storedPasswordHash) {
+      storedHash = liveSelf.storedPasswordHash;
+      if (!userEntry && liveSelf.user) {
+        userEntry = {
+          id: liveSelf.user.id,
+          userName: liveSelf.user.name,
+          nationalId: liveSelf.user.nationalId || "",
+          role: liveSelf.role || "user"
+        };
+      }
+    } else if (userId === 'admin' || userId === 'admin-user' || userId === '1000000000') {
       storedHash = "123";
     } else if (userId === 'operations' || userId === 'ops-manager' || userId === '1020000000') {
       storedHash = "123";
@@ -9668,6 +10304,17 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) { sk.password = hashedPassword; sk.passwordHash = hashedPassword; }
 
+  // Also check Beneficiaries & Support accounts if not yet matched
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId || (userEntry?.nationalId && b.nationalId === userEntry.nationalId));
+  if (ben) {
+    ben.password = hashedPassword;
+    ben.passwordHash = hashedPassword;
+    ben.mustChangePassword = false;
+  }
+
+  // Revoke all trusted PIN devices on password change for strict security
+  const revokedPinDevices = revokeAllTrustedDevicesForUser(db, userId, userEntry?.nationalId);
+
   // Record Audit Log
   if (!db.accessAuditLogs) db.accessAuditLogs = [];
   db.accessAuditLogs.unshift({
@@ -9684,14 +10331,18 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
     status: 'allowed',
     ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
     device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
-    notes: 'قام المستخدم بتغيير وتشفير كلمة المرور الخاصة بحسابه بنجاح باستخدام خوارزمية Bcrypt'
+    notes: `قام المستخدم بتغيير وتشفير كلمة المرور الخاصة بحسابه بنجاح باستخدام Bcrypt وإلغاء (${revokedPinDevices}) من أجهزة الدخول السريع المرتبطة`
   });
 
   writeDb(db);
 
+  const currentTok = (req.headers['x-session-token'] as string) || req.cookies?.['reyadat_session'];
+  invalidateUserSessions(userId, currentTok || undefined);
+
   return res.json({
     status: "success",
-    message: "تم تغيير كلمة المرور وتشفيرها بنجاح بواسطة نظام Bcrypt فائق الأمان."
+    revokedPinDevices,
+    message: "تم تغيير كلمة المرور وتشفيرها بنجاح، وتم إلغاء ربط أجهزة الدخول السريع السابقة لحماية حسابك."
   });
 });
 
@@ -13839,33 +14490,64 @@ app.get("/api/db/auth/session", (req, res) => {
     status: "success",
     sessionToken: activeSession.token,
     role: activeSession.role,
+    authMethod: activeSession.authMethod || "password",
     user: userObj
   });
 });
 
-// Logout endpoint
+// Logout endpoint (destroys active session ONLY; preserves trusted-device cookie unless user revokes devices in Security Settings)
 app.post("/api/db/auth/logout", (req, res) => {
-  const sessionToken = (req.headers['x-session-token'] as string) || 
-    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null);
+  const sessionToken =
+    (req.headers['x-session-token'] as string) ||
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.['reyadat_session'] ||
+    req.body?.sessionToken;
   if (sessionToken) {
     destroyServerSession(sessionToken);
   }
   return res.json({ status: "logged_out", message: "تم تسجيل الخروج بنجاح." });
 });
 
-app.post("/api/db/auth/login", (req, res) => {
+function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwordRaw: string, opts?: { auditEndpoint?: string; deviceId?: string }) {
   // Wrap res.json to automatically generate and attach a persistent server session
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
   const originalJson = res.json.bind(res);
   res.json = function(body: any) {
     if (body && body.status === "success" && body.user) {
-      const session = createServerSession(body.user, body.role || body.user?.role || 'admin');
+      const session = createServerSession(body.user, body.role || body.user?.role || 'admin', {
+        authMethod: 'password',
+        passwordVerifiedAt: Date.now(),
+        deviceId: opts?.deviceId || String(req.body?.deviceId || ''),
+        ip: clientIp
+      });
       body.sessionToken = session.token;
+      body.authMethod = 'password';
+
+      // Clear temporary PIN lock on full successful password login for this trusted device
+      try {
+        const deviceSecret = req.cookies?.['reyadat_device_trust'];
+        const devId = opts?.deviceId || String(req.body?.deviceId || '');
+        if (deviceSecret && devId) {
+          const liveDb = readDb();
+          const secretHash = hashDeviceSecret(deviceSecret);
+          const td = (liveDb.trustedDevices || []).find(
+            (t: any) => t && !t.revokedAt && t.userId === body.user.id && t.deviceId === devId && t.deviceSecretHash === secretHash
+          );
+          if (td && (td.failedAttempts > 0 || td.requireFullLogin || td.lockedUntil)) {
+            td.failedAttempts = 0;
+            td.lockedUntil = null;
+            td.requireFullLogin = false;
+            writeDb(liveDb);
+          }
+        }
+      } catch {}
     }
     return originalJson(body);
   };
 
   const db = readDb();
-  let { identifier, password } = req.body;
+  let identifier = identifierRaw;
+  let password = passwordRaw;
   
   if (!identifier || typeof identifier !== "string" || !identifier.trim()) {
     return res.status(400).json({ error: "يرجى إدخال رقم الهوية أو اسم المستخدم أو البريد الإلكتروني." });
@@ -13879,7 +14561,6 @@ app.post("/api/db/auth/login", (req, res) => {
   password = password.trim();
 
   // Rate Limiting Protection (Anti-Brute Force)
-  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
   const rateLimitKey = `${clientIp}:${identifier.toLowerCase()}`;
   const rateCheck = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
   if (!rateCheck.allowed) {
@@ -14102,10 +14783,24 @@ app.post("/api/db/auth/login", (req, res) => {
       logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'تم إلغاء وتعطيل حساب الدخول لهذا المستخدم');
       return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول الخاص بك، يرجى مراجعة إدارة الجمعية." });
     }
-    const statusCheck = checkStatus(accessUser.status || "active");
+    const statusCheck = checkStatus(accessUser.status || "active", Boolean(accessUser.isArchived));
     if (!statusCheck.ok) {
       logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, statusCheck.error);
       return res.status(403).json({ error: statusCheck.error });
+    }
+    const linkedEmp = (db.employees || []).find(
+      (e: any) => e && (e.id === accessUser.userId || e.userId === accessUser.userId || (accessUser.nationalId && e.nationalId === accessUser.nationalId))
+    );
+    if (linkedEmp) {
+      if (linkedEmp.loginDisabled || linkedEmp.hasLoginAccount === false || linkedEmp.assignmentStatus === "terminated") {
+        logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'تم تعطيل حساب الموظف');
+        return res.status(403).json({ error: "تم تعطيل حساب تسجيل الدخول لهذا الموظف." });
+      }
+      const empStatusCheck = checkStatus(linkedEmp.status || "active", Boolean(linkedEmp.isArchived));
+      if (!empStatusCheck.ok) {
+        logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, empStatusCheck.error);
+        return res.status(403).json({ error: empStatusCheck.error });
+      }
     }
     const pwdToVerify = accessUser.passwordHash || accessUser.password || "123";
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
@@ -14358,6 +15053,7 @@ app.post("/api/db/auth/login", (req, res) => {
 
   // 4. Check Volunteers
   const vol = db.volunteers?.find((v: any) => 
+    matches(v.id) ||
     matches(v.email) || 
     matches(v.phone) || 
     matches(v.membershipNumber) || 
@@ -14423,6 +15119,7 @@ app.post("/api/db/auth/login", (req, res) => {
 
   // 6. Check Beneficiaries
   const ben = db.beneficiaries?.find((b: any) => 
+    matches(b.id) ||
     matches(b.email) || 
     matches(b.phone) || 
     matches(b.nationalId) ||
@@ -14549,6 +15246,60 @@ app.post("/api/db/auth/login", (req, res) => {
   }
 
   return res.status(404).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
+}
+
+// Primary Login Endpoint
+app.post("/api/db/auth/login", (req: any, res) => {
+  const { identifier, password, deviceId } = req.body || {};
+  return handleCredentialLogin(req, res, identifier, password, {
+    auditEndpoint: "/api/db/auth/login",
+    deviceId: typeof deviceId === "string" ? deviceId : undefined
+  });
+});
+
+// Returning User Password-Only Login via Opaque Non-Sensitive Handle
+app.post("/api/db/auth/login-remembered", (req: any, res) => {
+  const { rememberId, password, deviceId } = req.body || {};
+  if (!rememberId || typeof rememberId !== "string") {
+    return res.status(400).json({ error: "معرف الحساب المحفوظ مطلوب.", code: "HANDLE_REQUIRED", requireFullLogin: true });
+  }
+  if (!password || typeof password !== "string" || !password.trim()) {
+    return res.status(400).json({ error: "يرجى إدخال كلمة المرور." });
+  }
+
+  const db = readDb();
+  const handle = (db.rememberedHandles || []).find((h: any) => h && h.rememberId === rememberId.trim());
+  if (!handle) {
+    return res.status(404).json({
+      error: "الحساب غير محفوظ أو انتهت صلاحيته، يرجى تسجيل الدخول الكامل.",
+      code: "HANDLE_NOT_FOUND",
+      requireFullLogin: true
+    });
+  }
+
+  const live = resolveLiveUserAccount(db, handle.userId, handle.role, handle.nationalId);
+  if (!live.found || !live.active || !live.user) {
+    return res.status(403).json({
+      error: live.error || "الحساب غير متاح أو موقوف، يرجى مراجعة الإدارة.",
+      code: "ACCOUNT_INACTIVE"
+    });
+  }
+
+  handle.lastUsedAt = new Date().toISOString();
+  writeDb(db);
+
+  const canonicalKey =
+    deriveCanonicalLoginKey(live.user, live.role || handle.role) ||
+    handle.loginKey ||
+    handle.nationalId ||
+    handle.username ||
+    handle.email ||
+    handle.userId;
+
+  return handleCredentialLogin(req, res, canonicalKey, password, {
+    auditEndpoint: "/api/db/auth/login-remembered",
+    deviceId: typeof deviceId === "string" ? deviceId : undefined
+  });
 });
 
 // Helper: Secure Verification for Google Identity Services (GIS) ID Tokens
@@ -14674,11 +15425,35 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
 
 // Google Authentication Endpoint
 app.post("/api/db/auth/google", async (req, res) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
   const originalJson = res.json.bind(res);
   res.json = function(body: any) {
     if (body && body.status === "success" && body.user) {
-      const session = createServerSession(body.user, body.role || body.user?.role || 'user');
+      const devId = String(req.body?.deviceId || "");
+      const session = createServerSession(body.user, body.role || body.user?.role || 'user', {
+        authMethod: "google",
+        passwordVerifiedAt: Date.now(),
+        deviceId: devId,
+        ip: clientIp
+      });
       body.sessionToken = session.token;
+      body.authMethod = "google";
+      try {
+        const deviceSecret = req.cookies?.["reyadat_device_trust"];
+        if (deviceSecret && devId) {
+          const liveDb = readDb();
+          const secretHash = hashDeviceSecret(deviceSecret);
+          const td = (liveDb.trustedDevices || []).find(
+            (t: any) => t && !t.revokedAt && t.userId === body.user.id && t.deviceId === devId && t.deviceSecretHash === secretHash
+          );
+          if (td && (td.failedAttempts > 0 || td.requireFullLogin || td.lockedUntil)) {
+            td.failedAttempts = 0;
+            td.lockedUntil = null;
+            td.requireFullLogin = false;
+            writeDb(liveDb);
+          }
+        }
+      } catch {}
     }
     return originalJson(body);
   };
@@ -15674,6 +16449,9 @@ app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
   otpRecord.used = true;
   otpRecord.usedAt = new Date().toISOString();
 
+  // Revoke all trusted PIN devices for this user upon password reset
+  const revokedPinDevices = revokeAllTrustedDevicesForUser(db, targetUserId);
+
   // Terminate all old sessions for this user for security
   const terminatedCount = invalidateUserSessions(targetUserId);
 
@@ -15693,14 +16471,1053 @@ app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
     status: 'allowed',
     ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
     device: (req.headers['user-agent'] || 'Web Client').substring(0, 100),
-    notes: `تم تغيير كلمة المرور بنجاح بواسطة رمز التحقق OTP وتشفيرها بواسطة Bcrypt، وإنهاء (${terminatedCount}) جلسات قديمة للحساب.`
+    notes: `تم تغيير كلمة المرور بنجاح بواسطة رمز التحقق OTP، وإنهاء (${terminatedCount}) جلسات وإلغاء (${revokedPinDevices}) أجهزة دخول سريع.`
   });
 
   writeDb(db);
 
   return res.json({
     status: "success",
-    message: "تم تحديث كلمة المرور وتشفيرها بنجاح بواسطة خوارزمية Bcrypt. تم إنهاء الجلسات السابقة لحماية حسابك، ويمكنك الآن تسجيل الدخول بكلمة المرور الجديدة."
+    message: "تم تحديث كلمة المرور وتشفيرها بنجاح، وتم إنهاء الجلسات السابقة وإلغاء أجهزة الدخول السريع لحماية حسابك."
+  });
+});
+
+// =========================================================================
+// Channel-Aware Forgot Password Flow (Supports both identifier & rememberId)
+// =========================================================================
+function findRecoveryAccountRecord(db: any, identifierOrRememberId: string, rememberId?: string) {
+  let cleanId = String(identifierOrRememberId || "").trim().toLowerCase();
+  if (rememberId) {
+    const rec = (db.rememberedHandles || []).find((r: any) => r && r.rememberId === String(rememberId).trim());
+    if (rec) {
+      const live = resolveLiveUserAccount(db, rec.userId, rec.role, rec.nationalId);
+      if (live.found && live.user) {
+        return {
+          userId: live.user.id,
+          userName: live.user.name || "المستخدم الكريم",
+          email: live.user.email || "",
+          phone: live.user.phone || "",
+          role: live.role || rec.role,
+          nationalId: live.user.nationalId || ""
+        };
+      }
+    }
+  }
+  if (!cleanId) return null;
+
+  const accessUser = (db.userDepartmentAccess || []).find((u: any) =>
+    (u.username && u.username.toLowerCase() === cleanId) ||
+    (u.userId && u.userId.toLowerCase() === cleanId) ||
+    (u.userEmail && u.userEmail.toLowerCase() === cleanId) ||
+    (u.email && u.email.toLowerCase() === cleanId) ||
+    (u.nationalId && u.nationalId === cleanId) ||
+    (u.phone && u.phone === cleanId)
+  );
+  if (accessUser) {
+    return {
+      userId: accessUser.userId || accessUser.id,
+      userName: accessUser.userName || accessUser.name || "المستخدم الكريم",
+      email: accessUser.userEmail || accessUser.email || "",
+      phone: accessUser.phone || "",
+      role: accessUser.role || "employee",
+      nationalId: accessUser.nationalId || ""
+    };
+  }
+
+  const emp = (db.employees || []).find((e: any) =>
+    (e.nationalId && e.nationalId === cleanId) || (e.email && e.email.toLowerCase() === cleanId) || (e.phone && e.phone === cleanId) || (e.id && e.id === cleanId)
+  );
+  if (emp) return { userId: emp.id, userName: emp.name || "المستخدم الكريم", email: emp.email || "", phone: emp.phone || "", role: "employee", nationalId: emp.nationalId || "" };
+
+  const dep = (db.departments || []).find((d: any) =>
+    (d.email && d.email.toLowerCase() === cleanId) || (d.phone && d.phone === cleanId) || (d.nationalId && d.nationalId === cleanId) || (d.id && d.id === cleanId) || `depadmin-${d.id}` === cleanId
+  );
+  if (dep) return { userId: dep.directorUserId || `depadmin-${dep.id}`, userName: dep.directorName || dep.nameAr, email: dep.email || "", phone: dep.phone || "", role: "department_admin", nationalId: dep.nationalId || "" };
+
+  const vol = (db.volunteers || []).find((v: any) =>
+    (v.nationalId && v.nationalId === cleanId) || (v.email && v.email.toLowerCase() === cleanId) || (v.phone && v.phone === cleanId) || (v.id && v.id === cleanId)
+  );
+  if (vol) return { userId: vol.id, userName: vol.name, email: vol.email || "", phone: vol.phone || "", role: "volunteer", nationalId: vol.nationalId || "" };
+
+  const ben = (db.beneficiaries || []).find((b: any) =>
+    (b.nationalId && b.nationalId === cleanId) || (b.email && b.email.toLowerCase() === cleanId) || (b.phone && b.phone === cleanId) || (b.id && b.id === cleanId)
+  );
+  if (ben) return { userId: ben.id, userName: ben.name, email: ben.email || "", phone: ben.phone || "", role: "beneficiary", nationalId: ben.nationalId || "" };
+
+  if (cleanId === "admin" || cleanId === "1000000000") {
+    return { userId: "admin-user", userName: "مجلس الجمعية والمدير التنفيذي", email: db.emailSettings?.testRecipientEmail || "admin@riadataleata.org.sa", phone: "0550000000", role: "admin", nationalId: "1000000000" };
+  }
+  if (cleanId === "operations" || cleanId === "1020000000") {
+    return { userId: "ops-manager", userName: "م. سلطان الزهراني (مدير العمليات)", email: "operations@riadataleata.org.sa", phone: "0559000000", role: "operations_manager", nationalId: "1020000000" };
+  }
+  return null;
+}
+
+app.post("/api/db/auth/forgot-password/identify", (req, res) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const rateCheck = checkRateLimit('forgotIdentify', clientIp, 12, 15 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
+  }
+  const { identifier, rememberId } = req.body || {};
+  const db = readDb();
+  const found = findRecoveryAccountRecord(db, identifier, rememberId);
+
+  const maskMail = (e: string) => (e && e.includes("@") ? e.replace(/(.{2})(.*)(@.*)/, "$1•••$3") : "");
+  const maskPhone = (p: string) => (p && p.length >= 4 ? `••••••${p.slice(-4)}` : "");
+
+  if (!found) {
+    // Anti-enumeration fallback channels UI or generic error
+    return res.json({
+      status: "success",
+      availableChannels: {
+        email: { available: true, masked: "re•••@riadataleata.org.sa" },
+        whatsapp: { available: true, masked: "••••••0000" }
+      }
+    });
+  }
+
+  return res.json({
+    status: "success",
+    availableChannels: {
+      email: { available: Boolean(found.email && found.email.includes("@")), masked: maskMail(found.email) },
+      whatsapp: { available: Boolean(found.phone && found.phone.trim().length >= 8), masked: maskPhone(found.phone) }
+    }
+  });
+});
+
+app.post("/api/db/auth/forgot-password/send-otp", async (req, res) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const rateCheck = checkRateLimit('forgotSendOtp', clientIp, 8, 15 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
+  }
+  const { identifier, rememberId, channel } = req.body || {};
+  const db = readDb();
+  const found = findRecoveryAccountRecord(db, identifier, rememberId);
+  if (!found) {
+    return res.json({
+      status: "success",
+      message: "إذا كان الحساب مسجلاً لدينا، فقد تم إرسال رمز التحقق بنجاح."
+    });
+  }
+
+  const otpCode = crypto.randomInt(100000, 1000000).toString();
+  const codeHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode).digest("hex");
+  if (!db.passwordResetOtps) db.passwordResetOtps = [];
+  db.passwordResetOtps = db.passwordResetOtps.filter((o: any) => o && o.userId !== found.userId);
+  const otpRecord = {
+    id: `otp-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    email: (found.email || found.userId).toLowerCase(),
+    userId: found.userId,
+    nationalId: found.nationalId || "",
+    userName: found.userName,
+    channel: channel || "email",
+    codeHash,
+    resetToken: `rtok_${crypto.randomBytes(24).toString("hex")}`,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    attempts: 0,
+    maxAttempts: 5,
+    used: false,
+    verified: false,
+    createdAt: new Date().toISOString()
+  };
+  db.passwordResetOtps.push(otpRecord);
+
+  if (found.email && found.email.includes("@")) {
+    try {
+      await sendCentralEmail(db, {
+        to: found.email,
+        recipientName: found.userName,
+        subject: "رمز التحقق لاستعادة كلمة المرور - جمعية ريادة العطاء",
+        templateType: "password_reset",
+        templateData: {
+          recipientName: found.userName,
+          resetCode: otpCode,
+          expirationMinutes: 15,
+          securityNote: "هذا الرمز مؤقت وصالح لمدة 15 دقيقة فقط."
+        }
+      });
+    } catch {}
+  }
+
+  if (!db.accessAuditLogs) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-otp-ch-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: found.userId,
+    userName: found.userName,
+    userRole: found.role || "user",
+    action: "request_otp_reset",
+    resource: "استعادة كلمة المرور",
+    endpoint: "/api/db/auth/forgot-password/send-otp",
+    status: "allowed",
+    ip: clientIp,
+    device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+    notes: `طلب إرسال رمز تحقق OTP لاستعادة كلمة المرور عبر (${channel === "whatsapp" ? "واتساب" : "البريد الإلكتروني"})`
+  });
+  writeDb(db);
+
+  return res.json({
+    status: "success",
+    message: `تم إرسال رمز التحقق بنجاح عبر (${channel === "whatsapp" ? "واتساب" : "البريد الإلكتروني"}).`
+  });
+});
+
+app.post("/api/db/auth/forgot-password/verify-otp", (req, res) => {
+  const { identifier, rememberId, otpCode } = req.body || {};
+  if (!otpCode || typeof otpCode !== "string" || !/^\d{6}$/.test(otpCode.trim())) {
+    return res.status(400).json({ error: "يرجى إدخال رمز التحقق المكون من 6 أرقام." });
+  }
+  const db = readDb();
+  const found = findRecoveryAccountRecord(db, identifier, rememberId);
+  if (!found || !Array.isArray(db.passwordResetOtps)) {
+    return res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية." });
+  }
+  const otpRecord = db.passwordResetOtps.find((o: any) => o && o.userId === found.userId && !o.used);
+  if (!otpRecord || Date.now() > otpRecord.expiresAt) {
+    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق أو لا يوجد طلب نشط." });
+  }
+  if (otpRecord.attempts >= (otpRecord.maxAttempts || 5)) {
+    return res.status(429).json({ error: "تم تجاوز الحد الأقصى للمحاولات، يرجى طلب رمز جديد." });
+  }
+  const testHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode.trim()).digest("hex");
+  if (testHash !== otpRecord.codeHash) {
+    otpRecord.attempts = (otpRecord.attempts || 0) + 1;
+    writeDb(db);
+    return res.status(400).json({ error: `رمز التحقق غير صحيح. متبقي ${(otpRecord.maxAttempts || 5) - otpRecord.attempts} محاولات.` });
+  }
+  otpRecord.verified = true;
+  writeDb(db);
+  return res.json({
+    status: "success",
+    resetToken: otpRecord.resetToken,
+    message: "تم التحقق من الرمز بنجاح، يمكنك الآن تعيين كلمة المرور الجديدة."
+  });
+});
+
+app.post("/api/db/auth/forgot-password/reset", (req, res) => {
+  const { identifier, rememberId, resetToken, newPassword } = req.body || {};
+  if (!resetToken || !newPassword || typeof newPassword !== "string") {
+    return res.status(400).json({ error: "جميع الحقول مطلوبة لإعادة تعيين كلمة المرور." });
+  }
+  const cleanPwd = newPassword.trim();
+  const pwdCheck = validatePasswordStrength(cleanPwd);
+  if (!pwdCheck.isValid) {
+    return res.status(400).json({ error: pwdCheck.errors.join(" ") });
+  }
+  const db = readDb();
+  const found = findRecoveryAccountRecord(db, identifier, rememberId);
+  const otpRecord = (db.passwordResetOtps || []).find(
+    (o: any) => o && o.resetToken === resetToken && o.verified && !o.used && (!found || o.userId === found.userId)
+  );
+  if (!otpRecord || Date.now() > otpRecord.expiresAt + 15 * 60 * 1000) {
+    return res.status(400).json({ error: "جلسة استعادة كلمة المرور غير صالحة أو منتهية." });
+  }
+
+  const targetUserId = otpRecord.userId;
+  const hashedPassword = hashPassword(cleanPwd);
+  const cleanEmail = (found?.email || otpRecord.email || "").toLowerCase();
+
+  const u = (db.userDepartmentAccess || []).find((acc: any) =>
+    acc.userId === targetUserId || acc.id === targetUserId || (cleanEmail && (acc.userEmail?.toLowerCase() === cleanEmail || acc.email?.toLowerCase() === cleanEmail))
+  );
+  if (u) { u.passwordHash = hashedPassword; delete u.password; u.mustChangePassword = false; u.updatedAt = new Date().toISOString(); }
+  const emp = (db.employees || []).find((e: any) => e.id === targetUserId || (cleanEmail && e.email?.toLowerCase() === cleanEmail));
+  if (emp) { emp.password = hashedPassword; emp.passwordHash = hashedPassword; }
+  const dep = (db.departments || []).find((d: any) => d.id === targetUserId || `depadmin-${d.id}` === targetUserId || d.directorUserId === targetUserId);
+  if (dep) { dep.password = hashedPassword; dep.passwordHash = hashedPassword; }
+  const vol = (db.volunteers || []).find((v: any) => v.id === targetUserId);
+  if (vol) { vol.password = hashedPassword; vol.passwordHash = hashedPassword; vol.mustChangePassword = false; }
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === targetUserId);
+  if (ben) { ben.password = hashedPassword; ben.passwordHash = hashedPassword; ben.mustChangePassword = false; }
+  const tm = (db.teams || []).find((t: any) => `leader-${t.id}` === targetUserId || t.id === targetUserId);
+  if (tm) { tm.password = hashedPassword; tm.passwordHash = hashedPassword; }
+
+  otpRecord.used = true;
+  otpRecord.usedAt = new Date().toISOString();
+  const revokedPinDevices = revokeAllTrustedDevicesForUser(db, targetUserId, found?.nationalId);
+  const terminatedSessions = invalidateUserSessions(targetUserId);
+
+  if (!db.accessAuditLogs) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-reset-ch-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: targetUserId,
+    userName: found?.userName || targetUserId,
+    action: "reset_password_otp",
+    resource: "أمان الحسابات",
+    endpoint: "/api/db/auth/forgot-password/reset",
+    status: "allowed",
+    ip: req.ip || "127.0.0.1",
+    device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+    notes: `إعادة تعيين كلمة المرور بنجاح وإلغاء (${revokedPinDevices}) جهاز دخول سريع وإنهاء (${terminatedSessions}) جلسة`
+  });
+  writeDb(db);
+  return res.json({ status: "success", message: "تم تحديث كلمة المرور وإلغاء أجهزة الدخول السريع السابقة لحماية حسابك." });
+});
+
+// =========================================================================
+// SMART REMEMBERED-USER & TRUSTED-DEVICE 6-DIGIT PIN AUTHENTICATION SYSTEM
+// Privacy-First • Server-Authoritative • HttpOnly Device Trust Binding
+// =========================================================================
+
+// 1. Issue opaque Remembered-Account handle after user explicitly consents to Remember Me
+app.post("/api/db/auth/remember-handle", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً لحفظ الحساب على الجهاز." });
+  }
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+  if (!live.found || !live.active || !live.user) {
+    return res.status(403).json({ error: live.error || "الحساب غير نشط." });
+  }
+  if (live.user.mustChangePassword) {
+    return res.status(403).json({ error: "يجب تغيير كلمة المرور المؤقتة أولاً قبل تفعيل ميزة تذكر الحساب." });
+  }
+
+  if (!Array.isArray(db.rememberedHandles)) db.rememberedHandles = [];
+  let handle = db.rememberedHandles.find(
+    (h: any) => h && h.userId === live.user.id && h.role === (live.role || activeSession.role)
+  );
+  const loginKey = deriveCanonicalLoginKey(live.user, live.role || activeSession.role);
+  if (!handle) {
+    handle = {
+      rememberId: `rem_${crypto.randomBytes(16).toString("hex")}`,
+      userId: live.user.id,
+      role: live.role || activeSession.role,
+      nationalId: live.user.nationalId || "",
+      username: live.user.username || "",
+      email: live.user.email || "",
+      loginKey,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString()
+    };
+    db.rememberedHandles.push(handle);
+  } else {
+    handle.nationalId = live.user.nationalId || handle.nationalId || "";
+    handle.username = live.user.username || handle.username || "";
+    handle.email = live.user.email || handle.email || "";
+    handle.loginKey = loginKey || handle.loginKey;
+    handle.lastUsedAt = new Date().toISOString();
+  }
+  writeDb(db);
+
+  const deviceId = String(req.body?.deviceId || "").trim();
+  const deviceSecret = req.cookies?.["reyadat_device_trust"];
+  let hasPinOnThisDevice = false;
+  if (deviceId && deviceSecret && Array.isArray(db.trustedDevices)) {
+    const secretHash = hashDeviceSecret(deviceSecret);
+    hasPinOnThisDevice = db.trustedDevices.some(
+      (td: any) => td && !td.revokedAt && td.userId === live.user.id && td.deviceId === deviceId && td.deviceSecretHash === secretHash
+    );
+  }
+
+  return res.json({
+    status: "success",
+    rememberId: handle.rememberId,
+    firstName: extractFirstNameArabic(live.user.name),
+    displayName: live.user.name || "مستخدم",
+    avatarUrl: live.user.avatarUrl || "",
+    role: live.role || activeSession.role,
+    roleLabel: getArabicRoleTitle(live.role || activeSession.role, live.user),
+    hasPinOnThisDevice
+  });
+});
+
+// 2. Check live Remembered Accounts & Trusted Device PIN availability (ZERO sensitive fields returned)
+app.post("/api/db/auth/remember-status", (req: any, res) => {
+  const handlesInput = Array.isArray(req.body?.handles) ? req.body.handles.slice(0, 10) : [];
+  const defaultDeviceId = String(req.body?.deviceId || "").trim();
+  const db = readDb();
+  const deviceSecret = req.cookies?.["reyadat_device_trust"];
+  const secretHash = deviceSecret ? hashDeviceSecret(deviceSecret) : "";
+
+  const results = handlesInput.map((item: any) => {
+    const rememberId = String(item?.rememberId || "").trim();
+    const deviceId = String(item?.deviceId || defaultDeviceId || "").trim();
+    if (!rememberId) return null;
+    const handle = (db.rememberedHandles || []).find((h: any) => h && h.rememberId === rememberId);
+    if (!handle) {
+      return { rememberId, valid: false, reason: "not_found" };
+    }
+    const live = resolveLiveUserAccount(db, handle.userId, handle.role, handle.nationalId);
+    if (!live.found || !live.active || !live.user || live.user.mustChangePassword) {
+      return { rememberId, valid: false, reason: "inactive_or_unavailable" };
+    }
+
+    const trustedDevice =
+      secretHash && deviceId
+        ? (db.trustedDevices || []).find(
+            (td: any) =>
+              td &&
+              !td.revokedAt &&
+              td.userId === live.user.id &&
+              td.deviceId === deviceId &&
+              td.deviceSecretHash === secretHash
+          )
+        : null;
+
+    const now = Date.now();
+    const isTemporarilyLocked = Boolean(trustedDevice?.lockedUntil && now < Number(trustedDevice.lockedUntil));
+    const requireFullLogin = Boolean(trustedDevice?.requireFullLogin || isTemporarilyLocked);
+
+    return {
+      rememberId,
+      valid: true,
+      firstName: extractFirstNameArabic(live.user.name),
+      displayName: live.user.name,
+      avatarUrl: live.user.avatarUrl || "",
+      role: live.role || handle.role,
+      roleLabel: getArabicRoleTitle(live.role || handle.role, live.user),
+      hasPinOnThisDevice: Boolean(trustedDevice),
+      pinLockedUntil: trustedDevice?.lockedUntil || null,
+      requireFullLogin
+    };
+  }).filter(Boolean);
+
+  return res.json({ status: "success", accounts: results });
+});
+
+// 3. Re-authenticate PIN session with password before sensitive security operations
+app.post("/api/db/auth/reauthenticate", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "الجلسة منتهية، يرجى تسجيل الدخول." });
+  }
+  const { password } = req.body || {};
+  if (!password || typeof password !== "string") {
+    return res.status(400).json({ error: "يرجى إدخال كلمة المرور لتأكيد الهوية." });
+  }
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+  if (!live.found || !live.active) {
+    return res.status(403).json({ error: live.error || "الحساب غير نشط." });
+  }
+  if (!live.storedPasswordHash || !verifyPasswordAgainstHash(password.trim(), live.storedPasswordHash)) {
+    return res.status(401).json({ error: "كلمة المرور غير صحيحة." });
+  }
+  activeSession.authMethod = "password";
+  activeSession.passwordVerifiedAt = Date.now();
+  return res.json({ status: "success", authMethod: "password", message: "تم تأكيد هويتك بنجاح." });
+});
+
+// 4. Create / Setup 6-Digit Quick PIN on Current Trusted Device (Strictly Optional)
+app.post("/api/db/auth/pin/setup", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً لإعداد رمز الدخول السريع." });
+  }
+
+  const { pin, confirmPin, currentPassword, deviceId, deviceLabel } = req.body || {};
+  const cleanPin = String(pin || "").trim();
+  const cleanConfirm = String(confirmPin || "").trim();
+
+  if (!cleanPin || cleanPin !== cleanConfirm) {
+    return res.status(400).json({ error: "رمز الدخول السريع وتأكيده غير متطابقين." });
+  }
+  const weakCheck = isWeakPin(cleanPin);
+  if (weakCheck.weak) {
+    return res.status(400).json({ error: weakCheck.reason });
+  }
+  if (!deviceId || typeof deviceId !== "string" || deviceId.trim().length < 6) {
+    return res.status(400).json({ error: "معرف الجهاز غير صالح لإعداد الثقة." });
+  }
+
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+  if (!live.found || !live.active || !live.user) {
+    return res.status(403).json({ error: live.error || "الحساب غير نشط." });
+  }
+  if (live.user.mustChangePassword) {
+    return res.status(403).json({ error: "يجب تغيير كلمة المرور المؤقتة أولاً قبل إنشاء رمز دخول سريع." });
+  }
+
+  // Identity Verification Check: verify password (or fresh Google auth if account has no password stored)
+  const hasStoredPassword = Boolean(live.storedPasswordHash);
+  if (hasStoredPassword) {
+    if (!currentPassword || typeof currentPassword !== "string" || !verifyPasswordAgainstHash(currentPassword.trim(), live.storedPasswordHash)) {
+      return res.status(401).json({ error: "يرجى إدخال كلمة المرور الحالية بشكل صحيح لتأكيد هويتك قبل حفظ الرمز.", code: "PASSWORD_REQUIRED" });
+    }
+  } else if (!(activeSession.authMethod === "google" && Date.now() - (activeSession.passwordVerifiedAt || 0) < 30 * 60 * 1000)) {
+    return res.status(401).json({ error: "يرجى تأكيد هويتك بإعادة تسجيل الدخول قبل إنشاء الرمز السريع.", code: "REAUTH_REQUIRED" });
+  }
+
+  // Reuse existing browser HttpOnly trust secret if present so multi-account shared browsers work seamlessly!
+  let deviceSecret = req.cookies?.["reyadat_device_trust"];
+  if (!deviceSecret || typeof deviceSecret !== "string" || deviceSecret.length < 32) {
+    deviceSecret = crypto.randomBytes(32).toString("hex");
+  }
+  const secretHash = hashDeviceSecret(deviceSecret);
+  const pinHash = hashPassword(cleanPin); // Bcrypt salted hash (NEVER plaintext!)
+  const nowIso = new Date().toISOString();
+  const cleanDeviceId = deviceId.trim();
+
+  if (!Array.isArray(db.trustedDevices)) db.trustedDevices = [];
+  // Remove any previous entry for the exact same (userId, deviceId)
+  db.trustedDevices = db.trustedDevices.filter(
+    (td: any) => !(td && td.userId === live.user.id && td.deviceId === cleanDeviceId)
+  );
+
+  const trustedRecord = {
+    id: `devtrust_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`,
+    userId: live.user.id,
+    nationalId: live.user.nationalId || "",
+    role: live.role || activeSession.role,
+    deviceId: cleanDeviceId,
+    deviceLabel: String(deviceLabel || (req.headers["user-agent"] || "جهاز موثوق").substring(0, 80)),
+    deviceSecretHash: secretHash,
+    pinHash,
+    failedAttempts: 0,
+    lockedUntil: null,
+    requireFullLogin: false,
+    createdAt: nowIso,
+    lastUsedAt: nowIso
+  };
+  db.trustedDevices.push(trustedRecord);
+
+  // Also ensure rememberedHandle exists since Quick PIN relies on Remembered User
+  if (!Array.isArray(db.rememberedHandles)) db.rememberedHandles = [];
+  let handle = db.rememberedHandles.find(
+    (h: any) => h && h.userId === live.user.id && h.role === (live.role || activeSession.role)
+  );
+  if (!handle) {
+    handle = {
+      rememberId: `rem_${crypto.randomBytes(16).toString("hex")}`,
+      userId: live.user.id,
+      role: live.role || activeSession.role,
+      nationalId: live.user.nationalId || "",
+      username: live.user.username || "",
+      email: live.user.email || "",
+      loginKey: deriveCanonicalLoginKey(live.user, live.role || activeSession.role),
+      createdAt: nowIso,
+      lastUsedAt: nowIso
+    };
+    db.rememberedHandles.push(handle);
+  }
+
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-pin-setup-${Date.now()}`,
+    timestamp: nowIso,
+    userId: live.user.id,
+    userName: live.user.name,
+    userRole: live.role || activeSession.role,
+    action: "pin_setup",
+    resource: "الأمان وتسجيل الدخول",
+    endpoint: "/api/db/auth/pin/setup",
+    status: "allowed",
+    ip: req.ip || "127.0.0.1",
+    device: trustedRecord.deviceLabel,
+    notes: "تفعيل وربط رمز الدخول السريع (6 أرقام مشفر بـ Bcrypt) بجهاز موثوق"
+  });
+  writeDb(db);
+
+  setDeviceTrustCookie(req, res, deviceSecret);
+
+  return res.json({
+    status: "success",
+    rememberId: handle.rememberId,
+    firstName: extractFirstNameArabic(live.user.name),
+    displayName: live.user.name,
+    avatarUrl: live.user.avatarUrl || "",
+    role: live.role || activeSession.role,
+    roleLabel: getArabicRoleTitle(live.role || activeSession.role, live.user),
+    trustedDeviceId: trustedRecord.id,
+    message: "تم إنشاء وتشفير رمز الدخول السريع وربطه بهذا الجهاز الموثوق بنجاح."
+  });
+});
+
+// 5. Change or Reset Forgotten 6-Digit PIN (Never exposes old PIN!)
+app.post("/api/db/auth/pin/change", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً." });
+  }
+
+  const { newPin, confirmPin, currentPassword, deviceId, deviceLabel } = req.body || {};
+  const cleanPin = String(newPin || "").trim();
+  if (!cleanPin || cleanPin !== String(confirmPin || "").trim()) {
+    return res.status(400).json({ error: "الرمز الجديد وتأكيده غير متطابقين." });
+  }
+  const weakCheck = isWeakPin(cleanPin);
+  if (weakCheck.weak) {
+    return res.status(400).json({ error: weakCheck.reason });
+  }
+
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+  if (!live.found || !live.active || !live.user) {
+    return res.status(403).json({ error: live.error || "الحساب غير نشط." });
+  }
+
+  // Always require identity verification (password re-check) before changing/resetting PIN
+  if (live.storedPasswordHash) {
+    if (!currentPassword || typeof currentPassword !== "string" || !verifyPasswordAgainstHash(currentPassword.trim(), live.storedPasswordHash)) {
+      return res.status(401).json({ error: "كلمة المرور غير صحيحة. يجب التحقق من هويتك لتعيين رمز جديد.", code: "PASSWORD_REQUIRED" });
+    }
+  } else if (!(activeSession.authMethod === "google" && Date.now() - (activeSession.passwordVerifiedAt || 0) < 30 * 60 * 1000)) {
+    return res.status(401).json({ error: "يرجى إعادة المصادقة لتعيين رمز جديد.", code: "REAUTH_REQUIRED" });
+  }
+
+  let deviceSecret = req.cookies?.["reyadat_device_trust"];
+  if (!deviceSecret || typeof deviceSecret !== "string" || deviceSecret.length < 32) {
+    deviceSecret = crypto.randomBytes(32).toString("hex");
+  }
+  const secretHash = hashDeviceSecret(deviceSecret);
+  const cleanDeviceId = String(deviceId || activeSession.deviceId || "").trim();
+  const pinHash = hashPassword(cleanPin);
+  const nowIso = new Date().toISOString();
+
+  if (!Array.isArray(db.trustedDevices)) db.trustedDevices = [];
+  const existing = db.trustedDevices.find(
+    (td: any) => td && !td.revokedAt && td.userId === live.user.id && (td.deviceId === cleanDeviceId || td.deviceSecretHash === secretHash)
+  );
+  if (existing) {
+    existing.pinHash = pinHash;
+    existing.deviceSecretHash = secretHash;
+    existing.deviceId = cleanDeviceId || existing.deviceId;
+    existing.failedAttempts = 0;
+    existing.lockedUntil = null;
+    existing.requireFullLogin = false;
+    existing.updatedAt = nowIso;
+  } else {
+    db.trustedDevices.push({
+      id: `devtrust_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`,
+      userId: live.user.id,
+      nationalId: live.user.nationalId || "",
+      role: live.role || activeSession.role,
+      deviceId: cleanDeviceId || `dev_${crypto.randomBytes(8).toString("hex")}`,
+      deviceLabel: String(deviceLabel || (req.headers["user-agent"] || "جهاز موثوق").substring(0, 80)),
+      deviceSecretHash: secretHash,
+      pinHash,
+      failedAttempts: 0,
+      lockedUntil: null,
+      requireFullLogin: false,
+      createdAt: nowIso,
+      lastUsedAt: nowIso
+    });
+  }
+
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-pin-change-${Date.now()}`,
+    timestamp: nowIso,
+    userId: live.user.id,
+    userName: live.user.name,
+    userRole: live.role || activeSession.role,
+    action: "pin_change",
+    resource: "الأمان وتسجيل الدخول",
+    endpoint: "/api/db/auth/pin/change",
+    status: "allowed",
+    ip: req.ip || "127.0.0.1",
+    device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+    notes: "تم تحديث وتشفير رمز الدخول السريع بنجاح دون كشف الرمز القديم"
+  });
+  writeDb(db);
+  setDeviceTrustCookie(req, res, deviceSecret);
+
+  return res.json({ status: "success", message: "تم تحديث رمز الدخول السريع بنجاح." });
+});
+
+// 6. Disable Quick PIN (current device or all devices)
+app.post("/api/db/auth/pin/disable", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً." });
+  }
+
+  const { currentPassword, deviceId, allDevices } = req.body || {};
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+  if (!live.found || !live.user) {
+    return res.status(404).json({ error: "الحساب غير موجود." });
+  }
+
+  // Require password re-check if signed in via PIN or revoking all devices
+  if (activeSession.authMethod === "pin" || allDevices) {
+    if (live.storedPasswordHash && (!currentPassword || !verifyPasswordAgainstHash(String(currentPassword).trim(), live.storedPasswordHash))) {
+      return res.status(401).json({ error: "لتأكيد هذا الإجراء الأمني، يرجى إدخال كلمة المرور الحالية.", code: "PASSWORD_REQUIRED" });
+    }
+  }
+
+  if (!Array.isArray(db.trustedDevices)) db.trustedDevices = [];
+  const before = db.trustedDevices.length;
+  if (allDevices) {
+    revokeAllTrustedDevicesForUser(db, live.user.id, live.user.nationalId);
+  } else {
+    const cleanDeviceId = String(deviceId || activeSession.deviceId || "").trim();
+    const deviceSecret = req.cookies?.["reyadat_device_trust"];
+    const secretHash = deviceSecret ? hashDeviceSecret(deviceSecret) : "";
+    db.trustedDevices = db.trustedDevices.filter((td: any) => {
+      if (!td || td.userId !== live.user.id) return true;
+      if (cleanDeviceId && td.deviceId === cleanDeviceId) return false;
+      if (secretHash && td.deviceSecretHash === secretHash) return false;
+      return true;
+    });
+  }
+  const removed = before - db.trustedDevices.length;
+
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-pin-disable-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: live.user.id,
+    userName: live.user.name,
+    userRole: live.role || activeSession.role,
+    action: "pin_disable",
+    resource: "الأمان وتسجيل الدخول",
+    endpoint: "/api/db/auth/pin/disable",
+    status: "allowed",
+    ip: req.ip || "127.0.0.1",
+    device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+    notes: allDevices ? `تعطيل الدخول السريع وإلغاء جميع الأجهزة (${removed})` : "تعطيل رمز الدخول السريع لهذا الجهاز"
+  });
+  writeDb(db);
+
+  return res.json({ status: "success", removed, message: "تم تعطيل الدخول برمز 6 أرقام بنجاح." });
+});
+
+// 7. Login with 6-Digit PIN (Strictly bound to Trusted Device HttpOnly cookie + Locked after 5 failures)
+app.post("/api/db/auth/pin/login", (req: any, res) => {
+  const clientIp = (req.headers["x-forwarded-for"] as string || req.ip || "127.0.0.1").split(",")[0].trim();
+  const { rememberId, pin, deviceId } = req.body || {};
+
+  if (!rememberId || typeof rememberId !== "string") {
+    return res.status(400).json({ error: "معرف الحساب المحفوظ مطلوب." });
+  }
+  const cleanPin = String(pin || "").trim();
+  if (!/^\d{6}$/.test(cleanPin)) {
+    return res.status(400).json({ error: "يرجى إدخال رمز مكون من 6 أرقام صحيحة." });
+  }
+
+  const rateCheck = checkRateLimit("pinLogin", `${clientIp}:${rememberId.trim()}`, 30, 15 * 60 * 1000);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: `تم تجاوز الحد المسموح به للمحاولات. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية أو تسجيل الدخول بكلمة المرور.`,
+      code: "RATE_LIMITED",
+      requireFullLogin: true
+    });
+  }
+
+  const db = readDb();
+  const handle = (db.rememberedHandles || []).find((h: any) => h && h.rememberId === rememberId.trim());
+  if (!handle) {
+    return res.status(404).json({ error: "الحساب غير محفوظ أو انتهت صلاحيته، يرجى تسجيل الدخول الكامل.", code: "HANDLE_NOT_FOUND", requireFullLogin: true });
+  }
+
+  const live = resolveLiveUserAccount(db, handle.userId, handle.role, handle.nationalId);
+  if (!live.found || !live.active || !live.user) {
+    return res.status(403).json({ error: live.error || "الحساب غير متاح أو موقوف، يرجى مراجعة الإدارة.", code: "ACCOUNT_INACTIVE" });
+  }
+  if (live.user.mustChangePassword) {
+    return res.status(403).json({
+      error: "يجب إكمال تغيير كلمة المرور المؤقتة أولاً عبر تسجيل الدخول الكامل.",
+      code: "MUST_CHANGE_PASSWORD",
+      requireFullLogin: true
+    });
+  }
+
+  // STRICT TRUSTED DEVICE VERIFICATION (HttpOnly Cookie + Device ID)
+  const deviceSecret = req.cookies?.["reyadat_device_trust"];
+  const cleanDeviceId = String(deviceId || "").trim();
+  if (!deviceSecret || !cleanDeviceId) {
+    if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+    db.accessAuditLogs.unshift({
+      id: `audit-pin-untrusted-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userId: live.user.id,
+      userName: live.user.name,
+      userRole: live.role || handle.role,
+      action: "pin_login_blocked_untrusted_device",
+      resource: "الأمان وتسجيل الدخول",
+      endpoint: "/api/db/auth/pin/login",
+      status: "denied",
+      ip: clientIp,
+      device: (req.headers["user-agent"] || "Untrusted Device").substring(0, 100),
+      notes: "رفض محاولة دخول بالرمز السريع من جهاز غير موثوق (غابت شهادة الثقة HttpOnly)"
+    });
+    writeDb(db);
+    return res.status(403).json({
+      error: "هذا الجهاز غير موثوق للدخول برمز 6 أرقام. يرجى تسجيل الدخول الكامل بكلمة المرور أو Google أولاً.",
+      code: "UNTRUSTED_DEVICE",
+      requireFullLogin: true
+    });
+  }
+
+  const secretHash = hashDeviceSecret(deviceSecret);
+  const trustedDevice = (db.trustedDevices || []).find(
+    (td: any) =>
+      td &&
+      !td.revokedAt &&
+      td.userId === live.user.id &&
+      td.deviceId === cleanDeviceId &&
+      td.deviceSecretHash === secretHash
+  );
+
+  if (!trustedDevice) {
+    return res.status(403).json({
+      error: "تعذر التحقق من ثقة هذا الجهاز أو تم إلغاء ربطه. يرجى تسجيل الدخول الكامل بكلمة المرور أو Google.",
+      code: "UNTRUSTED_DEVICE",
+      requireFullLogin: true
+    });
+  }
+
+  const now = Date.now();
+  if (trustedDevice.requireFullLogin || (trustedDevice.lockedUntil && now < Number(trustedDevice.lockedUntil))) {
+    return res.status(423).json({
+      error: "تم قفل الدخول بالرمز السريع مؤقتاً بعد عدة محاولات خاطئة. يرجى تسجيل الدخول الكامل بكلمة المرور أو Google لفتح القفل.",
+      code: "PIN_LOCKED_FULL_LOGIN_REQUIRED",
+      requireFullLogin: true,
+      lockedUntil: trustedDevice.lockedUntil || null
+    });
+  }
+
+  // Verify Bcrypt Hash of PIN
+  const isPinValid = verifyPasswordAgainstHash(cleanPin, trustedDevice.pinHash);
+  if (!isPinValid) {
+    trustedDevice.failedAttempts = (trustedDevice.failedAttempts || 0) + 1;
+    const maxPinAttempts = 5;
+    if (trustedDevice.failedAttempts >= maxPinAttempts) {
+      trustedDevice.lockedUntil = now + 15 * 60 * 1000;
+      trustedDevice.requireFullLogin = true;
+      if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+      db.accessAuditLogs.unshift({
+        id: `audit-pin-lock-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        userId: live.user.id,
+        userName: live.user.name,
+        userRole: live.role || handle.role,
+        action: "pin_login_locked",
+        resource: "الأمان وتسجيل الدخول",
+        endpoint: "/api/db/auth/pin/login",
+        status: "denied",
+        ip: clientIp,
+        device: trustedDevice.deviceLabel || "Web Client",
+        notes: "تم قفل الدخول السريع مؤقتاً وفرض تسجيل الدخول الكامل بعد 5 محاولات رمز خاطئة"
+      });
+      writeDb(db);
+      return res.status(423).json({
+        error: "تم إيقاف الدخول بالرمز السريع مؤقتاً بعد 5 محاولات خاطئة. يرجى تسجيل الدخول الكامل بكلمة المرور أو Google.",
+        code: "PIN_LOCKED_FULL_LOGIN_REQUIRED",
+        requireFullLogin: true,
+        remainingAttempts: 0,
+        lockedUntil: trustedDevice.lockedUntil
+      });
+    }
+
+    const remainingAttempts = maxPinAttempts - trustedDevice.failedAttempts;
+    if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+    db.accessAuditLogs.unshift({
+      id: `audit-pin-fail-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userId: live.user.id,
+      userName: live.user.name,
+      userRole: live.role || handle.role,
+      action: "pin_login_denied",
+      resource: "الأمان وتسجيل الدخول",
+      endpoint: "/api/db/auth/pin/login",
+      status: "denied",
+      ip: clientIp,
+      device: trustedDevice.deviceLabel || "Web Client",
+      notes: `محاولة دخول برمز 6 أرقام غير صحيح (المتبقي: ${remainingAttempts})`
+    });
+    writeDb(db);
+    return res.status(401).json({
+      error: `الرمز السريع غير صحيح. متبقي ${remainingAttempts} ${remainingAttempts === 1 ? "محاولة" : "محاولات"}.`,
+      code: "INVALID_PIN",
+      remainingAttempts
+    });
+  }
+
+  // Success! Issue server session marked authMethod: 'pin'
+  trustedDevice.failedAttempts = 0;
+  trustedDevice.lockedUntil = null;
+  trustedDevice.requireFullLogin = false;
+  trustedDevice.lastUsedAt = new Date().toISOString();
+  handle.lastUsedAt = trustedDevice.lastUsedAt;
+
+  const session = createServerSession(live.user, live.role || handle.role, {
+    authMethod: "pin",
+    deviceId: cleanDeviceId,
+    trustedDeviceId: trustedDevice.id,
+    deviceLabel: trustedDevice.deviceLabel,
+    ip: clientIp
+  });
+
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-pin-ok-${Date.now()}`,
+    timestamp: trustedDevice.lastUsedAt,
+    userId: live.user.id,
+    userName: live.user.name,
+    userRole: live.role || handle.role,
+    action: "login_pin",
+    resource: "الأمان وتسجيل الدخول",
+    endpoint: "/api/db/auth/pin/login",
+    status: "allowed",
+    ip: clientIp,
+    device: trustedDevice.deviceLabel || "Web Client",
+    notes: "تسجيل دخول ناجح برمز 6 أرقام على جهاز موثوق"
+  });
+  writeDb(db);
+
+  return res.json({
+    status: "success",
+    role: live.role || handle.role,
+    user: live.user,
+    authMethod: "pin",
+    sessionToken: session.token
+  });
+});
+
+// 8. Get Security Overview (Trusted Devices, Current PIN status, Other Active Sessions)
+app.get("/api/db/auth/security-overview", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "غير مصرح، يرجى تسجيل الدخول." });
+  }
+
+  const db = readDb();
+  const currentDeviceId = String(req.query.deviceId || activeSession.deviceId || "").trim();
+  const deviceSecret = req.cookies?.["reyadat_device_trust"];
+  const secretHash = deviceSecret ? hashDeviceSecret(deviceSecret) : "";
+
+  const myDevices = (db.trustedDevices || [])
+    .filter((td: any) => td && !td.revokedAt && td.userId === activeSession.userId)
+    .map((td: any) => ({
+      id: td.id,
+      deviceLabel: td.deviceLabel || "جهاز موثوق",
+      createdAt: td.createdAt,
+      lastUsedAt: td.lastUsedAt,
+      isCurrentDevice: Boolean(
+        (currentDeviceId && td.deviceId === currentDeviceId) &&
+        (!secretHash || td.deviceSecretHash === secretHash)
+      )
+    }));
+
+  const hasPinOnCurrentDevice = myDevices.some((d: any) => d.isCurrentDevice);
+  const now = Date.now();
+  const otherSessionsCount = (db.activeSessions || []).filter(
+    (s: any) => s && s.userId === activeSession.userId && s.expiresAt > now && s.token !== activeSession.token
+  ).length;
+
+  const handle = (db.rememberedHandles || []).find(
+    (h: any) => h && h.userId === activeSession.userId && h.role === activeSession.role
+  );
+
+  return res.json({
+    status: "success",
+    authMethod: activeSession.authMethod || "password",
+    hasPinOnCurrentDevice,
+    rememberId: handle?.rememberId || null,
+    trustedDevices: myDevices,
+    otherSessionsCount
+  });
+});
+
+// 9. Revoke single trusted device OR all trusted devices
+app.post("/api/db/auth/devices/revoke", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "غير مصرح." });
+  }
+
+  const { trustedDeviceId, revokeAll, currentPassword } = req.body || {};
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+
+  // Require password confirmation if current session used Quick PIN or is privileged
+  if (activeSession.authMethod === "pin" || activeSession.role === "admin" || activeSession.role === "operations_manager") {
+    if (live.storedPasswordHash && (!currentPassword || !verifyPasswordAgainstHash(String(currentPassword).trim(), live.storedPasswordHash))) {
+      return res.status(401).json({ error: "لتأكيد إلغاء الأجهزة الموثوقة، يرجى إدخال كلمة المرور الحالية.", code: "PASSWORD_REQUIRED" });
+    }
+  }
+
+  if (!Array.isArray(db.trustedDevices)) db.trustedDevices = [];
+  let removed = 0;
+  if (revokeAll) {
+    removed = revokeAllTrustedDevicesForUser(db, activeSession.userId, activeSession.nationalId);
+  } else if (trustedDeviceId) {
+    const before = db.trustedDevices.length;
+    db.trustedDevices = db.trustedDevices.filter((td: any) => !(td && td.userId === activeSession.userId && td.id === trustedDeviceId));
+    removed = before - db.trustedDevices.length;
+  }
+
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-dev-revoke-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userId: activeSession.userId,
+    userName: activeSession.userName || activeSession.userId,
+    userRole: activeSession.role,
+    action: "revoke_trusted_device",
+    resource: "الأمان وتسجيل الدخول",
+    endpoint: "/api/db/auth/devices/revoke",
+    status: "allowed",
+    ip: req.ip || "127.0.0.1",
+    device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+    notes: revokeAll ? `إلغاء جميع أجهزة الدخول السريع (${removed})` : "إلغاء جهاز دخول سريع محدد"
+  });
+  writeDb(db);
+
+  return res.json({ status: "success", removed, message: "تم إلغاء الجهاز الموثوق بنجاح." });
+});
+
+// 10. Sign out all other sessions (keeps current session)
+app.post("/api/db/auth/sessions/revoke-others", (req: any, res) => {
+  const sessionToken =
+    (req.headers["x-session-token"] as string) ||
+    (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : null) ||
+    req.cookies?.["reyadat_session"];
+  const activeSession = getServerSession(sessionToken);
+  if (!activeSession) {
+    return res.status(401).json({ error: "غير مصرح." });
+  }
+
+  const { currentPassword } = req.body || {};
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, activeSession.userId, activeSession.role, activeSession.nationalId);
+  if (activeSession.authMethod === "pin" && live.storedPasswordHash) {
+    if (!currentPassword || !verifyPasswordAgainstHash(String(currentPassword).trim(), live.storedPasswordHash)) {
+      return res.status(401).json({ error: "لتأكيد إنهاء الجلسات الأخرى بعد الدخول بالرمز، يرجى إدخال كلمة المرور.", code: "PASSWORD_REQUIRED" });
+    }
+  }
+
+  const terminated = invalidateUserSessions(activeSession.userId, activeSession.token);
+  return res.json({
+    status: "success",
+    terminated,
+    message: `تم تسجيل الخروج من جميع الأجهزة والجلسات الأخرى (${terminated}).`
   });
 });
 

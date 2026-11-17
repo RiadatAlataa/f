@@ -4,11 +4,22 @@ import {
   RefreshCw, Globe, ArrowRight, ArrowLeft, CheckCircle2, 
   ChevronDown, ChevronUp, HeartHandshake, Award, X,
   KeyRound, CreditCard, Mail, Check, User, Users, Heart,
-  Phone, Calendar, MapPin, Clock, FileCheck, CheckCircle, Info, MessageSquare
+  Phone, Calendar, MapPin, Clock, FileCheck, CheckCircle, Info, MessageSquare,
+  Smartphone, Trash2, UserPlus, LogIn
 } from "lucide-react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import { evaluatePasswordStrength, generateStrongPassword } from "../utils/passwordSecurity";
 import { BeneficiaryFormFields, BeneficiaryFormData } from "./BeneficiaryFormFields";
+import { PinCodeInput } from "./PinCodeInput";
+import {
+  RememberedAccountCard,
+  getOrCreateDeviceId,
+  getRememberedAccounts,
+  purgeLegacySensitiveAuthStorage,
+  removeRememberedAccount,
+  replaceRememberedAccountsFromServer,
+  updateRememberedAccountPinState,
+} from "../utils/rememberedAccounts";
 
 declare global {
   interface Window {
@@ -45,7 +56,11 @@ declare global {
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").trim();
 
 interface AuthScreenProps {
-  onLoginSuccess: (role: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'supervisor' | 'department_admin' | 'storekeeper' | string, user: any) => void;
+  onLoginSuccess: (
+    role: 'admin' | 'leader' | 'volunteer' | 'beneficiary' | 'supervisor' | 'department_admin' | 'storekeeper' | string,
+    user: any,
+    options?: { rememberAccount?: boolean; authMethod?: 'password' | 'google' | 'pin' }
+  ) => void;
   onBackToHome: () => void;
   lang?: 'ar' | 'en';
   onToggleLang?: (l: 'ar' | 'en') => void;
@@ -70,10 +85,19 @@ export function AuthScreen({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Smart Remembered-User & 6-Digit Trusted-Device PIN State
+  const [rememberedAccounts, setRememberedAccounts] = useState<RememberedAccountCard[]>([]);
+  const [selectedRememberId, setSelectedRememberId] = useState<string>("");
+  const [loginViewMode, setLoginViewMode] = useState<'welcome' | 'standard'>('standard');
+  const [welcomeAuthMethod, setWelcomeAuthMethod] = useState<'pin' | 'password'>('password');
+  const [pinInput, setPinInput] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+
   // Multi-Step Password Recovery with Salted OTP & Bcrypt (WhatsApp & Email)
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [recoveryStep, setRecoveryStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [recoveryIdentifier, setRecoveryIdentifier] = useState("");
+  const [recoveryRememberId, setRecoveryRememberId] = useState<string>("");
   const [recoveryChannel, setRecoveryChannel] = useState<'whatsapp' | 'email'>('whatsapp');
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
@@ -178,20 +202,207 @@ export function AuthScreen({
   // Collapsible quick test credentials for evaluation
   const [showDemoCredentials, setShowDemoCredentials] = useState(false);
 
-  // Load saved identifier if "Remember Me" was previously selected (never stores password)
+  // Load & verify non-sensitive Remembered Accounts + Trusted Device PIN readiness on mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("reyadat_saved_identifier");
-      if (saved) {
-        setIdentifier(saved);
-        setRememberMe(true);
-      }
-    } catch {
-      // LocalStorage access failsafe
+    purgeLegacySensitiveAuthStorage();
+    const localCards = getRememberedAccounts();
+    if (localCards.length === 0) {
+      setRememberedAccounts([]);
+      setLoginViewMode('standard');
+      return;
     }
+
+    setRememberedAccounts(localCards);
+    const initial = localCards[0];
+    setSelectedRememberId(initial.rememberId);
+    setLoginViewMode('welcome');
+    setWelcomeAuthMethod(initial.hasPinEnabled && !initial.requireFullLogin ? 'pin' : 'password');
+
+    // Sync live validity & trusted-device PIN status with server
+    const syncRememberedStatus = async () => {
+      try {
+        const deviceId = getOrCreateDeviceId();
+        const res = await fetch("/api/db/auth/remember-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId,
+            handles: localCards.map((c) => ({ rememberId: c.rememberId, deviceId })),
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !Array.isArray(data?.accounts)) return;
+
+        const statusMap = new Map<string, any>(data.accounts.map((a: any) => [a.rememberId, a]));
+        const syncedCards: RememberedAccountCard[] = [];
+        for (const card of localCards) {
+          const live = statusMap.get(card.rememberId);
+          if (live && live.valid === false) continue; // Remove deactivated/invalid accounts from welcome list
+          if (live && live.valid) {
+            syncedCards.push({
+              ...card,
+              firstName: live.firstName || card.firstName,
+              displayName: live.displayName || card.displayName,
+              avatarUrl: live.avatarUrl || card.avatarUrl || "",
+              role: live.role || card.role,
+              roleLabel: live.roleLabel || card.roleLabel,
+              hasPinEnabled: Boolean(live.hasPinOnThisDevice),
+              pinLockedUntil: live.pinLockedUntil || null,
+              requireFullLogin: Boolean(live.requireFullLogin),
+            });
+          } else {
+            syncedCards.push(card);
+          }
+        }
+
+        const updated = replaceRememberedAccountsFromServer(syncedCards);
+        setRememberedAccounts(updated);
+        if (updated.length === 0) {
+          setSelectedRememberId("");
+          setLoginViewMode('standard');
+        } else {
+          const activeCard = updated.find((u) => u.rememberId === initial.rememberId) || updated[0];
+          setSelectedRememberId(activeCard.rememberId);
+          setWelcomeAuthMethod(activeCard.hasPinEnabled && !activeCard.requireFullLogin ? 'pin' : 'password');
+        }
+      } catch {
+        // Keep local non-sensitive metadata if offline
+      }
+    };
+    syncRememberedStatus();
   }, []);
 
+  const selectedRememberedAccount =
+    rememberedAccounts.find((a) => a.rememberId === selectedRememberId) || rememberedAccounts[0] || null;
+
   const isRtl = lang === 'ar';
+
+  const handleSelectRememberedCard = (card: RememberedAccountCard) => {
+    setSelectedRememberId(card.rememberId);
+    setError(null);
+    setPassword("");
+    setPinInput("");
+    setWelcomeAuthMethod(card.hasPinEnabled && !card.requireFullLogin ? 'pin' : 'password');
+  };
+
+  const handleRemoveRememberedCard = (rememberId: string) => {
+    const next = removeRememberedAccount(rememberId);
+    setRememberedAccounts(next);
+    setError(null);
+    setPassword("");
+    setPinInput("");
+    if (next.length === 0) {
+      setSelectedRememberId("");
+      setLoginViewMode('standard');
+    } else if (selectedRememberId === rememberId) {
+      setSelectedRememberId(next[0].rememberId);
+      setWelcomeAuthMethod(next[0].hasPinEnabled && !next[0].requireFullLogin ? 'pin' : 'password');
+    }
+  };
+
+  // Welcome Screen: Login with Password (without retyping National ID)
+  const handleRememberedPasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRememberedAccount) return;
+    setError(null);
+    if (!password.trim()) {
+      setError("يرجى إدخال كلمة المرور للمتابعة.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const deviceId = getOrCreateDeviceId();
+      const res = await fetch("/api/db/auth/login-remembered", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rememberId: selectedRememberedAccount.rememberId,
+          password: password.trim(),
+          deviceId,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error || "كلمة المرور غير صحيحة، يرجى التحقق والمحاولة مرة أخرى.");
+        return;
+      }
+      if (data && data.status === "success" && data.role) {
+        const enrichedUser = {
+          ...data.user,
+          authMethod: data.authMethod || 'password',
+          sessionToken: data.sessionToken || data.user?.sessionToken,
+        };
+        onLoginSuccess(data.role, enrichedUser, { rememberAccount: true, authMethod: 'password' });
+      }
+    } catch {
+      setError("تعذر الاتصال بالخادم، يرجى التحقق من اتصال الإنترنت.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Welcome Screen: Login with 6-Digit Trusted-Device PIN
+  const handlePinLoginSubmit = async (e?: React.FormEvent, explicitPin?: string) => {
+    if (e) e.preventDefault();
+    if (!selectedRememberedAccount) return;
+    const pinVal = (explicitPin ?? pinInput).trim();
+    setError(null);
+    if (!/^\d{6}$/.test(pinVal)) {
+      setError("يرجى إدخال رمز الدخول المكون من 6 أرقام.");
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const deviceId = getOrCreateDeviceId();
+      const res = await fetch("/api/db/auth/pin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rememberId: selectedRememberedAccount.rememberId,
+          pin: pinVal,
+          deviceId,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setPinInput("");
+        if (data?.code === "UNTRUSTED_DEVICE") {
+          updateRememberedAccountPinState(selectedRememberedAccount.rememberId, false);
+          setRememberedAccounts((prev) =>
+            prev.map((a) =>
+              a.rememberId === selectedRememberedAccount.rememberId ? { ...a, hasPinEnabled: false } : a
+            )
+          );
+          setWelcomeAuthMethod('password');
+        } else if (data?.requireFullLogin || res.status === 423) {
+          setRememberedAccounts((prev) =>
+            prev.map((a) =>
+              a.rememberId === selectedRememberedAccount.rememberId
+                ? { ...a, requireFullLogin: true, pinLockedUntil: data?.lockedUntil || Date.now() + 15 * 60 * 1000 }
+                : a
+            )
+          );
+          setWelcomeAuthMethod('password');
+        }
+        setError(data?.error || "تعذر التحقق من رمز الدخول السريع.");
+        return;
+      }
+
+      if (data && data.status === "success" && data.role) {
+        const enrichedUser = {
+          ...data.user,
+          authMethod: 'pin',
+          sessionToken: data.sessionToken || data.user?.sessionToken,
+        };
+        onLoginSuccess(data.role, enrichedUser, { rememberAccount: true, authMethod: 'pin' });
+      }
+    } catch {
+      setError("تعذر الاتصال بالخادم، يرجى المحاولة مرة أخرى.");
+    } finally {
+      setPinLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,12 +430,14 @@ export function AuthScreen({
     setLoading(true);
 
     try {
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch("/api/db/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           identifier: identifier.trim(), 
-          password: password.trim() 
+          password: password.trim(),
+          deviceId
         })
       });
 
@@ -241,23 +454,19 @@ export function AuthScreen({
       }
 
       if (data && data.status === "success" && data.role) {
-        // Handle "Remember Me" for identifier ONLY (Strictly NEVER save password in localStorage)
-        try {
-          if (rememberMe) {
-            localStorage.setItem("reyadat_saved_identifier", identifier.trim());
-          } else {
-            localStorage.removeItem("reyadat_saved_identifier");
-          }
-        } catch {
-          // Ignore localStorage errors
-        }
+        // Always ensure NO sensitive identifier/credentials touch localStorage
+        purgeLegacySensitiveAuthStorage();
 
         // Successfully authenticated! Route to target role dashboard automatically
         const enrichedUser = {
           ...data.user,
+          authMethod: data.authMethod || 'password',
           sessionToken: data.sessionToken || data.user?.sessionToken
         };
-        onLoginSuccess(data.role, enrichedUser);
+        onLoginSuccess(data.role, enrichedUser, {
+          rememberAccount: rememberMe,
+          authMethod: 'password',
+        });
       } else {
         setError(
           lang === 'ar' 
@@ -283,10 +492,11 @@ export function AuthScreen({
     setError(null);
 
     try {
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch("/api/db/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential })
+        body: JSON.stringify({ credential, deviceId })
       });
 
       const data = await res.json().catch(() => null);
@@ -304,9 +514,13 @@ export function AuthScreen({
         setShowGoogleModal(false);
         const enrichedUser = {
           ...data.user,
+          authMethod: data.authMethod || 'google',
           sessionToken: data.sessionToken || data.user?.sessionToken
         };
-        onLoginSuccess(data.role, enrichedUser);
+        onLoginSuccess(data.role, enrichedUser, {
+          rememberAccount: rememberMe || loginViewMode === 'welcome',
+          authMethod: 'google',
+        });
       } else if (data?.status === "new_google_user") {
         // Case 2: New Google user -> show Choice Modal ("مستفيد" / "متطوع")
         setShowGoogleModal(false);
@@ -513,12 +727,13 @@ export function AuthScreen({
 
   // Multi-Step Password Recovery Handlers (WhatsApp & Email OTP)
   // Step 1: Identify account and fetch available recovery channels
-  const handleIdentifyAccount = async (e?: React.FormEvent) => {
+  const handleIdentifyAccount = async (e?: React.FormEvent, overrideRememberId?: string) => {
     if (e) e.preventDefault();
     setRecoveryError(null);
     setRecoverySuccess(null);
 
-    if (!recoveryIdentifier.trim()) {
+    const activeRemId = overrideRememberId !== undefined ? overrideRememberId : recoveryRememberId;
+    if (!recoveryIdentifier.trim() && !activeRemId) {
       setRecoveryError(
         lang === 'ar' 
           ? "يرجى إدخال رقم الهوية أو اسم المستخدم أو البريد الإلكتروني أو رقم الجوال." 
@@ -532,7 +747,10 @@ export function AuthScreen({
       const res = await fetch("/api/db/auth/forgot-password/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: recoveryIdentifier.trim() })
+        body: JSON.stringify({
+          identifier: recoveryIdentifier.trim(),
+          rememberId: activeRemId || undefined
+        })
       });
       const data = await res.json().catch(() => null);
 
@@ -540,13 +758,12 @@ export function AuthScreen({
         setAvailableChannels(data.availableChannels || null);
         setMaskedEmail(data.availableChannels?.email?.masked || "");
         setMaskedPhone(data.availableChannels?.whatsapp?.masked || "");
-        // Default to WhatsApp if phone available, else email
         if (data.availableChannels?.whatsapp?.available) {
           setRecoveryChannel('whatsapp');
         } else {
           setRecoveryChannel('email');
         }
-        setRecoveryStep(2); // Go to Channel Selection step
+        setRecoveryStep(2);
       } else {
         setRecoveryError(data?.error || (lang === 'ar' ? "تعذر التحقق من المعرف، يرجى المحاولة لاحقاً." : "Failed to verify account."));
       }
@@ -570,14 +787,15 @@ export function AuthScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           identifier: recoveryIdentifier.trim(),
+          rememberId: recoveryRememberId || undefined,
           channel: recoveryChannel 
         })
       });
       const data = await res.json().catch(() => null);
 
       if (res.ok && data?.status === "success") {
-        setRecoveryStep(3); // Go to Enter OTP step
-        setOtpTimer(60); // 60 seconds countdown for resend
+        setRecoveryStep(3);
+        setOtpTimer(60);
         setRecoverySuccess(
           data.message || 
           (lang === 'ar' 
@@ -612,6 +830,7 @@ export function AuthScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           identifier: recoveryIdentifier.trim(),
+          rememberId: recoveryRememberId || undefined,
           otpCode: otpCode.trim()
         })
       });
@@ -619,7 +838,7 @@ export function AuthScreen({
 
       if (res.ok && data?.status === "success") {
         setResetToken(data.resetToken);
-        setRecoveryStep(4); // Go to Set New Password step
+        setRecoveryStep(4);
         setRecoverySuccess(data.message || (lang === 'ar' ? "تم التحقق من الرمز بنجاح." : "Code verified successfully."));
       } else {
         setRecoveryError(data?.error || (lang === 'ar' ? "رمز التحقق غير صحيح أو منتهي الصلاحية." : "Invalid or expired OTP."));
@@ -664,6 +883,7 @@ export function AuthScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           identifier: recoveryIdentifier.trim(),
+          rememberId: recoveryRememberId || undefined,
           resetToken,
           newPassword: recoveryNewPassword.trim()
         })
@@ -697,39 +917,32 @@ export function AuthScreen({
 
   return (
     <div 
-      className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans transition-colors"
+      className="min-h-screen bg-[#f4f7fb] dark:bg-[#081426] flex flex-col font-sans transition-colors"
       dir={isRtl ? "rtl" : "ltr"}
     >
       {/* 1. TOP UTILITY BAR (Official Association Bar) */}
-      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-all shadow-xs">
+      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-[#0e213d]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-[#1e3a66] transition-all shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[4.25rem] py-2 flex items-center justify-between gap-2 sm:gap-4">
           
           {/* Logo & Association Info */}
           <div className="flex items-center gap-2 sm:gap-3.5 shrink-0 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-white ring-2 ring-emerald-600/30 dark:ring-emerald-400/30 shadow-xs flex items-center justify-center overflow-hidden shrink-0">
-              {homeSettings?.logoUrl ? (
-                <img 
-                  src={homeSettings.logoUrl} 
-                  alt="شعار الجمعية" 
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = "none";
-                  }}
-                />
-              ) : (
-                <Sparkles className="w-5 h-5 text-emerald-600" />
-              )}
+            <div className="w-10 h-10 rounded-full bg-white ring-2 ring-[#0754C7]/25 dark:ring-[#0875E1]/40 shadow-xs flex items-center justify-center overflow-hidden shrink-0">
+              <img 
+                src={homeSettings?.logoUrl && !String(homeSettings.logoUrl).includes("unsplash.com") ? homeSettings.logoUrl : "/logo.png"} 
+                alt="شعار جمعية ريادة العطاء" 
+                className="w-full h-full object-contain p-0.5"
+              />
             </div>
             <div className="flex flex-col justify-center min-w-0 text-right">
-              <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-tight tracking-tight truncate max-w-[130px] min-[390px]:max-w-[190px] sm:max-w-none">
+              <h1 className="text-xs sm:text-sm font-black text-[#071C43] dark:text-white leading-tight tracking-tight truncate max-w-[140px] min-[390px]:max-w-[205px] sm:max-w-none">
                 {lang === 'ar' ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : "Reyadat Al-Ata Association"}
               </h1>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-semibold tracking-normal hidden sm:block whitespace-nowrap">
                   {lang === 'ar' ? "بوابة النفاذ الموحدة" : "Unified Access Portal"}
                 </span>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800 shrink-0">
-                  <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#0754C7] dark:text-blue-300 bg-[#eaf3ff] dark:bg-[#142d50] px-2 py-0.5 rounded-full border border-blue-200/70 dark:border-[#244577] shrink-0">
+                  <ShieldCheck className="w-3 h-3 text-[#0754C7] dark:text-blue-300 shrink-0" />
                   <span className="hidden sm:inline">{lang === 'ar' ? "ترخيص: " : "License: "}</span>
                   <span className="font-mono">1000888600</span>
                 </span>
@@ -743,11 +956,11 @@ export function AuthScreen({
               <button
                 type="button"
                 onClick={() => onToggleLang(lang === 'ar' ? 'en' : 'ar')}
-                className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200/70 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
+                className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#142d50] rounded-xl border border-slate-200/70 dark:border-[#244577] transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
                 title="تغيير اللغة / Switch Language"
                 aria-label="تغيير اللغة"
               >
-                <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <Globe className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
                 <span className="hidden sm:inline font-mono">{lang === 'ar' ? "English" : "العربية"}</span>
               </button>
             )}
@@ -755,7 +968,7 @@ export function AuthScreen({
             <button
               type="button"
               onClick={onBackToHome}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-400 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#071C43] dark:text-slate-200 hover:text-[#0754C7] dark:hover:text-white bg-slate-100 dark:bg-[#142d50] hover:bg-[#eaf3ff] dark:hover:bg-[#1b3a66] rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer"
               title={lang === 'ar' ? "العودة للموقع الرسمي للجمعية" : "Back to official homepage"}
             >
               {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
@@ -766,38 +979,34 @@ export function AuthScreen({
         </div>
       </header>
 
-      {/* 2. MAIN BODY (SPLIT VIEW: VISUAL BRANDING + UNIFIED LOGIN CARD) */}
+      {/* 2. MAIN BODY (SPLIT VIEW: OFFICIAL BRANDING + SMART/UNIFIED LOGIN CARD) */}
       <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
           
           {/* ======================================================== */}
-          {/* SECTION 1: CHARITY BRANDING & MISSION SIDE (القسم التعريفي - يظهر للشاشات الكبيرة فقط) */}
+          {/* SECTION 1: CHARITY BRANDING & MISSION SIDE (Royal Navy Official Identity) */}
           {/* ======================================================== */}
-          <div className="hidden lg:flex lg:col-span-5 flex-col justify-between p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 text-white shadow-xl relative overflow-hidden order-2 lg:order-1 border border-emerald-700/40">
+          <div className="hidden lg:flex lg:col-span-5 flex-col justify-between p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#071C43] via-[#09295e] to-[#0754C7] text-white shadow-xl relative overflow-hidden order-2 lg:order-1 border border-[#1d4282]">
             {/* Background Decorative Accents */}
-            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
-            <div className="absolute bottom-0 left-0 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20"></div>
-            
-            {/* Soft Charity Community Background Image with subtle overlay */}
-            <div 
-              className="absolute inset-0 bg-cover bg-center opacity-10 mix-blend-overlay pointer-events-none"
-              style={{ 
-                backgroundImage: `url('https://images.unsplash.com/photo-1593113598332-cd288d649433?w=900&auto=format&fit=crop&q=80')` 
-              }}
-            ></div>
+            <div className="absolute top-0 right-0 w-80 h-80 bg-[#0875E1]/20 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+            <div className="absolute bottom-0 left-0 w-80 h-80 bg-[#0754C7]/25 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20"></div>
 
             <div className="relative z-10 space-y-6">
               
-              {/* Association Emblem Badge */}
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner">
-                  <ShieldCheck className="w-6 h-6 text-emerald-300" />
+              {/* Official Association Emblem */}
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-white p-1.5 flex items-center justify-center border border-white/30 shadow-lg shrink-0">
+                  <img
+                    src={homeSettings?.logoUrl && !String(homeSettings.logoUrl).includes("unsplash.com") ? homeSettings.logoUrl : "/logo.png"}
+                    alt="شعار جمعية ريادة العطاء"
+                    className="w-full h-full object-contain"
+                  />
                 </div>
                 <div>
-                  <div className="text-[11px] font-extrabold uppercase tracking-widest text-emerald-300">
+                  <div className="text-[11px] font-extrabold tracking-wide text-blue-200">
                     {lang === 'ar' ? "منظومة العطاء المتكاملة" : "Nonprofit Portal"}
                   </div>
-                  <div className="text-sm font-bold text-white">
+                  <div className="text-sm font-black text-white">
                     {lang === 'ar' ? "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة" : "Reyadat Al-Ata Association"}
                   </div>
                 </div>
@@ -808,245 +1017,572 @@ export function AuthScreen({
                 <h2 className="text-2xl sm:text-3xl font-black text-white leading-snug tracking-tight">
                   {lang === 'ar' ? "معًا نصنع أثرًا ونبني مجتمعًا أفضل" : "Together Making Impact & Building a Better Society"}
                 </h2>
-                <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed font-normal">
+                <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed font-normal">
                   {lang === 'ar' 
-                    ? "منصة إلكترونية متكاملة لخدمة المستفيدين وتمكين المتطوعين والموظفين والشركاء ودعم الأعمال والمبادرات المجتمعية."
-                    : "An integrated portal empowering beneficiaries, volunteers, staff, partners, and community programs."}
+                    ? "بوابة ذكية وآمنة لجميع المستفيدين والمتطوعين والكوادر الإدارية، مصممة لتسهيل الوصول وحماية الخصوصية."
+                    : "Smart, secure portal for all beneficiaries, volunteers, and management teams."}
                 </p>
               </div>
 
-              {/* 3 Charity Pillars (الأثر المستدام، الخدمة الموثوقة، المجتمع الأفضل) */}
+              {/* 3 Pillars */}
               <div className="space-y-3 pt-2">
-                
-                {/* Pillar 1: Sustainable Impact */}
-                <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 mt-0.5">
-                    <Sparkles className="w-4 h-4" />
+                <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-xs">
+                  <div className="w-8 h-8 rounded-xl bg-[#0875E1]/30 text-blue-200 flex items-center justify-center shrink-0 mt-0.5">
+                    <ShieldCheck className="w-4 h-4" />
                   </div>
                   <div>
                     <h3 className="text-xs font-black text-white">
-                      {lang === 'ar' ? "أثر مستدام" : "Sustainable Impact"}
+                      {lang === 'ar' ? "دخول ذكي وآمن" : "Smart & Secure Access"}
                     </h3>
-                    <p className="text-[11px] text-emerald-100/80 leading-relaxed">
-                      {lang === 'ar' ? "نساهم في صناعة أثر إيجابي مستمر في خدمة الإنسان." : "Creating lasting positive community impact."}
+                    <p className="text-[11px] text-blue-100/80 leading-relaxed">
+                      {lang === 'ar' ? "دعم كلمة المرور ورمز الدخول السريع (6 أرقام) المرتبط بالأجهزة الموثوقة فقط." : "Password & trusted-device 6-digit quick PIN."}
                     </p>
                   </div>
                 </div>
 
-                {/* Pillar 2: Reliable Service */}
-                <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
-                  <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-xs">
+                  <div className="w-8 h-8 rounded-xl bg-white/15 text-white flex items-center justify-center shrink-0 mt-0.5">
                     <Award className="w-4 h-4" />
                   </div>
                   <div>
                     <h3 className="text-xs font-black text-white">
                       {lang === 'ar' ? "خدمة موثوقة" : "Reliable Services"}
                     </h3>
-                    <p className="text-[11px] text-emerald-100/80 leading-relaxed">
-                      {lang === 'ar' ? "نقدم خدماتنا للمستخدمين بأعلى معايير الجودة والحوكمة." : "Providing high governance and quality standards."}
+                    <p className="text-[11px] text-blue-100/80 leading-relaxed">
+                      {lang === 'ar' ? "تطبيق كامل لمعايير الحوكمة وصلاحيات الإدارات المعتمدة في الجمعية." : "Full governance and live role permissions."}
                     </p>
                   </div>
                 </div>
 
-                {/* Pillar 3: Better Community */}
-                <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-400/20 text-emerald-200 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-xs">
+                  <div className="w-8 h-8 rounded-xl bg-[#0875E1]/30 text-blue-200 flex items-center justify-center shrink-0 mt-0.5">
                     <HeartHandshake className="w-4 h-4" />
                   </div>
                   <div>
                     <h3 className="text-xs font-black text-white">
-                      {lang === 'ar' ? "مجتمع أفضل" : "Better Community"}
+                      {lang === 'ar' ? "مجتمع متكافل" : "Better Community"}
                     </h3>
-                    <p className="text-[11px] text-emerald-100/80 leading-relaxed">
-                      {lang === 'ar' ? "نعمل معًا لخدمة المجتمع وتعزيز التكافل الاجتماعي والتطوع." : "Working together to promote solidarity and volunteerism."}
+                    <p className="text-[11px] text-blue-100/80 leading-relaxed">
+                      {lang === 'ar' ? "رحلة رقمية متكاملة للمستفيدين والمتطوعين وفرق العمل الميدانية." : "Unified portal for beneficiaries and volunteers."}
                     </p>
                   </div>
                 </div>
-
               </div>
 
             </div>
 
             {/* Bottom Footer Note */}
-            <div className="relative z-10 pt-6 mt-6 border-t border-white/10 flex items-center justify-between text-[10px] text-emerald-200/80">
+            <div className="relative z-10 pt-6 mt-6 border-t border-white/15 flex items-center justify-between text-[10px] text-blue-100/80">
               <span>{lang === 'ar' ? "العسيلة - مكة المكرمة" : "Al-Useilah, Makkah"}</span>
               <span className="flex items-center gap-1 font-bold text-white">
-                <Check className="w-3 h-3 text-emerald-400" />
-                {lang === 'ar' ? "نظام دخول مشفر وآمن" : "Encrypted Access"}
+                <Check className="w-3 h-3 text-blue-300" />
+                {lang === 'ar' ? "مصادقة مشفرة بالكامل" : "Encrypted Authentication"}
               </span>
             </div>
           </div>
 
           {/* ======================================================== */}
-          {/* SECTION 2: THE UNIFIED LOGIN CARD (بطاقة تسجيل الدخول) */}
+          {/* SECTION 2: WELCOME SCREEN OR UNIFIED LOGIN CARD */}
           {/* ======================================================== */}
           <div className="w-full lg:col-span-7 flex flex-col justify-center order-1 lg:order-2 max-w-xl mx-auto lg:max-w-none">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xl p-6 sm:p-10 space-y-6">
-              
-              {/* Card Header */}
-              <div className="space-y-1.5 text-right">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold border border-emerald-200/60 dark:border-emerald-800">
-                  <KeyRound className="w-3 h-3 text-emerald-600" />
-                  <span>{lang === 'ar' ? "البوابة الموحدة لكافة الحسابات" : "Unified All-Accounts Portal"}</span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {lang === 'ar' ? "تسجيل الدخول" : "Sign In"}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-normal">
-                  {lang === 'ar' 
-                    ? "مرحبًا بك، قم بتسجيل الدخول للوصول إلى حسابك (المدير، الموظف، المتطوع، المستفيد، الشريك)"
-                    : "Welcome back! Sign in to access your account dashboard."}
-                </p>
-              </div>
+            <div className="bg-white dark:bg-[#0e213d] rounded-3xl border border-slate-200/90 dark:border-[#1e3a66] shadow-xl p-5 sm:p-9 space-y-5">
 
-              {/* Error Alert Display */}
-              {error && (
-                <div 
-                  role="alert"
-                  className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 p-4 rounded-2xl text-rose-800 dark:text-rose-300 text-xs flex items-start gap-3 transition-all animate-in fade-in duration-200"
-                >
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
-                  <div className="font-semibold leading-relaxed text-right flex-1">
-                    {error}
-                  </div>
-                </div>
-              )}
+              {/* RETURNING USER WELCOME SCREEN */}
+              {loginViewMode === 'welcome' && selectedRememberedAccount ? (
+                <div className="space-y-5 animate-in fade-in duration-200" data-testid="welcome-back-card">
+                  {/* Association Logo + User Identity Header */}
+                  <div className="flex flex-col items-center text-center space-y-3 pt-1">
+                    <div className="relative">
+                      {selectedRememberedAccount.avatarUrl ? (
+                        <img
+                          src={selectedRememberedAccount.avatarUrl}
+                          alt={selectedRememberedAccount.displayName}
+                          className="w-20 h-20 rounded-full object-cover ring-4 ring-[#0754C7]/20 dark:ring-[#0875E1]/40 shadow-md"
+                        />
+                      ) : (
+                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#071C43] to-[#0754C7] text-white text-2xl font-black flex items-center justify-center ring-4 ring-[#0754C7]/20 dark:ring-[#0875E1]/40 shadow-md">
+                          {selectedRememberedAccount.firstName.charAt(0)}
+                        </div>
+                      )}
+                      <div className="absolute -bottom-1 -left-1 w-8 h-8 rounded-full bg-white dark:bg-[#0e213d] p-1 border border-slate-200 dark:border-[#244577] shadow-sm flex items-center justify-center">
+                        <img
+                          src={homeSettings?.logoUrl && !String(homeSettings.logoUrl).includes("unsplash.com") ? homeSettings.logoUrl : "/logo.png"}
+                          alt="شعار الجمعية"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    </div>
 
-              {/* Form Content */}
-              <form onSubmit={handleSubmit} className="space-y-4">
-                
-                {/* FIELD 1: Identifier (National ID / Username / Email / Phone) */}
-                <div className="space-y-1.5">
-                  <label 
-                    htmlFor="user-identifier"
-                    className="block text-xs font-black text-slate-700 dark:text-slate-300 text-right"
-                  >
-                    {lang === 'ar' 
-                      ? "رقم الهوية الوطنية / اسم المستخدم / البريد الإلكتروني" 
-                      : "National ID / Username / Email / Phone"}
-                    <span className="text-rose-500 mr-1">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="user-identifier"
-                      name="identifier"
-                      type="text"
-                      autoComplete="username"
-                      value={identifier}
-                      onChange={(e) => {
-                        setIdentifier(e.target.value);
-                        if (error) setError(null);
-                      }}
-                      placeholder={
-                        lang === 'ar' 
-                          ? "أدخل رقم الهوية أو اسم المستخدم أو البريد الإلكتروني" 
-                          : "Enter your National ID, username, or email"
-                      }
-                      className="w-full pr-10 pl-4 py-3 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
-                      disabled={loading}
-                    />
-                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                      <User className="w-4 h-4" />
+                    <div className="space-y-1">
+                      <h2 className="text-xl sm:text-2xl font-black text-[#071C43] dark:text-white tracking-tight">
+                        مرحبًا بعودتك، {selectedRememberedAccount.firstName}!
+                      </h2>
+                      <p className="text-xs font-bold text-[#0754C7] dark:text-blue-300">
+                        يسعدنا وجودك مجددًا في ريادة العطاء
+                      </p>
+                      <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        {selectedRememberedAccount.displayName} • {selectedRememberedAccount.roleLabel}
+                      </p>
                     </div>
                   </div>
-                </div>
 
-                {/* FIELD 2: Password with Show/Hide toggle */}
-                <div className="space-y-1.5">
-                  <label 
-                    htmlFor="user-password"
-                    className="block text-xs font-black text-slate-700 dark:text-slate-300 text-right"
-                  >
-                    {lang === 'ar' ? "كلمة المرور" : "Password"}
-                    <span className="text-rose-500 mr-1">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="user-password"
-                      name="password"
-                      type={showPassword ? "text" : "password"}
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        if (error) setError(null);
-                      }}
-                      placeholder={lang === 'ar' ? "أدخل كلمة المرور" : "Enter your password"}
-                      className="w-full pr-10 pl-11 py-3 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
-                      disabled={loading}
-                    />
-                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                      <Lock className="w-4 h-4" />
+                  {/* Multi-account Switcher (when 1+ remembered accounts saved on this device) */}
+                  {rememberedAccounts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-bold">
+                        <span>{rememberedAccounts.length > 1 ? "الحسابات المحفوظة على هذا الجهاز:" : "الحساب المحدد:"}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError(null);
+                            setLoginViewMode('standard');
+                          }}
+                          className="text-[#0754C7] dark:text-blue-300 hover:underline inline-flex items-center gap-1 cursor-pointer font-black"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>استخدام حساب آخر</span>
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {rememberedAccounts.map((acc) => {
+                          const isSelected = acc.rememberId === selectedRememberedAccount.rememberId;
+                          return (
+                            <div
+                              key={acc.rememberId}
+                              className={`group flex items-center gap-2 pl-2 pr-2.5 py-1.5 rounded-xl border text-xs transition-all ${
+                                isSelected
+                                  ? "bg-[#eaf3ff] dark:bg-[#142d50] border-[#0754C7] dark:border-[#0875E1] text-[#071C43] dark:text-white font-black shadow-2xs"
+                                  : "bg-slate-50 dark:bg-[#081426] border-slate-200 dark:border-[#244577] text-slate-600 dark:text-slate-300 font-bold hover:border-[#0754C7]/60"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleSelectRememberedCard(acc)}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <span className="w-6 h-6 rounded-full bg-[#071C43] dark:bg-[#0754C7] text-white text-[10px] font-black flex items-center justify-center shrink-0">
+                                  {acc.firstName.charAt(0)}
+                                </span>
+                                <span className="max-w-[110px] truncate">{acc.firstName}</span>
+                                {acc.hasPinEnabled && (
+                                  <span title="يدعم الدخول السريع" className="inline-flex shrink-0">
+                                    <KeyRound className="w-3 h-3 text-[#0754C7] dark:text-blue-300" />
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveRememberedCard(acc.rememberId)}
+                                title={`إزالة ${acc.firstName} من هذا الجهاز`}
+                                aria-label={`إزالة ${acc.firstName} من شاشة الترحيب`}
+                                className="p-0.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    
-                    {/* Show/Hide password toggle */}
+                  )}
+
+                  {/* Quick Switch Between Password Login & 6-Digit PIN Login */}
+                  <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-[#081426] border border-slate-200/80 dark:border-[#244577]">
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setError(null);
+                        setWelcomeAuthMethod('pin');
+                      }}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        welcomeAuthMethod === 'pin'
+                          ? "bg-[#0754C7] text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white"
+                      }`}
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>الدخول برمز من 6 أرقام</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError(null);
+                        setWelcomeAuthMethod('password');
+                      }}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        welcomeAuthMethod === 'password'
+                          ? "bg-[#071C43] dark:bg-[#0875E1] text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white"
+                      }`}
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>الدخول بكلمة المرور</span>
                     </button>
                   </div>
 
-                  {/* Default Password Tip for New Beneficiaries and Volunteers */}
-                  <div className="mt-2 p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 flex items-center gap-2 text-[11px] text-emerald-800 dark:text-emerald-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                    <span>
-                      {lang === 'ar' 
-                        ? <>كلمة المرور الافتراضية للمستفيدين والمتطوعين الجدد هي <strong className="font-mono font-black text-xs text-emerald-950 dark:text-emerald-100 bg-emerald-200/60 dark:bg-emerald-900/60 px-1 py-0.5 rounded">A123b456</strong> (يلزم تغييرها عند أول دخول).</>
-                        : <>Default password for new beneficiaries and volunteers is <strong className="font-mono font-bold">A123b456</strong> (mandatory change upon first login).</>}
-                    </span>
+                  {/* Error Alert Display */}
+                  {error && (
+                    <div
+                      role="alert"
+                      className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-3.5 rounded-2xl text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2.5"
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                      <div className="font-bold leading-relaxed text-right flex-1">{error}</div>
+                    </div>
+                  )}
+
+                  {/* Option A: 6-Digit Trusted Device PIN Form */}
+                  {welcomeAuthMethod === 'pin' && (
+                    <div className="space-y-4">
+                      {!selectedRememberedAccount.hasPinEnabled ? (
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#081426] border border-slate-200 dark:border-[#244577] text-center space-y-2.5">
+                          <Smartphone className="w-6 h-6 text-[#0754C7] dark:text-blue-300 mx-auto" />
+                          <p className="text-xs font-black text-[#071C43] dark:text-white">
+                            الدخول السريع بالرمز غير مفعل على هذا الجهاز بعد
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                            لأمان حسابك، يُفعَّل الرمز من 6 أرقام من داخل «الأمان وتسجيل الدخول» بعد دخولك بكلمة المرور أو Google.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setWelcomeAuthMethod('password')}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0754C7] hover:bg-[#0875E1] text-white text-xs font-black cursor-pointer transition-all"
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>الدخول بكلمة المرور الآن</span>
+                          </button>
+                        </div>
+                      ) : selectedRememberedAccount.requireFullLogin ? (
+                        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-center space-y-2.5">
+                          <ShieldAlert className="w-6 h-6 text-amber-600 dark:text-amber-400 mx-auto" />
+                          <p className="text-xs font-black text-amber-900 dark:text-amber-200">
+                            تم قفل الدخول بالرمز مؤقتاً لحماية حسابك
+                          </p>
+                          <p className="text-[11px] text-amber-800/90 dark:text-amber-300 leading-relaxed">
+                            يرجى إتمام تسجيل الدخول الكامل بكلمة المرور أو حساب Google لإعادة تفعيل الرمز السريع.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setWelcomeAuthMethod('password')}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#071C43] hover:bg-[#0754C7] text-white text-xs font-black cursor-pointer transition-all"
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>المتابعة بكلمة المرور</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <form onSubmit={(e) => handlePinLoginSubmit(e)} className="space-y-4">
+                          <PinCodeInput
+                            value={pinInput}
+                            onChange={(val) => {
+                              setPinInput(val);
+                              if (error) setError(null);
+                            }}
+                            onComplete={(val) => handlePinLoginSubmit(undefined, val)}
+                            disabled={pinLoading}
+                            label="أدخل رمز الدخول السريع المكون من 6 أرقام"
+                            idPrefix="welcome-pin"
+                            autoFocus
+                          />
+
+                          <button
+                            type="submit"
+                            disabled={pinLoading || pinInput.length !== 6}
+                            className="w-full py-3.5 px-4 bg-[#0754C7] hover:bg-[#0875E1] active:bg-[#071C43] text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {pinLoading ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                                <span>جاري التحقق من الرمز...</span>
+                              </>
+                            ) : (
+                              <>
+                                <LogIn className="w-4 h-4" />
+                                <span>دخول فوري برمز 6 أرقام</span>
+                              </>
+                            )}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Option B: Password Login without re-entering National ID / Username */}
+                  {welcomeAuthMethod === 'password' && (
+                    <form onSubmit={handleRememberedPasswordLogin} className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label
+                          htmlFor="remembered-password"
+                          className="block text-xs font-black text-[#071C43] dark:text-slate-200 text-right"
+                        >
+                          كلمة المرور لحساب ({selectedRememberedAccount.firstName}):
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="remembered-password"
+                            name="password"
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="current-password"
+                            autoFocus
+                            value={password}
+                            onChange={(e) => {
+                              setPassword(e.target.value);
+                              if (error) setError(null);
+                            }}
+                            placeholder="أدخل كلمة المرور فقط"
+                            className="w-full pr-10 pl-11 py-3.5 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-[#244577] bg-slate-50/80 dark:bg-[#081426] text-[#071C43] dark:text-white placeholder-slate-400 focus:bg-white dark:focus:bg-[#0b1b34] focus:outline-none focus:ring-2 focus:ring-[#0754C7]/25 focus:border-[#0754C7] transition-all font-medium"
+                            disabled={loading}
+                          />
+                          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                            <Lock className="w-4 h-4" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-[#0754C7] dark:hover:text-blue-300 cursor-pointer"
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-3.5 px-4 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-md disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {loading ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                            <span>جاري التحقق والدخول...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LogIn className="w-4 h-4" />
+                            <span>الدخول بكلمة المرور</span>
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* Recovery & Alternate Account Links */}
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecoveryIdentifier("");
+                        setRecoveryRememberId(selectedRememberedAccount.rememberId);
+                        setRecoveryStep(1);
+                        setRecoveryError(null);
+                        setRecoverySuccess(null);
+                        setShowForgotModal(true);
+                        handleIdentifyAccount(undefined, selectedRememberedAccount.rememberId);
+                      }}
+                      className="text-[#0754C7] dark:text-blue-300 hover:underline font-bold cursor-pointer"
+                    >
+                      نسيت كلمة المرور؟
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError(null);
+                        setLoginViewMode('standard');
+                      }}
+                      className="text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white font-bold cursor-pointer"
+                    >
+                      استخدام حساب آخر
+                    </button>
                   </div>
                 </div>
-
-                {/* ROW: Remember Me & Forgot Password */}
-                <div className="flex items-center justify-between pt-1 text-xs">
-                  {/* Remember me checkbox */}
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 rounded-md border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                    />
-                    <span className="text-slate-600 dark:text-slate-400 font-bold">
-                      {lang === 'ar' ? "تذكرني" : "Remember me"}
-                    </span>
-                  </label>
-
-                  {/* Forgot Password link */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRecoveryIdentifier(identifier);
-                      setShowForgotModal(true);
-                      setRecoveryError(null);
-                      setRecoverySuccess(null);
-                    }}
-                    className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 font-bold transition-colors cursor-pointer"
-                  >
-                    {lang === 'ar' ? "نسيت كلمة المرور؟" : "Forgot Password?"}
-                  </button>
-                </div>
-
-                {/* SUBMIT BUTTON */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                      <span>{lang === 'ar' ? "جاري التحقق والمصادقة..." : "Verifying credentials..."}</span>
-                    </>
-                  ) : (
-                    <span>{lang === 'ar' ? "تسجيل الدخول" : "Sign In"}</span>
+              ) : (
+                /* STANDARD FULL LOGIN CARD */
+                <div className="space-y-5">
+                  {/* Back to Welcome Card button if user has remembered accounts */}
+                  {rememberedAccounts.length > 0 && (
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-[#1e3a66]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError(null);
+                          setLoginViewMode('welcome');
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-black text-[#0754C7] dark:text-blue-300 hover:underline cursor-pointer"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5" />
+                        <span>العودة إلى الترحيب السريع ({rememberedAccounts[0].firstName})</span>
+                      </button>
+                    </div>
                   )}
-                </button>
-              </form>
+
+                  {/* Card Header */}
+                  <div className="space-y-1.5 text-right">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#eaf3ff] dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 text-[11px] font-bold border border-blue-200/70 dark:border-[#244577]">
+                      <KeyRound className="w-3 h-3 text-[#0754C7] dark:text-blue-300" />
+                      <span>{lang === 'ar' ? "البوابة الموحدة لكافة الحسابات" : "Unified All-Accounts Portal"}</span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black text-[#071C43] dark:text-white tracking-tight">
+                      {lang === 'ar' ? "تسجيل الدخول" : "Sign In"}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-normal">
+                      {lang === 'ar' 
+                        ? "مرحبًا بك، قم بتسجيل الدخول للوصول إلى حسابك (المدير، الموظف، المتطوع، المستفيد، الشريك)"
+                        : "Welcome back! Sign in to access your account dashboard."}
+                    </p>
+                  </div>
+
+                  {/* Error Alert Display */}
+                  {error && (
+                    <div 
+                      role="alert"
+                      className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 p-4 rounded-2xl text-rose-800 dark:text-rose-300 text-xs flex items-start gap-3 transition-all animate-in fade-in duration-200"
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                      <div className="font-semibold leading-relaxed text-right flex-1">
+                        {error}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Form Content */}
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    
+                    {/* FIELD 1: Identifier (National ID / Username / Email / Phone) */}
+                    <div className="space-y-1.5">
+                      <label 
+                        htmlFor="user-identifier"
+                        className="block text-xs font-black text-[#071C43] dark:text-slate-300 text-right"
+                      >
+                        {lang === 'ar' 
+                          ? "رقم الهوية الوطنية / اسم المستخدم / البريد الإلكتروني" 
+                          : "National ID / Username / Email / Phone"}
+                        <span className="text-rose-500 mr-1">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="user-identifier"
+                          name="identifier"
+                          type="text"
+                          autoComplete="username"
+                          value={identifier}
+                          onChange={(e) => {
+                            setIdentifier(e.target.value);
+                            if (error) setError(null);
+                          }}
+                          placeholder={
+                            lang === 'ar' 
+                              ? "أدخل رقم الهوية أو اسم المستخدم أو البريد الإلكتروني" 
+                              : "Enter your National ID, username, or email"
+                          }
+                          className="w-full pr-10 pl-4 py-3 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-[#244577] bg-slate-50/70 dark:bg-[#081426] text-[#071C43] dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:bg-white dark:focus:bg-[#0b1b34] focus:outline-none focus:ring-2 focus:ring-[#0754C7]/20 focus:border-[#0754C7] transition-all font-medium"
+                          disabled={loading}
+                        />
+                        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                          <User className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* FIELD 2: Password with Show/Hide toggle */}
+                    <div className="space-y-1.5">
+                      <label 
+                        htmlFor="user-password"
+                        className="block text-xs font-black text-[#071C43] dark:text-slate-300 text-right"
+                      >
+                        {lang === 'ar' ? "كلمة المرور" : "Password"}
+                        <span className="text-rose-500 mr-1">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="user-password"
+                          name="password"
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          value={password}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            if (error) setError(null);
+                          }}
+                          placeholder={lang === 'ar' ? "أدخل كلمة المرور" : "Enter your password"}
+                          className="w-full pr-10 pl-11 py-3 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-[#244577] bg-slate-50/70 dark:bg-[#081426] text-[#071C43] dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:bg-white dark:focus:bg-[#0b1b34] focus:outline-none focus:ring-2 focus:ring-[#0754C7]/20 focus:border-[#0754C7] transition-all font-medium"
+                          disabled={loading}
+                        />
+                        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                          <Lock className="w-4 h-4" />
+                        </div>
+                        
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-[#0754C7] dark:hover:text-blue-300 transition-colors cursor-pointer"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+
+                      {/* Default Password Tip for New Beneficiaries and Volunteers */}
+                      <div className="mt-2 p-2.5 rounded-xl bg-[#eaf3ff] dark:bg-[#142d50]/70 border border-blue-200/70 dark:border-[#244577] flex items-center gap-2 text-[11px] text-[#071C43] dark:text-blue-200">
+                        <span className="w-2 h-2 rounded-full bg-[#0754C7] shrink-0" />
+                        <span>
+                          {lang === 'ar' 
+                            ? <>كلمة المرور الافتراضية للمستفيدين والمتطوعين الجدد هي <strong className="font-mono font-black text-xs text-[#071C43] dark:text-white bg-blue-200/60 dark:bg-[#0754C7]/50 px-1 py-0.5 rounded">A123b456</strong> (يلزم تغييرها عند أول دخول).</>
+                            : <>Default password for new beneficiaries and volunteers is <strong className="font-mono font-bold">A123b456</strong> (mandatory change upon first login).</>}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ROW: Privacy-Safe Remember Me Opt-In & Forgot Password */}
+                    <div className="flex items-center justify-between pt-1 text-xs gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          id="checkbox-remember-device"
+                          type="checkbox"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
+                          className="w-4 h-4 rounded-md border-slate-300 text-[#0754C7] focus:ring-[#0754C7] dark:border-[#244577] dark:bg-[#081426] cursor-pointer"
+                        />
+                        <span className="text-slate-700 dark:text-slate-300 font-bold">
+                          {lang === 'ar' ? "تذكرني على هذا الجهاز" : "Remember this account"}
+                        </span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecoveryRememberId("");
+                          setRecoveryIdentifier(identifier);
+                          setRecoveryStep(1);
+                          setShowForgotModal(true);
+                          setRecoveryError(null);
+                          setRecoverySuccess(null);
+                        }}
+                        className="text-[#0754C7] dark:text-blue-300 hover:underline font-bold transition-colors cursor-pointer"
+                      >
+                        {lang === 'ar' ? "نسيت كلمة المرور؟" : "Forgot Password?"}
+                      </button>
+                    </div>
+
+                    {/* SUBMIT BUTTON */}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3.5 px-4 bg-[#071C43] hover:bg-[#0754C7] active:bg-[#051533] text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {loading ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                          <span>{lang === 'ar' ? "جاري التحقق والمصادقة..." : "Verifying credentials..."}</span>
+                        </>
+                      ) : (
+                        <span>{lang === 'ar' ? "تسجيل الدخول" : "Sign In"}</span>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              )}
 
               {isMaintenanceMode ? (
                 /* MAINTENANCE MODE NOTICE: Google login & public registration closed */
@@ -1327,110 +1863,93 @@ export function AuthScreen({
       </div>
 
       {/* ======================================================== */}
-      {/* 3. FORGOT PASSWORD / RECOVERY MODAL */}
+      {/* 3. FORGOT PASSWORD / RECOVERY MODAL (5 Steps Channel-Aware) */}
       {/* ======================================================== */}
       {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 text-right relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#071C43]/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#1e3a66] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 text-right relative">
             
-            {/* Close Button */}
             <button
               type="button"
               onClick={() => setShowForgotModal(false)}
-              className="absolute left-4 top-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="absolute left-4 top-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-[#142d50] transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Stepper Header */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-[#eaf3ff] dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 flex items-center justify-center shadow-xs">
                   <KeyRound className="w-5 h-5" />
                 </div>
-                {/* Step indicator badge */}
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
-                  <span>الخطوة {recoveryStep} من 3</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  <span>{recoveryStep === 1 ? 'طلب OTP' : recoveryStep === 2 ? 'التحقق' : recoveryStep === 3 ? 'تشفير Bcrypt' : 'مكتمل'}</span>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-[#081426] px-2.5 py-1 rounded-full">
+                  <span>الخطوة {recoveryStep} من 5</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#0754C7]"></span>
                 </div>
               </div>
 
               <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white">
-                  {recoveryStep === 1 && (lang === 'ar' ? "استعادة كلمة المرور عبر البريد" : "Password Recovery via Email")}
-                  {recoveryStep === 2 && (lang === 'ar' ? "إدخال رمز التحقق OTP" : "Enter Verification OTP")}
-                  {recoveryStep === 3 && (lang === 'ar' ? "تعيين كلمة المرور الجديدة (Bcrypt)" : "Set New Bcrypt Password")}
-                  {recoveryStep === 4 && (lang === 'ar' ? "تم تحديث كلمة المرور بنجاح 🎉" : "Password Updated Successfully")}
+                <h3 className="text-base font-black text-[#071C43] dark:text-white">
+                  {recoveryStep === 1 && "استعادة كلمة المرور"}
+                  {recoveryStep === 2 && "اختيار قناة استلام الرمز"}
+                  {recoveryStep === 3 && "إدخال رمز التحقق OTP"}
+                  {recoveryStep === 4 && "تعيين كلمة المرور الجديدة"}
+                  {recoveryStep === 5 && "تم تحديث كلمة المرور بنجاح"}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                  {recoveryStep === 1 && "أدخل رقم الهوية أو اسم المستخدم أو البريد المسجل لإرسال رمز تحقق مؤقت."}
-                  {recoveryStep === 2 && `أدخل رمز التحقق (OTP) المكون من 6 أرقام المرسل إلى: ${maskedEmail}`}
-                  {recoveryStep === 3 && "أدخل كلمة مرور قوية تطابق معايير الأمان ليتم تشفيرها بخوارزمية Bcrypt."}
-                  {recoveryStep === 4 && "تم حفظ وتشفير كلمة مرورك بنجاح وإنهاء الجلسات السابقة لحماية حسابك."}
+                  {recoveryStep === 1 && "أدخل رقم الهوية أو اسم المستخدم أو البريد المسجل للتحقق من حسابك."}
+                  {recoveryStep === 2 && "اختر قناة استلام رمز التحقق المكون من 6 أرقام."}
+                  {recoveryStep === 3 && `أدخل رمز التحقق المرسل عبر (${recoveryChannel === 'whatsapp' ? `واتساب ${maskedPhone}` : `البريد ${maskedEmail}`}).`}
+                  {recoveryStep === 4 && "أدخل كلمة مرور قوية مطابقة لمعايير الأمان."}
+                  {recoveryStep === 5 && "تم حفظ كلمة المرور الجديدة وإلغاء أجهزة الدخول السريع السابقة لحمايتك."}
                 </p>
               </div>
             </div>
 
-            {/* Error banner in modal */}
             {recoveryError && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 animate-in fade-in">
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
                 <span className="font-bold leading-relaxed">{recoveryError}</span>
               </div>
             )}
 
-            {/* Success banner in modal (Step 1 to 3) */}
-            {recoverySuccess && recoveryStep !== 4 && (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            {recoverySuccess && recoveryStep !== 5 && (
+              <div className="p-3 bg-[#eaf3ff] dark:bg-[#142d50] border border-blue-200 dark:border-[#244577] rounded-2xl text-[#071C43] dark:text-blue-200 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-[#0754C7]" />
                 <span className="font-bold leading-relaxed">{recoverySuccess}</span>
               </div>
             )}
 
-            {/* STEP 1: Enter Identifier */}
             {recoveryStep === 1 && (
-              <form onSubmit={handleRequestOtp} className="space-y-4">
+              <form onSubmit={(e) => handleIdentifyAccount(e)} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-bold text-[#071C43] dark:text-slate-300">
                     رقم الهوية أو اسم المستخدم أو البريد الإلكتروني:
                   </label>
                   <input
                     type="text"
                     value={recoveryIdentifier}
                     onChange={(e) => setRecoveryIdentifier(e.target.value)}
-                    placeholder="أدخل رقم الهوية الوطنية أو البريد الإلكتروني الرسمي"
-                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    placeholder="أدخل رقم الهوية أو البريد الإلكتروني"
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-[#244577] bg-slate-50 dark:bg-[#081426] text-[#071C43] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0754C7]"
                     autoFocus
                     required
                   />
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    ملاحظة أمنية: يجب أن يكون للحساب بريد إلكتروني موثق ليتم إرسال رمز التحقق إليه.
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="submit"
                     disabled={recoveryLoading}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                    className="flex-1 py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                   >
-                    {recoveryLoading ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>جاري التحقق والبحث...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Mail className="w-3.5 h-3.5" />
-                        <span>إرسال رمز التحقق OTP</span>
-                      </>
-                    )}
+                    {recoveryLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+                    <span>متابعة</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowForgotModal(false)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#142d50] text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
                   >
                     إلغاء
                   </button>
@@ -1438,73 +1957,67 @@ export function AuthScreen({
               </form>
             )}
 
-            {/* STEP 2: Enter 6-digit OTP Code */}
             {recoveryStep === 2 && (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      رمز التحقق (OTP):
-                    </label>
-                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-bold">
-                      صالح لمدة 10 دقائق
+              <form onSubmit={handleRequestOtp} className="space-y-3">
+                {availableChannels?.whatsapp?.available && (
+                  <label className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all ${recoveryChannel === 'whatsapp' ? 'border-[#0754C7] bg-[#eaf3ff] dark:bg-[#142d50]' : 'border-slate-200 dark:border-[#244577]'}`}>
+                    <span className="flex items-center gap-2 text-xs font-black text-[#071C43] dark:text-white">
+                      <MessageSquare className="w-4 h-4 text-[#0754C7]" />
+                      <span>واتساب ({maskedPhone || 'مسجل'})</span>
                     </span>
-                  </div>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ""))}
-                    placeholder="••••••"
-                    className="w-full px-3.5 py-3 text-center text-lg tracking-[0.5em] font-mono font-black rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    autoFocus
-                    required
-                  />
-                  <div className="flex items-center justify-between pt-1">
-                    <button
-                      type="button"
-                      disabled={otpTimer > 0 || recoveryLoading}
-                      onClick={() => handleRequestOtp()}
-                      className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      {otpTimer > 0 ? `إعادة الإرسال بعد (${otpTimer}) ثانية` : "إعادة إرسال رمز جديد"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRecoveryStep(1);
-                        setOtpCode("");
-                        setRecoveryError(null);
-                      }}
-                      className="text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      تغيير الحساب
-                    </button>
-                  </div>
-                </div>
-
+                    <input type="radio" name="recChannel" checked={recoveryChannel === 'whatsapp'} onChange={() => setRecoveryChannel('whatsapp')} />
+                  </label>
+                )}
+                <label className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all ${recoveryChannel === 'email' ? 'border-[#0754C7] bg-[#eaf3ff] dark:bg-[#142d50]' : 'border-slate-200 dark:border-[#244577]'}`}>
+                  <span className="flex items-center gap-2 text-xs font-black text-[#071C43] dark:text-white">
+                    <Mail className="w-4 h-4 text-[#0754C7]" />
+                    <span>البريد الإلكتروني ({maskedEmail || 'مسجل'})</span>
+                  </span>
+                  <input type="radio" name="recChannel" checked={recoveryChannel === 'email'} onChange={() => setRecoveryChannel('email')} />
+                </label>
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="submit"
-                    disabled={recoveryLoading || otpCode.length !== 6}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                    disabled={recoveryLoading}
+                    className="flex-1 py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer"
                   >
-                    {recoveryLoading ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>جاري التحقق من الرمز...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>التحقق ومتابعة التعيين</span>
-                      </>
-                    )}
+                    {recoveryLoading ? "جاري الإرسال..." : "إرسال رمز التحقق OTP"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {recoveryStep === 3 && (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <PinCodeInput
+                  value={otpCode}
+                  onChange={(val) => setOtpCode(val)}
+                  label="أدخل رمز التحقق المكون من 6 أرقام:"
+                  idPrefix="recovery-otp"
+                  autoFocus
+                />
+                <div className="flex items-center justify-between text-[11px]">
+                  <button
+                    type="button"
+                    disabled={otpTimer > 0 || recoveryLoading}
+                    onClick={() => handleRequestOtp()}
+                    className="text-[#0754C7] dark:text-blue-300 font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    {otpTimer > 0 ? `إعادة الإرسال بعد (${otpTimer}) ثانية` : "إعادة إرسال رمز جديد"}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading || otpCode.length !== 6}
+                    className="flex-1 py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer disabled:opacity-60"
+                  >
+                    {recoveryLoading ? "جاري التحقق..." : "التحقق ومتابعة"}
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowForgotModal(false)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    className="px-4 py-2.5 bg-slate-100 dark:bg-[#142d50] text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
                   >
                     إلغاء
                   </button>
@@ -1512,15 +2025,11 @@ export function AuthScreen({
               </form>
             )}
 
-            {/* STEP 3: Enter New Password (with Strength Meter & Bcrypt) */}
-            {recoveryStep === 3 && (
+            {recoveryStep === 4 && (
               <form onSubmit={handleResetPasswordWithOtp} className="space-y-4">
-                {/* New Password */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      كلمة المرور الجديدة:
-                    </label>
+                    <label className="text-xs font-bold text-[#071C43] dark:text-slate-300">كلمة المرور الجديدة:</label>
                     <button
                       type="button"
                       onClick={() => {
@@ -1529,7 +2038,7 @@ export function AuthScreen({
                         setRecoveryConfirmPassword(strong);
                         setRecoveryError(null);
                       }}
-                      className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] text-[#0754C7] dark:text-blue-300 font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <Sparkles className="w-3 h-3 text-amber-500" />
                       <span>توليد كلمة قوية</span>
@@ -1541,112 +2050,67 @@ export function AuthScreen({
                       value={recoveryNewPassword}
                       onChange={(e) => setRecoveryNewPassword(e.target.value)}
                       placeholder="أدخل كلمة مرور قوية (8 خانات فأكثر)"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 pl-10 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+                      className="w-full bg-slate-50 dark:bg-[#081426] border border-slate-200 dark:border-[#244577] rounded-xl p-2.5 pl-10 text-xs text-[#071C43] dark:text-white"
                       autoFocus
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowRecNewPass(!showRecNewPass)}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
+                    <button type="button" onClick={() => setShowRecNewPass(!showRecNewPass)} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer">
                       {showRecNewPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  {/* Real-time strength meter */}
                   <PasswordStrengthMeter password={recoveryNewPassword} />
                 </div>
 
-                {/* Confirm Password */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    تأكيد كلمة المرور الجديدة:
-                  </label>
+                  <label className="block text-xs font-bold text-[#071C43] dark:text-slate-300 mb-1.5">تأكيد كلمة المرور الجديدة:</label>
                   <div className="relative">
                     <input
                       type={showRecConfirmPass ? "text" : "password"}
                       value={recoveryConfirmPassword}
                       onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
                       placeholder="أعد إدخال كلمة المرور"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 pl-10 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+                      className="w-full bg-slate-50 dark:bg-[#081426] border border-slate-200 dark:border-[#244577] rounded-xl p-2.5 pl-10 text-xs text-[#071C43] dark:text-white"
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowRecConfirmPass(!showRecConfirmPass)}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
+                    <button type="button" onClick={() => setShowRecConfirmPass(!showRecConfirmPass)} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer">
                       {showRecConfirmPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  {recoveryConfirmPassword && recoveryNewPassword !== recoveryConfirmPassword && (
-                    <p className="text-[11px] text-rose-500 font-bold mt-1">
-                      ⚠️ كلمتا المرور غير متطابقتين.
-                    </p>
-                  )}
-                  {recoveryConfirmPassword && recoveryNewPassword === recoveryConfirmPassword && (
-                    <p className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
-                      <Check className="w-3 h-3" />
-                      كلمتا المرور متطابقتان.
-                    </p>
-                  )}
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="submit"
                     disabled={recoveryLoading || !recoveryNewPassword || recoveryNewPassword !== recoveryConfirmPassword}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-xs"
+                    className="flex-1 py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer disabled:opacity-60"
                   >
-                    {recoveryLoading ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>جاري الحفظ والتشفير عبر Bcrypt...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>تأكيد وحفظ كلمة المرور الجديدة</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotModal(false)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
-                  >
-                    إلغاء
+                    {recoveryLoading ? "جاري الحفظ..." : "تأكيد وحفظ كلمة المرور"}
                   </button>
                 </div>
               </form>
             )}
 
-            {/* STEP 4: Success confirmation */}
-            {recoveryStep === 4 && (
+            {recoveryStep === 5 && (
               <div className="space-y-4">
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-800 dark:text-emerald-300 text-xs space-y-2">
+                <div className="p-4 bg-[#eaf3ff] dark:bg-[#142d50] border border-blue-200 dark:border-[#244577] rounded-2xl text-[#071C43] dark:text-blue-200 text-xs space-y-2">
                   <div className="flex items-center gap-2 font-black text-sm">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <span>تم تحديث وتشفير كلمة المرور بنجاح!</span>
+                    <CheckCircle2 className="w-5 h-5 text-[#0754C7] shrink-0" />
+                    <span>تم تحديث كلمة المرور بنجاح!</span>
                   </div>
-                  <p className="leading-relaxed font-medium">
-                    تم تشفير كلمة مرورك الجديدة بواسطة نظام Bcrypt وإنهاء الجلسات القديمة لضمان أقصى درجات الأمان. يمكنك الآن تسجيل الدخول مباشرة ببياناتك الجديدة.
-                  </p>
+                  <p className="leading-relaxed">تم تأمين حسابك وإلغاء أي جلسات وأجهزة دخول سريع سابقة.</p>
                 </div>
-
                 <button
                   type="button"
                   onClick={() => {
                     setShowForgotModal(false);
-                    setIdentifier(recoveryIdentifier);
                     setPassword("");
                     setError(null);
                     setRecoveryStep(1);
+                    setWelcomeAuthMethod('password');
                   }}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer"
                 >
-                  <User className="w-4 h-4" />
-                  <span>تسجيل الدخول الآن بحسابك</span>
+                  تسجيل الدخول الآن بكلمة المرور الجديدة
                 </button>
               </div>
             )}

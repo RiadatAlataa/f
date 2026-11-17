@@ -30,6 +30,7 @@ interface NotificationBellProps {
   onDelete?: (notificationId?: string, clearAll?: boolean) => void;
   onNavigate?: (linkUrl: string) => void;
   onOpenUserSettings?: () => void;
+  variant?: 'default' | 'executive';
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({
@@ -39,7 +40,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   onMarkRead,
   onDelete,
   onNavigate,
-  onOpenUserSettings
+  onOpenUserSettings,
+  variant = 'default'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -198,44 +200,49 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       {/* Bell Button */}
       <button
         id="btn-notification-bell"
+        type="button"
         onClick={() => {
           setIsOpen(!isOpen);
           if (!isOpen && unreadCount > 0) {
             playAlertChime(hasUrgentUnread ? 'urgent' : 'normal');
           }
         }}
-        className={`relative p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
-          isOpen 
-            ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-200 dark:ring-emerald-800' 
-            : unreadCount > 0
-              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm'
-              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-        }`}
+        className={
+          variant === 'executive'
+            ? `relative w-10 h-10 rounded-full border transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                isOpen
+                  ? 'bg-[#0875E1] text-white border-white/40 shadow-md ring-2 ring-blue-300/40'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-xs'
+              }`
+            : `relative p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
+                isOpen 
+                  ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-md ring-2 ring-blue-200 dark:ring-blue-800' 
+                  : unreadCount > 0
+                    ? 'bg-[#eaf3ff] dark:bg-blue-950/60 text-[#0754C7] dark:text-blue-300 border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/60 shadow-sm'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`
+        }
         title="جرس الإشعارات والتنبيهات"
+        aria-label="الإشعارات"
       >
-        <Bell className={`w-5 h-5 ${unreadCount > 0 && !isOpen ? 'animate-bounce text-emerald-700 dark:text-emerald-400' : ''}`} />
+        <Bell className={`${variant === 'executive' ? 'w-4.5 h-4.5 text-white' : `w-5 h-5 ${unreadCount > 0 && !isOpen ? 'text-[#0754C7] dark:text-blue-400' : ''}`}`} />
 
-        {/* Unread Red Badge */}
+        {/* Unread Badge */}
         {unreadCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white text-[11px] font-black min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center shadow-md border-2 border-white dark:border-slate-900 animate-pulse">
+          <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[10px] font-mono font-black min-w-[19px] h-[19px] px-1 rounded-full flex items-center justify-center shadow-md border-2 border-[#071C43] tabular-nums">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
-        )}
-
-        {/* Urgent Glow Indicator */}
-        {hasUrgentUnread && (
-          <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping opacity-75" />
         )}
       </button>
 
       {/* Notifications Dropdown Panel */}
       {isOpen && (
-        <div className="absolute left-0 mt-3 w-80 sm:w-96 md:w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden text-slate-800 dark:text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute left-0 mt-3 w-80 sm:w-96 md:w-[420px] bg-white dark:bg-[#0e213d] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#1e3a66] z-50 overflow-hidden text-slate-800 dark:text-slate-100 animate-in fade-in zoom-in-95 duration-150">
           
           {/* Panel Header */}
-          <div className="p-4 bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white flex items-center justify-between border-b border-emerald-800/40">
+          <div className="p-4 bg-gradient-to-l from-[#071C43] via-[#0644A3] to-[#0754C7] text-white flex items-center justify-between border-b border-blue-900/40">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-emerald-500/20 rounded-xl border border-emerald-400/30 text-emerald-300">
+              <div className="p-2 bg-white/15 rounded-xl border border-white/25 text-white">
                 <Bell className="w-5 h-5" />
               </div>
               <div>

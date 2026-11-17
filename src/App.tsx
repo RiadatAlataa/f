@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Building2, Users, Calendar, ShieldCheck, Heart, Sparkles, Smartphone, 
-  Moon, Sun, HelpCircle, Bot, RefreshCw, Layers, ChevronRight, CheckCircle2,
+  Moon, Sun, HelpCircle, Bot, RefreshCw, Layers, ChevronRight, ChevronDown, CheckCircle2,
   AlertCircle, BookOpen, ExternalLink, Award, Globe, HeartHandshake, Boxes, Shield,
-  LogOut, ArrowRight, Settings, Sliders, X, Menu, Mail
+  LogOut, ArrowRight, Settings, Sliders, X, Menu, Mail, KeyRound
 } from "lucide-react";
+import makkahHeaderImg from "./assets/images/header_makkah_skyline_backdrop_1794924254425.jpg";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, JoinRequest, 
   AttendanceRecord, Evaluation, OperationLog, SystemStats,
@@ -41,6 +42,12 @@ import {
   getHttpStatusDescription
 } from "./config/api";
 import { resolveRouteSeo, applyRouteSeo } from "./utils/seo";
+import {
+  saveRememberedAccount,
+  getOrCreateDeviceId,
+  getRememberedAccounts,
+  updateRememberedAccountPinState
+} from "./utils/rememberedAccounts";
 
 export default function App() {
   // Global App States
@@ -224,7 +231,22 @@ export default function App() {
     return stored?.role && stored.role !== 'public' ? (stored.role as any) : null;
   });
   const [isUserSettingsOpen, setIsUserSettingsOpen] = useState<boolean>(false);
+  const [userSettingsInitialTab, setUserSettingsInitialTab] = useState<'security' | 'preferences'>('security');
+  const [userSettingsSecurityAction, setUserSettingsSecurityAction] = useState<'pin_setup' | null>(null);
+  const [showPinPromoBanner, setShowPinPromoBanner] = useState<boolean>(false);
   const [isPortalMobileMenuOpen, setIsPortalMobileMenuOpen] = useState<boolean>(false);
+  const [isHeaderProfileMenuOpen, setIsHeaderProfileMenuOpen] = useState<boolean>(false);
+  const headerProfileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (headerProfileMenuRef.current && !headerProfileMenuRef.current.contains(e.target as Node)) {
+        setIsHeaderProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
 
   // Track user dashboard role whenever in internal view
   useEffect(() => {
@@ -359,6 +381,7 @@ export default function App() {
     } catch {
       // Ignore
     }
+    setShowPinPromoBanner(false);
     setAuthenticatedUser(null);
     setSavedUserRole(null);
     setCurrentRole('public');
@@ -368,11 +391,16 @@ export default function App() {
   };
 
   // Centralized login success handler (persists session immediately and triggers authenticated data load)
-  const handleLoginSuccess = async (role: string, user: any) => {
+  const handleLoginSuccess = async (
+    role: string,
+    user: any,
+    options?: { rememberAccount?: boolean; authMethod?: string }
+  ) => {
     setAuthenticatedUser(user);
     setSavedUserRole(role as any);
     setCurrentRole(role as any);
     setActiveMainTab('system');
+    setShowPinPromoBanner(false);
     const sessionToken = user?.sessionToken || `tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     try {
       localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
@@ -401,6 +429,57 @@ export default function App() {
       await fetchDatabase(false, 0, authHeaders);
     } catch (err) {
       console.warn("Immediate post-login fetch warning:", err);
+    }
+
+    // Issue non-sensitive Remembered Account handle if user explicitly consented (never stores secrets)
+    if (!user?.mustChangePassword) {
+      const deviceId = getOrCreateDeviceId();
+      if (options?.rememberAccount) {
+        try {
+          const remRes = await fetch(buildApiUrl("/api/db/auth/remember-handle"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders
+            },
+            body: JSON.stringify({ deviceId })
+          });
+          if (remRes.ok) {
+            const remData = await remRes.json().catch(() => null);
+            if (remData?.rememberId) {
+              saveRememberedAccount({
+                rememberId: remData.rememberId,
+                firstName: remData.firstName,
+                displayName: remData.displayName,
+                avatarUrl: remData.avatarUrl || "",
+                role: remData.role,
+                roleLabel: remData.roleLabel,
+                hasPinEnabled: Boolean(remData.hasPinOnThisDevice)
+              });
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      // Check whether to show optional non-blocking Quick-PIN setup prompt
+      if (options?.authMethod !== 'pin') {
+        try {
+          const ovRes = await fetch(
+            buildApiUrl(`/api/db/auth/security-overview?deviceId=${encodeURIComponent(deviceId)}`),
+            { headers: authHeaders }
+          );
+          if (ovRes.ok) {
+            const ovData = await ovRes.json().catch(() => null);
+            if (ovData && !ovData.hasPinOnCurrentDevice) {
+              setShowPinPromoBanner(true);
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
     }
   };
 
@@ -1914,12 +1993,38 @@ export default function App() {
       {/* INTERNAL PORTAL EXECUTIVE HEADER (Shown only when in management portal AND authenticated, and never for blocked users during maintenance) */}
       {currentRole !== 'public' && authenticatedUser && (!isMaintenanceActive || isAuthorizedMaintenanceStaff) && (() => {
         const unreadLettersCount = (dbData?.letters || []).filter((l: any) => !l.isRead && l.status !== 'archived').length;
-        const formattedArabicDate = new Date().toLocaleDateString('ar-SA-u-nu-latn', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
+        const now = new Date();
+        let formattedGregorianDate = '';
+        let formattedHijriDate = '';
+        try {
+          formattedGregorianDate = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+          }).format(now) + 'م';
+        } catch {
+          formattedGregorianDate = now.toLocaleDateString('ar-EG', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          }) + 'م';
+        }
+        try {
+          formattedHijriDate = new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+          }).format(now);
+        } catch {
+          formattedHijriDate = now.toLocaleDateString('ar-SA-u-nu-latn', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        }
+
         const licenseNumber = dbData?.homeSettings?.licenseNumber || '1000888600';
         const userDisplayTitle =
           authenticatedUser?.positionTitle ||
@@ -1939,6 +2044,16 @@ export default function App() {
             : currentRole === 'beneficiary'
             ? 'مستفيد'
             : 'موظف');
+
+        const userAvatarSrc =
+          authenticatedUser?.photoUrl ||
+          authenticatedUser?.avatarUrl ||
+          authenticatedUser?.photo ||
+          '';
+        const hasValidAvatar =
+          Boolean(userAvatarSrc) &&
+          !userAvatarSrc.includes('unsplash.com') &&
+          !userAvatarSrc.includes('placeholder');
 
         const canOpenQuickMessages =
           currentRole === 'admin' ||
@@ -1960,16 +2075,27 @@ export default function App() {
         return (
           <header
             style={{
-              paddingTop: 'calc(8px + env(safe-area-inset-top, 0px))',
+              paddingTop: 'calc(6px + env(safe-area-inset-top, 0px))',
             }}
-            className="bg-white/95 dark:bg-[#0e213d]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#1e3a66] shadow-xs sticky top-0 z-[999] no-print max-w-full box-border"
+            className="bg-gradient-to-l from-[#061838] via-[#0A2A66] to-[#071C43] text-white border-b border-[#1c3d75]/80 shadow-lg sticky top-0 z-[999] no-print max-w-full box-border relative overflow-visible"
           >
-            <div className="w-full max-w-[1860px] mx-auto px-3 sm:px-5 lg:px-8 py-2">
-              <div className="flex justify-between items-center gap-2 sm:gap-3">
+            {/* Atmospheric Makkah Skyline Center Backdrop (Softened so white/gold typography has crisp contrast) */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+              <img
+                src={makkahHeaderImg}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover object-center opacity-25 mix-blend-luminosity"
+              />
+              <div className="absolute inset-0 bg-gradient-to-l from-[#061838]/95 via-[#09265C]/65 to-[#061838]/95" />
+            </div>
 
-                {/* Right Side: Official Logo + Association Name (Lyon Font) + License & Live Date */}
-                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white border border-slate-200 dark:border-[#244577] flex items-center justify-center p-1 shadow-xs shrink-0 overflow-hidden">
+            <div className="relative z-10 w-full max-w-[1860px] mx-auto px-3 sm:px-5 lg:px-8 py-2.5">
+              <div className="flex justify-between items-center gap-2 sm:gap-4">
+
+                {/* Zone 1 (Right / RTL Start): Official Circular Seal Logo + Association Name + License */}
+                <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white p-1 border-2 border-[#E5C158]/80 shadow-md flex items-center justify-center shrink-0 overflow-hidden">
                     <img
                       src="/logo.png"
                       alt="شعار جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"
@@ -1977,91 +2103,67 @@ export default function App() {
                     />
                   </div>
                   <div className="text-right min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <h1 className="font-lyon text-sm sm:text-base font-black text-[#071C43] dark:text-white leading-tight truncate max-w-[190px] min-[390px]:max-w-[235px] sm:max-w-none">
-                        {dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
-                      </h1>
-                      <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-[#eaf3ff] dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 border border-blue-200 dark:border-[#244577] shrink-0">
-                        ترخيص: {licenseNumber}
-                      </span>
-                    </div>
-                    <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300 font-medium mt-0.5 truncate">
-                      <span className="flex items-center gap-1 text-[#0754C7] dark:text-blue-300 font-bold">
-                        <Calendar className="w-3 h-3 shrink-0" />
-                        <span>{formattedArabicDate}</span>
-                      </span>
-                      <span className="text-slate-300 dark:text-slate-600 hidden md:inline xl:hidden">•</span>
-                      <span className="hidden md:inline xl:hidden text-slate-600 dark:text-slate-300">
-                        ترخيص: <strong className="font-mono">{licenseNumber}</strong>
+                    <h1 className="font-lyon text-sm sm:text-base lg:text-lg font-black text-white leading-tight truncate max-w-[185px] min-[390px]:max-w-[225px] sm:max-w-none drop-shadow-xs">
+                      {dbData?.homeSettings?.associationNameAr || "جمعية ريادة العطاء لخدمة الإنسان بالعسيلة"}
+                    </h1>
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[11px] sm:text-xs font-semibold text-blue-100/95 whitespace-nowrap">
+                      <span>رقم الترخيص:</span>
+                      <span className="font-sans font-black text-[#F3D77A] tracking-wide tabular-nums">
+                        {licenseNumber}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Center: Core System Navigation Switcher (Desktop: lg and up) */}
-                <div className="hidden lg:flex bg-slate-100 dark:bg-[#142d50] p-1 rounded-xl gap-1 border border-slate-200/80 dark:border-[#244577] shadow-2xs shrink-0">
-                  <button
-                    id="main-tab-system"
-                    onClick={() => setActiveMainTab('system')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeMainTab === 'system'
-                        ? 'bg-[#0754C7] text-white shadow-xs font-black'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>النظام الإداري</span>
-                  </button>
-                  <button
-                    id="main-tab-ai"
-                    onClick={() => setActiveMainTab('ai')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeMainTab === 'ai'
-                        ? 'bg-[#0754C7] text-white shadow-xs font-black'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
-                    }`}
-                  >
-                    <Bot className="w-3.5 h-3.5" />
-                    <span>المساعد الذكي</span>
-                  </button>
-                </div>
-
-                {/* Left Side: User Identity + Quick Messages + Notifications + Theme + Settings + Home + Logout + Mobile Hamburger */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Logged-in User & Position Display (Desktop xl+) */}
-                  <div className="hidden xl:flex items-center gap-2 bg-slate-50 dark:bg-[#142d50] border border-slate-200 dark:border-[#244577] px-2.5 py-1 rounded-xl shrink-0">
-                    <div className="w-7 h-7 rounded-lg bg-[#071C43] dark:bg-[#0754C7] text-white text-xs font-black flex items-center justify-center shrink-0">
-                      {(authenticatedUser.name || 'م').trim().charAt(0)}
+                {/* Zone 2 (Center): Gregorian & Hijri Dates + Workspace Switcher */}
+                <div className="hidden lg:flex items-center gap-4 shrink-0">
+                  <div className="flex items-center gap-2.5 bg-[#061838]/55 backdrop-blur-xs border border-white/15 rounded-2xl px-3.5 py-1.5">
+                    <div className="w-8 h-8 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+                      <Calendar className="w-4 h-4 text-[#F3D77A]" />
                     </div>
-                    <div className="text-right leading-tight max-w-[155px]">
-                      <div className="text-[11px] font-black text-[#071C43] dark:text-white truncate">
-                        {authenticatedUser.name}
+                    <div className="text-right leading-snug whitespace-nowrap">
+                      <div className="text-xs font-extrabold text-white tabular-nums">
+                        {formattedGregorianDate}
                       </div>
-                      <div className="text-[10px] font-bold text-[#0754C7] dark:text-blue-300 truncate">
-                        {userDisplayTitle}
+                      <div className="text-[11px] font-semibold text-blue-200/90 tabular-nums">
+                        {formattedHijriDate}
                       </div>
                     </div>
                   </div>
 
-                  {/* Quick Messages / Official Letters Shortcut */}
-                  {canOpenQuickMessages && (
+                  {/* Core System Navigation Switcher (النظام الإداري | المساعد الذكي) */}
+                  <div className="hidden xl:flex bg-[#061838]/65 p-1 rounded-xl gap-1 border border-white/15 backdrop-blur-xs shrink-0">
                     <button
-                      id="btn-header-quick-messages"
+                      id="main-tab-system"
                       type="button"
-                      onClick={handleOpenQuickMessages}
-                      className="relative flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-[#142d50] px-2.5 py-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer text-xs font-bold shrink-0"
-                      title="الخطابات والمراسلات السريعة"
-                      aria-label="الخطابات والمراسلات"
+                      onClick={() => setActiveMainTab('system')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                        activeMainTab === 'system'
+                          ? 'bg-[#0875E1] text-white shadow-sm font-black'
+                          : 'text-blue-100 hover:text-white hover:bg-white/10'
+                      }`}
                     >
-                      <Mail className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
-                      <span className="hidden 2xl:inline">الرسائل</span>
-                      {unreadLettersCount > 0 && (
-                        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-mono font-black flex items-center justify-center">
-                          {unreadLettersCount}
-                        </span>
-                      )}
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>النظام الإداري</span>
                     </button>
-                  )}
+                    <button
+                      id="main-tab-ai"
+                      type="button"
+                      onClick={() => setActiveMainTab('ai')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                        activeMainTab === 'ai'
+                          ? 'bg-[#0875E1] text-white shadow-sm font-black'
+                          : 'text-blue-100 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <Bot className="w-3.5 h-3.5" />
+                      <span>المساعد الذكي</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Zone 3 (Left / RTL End): Notifications, Messages, Theme Toggle, Security/Settings, User Greeting + Avatar + Logout */}
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
                   <NotificationBell
                     notifications={dbData?.notifications || []}
@@ -2070,84 +2172,195 @@ export default function App() {
                     onMarkRead={handleMarkNotificationRead}
                     onDelete={handleDeleteNotification}
                     onOpenUserSettings={() => setIsUserSettingsOpen(true)}
+                    variant="executive"
                   />
 
-                  {/* Theme Toggle */}
+                  {/* Quick Messages / Official Letters Shortcut */}
+                  {canOpenQuickMessages && (
+                    <button
+                      id="btn-header-quick-messages"
+                      type="button"
+                      onClick={handleOpenQuickMessages}
+                      className="relative w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-xs transition-all cursor-pointer flex items-center justify-center shrink-0"
+                      title="الخطابات والمراسلات السريعة"
+                      aria-label="الخطابات والمراسلات"
+                    >
+                      <Mail className="w-4.5 h-4.5 text-white" />
+                      {unreadLettersCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-mono font-black flex items-center justify-center border-2 border-[#071C43] tabular-nums shadow-md">
+                          {unreadLettersCount}
+                        </span>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Theme Toggle (Dark / Light) */}
                   <button
                     id="btn-dark-toggle"
+                    type="button"
                     onClick={() => setIsDark(!isDark)}
-                    className="text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#142d50] p-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer flex items-center justify-center text-xs shrink-0"
+                    className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-xs transition-all cursor-pointer flex items-center justify-center shrink-0"
                     title={isDark ? "تفعيل الوضع المضيء ☀️" : "تفعيل الوضع الليلي 🌙"}
                     aria-label="تبديل مظهر العرض"
                   >
                     {isDark ? (
-                      <Sun className="w-4 h-4 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
+                      <Sun className="w-4.5 h-4.5 text-amber-300" />
                     ) : (
-                      <Moon className="w-4 h-4 text-[#071C43]" />
+                      <Moon className="w-4.5 h-4.5 text-blue-100" />
                     )}
                   </button>
 
-                  {/* User Preferences Settings (Desktop) */}
+                  {/* Account Security & Quick PIN Settings (Desktop) */}
                   <button
                     id="btn-header-user-settings"
-                    onClick={() => setIsUserSettingsOpen(true)}
-                    className="hidden md:flex text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#142d50] p-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer items-center justify-center text-xs shrink-0"
-                    title="إعدادات وتفضيلات المستخدم والتنبيهات الصوتية"
-                    aria-label="إعدادات وتفضيلات المستخدم"
+                    type="button"
+                    onClick={() => {
+                      setUserSettingsInitialTab('security');
+                      setUserSettingsSecurityAction(null);
+                      setIsUserSettingsOpen(true);
+                    }}
+                    className="hidden md:flex w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-xs transition-all cursor-pointer items-center justify-center shrink-0"
+                    title="إعدادات الحساب والأمان والدخول السريع"
+                    aria-label="إعدادات الحساب والأمان والدخول السريع"
                   >
-                    <Sliders className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
+                    <Sliders className="w-4.5 h-4.5 text-blue-100" />
                   </button>
 
-                  {/* System Settings for Admin / Operations (Desktop) */}
-                  {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                  {/* User Greeting + Avatar + Dropdown (Desktop md+) */}
+                  <div className="relative hidden md:block" ref={headerProfileMenuRef}>
                     <button
-                      id="btn-header-settings"
-                      onClick={() => {
-                        setActiveMainTab('system');
-                        setAdminSubTab('system_settings');
-                      }}
-                      className="hidden md:flex text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#142d50] p-2 rounded-xl border border-slate-200 dark:border-[#244577] transition-all cursor-pointer items-center justify-center text-xs shrink-0"
-                      title="إعدادات النظام الشاملة"
-                      aria-label="إعدادات النظام"
+                      type="button"
+                      id="btn-header-user-profile"
+                      onClick={() => setIsHeaderProfileMenuOpen((prev) => !prev)}
+                      className="flex items-center gap-2.5 bg-[#061838]/60 hover:bg-[#061838]/90 border border-white/20 hover:border-[#F3D77A]/60 pl-3 pr-1.5 py-1 rounded-full transition-all cursor-pointer shrink-0"
                     >
-                      <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                      {hasValidAvatar ? (
+                        <img
+                          src={userAvatarSrc}
+                          alt={authenticatedUser.name}
+                          referrerPolicy="no-referrer"
+                          className="w-9 h-9 rounded-full object-cover border-2 border-[#E5C158]/80 bg-white shrink-0"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#0875E1] to-[#071C43] border-2 border-[#E5C158]/80 text-white text-sm font-black flex items-center justify-center shrink-0">
+                          {(authenticatedUser.name || 'م').trim().charAt(0)}
+                        </div>
+                      )}
+                      <div className="text-right leading-tight max-w-[160px] hidden sm:block">
+                        <div className="text-[11px] font-bold text-blue-200 flex items-center gap-1">
+                          <span>مرحبًا بك</span>
+                          <span className="text-white/50">·</span>
+                          <span className="truncate font-black text-white">{authenticatedUser.name}</span>
+                        </div>
+                        <div className="text-[10px] font-bold text-[#F3D77A] truncate flex items-center gap-1 mt-0.5">
+                          <span className="truncate">{userDisplayTitle}</span>
+                          <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${isHeaderProfileMenuOpen ? 'rotate-180' : ''}`} />
+                        </div>
+                      </div>
                     </button>
-                  )}
 
-                  {/* Return to Public Site */}
+                    {/* Executive Profile Dropdown */}
+                    {isHeaderProfileMenuOpen && (
+                      <div
+                        className="absolute left-0 mt-2 w-72 rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-2 z-[1050] text-right text-slate-800 dark:text-slate-100 animate-fadeIn"
+                        dir="rtl"
+                      >
+                        <div className="px-3 py-2.5 border-b border-slate-100 dark:border-[#1e3a66] mb-1">
+                          <div className="text-xs font-black text-[#071C43] dark:text-white truncate">
+                            {authenticatedUser.name}
+                          </div>
+                          <div className="text-[11px] font-bold text-[#0754C7] dark:text-blue-300 mt-0.5">
+                            {userDisplayTitle}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderProfileMenuOpen(false);
+                            setUserSettingsInitialTab('security');
+                            setUserSettingsSecurityAction(null);
+                            setIsUserSettingsOpen(true);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#eaf3ff] dark:hover:bg-[#142d50] text-[#071C43] dark:text-slate-200 transition-colors cursor-pointer"
+                        >
+                          <Sliders className="w-4 h-4 text-[#0754C7] dark:text-blue-400" />
+                          <span>الأمان والرمز السريع وإعدادات الحساب</span>
+                        </button>
+
+                        {(currentRole === 'admin' || currentRole === 'operations_manager') && (
+                          <button
+                            id="btn-header-settings"
+                            type="button"
+                            onClick={() => {
+                              setIsHeaderProfileMenuOpen(false);
+                              setActiveMainTab('system');
+                              setAdminSubTab('system_settings');
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#eaf3ff] dark:hover:bg-[#142d50] text-[#071C43] dark:text-slate-200 transition-colors cursor-pointer"
+                          >
+                            <Settings className="w-4 h-4 text-[#0754C7] dark:text-blue-400" />
+                            <span>إعدادات النظام الشاملة</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderProfileMenuOpen(false);
+                            handleNavigateToPublicHome();
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#eaf3ff] dark:hover:bg-[#142d50] text-[#071C43] dark:text-slate-200 transition-colors cursor-pointer"
+                        >
+                          <ArrowRight className="w-4 h-4 text-[#0754C7] dark:text-blue-400" />
+                          <span>الانتقال للموقع العام للجمعية</span>
+                        </button>
+
+                        <div className="px-2 py-1">
+                          <PWAInstallButton variant="header" className="w-full justify-center" />
+                        </div>
+
+                        <div className="border-t border-slate-100 dark:border-[#1e3a66] mt-1 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsHeaderProfileMenuOpen(false);
+                              handleLogout();
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 transition-colors cursor-pointer"
+                          >
+                            <LogOut className="w-4 h-4" />
+                            <span>تسجيل الخروج</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Direct 1-Click Logout Button (Desktop md+) */}
                   <button
-                    onClick={handleNavigateToPublicHome}
-                    className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-[#0754C7] dark:text-blue-200 hover:text-white bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-[#0754C7] dark:hover:bg-[#0754C7] px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-[#244577] transition-all cursor-pointer shrink-0"
-                    title="العودة إلى الموقع العام للجمعية"
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" />
-                    <span>الموقع العام</span>
-                  </button>
-
-                  {/* PWA App Install Button */}
-                  <PWAInstallButton variant="header" className="hidden 2xl:inline-flex" />
-
-                  {/* User Logout Button (Desktop) */}
-                  <button
+                    type="button"
                     onClick={handleLogout}
-                    className="hidden md:flex bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/70 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer items-center gap-1.5 shadow-2xs shrink-0"
+                    className="hidden md:flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-600 border border-rose-300/30 hover:border-rose-400 text-rose-100 hover:text-white px-2.5 py-2 rounded-full text-xs font-bold transition-all cursor-pointer shrink-0"
                     title="تسجيل الخروج من النظام"
+                    aria-label="تسجيل الخروج"
                   >
-                    <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                    <span>خروج</span>
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span className="hidden 2xl:inline">خروج</span>
                   </button>
 
                   {/* Compact Mobile Hamburger Menu Button */}
                   <button
+                    type="button"
                     onClick={() => setIsPortalMobileMenuOpen(prev => !prev)}
-                    className="md:hidden flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#142d50] dark:hover:bg-[#1b3a66] text-[#071C43] dark:text-white border border-slate-200 dark:border-[#244577] shadow-2xs transition-all cursor-pointer active:scale-95 shrink-0"
+                    className="md:hidden flex items-center justify-center p-2 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/25 transition-all cursor-pointer active:scale-95 shrink-0"
                     title="القائمة"
                     aria-label="القائمة"
                   >
                     {isPortalMobileMenuOpen ? (
-                      <X className="w-5 h-5 text-[#0754C7] dark:text-blue-300" />
+                      <X className="w-5 h-5 text-white" />
                     ) : (
-                      <Menu className="w-5 h-5 text-[#071C43] dark:text-slate-100" />
+                      <Menu className="w-5 h-5 text-white" />
                     )}
                   </button>
                 </div>
@@ -2156,47 +2369,64 @@ export default function App() {
 
               {/* Mobile Collapsible Executive Drawer Menu (max-width: 768px) */}
               {isPortalMobileMenuOpen && (
-                <div className="md:hidden mt-2.5 pt-2.5 border-t border-slate-200 dark:border-[#1e3a66] space-y-2 animate-fadeIn">
-                  {/* Mobile User Identity + Date + License Strip */}
-                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#eaf3ff]/70 dark:bg-[#142d50] border border-blue-200/70 dark:border-[#244577]">
-                    <div className="min-w-0">
-                      <div className="text-xs font-black text-[#071C43] dark:text-white truncate">
-                        {authenticatedUser.name}
-                      </div>
-                      <div className="text-[11px] font-bold text-[#0754C7] dark:text-blue-300 truncate">
-                        {userDisplayTitle} • ترخيص {licenseNumber}
+                <div className="md:hidden mt-3 pt-3 border-t border-white/15 space-y-2.5 animate-fadeIn">
+                  {/* Mobile User Identity + Gregorian & Hijri Dates + License */}
+                  <div className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#061838]/75 border border-white/15">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {hasValidAvatar ? (
+                        <img
+                          src={userAvatarSrc}
+                          alt={authenticatedUser.name}
+                          referrerPolicy="no-referrer"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-[#E5C158]/80 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-[#0875E1] border-2 border-[#E5C158]/80 text-white text-sm font-black flex items-center justify-center shrink-0">
+                          {(authenticatedUser.name || 'م').trim().charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-white truncate">
+                          مرحبًا بك، {authenticatedUser.name}
+                        </div>
+                        <div className="text-[11px] font-bold text-[#F3D77A] truncate">
+                          {userDisplayTitle} • ترخيص {licenseNumber}
+                        </div>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 shrink-0">
-                      {new Date().toLocaleDateString('ar-SA-u-nu-latn')}
-                    </span>
+                    <div className="text-left text-[10px] text-blue-100/90 leading-tight shrink-0 tabular-nums">
+                      <div>{formattedGregorianDate}</div>
+                      <div className="text-blue-200/80">{formattedHijriDate}</div>
+                    </div>
                   </div>
 
                   {/* Core Navigation Switcher */}
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-[#142d50] p-1.5 rounded-xl border border-slate-200/70 dark:border-[#244577]">
+                  <div className="grid grid-cols-2 gap-2 bg-[#061838]/60 p-1.5 rounded-xl border border-white/15">
                     <button
+                      type="button"
                       onClick={() => {
                         setActiveMainTab('system');
                         setIsPortalMobileMenuOpen(false);
                       }}
                       className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         activeMainTab === 'system'
-                          ? 'bg-[#0754C7] text-white shadow-xs font-black'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
+                          ? 'bg-[#0875E1] text-white shadow-xs font-black'
+                          : 'text-blue-100 hover:text-white'
                       }`}
                     >
                       <Layers className="w-4 h-4" />
                       <span>النظام الإداري</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setActiveMainTab('ai');
                         setIsPortalMobileMenuOpen(false);
                       }}
                       className={`flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         activeMainTab === 'ai'
-                          ? 'bg-[#0754C7] text-white shadow-xs font-black'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-[#071C43] dark:hover:text-white'
+                          ? 'bg-[#0875E1] text-white shadow-xs font-black'
+                          : 'text-blue-100 hover:text-white'
                       }`}
                     >
                       <Bot className="w-4 h-4" />
@@ -2209,73 +2439,79 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleOpenQuickMessages}
-                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#142d50]/70 dark:hover:bg-[#142d50] text-[#071C43] dark:text-white font-bold text-xs border border-slate-200 dark:border-[#244577] transition-all cursor-pointer"
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
+                        <Mail className="w-4 h-4 text-[#F3D77A]" />
                         <span>الخطابات والمراسلات ({unreadLettersCount} غير مقروءة)</span>
                       </span>
-                      <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                      <ChevronRight className="w-4 h-4 text-blue-200 rtl:rotate-180" />
                     </button>
                   )}
 
                   {/* Return to Public Home */}
                   <button
+                    type="button"
                     onClick={() => {
                       handleNavigateToPublicHome();
                       setIsPortalMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-blue-100 text-[#0754C7] dark:text-blue-200 font-bold text-xs border border-blue-200 dark:border-[#244577] transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer"
                   >
                     <span className="flex items-center gap-2">
-                      <ArrowRight className="w-4 h-4" />
+                      <ArrowRight className="w-4 h-4 text-blue-200" />
                       <span>العودة إلى الموقع العام للجمعية</span>
                     </span>
-                    <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+                    <ChevronRight className="w-4 h-4 text-blue-200 rtl:rotate-180" />
                   </button>
 
-                  {/* User Settings */}
+                  {/* User Settings & Quick PIN Security */}
                   <button
+                    type="button"
                     onClick={() => {
+                      setUserSettingsInitialTab('security');
+                      setUserSettingsSecurityAction(null);
                       setIsUserSettingsOpen(true);
                       setIsPortalMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#142d50]/70 dark:hover:bg-[#142d50] text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-[#244577] transition-all cursor-pointer"
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer"
                   >
                     <span className="flex items-center gap-2">
-                      <Sliders className="w-4 h-4 text-[#0754C7] dark:text-blue-300" />
-                      <span>إعدادات وتفضيلات المستخدم والتنبيهات الصوتية</span>
+                      <Sliders className="w-4 h-4 text-blue-200" />
+                      <span>إعدادات الحساب والأمان والدخول السريع</span>
                     </span>
-                    <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                    <ChevronRight className="w-4 h-4 text-blue-200 rtl:rotate-180" />
                   </button>
 
                   {/* Admin System Settings */}
                   {(currentRole === 'admin' || currentRole === 'operations_manager') && (
                     <button
+                      type="button"
                       onClick={() => {
                         setActiveMainTab('system');
                         setAdminSubTab('system_settings');
                         setIsPortalMobileMenuOpen(false);
                       }}
-                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#142d50]/70 dark:hover:bg-[#142d50] text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200/70 dark:border-[#244577] transition-all cursor-pointer"
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs border border-white/15 transition-all cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
-                        <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                        <Settings className="w-4 h-4 text-blue-200" />
                         <span>إعدادات النظام الشاملة</span>
                       </span>
-                      <ChevronRight className="w-4 h-4 text-slate-400 rtl:rotate-180" />
+                      <ChevronRight className="w-4 h-4 text-blue-200 rtl:rotate-180" />
                     </button>
                   )}
 
                   {/* User Logout Button */}
                   <button
+                    type="button"
                     onClick={() => {
                       handleLogout();
                       setIsPortalMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800/80 transition-all cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white font-bold text-xs border border-rose-400/50 transition-all cursor-pointer"
                   >
-                    <LogOut className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                    <LogOut className="w-4 h-4" />
                     <span>تسجيل الخروج ({authenticatedUser.name})</span>
                   </button>
                 </div>
@@ -2327,6 +2563,51 @@ export default function App() {
               />
             ) : (
               <>
+                {/* Optional Non-Blocking Quick-PIN Setup Prompt Banner */}
+                {showPinPromoBanner && authenticatedUser && !authenticatedUser.mustChangePassword && (
+                  <div
+                    id="quick-pin-promo-banner"
+                    className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-l from-[#071C43] via-[#0B2A63] to-[#0754C7] text-white shadow-md border border-blue-400/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+                        <KeyRound className="w-4 h-4 text-blue-100" />
+                      </div>
+                      <div className="min-w-0">
+                        <strong className="text-xs sm:text-sm font-black block text-white">
+                          تسجيل دخول أسرع في زيارتك القادمة؟
+                        </strong>
+                        <p className="text-[11px] text-blue-100/90 leading-relaxed">
+                          أنشئ رمز دخول سريع مكوناً من 6 أرقام لهذا الجهاز (اختياري تماماً ومربوط بأمان جهازك).
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        id="btn-banner-setup-pin"
+                        onClick={() => {
+                          setUserSettingsInitialTab('security');
+                          setUserSettingsSecurityAction('pin_setup');
+                          setIsUserSettingsOpen(true);
+                          setShowPinPromoBanner(false);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-white text-[#071C43] hover:bg-blue-50 text-xs font-black transition-all cursor-pointer shadow-xs"
+                      >
+                        إنشاء رمز دخول سريع
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-banner-dismiss-pin"
+                        onClick={() => setShowPinPromoBanner(false)}
+                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer"
+                      >
+                        لاحقاً
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* 1. ADMINISTRATION & OPERATIONS VIEW */}
                 {(currentRole === 'admin' || currentRole === 'operations_manager') && (
                   <DashboardErrorBoundary pageName="لوحة التحكم العامة للإدارة والعمليات">
@@ -2767,15 +3048,21 @@ export default function App() {
         } : undefined} />
       )}
 
-      {/* USER SETTINGS & AUDIO PREFERENCES MODAL */}
+      {/* USER SETTINGS & SECURITY MODAL */}
       <UserSettingsModal
         isOpen={isUserSettingsOpen}
-        onClose={() => setIsUserSettingsOpen(false)}
+        onClose={() => {
+          setIsUserSettingsOpen(false);
+          setUserSettingsSecurityAction(null);
+        }}
         lang={lang}
         currentUser={authenticatedUser}
         currentUserRole={currentRole}
         isDark={isDark}
         onToggleDark={() => setIsDark(!isDark)}
+        initialTab={userSettingsInitialTab}
+        initialSecurityAction={userSettingsSecurityAction}
+        onRememberedStateChanged={() => setShowPinPromoBanner(false)}
       />
 
       {/* MANDATORY FORCE PASSWORD CHANGE MODAL */}
@@ -2796,7 +3083,13 @@ export default function App() {
                   user: updatedUser
                 }));
               }
+              getRememberedAccounts().forEach((card) => {
+                if (card.role === currentRole) {
+                  updateRememberedAccountPinState(card.rememberId, false);
+                }
+              });
             } catch {}
+            setShowPinPromoBanner(true);
           }}
           onLogout={handleLogout}
         />

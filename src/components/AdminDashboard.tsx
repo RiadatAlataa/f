@@ -3,7 +3,7 @@ import {
   Building2, Users, Calendar, BarChart3, Database, FileSpreadsheet, FileDown, 
   Trash2, Plus, Edit3, Shield, Copy, Archive, Check, AlertTriangle, 
   Moon, Sun, Search, Printer, RefreshCw, Smartphone, ShieldAlert, Lock, Trophy, Send, Eye, Settings, Activity, FileText, Globe, X,
-  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2, MoreHorizontal
+  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2, MoreHorizontal, Layers
 } from "lucide-react";
 import { ExecutiveKpiDashboard } from "./ExecutiveKpiDashboard";
 import { 
@@ -471,24 +471,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const allPrimaryCategories = useMemo(() => [
     {
       id: 'kpis' as const,
-      label: "لوحة المؤشرات",
-      icon: LayoutDashboard,
-      description: "لوحة المؤشرات والإحصائيات الشاملة لأداء الجمعية والبرامج والعمليات",
-      badge: 'رئيسي',
+      label: "الرئيسية",
+      icon: Home,
+      description: "لوحة التحكم الرئيسية والمؤشرات والوصول السريع والإحصائيات",
+      badge: undefined as string | number | undefined,
       items: [
-        { id: 'stats', label: 'لوحة المؤشرات والإحصائيات', icon: LayoutDashboard, badge: 'مباشر' }
+        { id: 'stats', label: 'الرئيسية ولوحة المؤشرات', icon: Home, badge: 'مباشر' }
+      ]
+    },
+    {
+      id: 'beneficiaries' as const,
+      label: "إدارة المستفيدين",
+      icon: Users,
+      description: "إدارة المستفيدين، طلبات المساعدة، توزيع السلال والكسوة، وتقييمات الرضا",
+      badge: activeBeneficiaries.length || undefined,
+      items: [
+        { id: 'beneficiaries', label: 'المستفيدون وطلبات المساعدة', icon: Users, badge: activeBeneficiaries.length || undefined },
+        { id: 'beneficiaries_archive', label: 'أرشيف المستفيدين', icon: Archive, badge: archivedBeneficiariesCount || undefined },
+        { id: 'distributions', label: 'التوزيعات وسندات الاستلام', icon: Package, badge: safeDistributions.filter(d => d.status === 'active').length || undefined },
+        { id: 'beneficiary_ratings', label: 'تقييمات ورضا المستفيدين', icon: Star, badge: safeBeneficiaryRatings.length || undefined }
+      ]
+    },
+    {
+      id: 'finance' as const,
+      label: "إدارة المتبرعين والمالية",
+      icon: HeartHandshake,
+      description: "المتبرعون، التبرعات، الإدارة المالية الشاملة، الميزانيات، المخزون، والعهد",
+      badge: (data?.storeDonations || []).length || undefined,
+      items: [
+        { id: 'store_finance', label: 'المتبرعون والمشاريع الخيرية', icon: ShoppingBag, badge: (data?.storeDonations || []).length || 'ربط مباشر' },
+        { id: 'enterprise_finance', label: 'الإدارة المالية الشاملة', icon: Wallet, badge: 'نظام متكامل' },
+        { id: 'inventory', label: 'إدارة المخزون والجرد', icon: Boxes, badge: 'مستودع' },
+        { id: 'custody', label: 'العهدة الإلكترونية والمستودع', icon: Shield, badge: 'معتمد' }
       ]
     },
     {
       id: 'volunteers' as const,
-      label: "إدارة التطوع",
-      icon: HeartHandshake,
-      description: "إحصائيات التطوع الموحدة، الفرص المعتمدة، الفرق، المتطوعين وسجلات الساعات",
+      label: "المشاريع والتطوع",
+      icon: Layers,
+      description: "المشاريع الخيرية، المبادرات، الفرص التطوعية، الفرق، المتطوعون، وسجلات الساعات",
       badge: safeOpportunityRequests.filter(r => r.status === 'pending').length || undefined,
       items: [
+        { id: 'init', label: 'المشاريع والمبادرات التطوعية', icon: Calendar, badge: safeInitiatives.length || 0 },
         { id: 'volunteer_mgmt_dashboard', label: 'لوحة إدارة التطوع والإحصائيات', icon: BarChart3, badge: 'نظام متكامل' },
         { id: 'opp_requests', label: 'اعتماد وإدارة الفرص التطوعية', icon: FileText, badge: safeOpportunityRequests.filter(r => r.status === 'pending').length || undefined },
-        { id: 'init', label: 'المبادرات التطوعية', icon: Calendar, badge: safeInitiatives.length || 0 },
         { id: 'vols', label: 'سجلات وساعات المتطوعين', icon: Users, badge: activeVolunteers.length || 0 },
         { id: 'volunteers_archive', label: 'أرشيف المتطوعين', icon: Archive, badge: archivedVolunteersCount || undefined },
         { id: 'teams', label: 'الفرق التطوعية وقادتها', icon: UsersRound, badge: safeTeams.length || 0 },
@@ -499,68 +525,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ]
     },
     {
-      id: 'beneficiaries' as const,
-      label: "إدارة المستفيدين",
-      icon: HeartHandshake,
-      description: "إدارة المستفيدين، طلبات الإعانة، توزيع السلال والكسوة، وتقييمات الرضا",
-      badge: activeBeneficiaries.length || undefined,
-      items: [
-        { id: 'beneficiaries', label: 'المستفيدون وطلبات الإعانة', icon: Users, badge: activeBeneficiaries.length || undefined },
-        { id: 'beneficiaries_archive', label: 'أرشيف المستفيدين', icon: Archive, badge: archivedBeneficiariesCount || undefined },
-        { id: 'distributions', label: 'التوزيعات وسندات الاستلام', icon: Package, badge: safeDistributions.filter(d => d.status === 'active').length || undefined },
-        { id: 'beneficiary_ratings', label: 'تقييمات ورضا المستفيدين', icon: Star, badge: safeBeneficiaryRatings.length || undefined }
-      ]
-    },
-    {
-      id: 'hr' as const,
-      label: "الموارد البشرية",
-      icon: Briefcase,
-      description: "الموظفون، العقود والبدلات، الحضور والانصراف، الإجازات، مسيرات الرواتب والقرارات الإدارية",
-      badge: safeEmployeeRequests.filter(r => r.status === 'pending').length || (safeEmployees.length || 0),
-      items: [
-        { id: 'hr_dashboard', label: 'نظام إدارة الموارد البشرية (HR Master)', icon: Briefcase, badge: 'شامل' },
-        { id: 'employee_requests', label: 'طلبات واستقطاب الكوادر', icon: Users, badge: safeEmployeeRequests.filter(r => r.status === 'pending').length || undefined }
-      ]
-    },
-    {
-      id: 'management' as const,
-      label: "الإدارة العامة",
-      icon: Building2,
-      description: "الهيكلة والموقع والصلاحيات والتواصل",
-      badge: safeDepartments.length || 0,
-      items: [
-        { id: 'deps', label: 'هيكلة الإدارات', icon: Building2, badge: safeDepartments.length || 0 },
-        { id: 'org_chart', label: 'إدارة الهيكل الإداري', icon: Network, badge: (data?.orgMembers || []).length || undefined },
-        { id: 'hero_slides', label: 'إدارة صور الصفحة الرئيسية', icon: ImageIcon, badge: (data?.heroSlides || []).length || undefined },
-        { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data?.partners || []).length || undefined },
-        { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: safeLetters.filter(l => !l.isRead).length || undefined },
-        { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
-        { id: 'registration_links', label: 'روابط التسجيل والمشاركة', icon: Link2, badge: 'مباشر' },
-        { id: 'users_mgmt', label: 'إدارة المستخدمين الشاملة', icon: Users, badge: 'شامل' },
-        { id: 'password_resets', label: 'طلبات تغيير كلمات المرور (مدير العمليات)', icon: KeyRound, badge: 'العمليات' },
-        { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
-        { id: 'chat', label: 'الدردشة الداخلية', icon: MessageSquare },
-        { id: 'notifications', label: 'الإشعارات والتعاميم', icon: Send }
-      ]
-    },
-    {
-      id: 'finance' as const,
-      label: "المالية والمشتريات",
-      icon: Wallet,
-      description: "نظام الإدارة المالية الشامل، التبرعات، الميزانيات، المشتريات، والرواتب",
-      badge: 'جديد متكامل',
-      items: [
-        { id: 'enterprise_finance', label: 'الإدارة المالية الشاملة', icon: Wallet, badge: 'نظام متكامل' },
-        { id: 'store_finance', label: 'المتجر والمالية للمشاريع', icon: ShoppingBag, badge: 'ربط مباشر' },
-        { id: 'inventory', label: 'إدارة المخزون والجرد', icon: Boxes, badge: 'مستودع' },
-        { id: 'custody', label: 'العهدة الإلكترونية والمستودع', icon: Shield, badge: 'جديد' }
-      ]
-    },
-    {
       id: 'support' as const,
-      label: "الدعم والتذاكر",
-      icon: Headphones,
-      description: "مركز خدمة المستفيدين والتذاكر الفنية",
+      label: "طلبات الدعم والمساعدة",
+      icon: FileText,
+      description: "تذاكر الدعم وطلبات الخدمة والمساعدة للمستفيدين والفرق",
       badge: 'مباشر',
       items: [
         { id: 'support', label: 'إدارة الدعم الفني والتذاكر', icon: Headphones, badge: 'مباشر' },
@@ -573,24 +541,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       icon: BarChart3,
       description: "الإحصائيات والبحث ولوحة الشرف وسجل العمليات",
       items: [
-        { id: 'leaderboard', label: 'لوحة الشرف الصدارة', icon: Trophy },
+        { id: 'leaderboard', label: 'لوحة الشرف والصدارة', icon: Trophy },
         { id: 'globalsearch', label: 'البحث الشامل المتقدم', icon: Search },
         { id: 'logs', label: 'سجل العمليات والتدقيق', icon: Shield }
+      ]
+    },
+    {
+      id: 'management' as const,
+      label: "المستخدمون والإدارة",
+      icon: UsersRound,
+      description: "إدارة المستخدمين، الهيكلة، الإدارات، الموقع، الصلاحيات والتواصل",
+      badge: safeDepartments.length || 0,
+      items: [
+        { id: 'users_mgmt', label: 'إدارة المستخدمين الشاملة', icon: Users, badge: 'شامل' },
+        { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
+        { id: 'deps', label: 'هيكلة الإدارات', icon: Building2, badge: safeDepartments.length || 0 },
+        { id: 'org_chart', label: 'إدارة الهيكل الإداري', icon: Network, badge: (data?.orgMembers || []).length || undefined },
+        { id: 'letters', label: 'الخطابات والمراسلات الرسمية', icon: Mail, badge: safeLetters.filter(l => !l.isRead).length || undefined },
+        { id: 'password_resets', label: 'طلبات تغيير كلمات المرور', icon: KeyRound, badge: 'العمليات' },
+        { id: 'homepage', label: 'إدارة المحتوى والموقع', icon: Globe },
+        { id: 'hero_slides', label: 'إدارة صور الصفحة الرئيسية', icon: ImageIcon, badge: (data?.heroSlides || []).length || undefined },
+        { id: 'partners_mgmt', label: 'إدارة شركاء النجاح', icon: Sparkles, badge: (data?.partners || []).length || undefined },
+        { id: 'registration_links', label: 'روابط التسجيل والمشاركة', icon: Link2, badge: 'مباشر' },
+        { id: 'chat', label: 'الدردشة الداخلية', icon: MessageSquare },
+        { id: 'notifications', label: 'الإشعارات والتعاميم', icon: Send }
       ]
     },
     {
       id: 'settings' as const,
       label: "الإعدادات",
       icon: Settings,
-      description: "إعدادات البريد والنظام العام وقاعدة البيانات",
+      description: "إعدادات النظام العام والهوية الرسمية والبريد وقاعدة البيانات",
       badge: 'المدير',
       items: [
-        { id: 'maintenance_status', label: '🔧 وضع الصيانة وحالة الموقع', icon: Wrench, badge: isMaintenanceActive ? '🔴 تحت الصيانة' : '🟢 يعمل' },
-        { id: 'official_identity', label: '🏛️ الهوية الرسمية والخطابات', icon: FileText, badge: 'معتمد' },
-        { id: 'whatsapp_settings', label: '💬 إعدادات واتساب والإشعارات', icon: MessageSquare, badge: 'جديد' },
-        { id: 'email_settings', label: 'إعدادات البريد الحقيقي (Sender & SMTP)', icon: Mail, badge: 'جديد' },
         { id: 'system_settings', label: 'إعدادات النظام الشاملة', icon: Settings, badge: 'المدير' },
+        { id: 'official_identity', label: 'الهوية الرسمية والخطابات', icon: FileText, badge: 'معتمد' },
+        { id: 'maintenance_status', label: 'وضع الصيانة وحالة الموقع', icon: Wrench, badge: isMaintenanceActive ? 'تحت الصيانة' : 'يعمل' },
+        { id: 'whatsapp_settings', label: 'إعدادات واتساب والإشعارات', icon: MessageSquare, badge: 'جديد' },
+        { id: 'email_settings', label: 'إعدادات البريد (Sender & SMTP)', icon: Mail, badge: 'جديد' },
         { id: 'backup', label: 'قاعدة البيانات والنسخ', icon: Database }
+      ]
+    },
+    {
+      id: 'hr' as const,
+      label: "الموارد البشرية",
+      icon: Briefcase,
+      description: "الموظفون، العقود والبدلات، الحضور والانصراف، الإجازات، مسيرات الرواتب والقرارات الإدارية",
+      badge: safeEmployeeRequests.filter(r => r.status === 'pending').length || (safeEmployees.length || 0),
+      items: [
+        { id: 'hr_dashboard', label: 'نظام إدارة الموارد البشرية (HR Master)', icon: Briefcase, badge: 'شامل' },
+        { id: 'employee_requests', label: 'طلبات واستقطاب الكوادر', icon: Users, badge: safeEmployeeRequests.filter(r => r.status === 'pending').length || undefined }
       ]
     }
   ], [
@@ -632,9 +632,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       .filter(cat => cat.items.length > 0);
   }, [allPrimaryCategories, authenticatedUser]);
 
-  // Partition into Primary Horizontal Nav Bar (first 6) & Organized «المزيد» Menu (remaining)
-  const visiblePrimaryNavCategories = useMemo(() => primaryCategories.slice(0, 6), [primaryCategories]);
-  const visibleMoreNavCategories = useMemo(() => primaryCategories.slice(6), [primaryCategories]);
+  // Partition into Primary Horizontal Nav Bar (the 8 iconic sections) & Organized «المزيد» Menu (additional departments like HR + quick tools)
+  const visiblePrimaryNavCategories = useMemo(() => primaryCategories.slice(0, 8), [primaryCategories]);
+  const visibleMoreNavCategories = useMemo(() => primaryCategories.slice(8), [primaryCategories]);
 
   // Derive navGroups for ModernAppSidebar to maintain 100% synchronization
   const navGroups: NavGroup[] = useMemo(() => {
@@ -1189,169 +1189,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       />
 
       {/* Main Content Area */}
-      <div className="w-full space-y-6">
-        {/* Modern Categorized Command Center & Horizontal Navigation */}
-        <div ref={navBarRef} className="bg-white dark:bg-[#0e213d] rounded-2xl border border-slate-200 dark:border-[#1e3a66] shadow-sm relative z-40 space-y-0">
-          
-          {/* Top Administrative Context & Fast Actions */}
-          <div className="p-3.5 sm:p-4 border-b border-slate-100 dark:border-[#1e3a66] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/70 dark:bg-[#081426]/60 rounded-t-2xl">
-            {/* System Hierarchy Breadcrumbs */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eaf3ff] dark:bg-blue-950/60 text-[#071C43] dark:text-blue-200 text-xs font-black border border-blue-200/70 dark:border-blue-800/60">
-                <span className="w-2 h-2 rounded-full bg-[#0754C7] dark:bg-blue-400 animate-pulse"></span>
-                <span>إدارة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة</span>
-              </span>
-              <span className="text-slate-300 dark:text-slate-600">/</span>
-              <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300">
-                {activeCategory?.label}
-              </span>
-              <span className="text-slate-300 dark:text-slate-600">/</span>
-              <span className="text-xs font-black text-[#071C43] dark:text-white bg-white dark:bg-[#142d50] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#244577]">
-                {getActiveTabTitle(activeSubTab)}
-              </span>
-            </div>
-
-            {/* Top Quick Actions (Organized, Aligned) */}
-            <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end flex-wrap">
-              {/* Maintenance Mode Control & Live Indicator */}
-              <button
-                type="button"
-                id="btn-admin-maintenance-mode"
-                onClick={() => {
-                  setMaintenanceTargetAction(isMaintenanceActive ? 'disable' : 'enable');
-                  setMaintenanceFeedback(null);
-                  setIsMaintenanceModalOpen(true);
-                }}
-                className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border shadow-xs transition-all cursor-pointer hover:shadow-md active:scale-95 shrink-0 ${
-                  isMaintenanceActive
-                    ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500 shadow-rose-500/25 ring-2 ring-rose-400/40'
-                    : 'bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-blue-100 dark:hover:bg-[#19355e] text-[#071C43] dark:text-blue-200 border-blue-200 dark:border-[#244577]'
-                }`}
-                title="التحكم في وضع صيانة الموقع العام وإغلاق/فتح البوابة للزوار"
-              >
-                <Wrench className={`w-3.5 h-3.5 ${isMaintenanceActive ? 'text-white animate-bounce' : 'text-[#0754C7] dark:text-blue-400'}`} />
-                <span>وضع الصيانة</span>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md ${
-                  isMaintenanceActive
-                    ? 'bg-rose-950 text-rose-200 border border-rose-400/50'
-                    : 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isMaintenanceActive ? 'bg-rose-400 animate-ping' : 'bg-emerald-500'}`} />
-                  <span>{isMaintenanceActive ? 'تحت الصيانة' : 'يعمل'}</span>
-                </span>
-              </button>
-
-              {/* Return to Public Homepage CTA */}
-              {onBackToHome && (
-                <button
-                  type="button"
-                  id="btn-admin-back-to-home"
-                  onClick={onBackToHome}
-                  className="px-3 py-2 rounded-xl bg-white dark:bg-[#142d50] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e] text-[#071C43] dark:text-slate-100 border border-slate-200 dark:border-[#244577] font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0"
-                  title="العودة إلى الصفحة التعريفية الرئيسية للموقع مع بقاء تسجيل الدخول نشطاً"
-                >
-                  <Home className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
-                  <span className="hidden sm:inline">الصفحة الرئيسية</span>
-                </button>
-              )}
-
-              {/* Fast Global Search Shortcut */}
-              <button
-                type="button"
-                onClick={() => handleSelectTab('globalsearch')}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                  activeSubTab === 'globalsearch'
-                    ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-xs font-black'
-                    : 'bg-white dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:bg-slate-50 dark:hover:bg-[#19355e]'
-                }`}
-                title="البحث الشامل في المتطوعين والفرق والمبادرات"
-              >
-                <Search className={`w-3.5 h-3.5 ${activeSubTab === 'globalsearch' ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
-                <span className="hidden lg:inline">البحث الشامل</span>
-              </button>
-
-              {/* Fast Support & Tickets Shortcut */}
-              <button
-                type="button"
-                onClick={() => handleSelectTab('support')}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                  activeSubTab === 'support'
-                    ? 'bg-rose-600 text-white border-rose-600 shadow-xs font-black'
-                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/50'
-                }`}
-                title="إدارة الدعم الفني والتذاكر"
-              >
-                <Headphones className={`w-3.5 h-3.5 ${activeSubTab === 'support' ? 'text-white' : 'text-rose-600 dark:text-rose-400'}`} />
-                <span>الدعم والتذاكر</span>
-              </button>
-
-              {/* Primary ☰ Comprehensive Sidebar Trigger */}
-              <button
-                id="btn-toggle-sidebar"
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-[#071C43] hover:bg-[#0754C7] text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
-                title="فتح القائمة الجانبية الشاملة لجميع أقسام النظام (☰)"
-              >
-                <Menu className="w-4 h-4" />
-                <span>جميع الأقسام</span>
-                {totalPendingCount > 0 && (
-                  <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                    {totalPendingCount}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Mobile Responsive Category Bar (< md) */}
-          <div className="md:hidden p-2.5 bg-slate-50/90 dark:bg-[#081426]/80 border-b border-slate-100 dark:border-[#1e3a66] overflow-x-auto scrollbar-none">
-            <div className="flex items-center gap-1.5 min-w-max pb-0.5">
-              {primaryCategories.map(cat => {
-                const CatIcon = cat.icon;
-                const isSelected = activeCategoryId === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      if (!cat.items.some(i => i.id === activeSubTab)) {
-                        handleSelectTab(cat.items[0].id);
-                      }
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all shrink-0 cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-xs font-black'
-                        : 'bg-white dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577]'
-                    }`}
-                  >
-                    <CatIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
-                    <span>{cat.label}</span>
-                    {cat.badge !== undefined && typeof cat.badge === 'number' && cat.badge > 0 && (
-                      <span className={`text-[9px] px-1 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-rose-500 text-white font-bold'}`}>
-                        {cat.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Desktop Horizontal Navigation Bar with Icons, Submenu Dropdowns & Organized «المزيد» */}
+      <div className="w-full space-y-5">
+        {/* Executive Horizontal Navigation Bar (Deep Royal Navy Style matching reference layout) */}
+        <div ref={navBarRef} className="relative z-40 space-y-2.5">
+          {/* Desktop Sleek Royal Navy Horizontal Tab Strip */}
           <nav
             aria-label="شريط التنقل الإداري الأفقي"
-            className="hidden md:flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50/60 dark:bg-[#0b1b33] border-b border-slate-100 dark:border-[#1e3a66] relative z-50"
+            className="hidden md:flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-2xl bg-gradient-to-l from-[#071C43] via-[#0B2454] to-[#071C43] border border-[#1a3b75] shadow-md text-white relative z-50"
           >
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {visiblePrimaryNavCategories.map((cat) => {
+            <div className="flex items-center gap-0.5 flex-wrap xl:flex-nowrap min-w-0">
+              {visiblePrimaryNavCategories.map((cat, idx) => {
                 const CatIcon = cat.icon;
                 const isSelected = activeCategoryId === cat.id;
                 const isOpen = openNavDropdownId === cat.id;
                 const hasSubItems = cat.items.length > 1;
 
                 return (
-                  <div key={cat.id} className="relative category-dropdown-group">
+                  <div key={cat.id} className="relative category-dropdown-group flex items-center shrink-0">
+                    {idx > 0 && (
+                      <span className="h-4 w-px bg-white/15 mx-0.5 hidden xl:block" aria-hidden="true" />
+                    )}
                     <button
                       type="button"
                       id={`nav-cat-${cat.id}`}
@@ -1365,26 +1222,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setOpenNavDropdownId(prev => (prev === cat.id ? null : cat.id));
                         }
                       }}
-                      className={`h-10 px-3 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
+                      className={`h-9 px-2 xl:px-2.5 rounded-xl text-[11px] xl:text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         isSelected
-                          ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-sm font-black'
-                          : 'bg-white dark:bg-[#142d50] text-[#071C43] dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:border-[#0754C7] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                          ? 'bg-gradient-to-l from-[#0754C7] to-[#0875E1] text-white shadow-sm font-black ring-1 ring-blue-300/35'
+                          : 'text-blue-100/90 hover:text-white hover:bg-white/10 font-bold'
                       }`}
                       title={cat.description}
                     >
-                      <CatIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                      <CatIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-blue-300'}`} />
                       <span>{cat.label}</span>
                       {cat.badge !== undefined && typeof cat.badge === 'number' && cat.badge > 0 && (
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono font-bold ${
+                        <span className={`hidden 2xl:inline-block text-[10px] px-1.5 py-0.2 rounded-md font-sans font-bold tabular-nums ${
                           isSelected
-                            ? 'bg-white/20 text-white'
-                            : 'bg-[#eaf3ff] text-[#0754C7] dark:bg-blue-950/80 dark:text-blue-300'
+                            ? 'bg-white/25 text-white'
+                            : 'bg-white/10 text-blue-100'
                         }`}>
                           {cat.badge}
                         </span>
                       )}
                       {hasSubItems && (
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''} ${isSelected ? 'text-white/90' : 'text-slate-400'}`} />
+                        <ChevronDown className={`w-3 h-3 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''} ${isSelected ? 'text-white' : 'text-blue-200/75'}`} />
                       )}
                     </button>
 
@@ -1392,7 +1249,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {hasSubItems && isOpen && (
                       <div
                         role="menu"
-                        className="absolute right-0 top-full mt-1.5 w-72 rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-2 z-[140] space-y-1 dropdown-menu-floating animate-fadeIn"
+                        className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-2 z-[140] space-y-1 dropdown-menu-floating animate-fadeIn text-slate-800 dark:text-slate-100"
                       >
                         <div className="px-2.5 py-1.5 border-b border-slate-100 dark:border-[#1e3a66] flex items-center justify-between text-[11px] font-black text-[#071C43] dark:text-blue-200">
                           <span>أقسام {cat.label}</span>
@@ -1441,164 +1298,319 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               })}
             </div>
 
-            {/* Organized «المزيد» (More) Dropdown */}
-            <div className="relative shrink-0">
-              {(() => {
-                const isMoreActive = visibleMoreNavCategories.some(c => c.id === activeCategoryId);
-                return (
-                  <>
-                    <button
-                      type="button"
-                      id="nav-more-dropdown-btn"
-                      aria-expanded={isMoreMenuOpen}
-                      onClick={() => {
-                        setOpenNavDropdownId(null);
-                        setIsMoreMenuOpen(prev => !prev);
-                      }}
-                      className={`h-10 px-3.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
-                        isMoreActive || isMoreMenuOpen
-                          ? 'bg-[#071C43] text-white border-[#071C43] shadow-sm'
-                          : 'bg-white dark:bg-[#142d50] text-[#071C43] dark:text-white border-slate-200 dark:border-[#244577] hover:border-[#0754C7] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
-                      }`}
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                      <span>المزيد</span>
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isMoreMenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isMoreMenuOpen && (
-                      <div
-                        role="menu"
-                        id="nav-more-dropdown-panel"
-                        className="absolute left-0 top-full mt-1.5 w-[360px] lg:w-[440px] rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-3 z-[150] space-y-3 dropdown-menu-floating animate-fadeIn max-h-[75vh] overflow-y-auto"
+            {/* Right-end Utility Controls in Nav Bar: «المزيد» & Quick «جميع الأقسام ☰» */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="relative">
+                {(() => {
+                  const isMoreActive = visibleMoreNavCategories.some(c => c.id === activeCategoryId);
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        id="nav-more-dropdown-btn"
+                        aria-expanded={isMoreMenuOpen}
+                        onClick={() => {
+                          setOpenNavDropdownId(null);
+                          setIsMoreMenuOpen(prev => !prev);
+                        }}
+                        className={`h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                          isMoreActive || isMoreMenuOpen
+                            ? 'bg-[#0875E1] text-white shadow-xs'
+                            : 'bg-white/10 hover:bg-white/20 text-blue-100 border border-white/15'
+                        }`}
                       >
-                        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-[#1e3a66]">
-                          <span className="text-xs font-black text-[#071C43] dark:text-white">المزيد من الأقسام والأدوات</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsMoreMenuOpen(false);
-                              setIsSidebarOpen(true);
-                            }}
-                            className="text-[11px] font-bold text-[#0754C7] dark:text-blue-400 hover:underline cursor-pointer"
-                          >
-                            عرض القائمة الشاملة ☰
-                          </button>
-                        </div>
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                        <span>المزيد</span>
+                        <ChevronDown className={`w-3 h-3 transition-transform ${isMoreMenuOpen ? 'rotate-180' : ''}`} />
+                      </button>
 
-                        {visibleMoreNavCategories.map(cat => {
-                          const CatIcon = cat.icon;
-                          return (
-                            <div key={cat.id} className="space-y-1.5">
-                              <div className="flex items-center gap-1.5 px-1 text-[11px] font-black text-slate-500 dark:text-blue-300">
-                                <CatIcon className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
-                                <span>{cat.label}</span>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                                {cat.items.map((subItem: any) => {
-                                  const SubIcon = subItem.icon;
-                                  const isSubActive = activeSubTab === subItem.id;
-                                  return (
-                                    <button
-                                      key={subItem.id}
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={() => {
-                                        handleSelectTab(subItem.id);
-                                        setIsMoreMenuOpen(false);
-                                      }}
-                                      className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-right ${
-                                        isSubActive
-                                          ? 'bg-[#0754C7] text-white border-[#0754C7] font-black'
-                                          : 'bg-slate-50 dark:bg-[#142d50]/70 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-[#1e3a66] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
-                                      }`}
-                                    >
-                                      <span className="flex items-center gap-1.5 min-w-0 truncate">
-                                        <SubIcon className={`w-3.5 h-3.5 shrink-0 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
-                                        <span className="truncate">{subItem.label}</span>
-                                      </span>
-                                      {subItem.badge !== undefined && (
-                                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
-                                          isSubActive ? 'bg-white/20 text-white' : 'bg-white dark:bg-[#081426] text-slate-600 dark:text-blue-200'
-                                        }`}>
-                                          {subItem.badge}
+                      {isMoreMenuOpen && (
+                        <div
+                          role="menu"
+                          id="nav-more-dropdown-panel"
+                          className="absolute left-0 top-full mt-2 w-[360px] lg:w-[440px] rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#244577] shadow-2xl p-3 z-[150] space-y-3 dropdown-menu-floating animate-fadeIn max-h-[75vh] overflow-y-auto text-slate-800 dark:text-slate-100"
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-[#1e3a66]">
+                            <span className="text-xs font-black text-[#071C43] dark:text-white">الأقسام والأدوات الإضافية</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsMoreMenuOpen(false);
+                                setIsSidebarOpen(true);
+                              }}
+                              className="text-[11px] font-bold text-[#0754C7] dark:text-blue-400 hover:underline cursor-pointer"
+                            >
+                              عرض القائمة الشاملة ☰
+                            </button>
+                          </div>
+
+                          {visibleMoreNavCategories.map(cat => {
+                            const CatIcon = cat.icon;
+                            return (
+                              <div key={cat.id} className="space-y-1.5">
+                                <div className="flex items-center gap-1.5 px-1 text-[11px] font-black text-slate-500 dark:text-blue-300">
+                                  <CatIcon className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                                  <span>{cat.label}</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                  {cat.items.map((subItem: any) => {
+                                    const SubIcon = subItem.icon;
+                                    const isSubActive = activeSubTab === subItem.id;
+                                    return (
+                                      <button
+                                        key={subItem.id}
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          handleSelectTab(subItem.id);
+                                          setIsMoreMenuOpen(false);
+                                        }}
+                                        className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-right ${
+                                          isSubActive
+                                            ? 'bg-[#0754C7] text-white border-[#0754C7] font-black'
+                                            : 'bg-slate-50 dark:bg-[#142d50]/70 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-[#1e3a66] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                                        }`}
+                                      >
+                                        <span className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <SubIcon className={`w-3.5 h-3.5 shrink-0 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                                          <span className="truncate">{subItem.label}</span>
                                         </span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
+                                        {subItem.badge !== undefined && (
+                                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
+                                            isSubActive ? 'bg-white/20 text-white' : 'bg-white dark:bg-[#081426] text-slate-600 dark:text-blue-200'
+                                          }`}>
+                                            {subItem.badge}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+                            );
+                          })}
+
+                          {/* Quick Tools Inside More Dropdown */}
+                          <div className="pt-2 border-t border-slate-100 dark:border-[#1e3a66] grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsMoreMenuOpen(false);
+                                handleSelectTab('globalsearch');
+                              }}
+                              className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold bg-slate-50 dark:bg-[#142d50] hover:bg-[#eaf3ff] text-[#071C43] dark:text-white border border-slate-200/70 dark:border-[#1e3a66] cursor-pointer"
+                            >
+                              <Search className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                              <span>البحث الشامل</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsMoreMenuOpen(false);
+                                setMaintenanceTargetAction(isMaintenanceActive ? 'disable' : 'enable');
+                                setMaintenanceFeedback(null);
+                                setIsMaintenanceModalOpen(true);
+                              }}
+                              className={`flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                                isMaintenanceActive
+                                  ? 'bg-rose-600 text-white border-rose-500'
+                                  : 'bg-slate-50 dark:bg-[#142d50] hover:bg-[#eaf3ff] text-[#071C43] dark:text-white border-slate-200/70 dark:border-[#1e3a66]'
+                              }`}
+                            >
+                              <Wrench className="w-3.5 h-3.5" />
+                              <span>وضع الصيانة ({isMaintenanceActive ? 'مفعل' : 'يعمل'})</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <button
+                id="btn-toggle-sidebar"
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="h-9 px-3 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/20 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shrink-0"
+                title="فتح القائمة الجانبية الشاملة لجميع أقسام النظام (☰)"
+              >
+                <Menu className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">الأقسام</span>
+                {totalPendingCount > 0 && (
+                  <span className="bg-rose-500 text-white text-[10px] px-1.5 rounded-full font-mono font-bold tabular-nums">
+                    {totalPendingCount}
+                  </span>
+                )}
+              </button>
             </div>
           </nav>
 
-          {/* Secondary Sub-Pages Level (Quick sibling page switchers inside the active category) */}
-          <div className="p-3 bg-white dark:bg-[#0e213d] border-t md:border-t-0 border-slate-100 dark:border-[#1e3a66] rounded-b-2xl overflow-x-auto">
-            {(() => {
-              const currentCat = primaryCategories.find(c => c.id === activeCategoryId) || activeCategory || primaryCategories[0];
-              if (!currentCat) return null;
-              const CurrentCatIcon = currentCat.icon || LayoutDashboard;
-              return (
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
-                      <CurrentCatIcon className="w-4 h-4 text-[#0754C7] dark:text-blue-400" />
-                      <span>صفحات قسم {currentCat.label}:</span>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-                    {(currentCat.items || []).map((subItem: any) => {
-                      const SubIcon = subItem.icon;
-                      const isSubActive = activeSubTab === subItem.id;
-                      return (
-                        <button
-                          key={subItem.id}
-                          id={`subtab-${subItem.id}`}
-                          type="button"
-                          onClick={() => handleSelectTab(subItem.id)}
-                          className={`h-9 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap shadow-2xs ${
-                            isSubActive
-                              ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-xs font-black'
-                              : 'bg-slate-50 dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e] hover:text-[#071C43] dark:hover:text-white'
-                          }`}
-                        >
-                          <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
-                          <span>{subItem.label}</span>
-                          {subItem.badge !== undefined && (
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono font-bold ${
-                              isSubActive
-                                ? 'bg-white/20 text-white'
-                                : typeof subItem.badge === 'number' && subItem.badge > 0
-                                ? 'bg-rose-500 text-white'
-                                : 'bg-slate-200 dark:bg-[#081426] text-slate-700 dark:text-slate-300'
-                            }`}>
-                              {subItem.badge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
+          {/* Mobile Responsive Category Bar (< md) */}
+          <div className="md:hidden p-2 rounded-2xl bg-gradient-to-l from-[#071C43] via-[#0B2454] to-[#071C43] border border-[#1a3b75] shadow-sm overflow-x-auto scrollbar-none">
+            <div className="flex items-center gap-1.5 min-w-max">
+              {primaryCategories.map(cat => {
+                const CatIcon = cat.icon;
+                const isSelected = activeCategoryId === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      if (!cat.items.some(i => i.id === activeSubTab)) {
+                        handleSelectTab(cat.items[0].id);
+                      }
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#0875E1] text-white shadow-xs font-black'
+                        : 'bg-white/10 text-blue-100 hover:bg-white/20 border border-white/10'
+                    }`}
+                  >
+                    <CatIcon className="w-3.5 h-3.5" />
+                    <span>{cat.label}</span>
+                    {cat.badge !== undefined && typeof cat.badge === 'number' && cat.badge > 0 && (
+                      <span className="text-[9px] px-1.5 rounded-full bg-rose-500 text-white font-mono font-bold">
+                        {cat.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-white/15 text-white border border-white/20 shrink-0 cursor-pointer"
+              >
+                <Menu className="w-3.5 h-3.5" />
+                <span>الكل</span>
+              </button>
+            </div>
           </div>
 
+          {/* Slim Sub-Pages & Quick Actions Context Bar (Shows sibling tabs cleanly inside multi-item categories + always keeps Maintenance & Home 1-click away) */}
+          {(() => {
+            const currentCat = primaryCategories.find(c => c.id === activeCategoryId) || activeCategory || primaryCategories[0];
+            const showSubPagesStrip = currentCat && currentCat.items.length > 1;
+            const CurrentCatIcon = currentCat?.icon || LayoutDashboard;
+
+            return (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#1e3a66] shadow-2xs">
+                {/* Left / Right RTL: Active Breadcrumb or Category Sibling Sub-Tabs */}
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  {showSubPagesStrip ? (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-black text-[#071C43] dark:text-blue-200 shrink-0">
+                        <CurrentCatIcon className="w-4 h-4 text-[#0754C7] dark:text-blue-400" />
+                        <span>{currentCat.label}:</span>
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(currentCat.items || []).map((subItem: any) => {
+                          const SubIcon = subItem.icon;
+                          const isSubActive = activeSubTab === subItem.id;
+                          return (
+                            <button
+                              key={subItem.id}
+                              id={`subtab-${subItem.id}`}
+                              type="button"
+                              onClick={() => handleSelectTab(subItem.id)}
+                              className={`h-8 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+                                isSubActive
+                                  ? 'bg-[#0754C7] text-white border-[#0754C7] shadow-2xs font-black'
+                                  : 'bg-slate-50 dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                              }`}
+                            >
+                              <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-white' : 'text-[#0754C7] dark:text-blue-400'}`} />
+                              <span>{subItem.label}</span>
+                              {subItem.badge !== undefined && (
+                                <span className={`text-[10px] px-1.5 rounded-md font-mono font-bold ${
+                                  isSubActive
+                                    ? 'bg-white/20 text-white'
+                                    : typeof subItem.badge === 'number' && subItem.badge > 0
+                                    ? 'bg-rose-500 text-white'
+                                    : 'bg-slate-200 dark:bg-[#081426] text-slate-700 dark:text-slate-300'
+                                }`}>
+                                  {subItem.badge}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-black text-[#071C43] dark:text-white flex items-center gap-1.5">
+                        <Home className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                        <span>{getActiveTabTitle(activeSubTab)}</span>
+                      </span>
+                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                      <span className="text-slate-500 dark:text-slate-300 font-medium truncate">
+                        البيانات التشغيلية الحية لجمعية ريادة العطاء
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Compact Operational Controls: Maintenance, Global Search, Public Home */}
+                <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    id="btn-admin-maintenance-mode"
+                    onClick={() => {
+                      setMaintenanceTargetAction(isMaintenanceActive ? 'disable' : 'enable');
+                      setMaintenanceFeedback(null);
+                      setIsMaintenanceModalOpen(true);
+                    }}
+                    className={`h-8 px-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 border transition-all cursor-pointer shrink-0 ${
+                      isMaintenanceActive
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500'
+                        : 'bg-[#eaf3ff] dark:bg-[#142d50] hover:bg-blue-100 dark:hover:bg-[#19355e] text-[#071C43] dark:text-blue-200 border-blue-200 dark:border-[#244577]'
+                    }`}
+                    title="التحكم في وضع صيانة الموقع العام"
+                  >
+                    <Wrench className="w-3.5 h-3.5" />
+                    <span>وضع الصيانة:</span>
+                    <span className="font-black">{isMaintenanceActive ? 'تحت الصيانة' : 'يعمل'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab('globalsearch')}
+                    className={`h-8 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer shrink-0 ${
+                      activeSubTab === 'globalsearch'
+                        ? 'bg-[#0754C7] text-white border-[#0754C7] font-black'
+                        : 'bg-slate-50 dark:bg-[#142d50] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-[#244577] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                    }`}
+                    title="البحث الشامل في النظام"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">بحث شامل</span>
+                  </button>
+
+                  {onBackToHome && (
+                    <button
+                      type="button"
+                      id="btn-admin-back-to-home"
+                      onClick={onBackToHome}
+                      className="h-8 px-2.5 rounded-xl bg-slate-50 dark:bg-[#142d50] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e] text-[#071C43] dark:text-slate-100 border border-slate-200 dark:border-[#244577] font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                      title="العودة إلى الموقع العام"
+                    >
+                      <Home className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                      <span className="hidden sm:inline">الموقع العام</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Prominent Sticky Warning Banner when Maintenance Mode is Active */}
         {isMaintenanceActive && (
-          <div className="w-full bg-amber-500/15 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl p-3 sm:p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs animate-fadeIn">
+          <div className="w-full bg-amber-500/15 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs animate-fadeIn">
             <div className="flex items-center gap-2.5 text-xs font-black text-amber-900 dark:text-amber-200">
-              <Wrench className="w-4 h-4 text-amber-600 animate-bounce shrink-0" />
+              <Wrench className="w-4 h-4 text-amber-600 shrink-0" />
               <span>تنبيه إداري نشط: وضع الصيانة مفعل حالياً على الموقع العام — الموقع مغلق أمام الزوار والمتطوعين والمستفيدين</span>
             </div>
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
@@ -1626,9 +1638,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* Main Dynamic Panel Container (Stable key to avoid remount flash/flicker) */}
+        {/* Main Dynamic Panel Container (Overview 'stats' sits cleanly on page canvas like the reference image; inner tabs keep structured panel card) */}
         <div
-          className="bg-white dark:bg-[#0e213d] p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-[#1e3a66] shadow-sm text-right min-h-[420px] relative z-10"
+          className={
+            activeSubTab === 'stats'
+              ? "text-right min-h-[420px] relative z-10"
+              : "bg-white dark:bg-[#0e213d] p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-[#1e3a66] shadow-sm text-right min-h-[420px] relative z-10"
+          }
         >
           <DashboardErrorBoundary
             pageName={`قسم: ${getActiveTabTitle(activeSubTab)}`}
