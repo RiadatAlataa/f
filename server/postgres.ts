@@ -425,7 +425,6 @@ export function normalizeSystemStateCollections(db: any): boolean {
     "benefitRequests",
     "volunteerApplications",
     "teamApplications",
-    "volunteerCharters",
     "volunteerTransferRequests",
     "passwordResetRequests",
     "letters",
