@@ -425,6 +425,7 @@ export function normalizeSystemStateCollections(db: any): boolean {
     "benefitRequests",
     "volunteerApplications",
     "teamApplications",
+    "volunteerCharters",
     "volunteerTransferRequests",
     "passwordResetRequests",
     "letters",
@@ -478,7 +479,11 @@ export function normalizeSystemStateCollections(db: any): boolean {
     "permissionChangeLogs",
     "developerErrorLogs",
     "customFields",
-    "userDepartmentAccess"
+    "userDepartmentAccess",
+    "personalTasks",
+    "personalTaskReminders",
+    "personalTaskEmailLogs",
+    "passwordResetTokens"
   ];
 
   for (const key of defaultArrayKeys) {

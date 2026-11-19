@@ -700,16 +700,17 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
 
             <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between">
               <div>
-                <h3 className="text-xs font-bold text-neutral-900">تفعيل رمز التحقق (OTP SMS)</h3>
-                <p className="text-[11px] text-neutral-500">إلزام إدخال كود التحقق عند التسجيل</p>
+                <h3 className="text-xs font-bold text-neutral-900">تفعيل التحقق برمز OTP</h3>
+                <p className="text-[11px] text-neutral-500">مغلق افتراضياً (يعتمد استعادة كلمة المرور عبر رابط البريد الآمن). يمكن تفعيله مستقبلاً عند الحاجة.</p>
               </div>
               <button
+                type="button"
                 onClick={() => updateSettings(s => ({ ...s, enableOtpVerification: !s.enableOtpVerification }))}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   settings.enableOtpVerification ? "bg-emerald-600 text-white" : "bg-neutral-200 text-neutral-700"
                 }`}
               >
-                {settings.enableOtpVerification ? "مفعل ✓" : "معطل ✕"}
+                {settings.enableOtpVerification ? "مفعل ✓" : "مغلق ✕"}
               </button>
             </div>
           </div>

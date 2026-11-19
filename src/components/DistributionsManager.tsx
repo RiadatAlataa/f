@@ -23,10 +23,14 @@ import {
   Layers,
   ChevronDown,
   Building2,
-  Undo2
+  Undo2,
+  Archive,
+  RotateCcw,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { AidDistribution, Beneficiary, DistributionHandoverRecord, HomeSettings, InventoryItem } from '../types';
+import { AidDistribution, Beneficiary, DistributionDeleteActionType, DistributionDeleteResult, DistributionHandoverRecord, HomeSettings, InventoryItem } from '../types';
 import { AidHandoverScannerModal } from './AidHandoverScannerModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
 import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
@@ -44,7 +48,10 @@ interface DistributionsManagerProps {
   };
   onCreateDistribution: (data: Partial<AidDistribution>) => Promise<boolean>;
   onUpdateDistribution: (data: Partial<AidDistribution>) => Promise<boolean>;
-  onDeleteDistribution: (id: string) => Promise<boolean>;
+  onDeleteDistribution: (
+    id: string,
+    options?: { actionType?: DistributionDeleteActionType; reason?: string }
+  ) => Promise<boolean | DistributionDeleteResult>;
   onHandoverSubmit: (data: any) => Promise<any>;
   onCancelHandover: (handoverId: string) => Promise<boolean>;
   lang?: 'ar' | 'en';
@@ -64,30 +71,46 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   onCancelHandover,
   lang = 'ar'
 }) => {
+  const activeDistributions = useMemo(
+    () => (distributions || []).filter(d => !d.isArchived && d.status !== 'archived'),
+    [distributions]
+  );
+
+  const archivedDistributions = useMemo(
+    () => (distributions || []).filter(d => d.isArchived === true || d.status === 'archived'),
+    [distributions]
+  );
+
+  const [showArchivedCampaigns, setShowArchivedCampaigns] = useState(false);
+
   // Active selected distribution for detail view
   const [selectedDistId, setSelectedDistId] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('reyadat_dist_id');
-      if (saved && distributions.some(d => d.id === saved)) return saved;
+      if (saved && activeDistributions.some(d => d.id === saved)) return saved;
     } catch {}
-    return distributions[0]?.id || '';
+    return activeDistributions[0]?.id || '';
   });
 
   useEffect(() => {
     try {
-      if (selectedDistId) localStorage.setItem('reyadat_dist_id', selectedDistId);
+      if (selectedDistId) {
+        localStorage.setItem('reyadat_dist_id', selectedDistId);
+      } else {
+        localStorage.removeItem('reyadat_dist_id');
+      }
     } catch {}
   }, [selectedDistId]);
 
   // Keep selected distribution valid if distributions change
-  const distributionsIdsKey = useMemo(() => (distributions || []).map(d => d.id).join(','), [distributions]);
+  const distributionsIdsKey = useMemo(() => activeDistributions.map(d => d.id).join(','), [activeDistributions]);
   useEffect(() => {
-    if (selectedDistId && !distributions.some(d => d.id === selectedDistId) && distributions[0]) {
-      setSelectedDistId(distributions[0].id);
-    } else if (!selectedDistId && distributions[0]) {
-      setSelectedDistId(distributions[0].id);
+    if (selectedDistId && !activeDistributions.some(d => d.id === selectedDistId)) {
+      setSelectedDistId(activeDistributions[0]?.id || '');
+    } else if (!selectedDistId && activeDistributions[0]) {
+      setSelectedDistId(activeDistributions[0].id);
     }
-  }, [distributionsIdsKey]);
+  }, [distributionsIdsKey, selectedDistId, activeDistributions]);
   
   // Modals
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -96,6 +119,15 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
   const [historyBeneficiary, setHistoryBeneficiary] = useState<Beneficiary | null>(null);
   const [formInventoryItemId, setFormInventoryItemId] = useState<string>('');
+
+  // Safe Delete / Archive Modal & Double-Click Guard States
+  const [deleteModalDist, setDeleteModalDist] = useState<AidDistribution | null>(null);
+  const [deleteModalLinkedCount, setDeleteModalLinkedCount] = useState<number>(0);
+  const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
+  const [deleteReason, setDeleteReason] = useState<string>('قرار إداري');
+  const [forceDeleteConfirmed, setForceDeleteConfirmed] = useState<boolean>(false);
+  const [deletingDistId, setDeletingDistId] = useState<string | null>(null);
+  const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Form State for Create/Edit
   const [formTitle, setFormTitle] = useState('');
@@ -116,7 +148,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Currently selected distribution object
-  const currentDist = distributions.find(d => d.id === selectedDistId) || distributions[0];
+  const currentDist = activeDistributions.find(d => d.id === selectedDistId) || activeDistributions[0];
 
   // Open Create Modal
   const handleOpenCreate = () => {
@@ -189,13 +221,91 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
     }
   };
 
-  // Delete Distribution
-  const handleDelete = async (dist: AidDistribution) => {
-    if (confirm(`هل أنت متأكد من حذف توزيعة (${dist.title})؟`)) {
-      await onDeleteDistribution(dist.id);
-      if (selectedDistId === dist.id && distributions.length > 1) {
-        setSelectedDistId(distributions.find(d => d.id !== dist.id)?.id || '');
+  // Open Safe Delete / Archive Modal
+  const handleDelete = (dist: AidDistribution) => {
+    if (deletingDistId) return;
+    const linkedCount = handoverRecords.filter(
+      h => h.distributionId === dist.id || (dist.distributionNumber && (h as any).distributionNumber === dist.distributionNumber)
+    ).length;
+    setDeleteModalDist(dist);
+    setDeleteModalLinkedCount(linkedCount);
+    setDeleteModalError(null);
+    setDeleteReason('قرار إداري');
+    setForceDeleteConfirmed(false);
+  };
+
+  // Normalize callback result (boolean or DistributionDeleteResult)
+  const normalizeDeleteOutcome = (raw: boolean | DistributionDeleteResult): DistributionDeleteResult => {
+    if (typeof raw === 'boolean') {
+      return raw ? { ok: true, message: 'تم تنفيذ العملية بنجاح.' } : { ok: false, error: 'تعذر تنفيذ عملية الحذف.' };
+    }
+    return raw || { ok: false, error: 'تعذر تنفيذ عملية الحذف.' };
+  };
+
+  // Execute Delete / Archive / Force Delete with double-click lock
+  const handleConfirmDistributionAction = async (actionType: DistributionDeleteActionType) => {
+    if (!deleteModalDist || deletingDistId) return;
+    const target = deleteModalDist;
+    setDeletingDistId(target.id);
+    setDeleteModalError(null);
+
+    try {
+      const result = normalizeDeleteOutcome(
+        await onDeleteDistribution(target.id, {
+          actionType,
+          reason: deleteReason.trim() || 'قرار إداري'
+        })
+      );
+
+      if (!result.ok) {
+        if (result.code === 'LINKED_HANDOVERS_EXIST' && typeof result.linkedHandoversCount === 'number') {
+          setDeleteModalLinkedCount(result.linkedHandoversCount);
+        }
+        setDeleteModalError(result.error || 'تعذر تنفيذ الإجراء على التوزيعة.');
+        return;
       }
+
+      const nextActive = activeDistributions.find(d => d.id !== target.id);
+      if (selectedDistId === target.id) {
+        setSelectedDistId(nextActive?.id || '');
+        try {
+          if (!nextActive) localStorage.removeItem('reyadat_dist_id');
+        } catch {}
+      }
+
+      setDeleteModalDist(null);
+      setDeleteFeedback({
+        type: 'success',
+        message:
+          result.message ||
+          (actionType === 'archive'
+            ? `تمت أرشفة التوزيعة (${target.title}) بأمان مع حفظ كافة السجلات المرتبطة.`
+            : `تم حذف التوزيعة (${target.title}) نهائياً بنجاح.`)
+      });
+    } finally {
+      setDeletingDistId(null);
+    }
+  };
+
+  // Restore Archived Distribution
+  const handleRestoreArchivedDist = async (dist: AidDistribution) => {
+    if (deletingDistId) return;
+    setDeletingDistId(dist.id);
+    try {
+      const result = normalizeDeleteOutcome(
+        await onDeleteDistribution(dist.id, { actionType: 'restore', reason: 'استعادة من الأرشيف' })
+      );
+      if (!result.ok) {
+        setDeleteFeedback({ type: 'error', message: result.error || 'تعذر استعادة التوزيعة.' });
+        return;
+      }
+      setDeleteFeedback({
+        type: 'success',
+        message: result.message || `تمت استعادة التوزيعة (${dist.title}) إلى الحملات النشطة.`
+      });
+      setSelectedDistId(dist.id);
+    } finally {
+      setDeletingDistId(null);
     }
   };
 
@@ -546,99 +656,190 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
         </div>
       </div>
 
+      {/* Feedback Toast Banner */}
+      {deleteFeedback && (
+        <div
+          className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border text-xs font-bold shadow-xs ${
+            deleteFeedback.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : 'bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+          }`}
+          role="status"
+        >
+          <div className="flex items-center gap-2">
+            {deleteFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+            )}
+            <span>{deleteFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteFeedback(null)}
+            className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            aria-label="إغلاق التنبيه"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Distribution Campaigns Carousel / Pills */}
       <div className="bg-neutral-50 dark:bg-neutral-900/60 p-4 rounded-3xl border border-neutral-200 dark:border-neutral-800 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-bold text-neutral-600 dark:text-neutral-400">
-            حملات التوزيع المعتمدة ({distributions.length}):
+            {showArchivedCampaigns
+              ? `أرشيف التوزيعات (${archivedDistributions.length}):`
+              : `حملات التوزيع المعتمدة (${activeDistributions.length}):`}
           </h3>
-          <span className="text-[11px] text-neutral-400">اختر توزيعة لعرض كشف الاستلام الخاص بها</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {distributions.map((dist) => {
-            const isSelected = dist.id === (currentDist?.id || '');
-            const distHandoversCount = handoverRecords.filter(h => h.distributionId === dist.id).length;
-            const distTotal = beneficiaries.length;
-            const distPct = distTotal > 0 ? Math.round((distHandoversCount / distTotal) * 100) : 0;
-
-            return (
-              <div
-                key={dist.id}
-                onClick={() => setSelectedDistId(dist.id)}
-                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative overflow-hidden ${
-                  isSelected
-                    ? 'border-emerald-600 bg-white dark:bg-neutral-900 shadow-md'
-                    : 'border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/40 hover:border-neutral-300'
+          <div className="flex items-center gap-2">
+            {archivedDistributions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowArchivedCampaigns(prev => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+                  showArchivedCampaigns
+                    ? 'bg-amber-600 text-white border-amber-600'
+                    : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700'
                 }`}
               >
-                {/* Status chip */}
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    dist.status === 'active'
-                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                      : dist.status === 'completed'
-                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                      : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300'
-                  }`}>
-                    {dist.status === 'active' ? '● جاري التوزيع' : dist.status === 'completed' ? '✓ مكتمل' : 'مجدول'}
-                  </span>
-
-                  <span className="text-[11px] font-bold text-neutral-400 font-mono">
-                    {dist.distributionDate}
-                  </span>
-                </div>
-
-                <h4 className="font-black text-sm text-neutral-900 dark:text-white truncate">
-                  {dist.title}
-                </h4>
-                
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 line-clamp-1 mt-1">
-                  {dist.quantityPerBeneficiary}
-                </p>
-
-                {/* Progress bar */}
-                <div className="mt-3 space-y-1">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
-                    <span>نسبة الإنجاز: {distPct}%</span>
-                    <span>{distHandoversCount} من {distTotal}</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-600 rounded-full transition-all duration-500"
-                      style={{ width: `${distPct}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Card Quick Actions */}
-                <div className="mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
-                    {dist.aidTypeLabel}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); handleOpenEdit(dist); }}
-                      className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                      title="تعديل التوزيعة"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); handleDelete(dist); }}
-                      className="p-1 text-neutral-400 hover:text-red-600 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                      title="حذف التوزيعة"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+                <Archive className="w-3.5 h-3.5" />
+                <span>
+                  {showArchivedCampaigns
+                    ? `عرض الحملات النشطة (${activeDistributions.length})`
+                    : `الأرشيف (${archivedDistributions.length})`}
+                </span>
+              </button>
+            )}
+            <span className="text-[11px] text-neutral-400 hidden sm:inline">
+              اختر توزيعة لعرض كشف الاستلام الخاص بها
+            </span>
+          </div>
         </div>
+
+        {(showArchivedCampaigns ? archivedDistributions : activeDistributions).length === 0 ? (
+          <div className="py-8 text-center text-xs text-neutral-400">
+            {showArchivedCampaigns
+              ? 'لا توجد توزيعات مؤرشفة حالياً.'
+              : 'لا توجد حملات توزيع نشطة حالياً. يمكنك إنشاء توزيعة جديدة من الزر أعلاه.'}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(showArchivedCampaigns ? archivedDistributions : activeDistributions).map((dist) => {
+              const isSelected = dist.id === (currentDist?.id || '');
+              const distHandoversCount = handoverRecords.filter(h => h.distributionId === dist.id).length;
+              const distTotal = beneficiaries.length;
+              const distPct = distTotal > 0 ? Math.round((distHandoversCount / distTotal) * 100) : 0;
+              const isBusy = deletingDistId === dist.id;
+              const isDistArchived = dist.isArchived === true || dist.status === 'archived';
+
+              return (
+                <div
+                  key={dist.id}
+                  onClick={() => {
+                    if (!isDistArchived) setSelectedDistId(dist.id);
+                  }}
+                  className={`p-4 rounded-2xl border-2 transition-all relative overflow-hidden ${
+                    isDistArchived ? 'cursor-default opacity-90' : 'cursor-pointer'
+                  } ${
+                    isSelected && !isDistArchived
+                      ? 'border-emerald-600 bg-white dark:bg-neutral-900 shadow-md'
+                      : 'border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/40 hover:border-neutral-300'
+                  }`}
+                >
+                  {/* Status chip */}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isDistArchived
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                        : dist.status === 'active'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        : dist.status === 'completed'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                        : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300'
+                    }`}>
+                      {isDistArchived
+                        ? 'مؤرشفة'
+                        : dist.status === 'active'
+                        ? '● جاري التوزيع'
+                        : dist.status === 'completed'
+                        ? '✓ مكتمل'
+                        : 'مجدول'}
+                    </span>
+
+                    <span className="text-[11px] font-bold text-neutral-400 font-mono">
+                      {dist.distributionDate}
+                    </span>
+                  </div>
+
+                  <h4 className="font-black text-sm text-neutral-900 dark:text-white truncate">
+                    {dist.title}
+                  </h4>
+                  
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 line-clamp-1 mt-1">
+                    {dist.quantityPerBeneficiary}
+                  </p>
+
+                  {/* Progress bar */}
+                  <div className="mt-3 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-neutral-500 dark:text-neutral-400">
+                      <span>نسبة الإنجاز: {distPct}%</span>
+                      <span>{distHandoversCount} من {distTotal}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                        style={{ width: `${distPct}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* Card Quick Actions */}
+                  <div className="mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                      {dist.aidTypeLabel}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {isDistArchived ? (
+                        <button
+                          type="button"
+                          disabled={Boolean(deletingDistId)}
+                          onClick={(e) => { e.stopPropagation(); handleRestoreArchivedDist(dist); }}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 rounded transition-colors disabled:opacity-50 cursor-pointer"
+                          title="استعادة التوزيعة إلى القائمة النشطة"
+                        >
+                          {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                          <span>استعادة</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={Boolean(deletingDistId)}
+                          onClick={(e) => { e.stopPropagation(); handleOpenEdit(dist); }}
+                          className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="تعديل التوزيعة"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={Boolean(deletingDistId)}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(dist); }}
+                        aria-label={`حذف التوزيعة ${dist.title}`}
+                        className="p-1 text-neutral-400 hover:text-red-600 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 cursor-pointer"
+                        title="حذف التوزيعة"
+                      >
+                        {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin text-red-600" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Selected Distribution Detail View */}
@@ -925,7 +1126,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
         <AidHandoverScannerModal
           isOpen={isScannerOpen}
           onClose={() => setIsScannerOpen(false)}
-          distributions={distributions}
+          distributions={activeDistributions}
           selectedDistributionId={selectedDistId}
           beneficiaries={beneficiaries}
           handoverRecords={handoverRecords}
@@ -1076,6 +1277,162 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Safe Delete / Archive Distribution Modal */}
+      {deleteModalDist && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dist-delete-modal-title"
+        >
+          <div
+            className="relative bg-white dark:bg-neutral-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800 text-right space-y-4"
+            dir="rtl"
+          >
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                  deleteModalLinkedCount > 0
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                    : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                }`}>
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="dist-delete-modal-title" className="text-base font-black text-neutral-900 dark:text-white">
+                    {deleteModalLinkedCount > 0 ? 'توزيعة مرتبطة بسجلات تسليم فعلية' : 'تأكيد حذف التوزيعة نهائياً'}
+                  </h3>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    {deleteModalDist.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(deletingDistId)}
+                onClick={() => setDeleteModalDist(null)}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+                aria-label="إغلاق"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {deleteModalLinkedCount > 0 ? (
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1.5 leading-relaxed">
+                <p className="font-bold">
+                  تحتوي هذه التوزيعة على <span className="font-mono font-black">{deleteModalLinkedCount}</span> سجل تسليم وباركود موثق للمستفيدين.
+                </p>
+                <p className="text-[11px] opacity-90">
+                  حفاظاً على سجلات الاستلام والتوثيق، يُنصح بـ <b>«أرشفة التوزيعة بأمان»</b> لإخفائها من الحملات النشطة وإلغاء حجز المخزون المتبقي مع إبقاء كافة السندات، أو اختيار الحذف النهائي بعد التأكيد الصريح أدناه.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/60 text-xs text-red-900 dark:text-red-200 leading-relaxed">
+                لا توجد سجلات تسليم أو باركود مرتبطة بهذه التوزيعة. سيتم حذف الحملة نهائياً من قاعدة البيانات وإلغاء أي حجز مخزون غير مصروف دون المساس بملفات المستفيدين أو بياناتهم.
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                سبب الإجراء (يُسجّل في سجل التدقيق)
+              </label>
+              <input
+                type="text"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                disabled={Boolean(deletingDistId)}
+                placeholder="مثال: إلغاء الحملة / انتهاء الصرف / قرار إداري"
+                className="w-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-2 text-xs font-bold text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {deleteModalLinkedCount > 0 && !(deleteModalDist.isArchived || deleteModalDist.status === 'archived') && (
+              <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 border border-neutral-200 dark:border-neutral-700 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={forceDeleteConfirmed}
+                  onChange={(e) => setForceDeleteConfirmed(e.target.checked)}
+                  disabled={Boolean(deletingDistId)}
+                  className="mt-0.5 rounded border-neutral-300 text-red-600 focus:ring-red-500"
+                />
+                <span className="text-neutral-700 dark:text-neutral-200 font-bold leading-relaxed">
+                  أؤكد رغبتي في الحذف النهائي للتوزيعة وإزالة ({deleteModalLinkedCount}) سجل تسليم مرتبط بها مع عكس قيود المخزون المصروفة.
+                </span>
+              </label>
+            )}
+
+            {deleteModalLinkedCount > 0 && (deleteModalDist.isArchived || deleteModalDist.status === 'archived') && (
+              <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 border border-neutral-200 dark:border-neutral-700 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={forceDeleteConfirmed}
+                  onChange={(e) => setForceDeleteConfirmed(e.target.checked)}
+                  disabled={Boolean(deletingDistId)}
+                  className="mt-0.5 rounded border-neutral-300 text-red-600 focus:ring-red-500"
+                />
+                <span className="text-neutral-700 dark:text-neutral-200 font-bold leading-relaxed">
+                  أؤكد رغبتي في الحذف النهائي لهذه التوزيعة المؤرشفة وإزالة ({deleteModalLinkedCount}) سجل تسليم مرتبط بها مع عكس قيود المخزون المصروفة.
+                </span>
+              </label>
+            )}
+
+            {deleteModalError && (
+              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-xs font-bold text-red-700 dark:text-red-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{deleteModalError}</span>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={Boolean(deletingDistId)}
+                onClick={() => setDeleteModalDist(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+              >
+                إلغاء
+              </button>
+
+              {deleteModalLinkedCount > 0 ? (
+                <>
+                  {!(deleteModalDist.isArchived || deleteModalDist.status === 'archived') && (
+                    <button
+                      type="button"
+                      disabled={Boolean(deletingDistId)}
+                      onClick={() => handleConfirmDistributionAction('archive')}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm disabled:opacity-50 cursor-pointer"
+                    >
+                      {deletingDistId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+                      <span>أرشفة التوزيعة بأمان</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={Boolean(deletingDistId) || !forceDeleteConfirmed}
+                    onClick={() => handleConfirmDistributionAction('force_delete')}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {deletingDistId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    <span>حذف نهائي مع السجلات</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={Boolean(deletingDistId)}
+                  onClick={() => handleConfirmDistributionAction('delete')}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {deletingDistId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>تأكيد الحذف النهائي</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

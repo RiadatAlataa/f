@@ -185,7 +185,7 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<'admin' | 'operations_manager' | 'department_admin' | 'employee' | 'leader' | 'volunteer' | 'beneficiary' | 'storekeeper' | 'public'>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
-      if (p === '/login' || p === '/auth') {
+      if (p === '/login' || p === '/auth' || p === '/auth/reset-password') {
         try { localStorage.removeItem('reyadat_view_mode'); } catch {}
         return initialAuthSession?.role || 'admin';
       }
@@ -208,7 +208,7 @@ export default function App() {
       const full = window.location.pathname + window.location.search;
       setBrowserFullPath(full);
       const p = window.location.pathname.replace(/\/+$/, '') || '/';
-      if ((p === '/login' || p === '/auth') && !initialAuthSession?.user) {
+      if ((p === '/login' || p === '/auth' || p === '/auth/reset-password' || window.location.search.includes('resetToken')) && !initialAuthSession?.user) {
         setCurrentRole('admin');
       } else if (p === '/' || p.startsWith('/register/') || p.startsWith('/teams/') || p.startsWith('/opportunities') || p.startsWith('/gallery') || p.startsWith('/news/')) {
         setCurrentRole('public');
@@ -1416,23 +1416,70 @@ export default function App() {
     }
   };
 
-  const handleDeleteDistribution = async (distributionId: string) => {
+  const handleDeleteDistribution = async (
+    distributionId: string,
+    options?: {
+      actionType?: 'delete' | 'archive' | 'force_delete' | 'restore';
+      reason?: string;
+    }
+  ) => {
+    const cleanId = String(distributionId || '').trim();
+    if (!cleanId) {
+      return {
+        ok: false,
+        error: 'معرف التوزيعة غير صالح.',
+        code: 'MISSING_DISTRIBUTION_ID'
+      };
+    }
+
+    const actionType = options?.actionType || 'delete';
     try {
       const authHeaders = getAuthHeaders();
       const res = await fetch(buildApiUrl("/api/db/distributions/delete"), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ distributionId })
+        body: JSON.stringify({
+          id: cleanId,
+          distributionId: cleanId,
+          actionType,
+          reason: options?.reason || 'قرار إداري'
+        })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "فشل حذف التوزيعة");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error || "فشل حذف التوزيعة",
+          code: data?.code,
+          linkedHandoversCount: data?.linkedHandoversCount
+        };
+      }
+
+      try {
+        if (actionType !== 'restore' && localStorage.getItem('reyadat_dist_id') === cleanId) {
+          localStorage.removeItem('reyadat_dist_id');
+        }
+      } catch {}
+
       if (data && data.departments && data.teams) setDbData(data);
-      else if (data.db) setDbData(data.db);
+      else if (data?.db) setDbData(data.db);
       else await fetchDatabase(true);
-      return true;
+
+      return {
+        ok: true,
+        actionType: data?.actionType || actionType,
+        message: data?.message || 'تم تنفيذ العملية بنجاح.',
+        releasedStock: data?.releasedStock,
+        removedHandoversCount: data?.removedHandoversCount,
+        deletedId: data?.deletedId,
+        archivedId: data?.archivedId,
+        restoredId: data?.restoredId
+      };
     } catch (err: any) {
-      alert(`خطأ: ${err.message}`);
-      return false;
+      return {
+        ok: false,
+        error: err?.message || 'تعذر الاتصال بالخادم لتنفيذ العملية.'
+      };
     }
   };
 

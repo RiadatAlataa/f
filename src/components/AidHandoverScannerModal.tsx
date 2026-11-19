@@ -89,18 +89,25 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
 
+  const activeDistributionsList = React.useMemo(
+    () => (distributions || []).filter(d => !d.isArchived && d.status !== 'archived'),
+    [distributions]
+  );
+
   // Sync initial distribution
-  const distributionsIdsKey = React.useMemo(() => (distributions || []).map(d => d.id).join(','), [distributions]);
+  const distributionsIdsKey = React.useMemo(() => activeDistributionsList.map(d => d.id).join(','), [activeDistributionsList]);
   useEffect(() => {
-    if (initialDistId) {
+    if (initialDistId && activeDistributionsList.some(d => d.id === initialDistId)) {
       setActiveDistId(prev => (prev === initialDistId ? prev : initialDistId));
-    } else if (distributions && distributions.length > 0 && !activeDistId) {
-      setActiveDistId(distributions[0].id);
+    } else if (activeDistributionsList.length > 0 && (!activeDistId || !activeDistributionsList.some(d => d.id === activeDistId))) {
+      setActiveDistId(activeDistributionsList[0].id);
+    } else if (activeDistributionsList.length === 0) {
+      setActiveDistId('');
     }
-  }, [initialDistId, distributionsIdsKey, activeDistId]);
+  }, [initialDistId, distributionsIdsKey, activeDistId, activeDistributionsList]);
 
   // Current active distribution object
-  const currentDistribution = distributions.find(d => d.id === activeDistId);
+  const currentDistribution = activeDistributionsList.find(d => d.id === activeDistId);
 
   // Handover count for this distribution
   const currentHandovers = handoverRecords.filter(h => h.distributionId === activeDistId);
@@ -406,7 +413,7 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
                 }}
                 className="flex-1 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl px-3 py-2 text-xs font-bold text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                {distributions.map(dist => (
+                {activeDistributionsList.map(dist => (
                   <option key={dist.id} value={dist.id}>
                     {dist.title} ({dist.aidTypeLabel || dist.aidType}) - {dist.quantityPerBeneficiary}
                   </option>

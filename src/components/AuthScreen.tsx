@@ -117,6 +117,13 @@ export function AuthScreen({
   const [recoverySuccess, setRecoverySuccess] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
+  // Email-Link Recovery Flow (Active when OTP is closed - default)
+  const [otpEnabled, setOtpEnabled] = useState<boolean>(false);
+  const [recoveryMode, setRecoveryMode] = useState<'otp' | 'link_request' | 'link_sent' | 'link_validate' | 'link_reset' | 'link_invalid' | 'link_done'>('link_request');
+  const [linkEmailInput, setLinkEmailInput] = useState("");
+  const [linkTokenValue, setLinkTokenValue] = useState("");
+  const [linkMaskedEmail, setLinkMaskedEmail] = useState("");
+
   // OTP Countdown Timer
   useEffect(() => {
     if (otpTimer <= 0) return;
@@ -174,24 +181,59 @@ export function AuthScreen({
   // Mandatory charter & terms agreement
   const [gRegAgreedToTerms, setGRegAgreedToTerms] = useState(false);
 
-  // Auto-detect password recovery link from email query parameters (?resetToken=...&email=...)
+  // Sync public recovery configuration (OTP active vs Email-Link recovery)
+  useEffect(() => {
+    fetch("/api/db/auth/recovery-config")
+      .then((r) => r.json())
+      .then((cfg) => {
+        if (typeof cfg?.otpEnabled === "boolean") {
+          setOtpEnabled(cfg.otpEnabled);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Auto-detect password recovery link from email query parameters (?resetToken=... or /auth/reset-password?token=...)
   useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
-        const urlResetToken = params.get('resetToken');
-        const urlEmail = params.get('email');
-        if (urlResetToken && urlEmail) {
-          setRecoveryEmail(urlEmail);
-          setMaskedEmail(urlEmail.replace(/(.{2})(.*)(@.*)/, "$1•••$3"));
+        const urlResetToken = params.get('resetToken') || params.get('token');
+        if (urlResetToken) {
+          setLinkTokenValue(urlResetToken);
           setResetToken(urlResetToken);
-          setRecoveryStep(3); // Directly open Step 3: Set New Password
+          setRecoveryMode('link_validate');
+          setRecoveryError(null);
+          setRecoverySuccess(null);
           setShowForgotModal(true);
-          setRecoverySuccess(
-            lang === 'ar' 
-              ? "تم فتح رابط استعادة كلمة المرور بنجاح. يرجى إدخال كلمة المرور الجديدة لحسابك."
-              : "Password reset link verified. Please enter your new password."
-          );
+
+          fetch("/api/db/auth/reset-password/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: urlResetToken })
+          })
+            .then(async (res) => {
+              const data = await res.json().catch(() => null);
+              if (res.ok && data?.valid) {
+                setLinkMaskedEmail(data.maskedEmail || "");
+                setRecoveryMode('link_reset');
+                setRecoverySuccess(
+                  lang === 'ar'
+                    ? "تم التحقق من صلاحية رابط الاستعادة. يمكنك الآن تعيين كلمة مرور جديدة."
+                    : "Reset link verified. Please enter your new password."
+                );
+              } else {
+                setRecoveryMode('link_invalid');
+                setRecoveryError(
+                  data?.error ||
+                  (lang === 'ar' ? "رابط إعادة تعيين كلمة المرور غير صالح أو منتهي الصلاحية." : "Invalid or expired reset link.")
+                );
+              }
+            })
+            .catch(() => {
+              setRecoveryMode('link_invalid');
+              setRecoveryError(lang === 'ar' ? "تعذر التحقق من رابط إعادة التعيين." : "Failed to validate reset link.");
+            });
         }
       }
     } catch (e) {
@@ -908,6 +950,91 @@ export function AuthScreen({
     }
   };
 
+  // Email-Link Password Recovery Handlers (Used when OTP is closed - Default)
+  const handleRequestResetLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError(null);
+    setRecoverySuccess(null);
+    const cleanEmail = linkEmailInput.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setRecoveryError("يرجى إدخال عنوان بريد إلكتروني صحيح.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/db/auth/forgot-password/request-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail })
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.status === "success") {
+        setRecoveryMode('link_sent');
+        setRecoverySuccess(
+          data.message ||
+          "إذا كان البريد الإلكتروني مسجلاً في النظام، فسيتم إرسال رابط إعادة تعيين كلمة المرور إليه خلال لحظات."
+        );
+      } else {
+        setRecoveryError(data?.error || "تعذر إرسال رابط استعادة كلمة المرور.");
+      }
+    } catch {
+      setRecoveryError("حدث خطأ أثناء الاتصال بالخادم.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleConfirmResetWithLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError(null);
+    setRecoverySuccess(null);
+
+    if (!recoveryNewPassword.trim()) {
+      setRecoveryError("يرجى إدخال كلمة المرور الجديدة.");
+      return;
+    }
+    if (recoveryNewPassword.trim() !== recoveryConfirmPassword.trim()) {
+      setRecoveryError("كلمتا المرور غير متطابقتين.");
+      return;
+    }
+
+    const evalResult = evaluatePasswordStrength(recoveryNewPassword.trim());
+    if (!evalResult.allPassed) {
+      setRecoveryError(`كلمة المرور لا تستوفي شروط الأمان: ${evalResult.errors.join(" ")}`);
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/db/auth/reset-password/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: linkTokenValue || resetToken,
+          newPassword: recoveryNewPassword.trim(),
+          confirmPassword: recoveryConfirmPassword.trim()
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.status === "success") {
+        setRecoveryMode('link_done');
+        setRecoverySuccess(data.message || "تم تعيين كلمة المرور الجديدة بنجاح.");
+        try {
+          if (typeof window !== 'undefined' && (window.location.search.includes('resetToken') || window.location.pathname === '/auth/reset-password')) {
+            window.history.replaceState({}, '', '/login');
+          }
+        } catch {}
+      } else {
+        setRecoveryError(data?.error || "تعذر حفظ كلمة المرور الجديدة.");
+      }
+    } catch {
+      setRecoveryError("حدث خطأ أثناء حفظ كلمة المرور الجديدة.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
   // Quick helper to fill test accounts
   const handleSelectDemoAccount = (id: string, pass: string = "123") => {
     setIdentifier(id);
@@ -1372,13 +1499,20 @@ export function AuthScreen({
                     <button
                       type="button"
                       onClick={() => {
-                        setRecoveryIdentifier("");
-                        setRecoveryRememberId(selectedRememberedAccount.rememberId);
-                        setRecoveryStep(1);
                         setRecoveryError(null);
                         setRecoverySuccess(null);
-                        setShowForgotModal(true);
-                        handleIdentifyAccount(undefined, selectedRememberedAccount.rememberId);
+                        if (otpEnabled) {
+                          setRecoveryMode('otp');
+                          setRecoveryIdentifier("");
+                          setRecoveryRememberId(selectedRememberedAccount.rememberId);
+                          setRecoveryStep(1);
+                          setShowForgotModal(true);
+                          handleIdentifyAccount(undefined, selectedRememberedAccount.rememberId);
+                        } else {
+                          setLinkEmailInput("");
+                          setRecoveryMode('link_request');
+                          setShowForgotModal(true);
+                        }
                       }}
                       className="text-[#0754C7] dark:text-blue-300 hover:underline font-bold cursor-pointer"
                     >
@@ -1552,12 +1686,19 @@ export function AuthScreen({
                       <button
                         type="button"
                         onClick={() => {
-                          setRecoveryRememberId("");
-                          setRecoveryIdentifier(identifier);
-                          setRecoveryStep(1);
-                          setShowForgotModal(true);
                           setRecoveryError(null);
                           setRecoverySuccess(null);
+                          if (otpEnabled) {
+                            setRecoveryMode('otp');
+                            setRecoveryRememberId("");
+                            setRecoveryIdentifier(identifier);
+                            setRecoveryStep(1);
+                            setShowForgotModal(true);
+                          } else {
+                            setLinkEmailInput(identifier.includes("@") ? identifier : "");
+                            setRecoveryMode('link_request');
+                            setShowForgotModal(true);
+                          }
                         }}
                         className="text-[#0754C7] dark:text-blue-300 hover:underline font-bold transition-colors cursor-pointer"
                       >
@@ -1863,7 +2004,7 @@ export function AuthScreen({
       </div>
 
       {/* ======================================================== */}
-      {/* 3. FORGOT PASSWORD / RECOVERY MODAL (5 Steps Channel-Aware) */}
+      {/* 3. FORGOT PASSWORD / RECOVERY MODAL (Email Link Default + Optional OTP) */}
       {/* ======================================================== */}
       {showForgotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#071C43]/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -1877,6 +2018,211 @@ export function AuthScreen({
               <X className="w-5 h-5" />
             </button>
 
+            {recoveryMode !== 'otp' ? (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-2xl bg-[#eaf3ff] dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 flex items-center justify-center shadow-xs">
+                      <KeyRound className="w-5 h-5" />
+                    </div>
+                    <span className="text-[10px] font-bold text-[#0754C7] dark:text-blue-300 bg-[#eaf3ff] dark:bg-[#081426] px-2.5 py-1 rounded-full">
+                      استعادة آمنة عبر البريد الإلكتروني
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-base font-black text-[#071C43] dark:text-white">
+                      {recoveryMode === 'link_request' && "استعادة كلمة المرور"}
+                      {recoveryMode === 'link_sent' && "تم استلام طلب الاستعادة"}
+                      {recoveryMode === 'link_validate' && "جاري التحقق من رابط الاستعادة..."}
+                      {recoveryMode === 'link_reset' && "تعيين كلمة مرور جديدة"}
+                      {recoveryMode === 'link_invalid' && "رابط الاستعادة غير صالح"}
+                      {recoveryMode === 'link_done' && "تم تحديث كلمة المرور بنجاح"}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      {recoveryMode === 'link_request' && "أدخل بريدك الإلكتروني المسجل في النظام لإرسال رابط مؤقت وآمن لإعادة تعيين كلمة المرور."}
+                      {recoveryMode === 'link_sent' && "يرجى فحص صندوق الوارد (أو الرسائل غير المرغوب فيها) والضغط على الرابط المرفق خلال 30 دقيقة."}
+                      {recoveryMode === 'link_reset' && (linkMaskedEmail ? `الحساب المرتبط: ${linkMaskedEmail}` : "أدخل كلمة مرور قوية ومؤكدة لحسابك.")}
+                      {recoveryMode === 'link_done' && "تم حفظ كلمة المرور الجديدة وإنهاء كافة الجلسات السابقة لحمايتك."}
+                    </p>
+                  </div>
+                </div>
+
+                {recoveryError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                    <span className="font-bold leading-relaxed">{recoveryError}</span>
+                  </div>
+                )}
+
+                {recoverySuccess && recoveryMode !== 'link_done' && (
+                  <div className="p-3 bg-[#eaf3ff] dark:bg-[#142d50] border border-blue-200 dark:border-[#244577] rounded-2xl text-[#071C43] dark:text-blue-200 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-[#0754C7]" />
+                    <span className="font-bold leading-relaxed">{recoverySuccess}</span>
+                  </div>
+                )}
+
+                {recoveryMode === 'link_request' && (
+                  <form onSubmit={handleRequestResetLink} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-[#071C43] dark:text-slate-300">
+                        البريد الإلكتروني المسجل:
+                      </label>
+                      <input
+                        type="email"
+                        value={linkEmailInput}
+                        onChange={(e) => setLinkEmailInput(e.target.value)}
+                        placeholder="name@example.com"
+                        dir="ltr"
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-[#244577] bg-slate-50 dark:bg-[#081426] text-[#071C43] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0754C7] text-left font-mono"
+                        autoFocus
+                        required
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="submit"
+                        disabled={recoveryLoading}
+                        className="flex-1 py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                      >
+                        {recoveryLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                        <span>إرسال رابط إعادة التعيين</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotModal(false)}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#142d50] text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {recoveryMode === 'link_sent' && (
+                  <div className="space-y-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="w-full py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer"
+                    >
+                      حسناً، العودة لتسجيل الدخول
+                    </button>
+                  </div>
+                )}
+
+                {recoveryMode === 'link_validate' && (
+                  <div className="py-6 flex items-center justify-center gap-2 text-xs font-bold text-[#0754C7] dark:text-blue-300">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>جاري فحص صلاحية رابط إعادة تعيين كلمة المرور...</span>
+                  </div>
+                )}
+
+                {recoveryMode === 'link_invalid' && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecoveryError(null);
+                        setRecoverySuccess(null);
+                        setRecoveryMode('link_request');
+                      }}
+                      className="flex-1 py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer"
+                    >
+                      طلب رابط استعادة جديد
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="px-4 py-2.5 bg-slate-100 dark:bg-[#142d50] text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+                )}
+
+                {recoveryMode === 'link_reset' && (
+                  <form onSubmit={handleConfirmResetWithLink} className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold text-[#071C43] dark:text-slate-300">كلمة المرور الجديدة:</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const strong = generateStrongPassword();
+                            setRecoveryNewPassword(strong);
+                            setRecoveryConfirmPassword(strong);
+                            setRecoveryError(null);
+                          }}
+                          className="text-[11px] text-[#0754C7] dark:text-blue-300 font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>توليد كلمة قوية</span>
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showRecNewPass ? "text" : "password"}
+                          value={recoveryNewPassword}
+                          onChange={(e) => setRecoveryNewPassword(e.target.value)}
+                          placeholder="أدخل كلمة مرور قوية (8 خانات فأكثر)"
+                          className="w-full bg-slate-50 dark:bg-[#081426] border border-slate-200 dark:border-[#244577] rounded-xl p-2.5 pl-10 text-xs text-[#071C43] dark:text-white"
+                          autoFocus
+                          required
+                        />
+                        <button type="button" onClick={() => setShowRecNewPass(!showRecNewPass)} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer">
+                          {showRecNewPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      <PasswordStrengthMeter password={recoveryNewPassword} />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#071C43] dark:text-slate-300 mb-1.5">تأكيد كلمة المرور الجديدة:</label>
+                      <div className="relative">
+                        <input
+                          type={showRecConfirmPass ? "text" : "password"}
+                          value={recoveryConfirmPassword}
+                          onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                          placeholder="أعد إدخال كلمة المرور"
+                          className="w-full bg-slate-50 dark:bg-[#081426] border border-slate-200 dark:border-[#244577] rounded-xl p-2.5 pl-10 text-xs text-[#071C43] dark:text-white"
+                          required
+                        />
+                        <button type="button" onClick={() => setShowRecConfirmPass(!showRecConfirmPass)} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer">
+                          {showRecConfirmPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={recoveryLoading || !recoveryNewPassword || recoveryNewPassword !== recoveryConfirmPassword}
+                      className="w-full py-2.5 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer disabled:opacity-60"
+                    >
+                      {recoveryLoading ? "جاري الحفظ..." : "تعيين كلمة المرور الجديدة"}
+                    </button>
+                  </form>
+                )}
+
+                {recoveryMode === 'link_done' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotModal(false);
+                      setPassword("");
+                      setError(null);
+                      setRecoveryNewPassword("");
+                      setRecoveryConfirmPassword("");
+                      setWelcomeAuthMethod('password');
+                    }}
+                    className="w-full py-3 bg-[#071C43] hover:bg-[#0754C7] text-white font-black text-xs rounded-xl cursor-pointer"
+                  >
+                    تسجيل الدخول الآن بكلمة المرور الجديدة
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="w-10 h-10 rounded-2xl bg-[#eaf3ff] dark:bg-[#142d50] text-[#0754C7] dark:text-blue-300 flex items-center justify-center shadow-xs">
@@ -2113,6 +2459,8 @@ export function AuthScreen({
                   تسجيل الدخول الآن بكلمة المرور الجديدة
                 </button>
               </div>
+            )}
+              </>
             )}
 
           </div>

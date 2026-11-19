@@ -37,12 +37,16 @@ import {
   RefreshCw,
   TrendingUp,
   Inbox,
-  Archive
+  Archive,
+  RotateCcw,
+  Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { 
   AidDistribution, 
   Beneficiary, 
+  DistributionDeleteActionType,
+  DistributionDeleteResult,
   DistributionHandoverRecord, 
   HomeSettings,
   InventoryItem,
@@ -74,7 +78,10 @@ interface BeneficiariesMasterDashboardProps {
   };
   onCreateDistribution: (data: Partial<AidDistribution>) => Promise<boolean>;
   onUpdateDistribution: (data: Partial<AidDistribution>) => Promise<boolean>;
-  onDeleteDistribution: (id: string) => Promise<boolean>;
+  onDeleteDistribution: (
+    id: string,
+    options?: { actionType?: DistributionDeleteActionType; reason?: string }
+  ) => Promise<boolean | DistributionDeleteResult>;
   onHandoverSubmit: (data: any) => Promise<any>;
   onCancelHandover: (handoverId: string) => Promise<boolean>;
   onUpdateBeneficiaryStatus?: (id: string, status: 'approved' | 'rejected') => Promise<boolean>;
@@ -256,8 +263,98 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
   const [benCategoryFilter, setBenCategoryFilter] = useState('all');
   const [benStatusFilter, setBenStatusFilter] = useState('all');
   const [distSearchQuery, setDistSearchQuery] = useState('');
+  const [showArchivedDistributions, setShowArchivedDistributions] = useState(false);
+  const [deleteModalDist, setDeleteModalDist] = useState<AidDistribution | null>(null);
+  const [deleteModalLinkedCount, setDeleteModalLinkedCount] = useState<number>(0);
+  const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
+  const [deleteReason, setDeleteReason] = useState<string>('قرار إداري');
+  const [forceDeleteConfirmed, setForceDeleteConfirmed] = useState<boolean>(false);
+  const [deletingDistId, setDeletingDistId] = useState<string | null>(null);
+  const [distFeedback, setDistFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [ledgerSearchQuery, setLedgerSearchQuery] = useState('');
   const [ledgerDistFilter, setLedgerDistFilter] = useState('all');
+
+  const activeDistributions = useMemo(
+    () => (distributions || []).filter(d => !d.isArchived && d.status !== 'archived'),
+    [distributions]
+  );
+
+  const archivedDistributions = useMemo(
+    () => (distributions || []).filter(d => d.isArchived === true || d.status === 'archived'),
+    [distributions]
+  );
+
+  const normalizeDistDeleteResult = (raw: boolean | DistributionDeleteResult): DistributionDeleteResult => {
+    if (typeof raw === 'boolean') {
+      return raw ? { ok: true, message: 'تم تنفيذ العملية بنجاح.' } : { ok: false, error: 'تعذر تنفيذ عملية الحذف.' };
+    }
+    return raw || { ok: false, error: 'تعذر تنفيذ عملية الحذف.' };
+  };
+
+  const handleOpenDistDeleteModal = (dist: AidDistribution) => {
+    if (deletingDistId) return;
+    const linkedCount = (handoverRecords || []).filter(
+      h => h.distributionId === dist.id || (dist.distributionNumber && (h as any).distributionNumber === dist.distributionNumber)
+    ).length;
+    setDeleteModalDist(dist);
+    setDeleteModalLinkedCount(linkedCount);
+    setDeleteModalError(null);
+    setDeleteReason('قرار إداري');
+    setForceDeleteConfirmed(false);
+  };
+
+  const handleConfirmDistAction = async (actionType: DistributionDeleteActionType) => {
+    if (!deleteModalDist || deletingDistId) return;
+    const target = deleteModalDist;
+    setDeletingDistId(target.id);
+    setDeleteModalError(null);
+    try {
+      const result = normalizeDistDeleteResult(
+        await onDeleteDistribution(target.id, {
+          actionType,
+          reason: deleteReason.trim() || 'قرار إداري'
+        })
+      );
+      if (!result.ok) {
+        if (result.code === 'LINKED_HANDOVERS_EXIST' && typeof result.linkedHandoversCount === 'number') {
+          setDeleteModalLinkedCount(result.linkedHandoversCount);
+        }
+        setDeleteModalError(result.error || 'تعذر تنفيذ العملية على التوزيعة.');
+        return;
+      }
+      setDeleteModalDist(null);
+      setDistFeedback({
+        type: 'success',
+        message:
+          result.message ||
+          (actionType === 'archive'
+            ? `تمت أرشفة التوزيعة (${target.title}) بأمان مع حفظ كافة السجلات.`
+            : `تم حذف التوزيعة (${target.title}) نهائياً بنجاح.`)
+      });
+    } finally {
+      setDeletingDistId(null);
+    }
+  };
+
+  const handleRestoreDist = async (dist: AidDistribution) => {
+    if (deletingDistId) return;
+    setDeletingDistId(dist.id);
+    try {
+      const result = normalizeDistDeleteResult(
+        await onDeleteDistribution(dist.id, { actionType: 'restore', reason: 'استعادة من الأرشيف' })
+      );
+      if (!result.ok) {
+        setDistFeedback({ type: 'error', message: result.error || 'تعذر استعادة التوزيعة.' });
+        return;
+      }
+      setDistFeedback({
+        type: 'success',
+        message: result.message || `تمت استعادة التوزيعة (${dist.title}) إلى الكشوف النشطة.`
+      });
+    } finally {
+      setDeletingDistId(null);
+    }
+  };
 
   // Raw vs active-only vs archived-only beneficiaries
   const allRawBeneficiaries = useMemo(() => {
@@ -328,20 +425,20 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     }
   };
 
-  // Statistics Calculations (active beneficiaries only)
+  // Statistics Calculations (active beneficiaries & active non-archived distributions)
   const stats = useMemo(() => {
     const totalBeneficiaries = effectiveBeneficiaries.length;
     const approvedBeneficiaries = effectiveBeneficiaries.filter(b => b.status === 'approved').length;
-    const totalDistributions = distributions.length;
-    const activeDistributions = distributions.filter(d => d.status === 'active').length;
-    const completedDistributions = distributions.filter(d => d.status === 'completed').length;
-    const plannedDistributions = distributions.filter(d => d.status === 'planned').length;
+    const totalDistributions = activeDistributions.length;
+    const activeDistributionsCount = activeDistributions.filter(d => d.status === 'active').length;
+    const completedDistributions = activeDistributions.filter(d => d.status === 'completed').length;
+    const plannedDistributions = activeDistributions.filter(d => d.status === 'planned').length;
     const totalHandovers = handoverRecords.length;
 
     // Inventory linked stats
     let totalReservedStock = 0;
     let totalAllocatedStock = 0;
-    distributions.forEach(d => {
+    activeDistributions.forEach(d => {
       if (d.reservedStock) totalReservedStock += Number(d.reservedStock) || 0;
       if (d.allocatedQuantity) totalAllocatedStock += Number(d.allocatedQuantity) || 0;
     });
@@ -354,7 +451,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       totalBeneficiaries,
       approvedBeneficiaries,
       totalDistributions,
-      activeDistributions,
+      activeDistributions: activeDistributionsCount,
       completedDistributions,
       plannedDistributions,
       totalHandovers,
@@ -362,7 +459,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
       totalAllocatedStock,
       completionRate
     };
-  }, [effectiveBeneficiaries, distributions, handoverRecords]);
+  }, [effectiveBeneficiaries, activeDistributions, handoverRecords]);
 
   // Available warehouse items for linking
   const availableInventoryItems = useMemo(() => {
@@ -394,26 +491,27 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
     });
   }, [effectiveBeneficiaries, benSearchQuery, benCategoryFilter, benStatusFilter]);
 
-  // Filtered distributions
+  // Filtered distributions (active or archived based on toggle)
   const filteredDistributions = useMemo(() => {
-    return distributions.filter(d => {
+    const sourceList = showArchivedDistributions ? archivedDistributions : activeDistributions;
+    return sourceList.filter(d => {
       return !distSearchQuery || 
         d.title.toLowerCase().includes(distSearchQuery.toLowerCase()) ||
         (d.aidTypeLabel && d.aidTypeLabel.toLowerCase().includes(distSearchQuery.toLowerCase())) ||
         (d.location && d.location.toLowerCase().includes(distSearchQuery.toLowerCase()));
     });
-  }, [distributions, distSearchQuery]);
+  }, [showArchivedDistributions, archivedDistributions, activeDistributions, distSearchQuery]);
 
   // Upcoming distributions
   const upcomingDistributions = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    return distributions.filter(d => d.status === 'planned' || (d.distributionDate >= today && d.status !== 'completed'));
-  }, [distributions]);
+    return activeDistributions.filter(d => d.status === 'planned' || (d.distributionDate >= today && d.status !== 'completed'));
+  }, [activeDistributions]);
 
   // Completed distributions
   const completedDistributionsList = useMemo(() => {
-    return distributions.filter(d => d.status === 'completed' || (d.completionRate && d.completionRate >= 100));
-  }, [distributions]);
+    return activeDistributions.filter(d => d.status === 'completed' || (d.completionRate && d.completionRate >= 100));
+  }, [activeDistributions]);
 
   // Filtered Handover Ledger
   const filteredLedger = useMemo(() => {
@@ -804,7 +902,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
             { id: 'allocations', label: 'تخصيص المساعدات للمستفيدين', icon: Layers, badge: availableInventoryItems.filter(i => i.availableStock > 0).length },
             { id: 'beneficiaries', label: 'المستفيدون', icon: Users, badge: effectiveBeneficiaries.length },
             { id: 'archive', label: 'أرشيف المستفيدين', icon: Archive, badge: archivedBeneficiariesList.length },
-            { id: 'distributions', label: 'كشوف التوزيع وأوامر الصرف', icon: Package, badge: distributions.length },
+            { id: 'distributions', label: 'كشوف التوزيع وأوامر الصرف', icon: Package, badge: activeDistributions.length },
             { id: 'eligibilities', label: 'الاستحقاقات', icon: CheckSquare },
             { id: 'handover_ledger', label: 'سجل الاستلام', icon: FileText, badge: handoverRecords.length },
             { id: 'upcoming', label: 'التوزيعات القادمة', icon: Calendar, badge: upcomingDistributions.length },
@@ -1279,7 +1377,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
               <div>
                 <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
                   <FileText className="w-5 h-5 text-indigo-600" />
-                  <span>كشوف التوزيع وأوامر الصرف المعتمدة الصادرة للمخزون ({distributions.length})</span>
+                  <span>كشوف التوزيع وأوامر الصرف المعتمدة الصادرة للمخزون ({activeDistributions.length})</span>
                 </h3>
                 <p className="text-xs text-neutral-400 mt-0.5">
                   أوامر التوزيع المعتمدة من إدارة المستفيدين، تسلّم فقط بالباركود والصورة للمستحقين المعتمدين
@@ -1287,7 +1385,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
               </div>
             </div>
 
-            {distributions.length === 0 ? (
+            {activeDistributions.length === 0 ? (
               <div className="py-12 text-center text-neutral-400 space-y-2">
                 <FileText className="w-12 h-12 mx-auto text-neutral-300" />
                 <p className="text-sm font-bold">لا توجد كشوف توزيع معتمدة بعد.</p>
@@ -1295,7 +1393,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
               </div>
             ) : (
               <div className="space-y-4">
-                {distributions.map(dist => {
+                {activeDistributions.map(dist => {
                   const targetedCount = (dist.targetedBeneficiaryIds && dist.targetedBeneficiaryIds.length > 0)
                     ? dist.targetedBeneficiaryIds.length
                     : beneficiaries.length;
@@ -1611,10 +1709,29 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {archivedDistributions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowArchivedDistributions(prev => !prev)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                    showArchivedDistributions
+                      ? 'bg-amber-600 text-white border-amber-600'
+                      : 'bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border-neutral-200'
+                  }`}
+                >
+                  <Archive className="w-4 h-4" />
+                  <span>
+                    {showArchivedDistributions
+                      ? `العودة للحملات النشطة (${activeDistributions.length})`
+                      : `الأرشيف (${archivedDistributions.length})`}
+                  </span>
+                </button>
+              )}
+
               <button
                 onClick={() => {
-                  setSelectedScannerDistId(distributions[0]?.id || '');
+                  setSelectedScannerDistId(activeDistributions[0]?.id || '');
                   setIsScannerOpen(true);
                 }}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
@@ -1633,6 +1750,34 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
             </div>
           </div>
 
+          {distFeedback && (
+            <div
+              className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border text-xs font-bold ${
+                distFeedback.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+              role="status"
+            >
+              <div className="flex items-center gap-2">
+                {distFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                )}
+                <span>{distFeedback.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDistFeedback(null)}
+                className="p-1 rounded-lg hover:bg-black/5 transition-colors cursor-pointer"
+                aria-label="إغلاق التنبيه"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* Distributions Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
@@ -1648,78 +1793,105 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {filteredDistributions.map(dist => {
-                  const targetCount = dist.targetedBeneficiaryIds?.length || beneficiaries.length || 1;
-                  const handedCount = dist.distributedCount || 0;
-                  const pct = Math.min(100, Math.round((handedCount / targetCount) * 100));
+                {filteredDistributions.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-neutral-400 font-bold">
+                      {showArchivedDistributions ? 'لا توجد توزيعات مؤرشفة حالياً.' : 'لا توجد حملات توزيع نشطة مطابقة للبحث.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDistributions.map(dist => {
+                    const targetCount = dist.targetedBeneficiaryIds?.length || beneficiaries.length || 1;
+                    const handedCount = handoverRecords.filter(h => h.distributionId === dist.id).length || dist.distributedCount || 0;
+                    const pct = Math.min(100, Math.round((handedCount / targetCount) * 100));
+                    const isBusy = deletingDistId === dist.id;
+                    const isDistArchived = dist.isArchived === true || dist.status === 'archived';
 
-                  return (
-                    <tr key={dist.id} className="hover:bg-neutral-50/80 transition-colors">
-                      <td className="p-3">
-                        <div className="font-bold text-neutral-900">{dist.title}</div>
-                        <div className="text-[10px] text-neutral-400">{dist.location || 'مقر الجمعية بالعسيلة'}</div>
-                      </td>
-                      <td className="p-3">
-                        {dist.inventoryItemName ? (
-                          <div className="flex items-center gap-1.5 text-indigo-700 font-bold">
-                            <Layers className="w-3.5 h-3.5" />
-                            <span>{dist.inventoryItemName}</span>
+                    return (
+                      <tr key={dist.id} className="hover:bg-neutral-50/80 transition-colors">
+                        <td className="p-3">
+                          <div className="font-bold text-neutral-900">{dist.title}</div>
+                          <div className="text-[10px] text-neutral-400">{dist.location || 'مقر الجمعية بالعسيلة'}</div>
+                        </td>
+                        <td className="p-3">
+                          {dist.inventoryItemName ? (
+                            <div className="flex items-center gap-1.5 text-indigo-700 font-bold">
+                              <Layers className="w-3.5 h-3.5" />
+                              <span>{dist.inventoryItemName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-neutral-500">{dist.aidTypeLabel || 'مساعدات عينية'}</span>
+                          )}
+                          {dist.reservedStock ? (
+                            <span className="text-[10px] text-neutral-400 block font-mono">محجوز: {dist.reservedStock} وحدة</span>
+                          ) : null}
+                        </td>
+                        <td className="p-3 font-bold text-neutral-800">{dist.quantityPerBeneficiary}</td>
+                        <td className="p-3 font-mono text-neutral-600">{dist.distributionDate}</td>
+                        <td className="p-3">
+                          <div className="w-32 space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold">
+                              <span className="text-neutral-500">{handedCount} / {targetCount}</span>
+                              <span className="text-emerald-700">{pct}%</span>
+                            </div>
+                            <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
+                              <div className="bg-emerald-600 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
                           </div>
-                        ) : (
-                          <span className="text-neutral-500">{dist.aidTypeLabel || 'مساعدات عينية'}</span>
-                        )}
-                        {dist.reservedStock ? (
-                          <span className="text-[10px] text-neutral-400 block font-mono">محجوز: {dist.reservedStock} وحدة</span>
-                        ) : null}
-                      </td>
-                      <td className="p-3 font-bold text-neutral-800">{dist.quantityPerBeneficiary}</td>
-                      <td className="p-3 font-mono text-neutral-600">{dist.distributionDate}</td>
-                      <td className="p-3">
-                        <div className="w-32 space-y-1">
-                          <div className="flex justify-between text-[10px] font-bold">
-                            <span className="text-neutral-500">{handedCount} / {targetCount}</span>
-                            <span className="text-emerald-700">{pct}%</span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            isDistArchived
+                              ? 'bg-amber-100 text-amber-800'
+                              : dist.status === 'completed'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {isDistArchived ? 'مؤرشفة' : dist.status === 'completed' ? 'مكتملة' : 'نشطة'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {isDistArchived ? (
+                              <button
+                                type="button"
+                                disabled={Boolean(deletingDistId)}
+                                onClick={() => handleRestoreDist(dist)}
+                                className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold flex items-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                                title="استعادة التوزيعة إلى الحملات النشطة"
+                              >
+                                {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                                <span>استعادة</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedScannerDistId(dist.id);
+                                  setIsScannerOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all cursor-pointer"
+                                title="صرف وتسجيل بالباركود"
+                              >
+                                <Camera className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={Boolean(deletingDistId)}
+                              onClick={() => handleOpenDistDeleteModal(dist)}
+                              aria-label={`حذف التوزيعة ${dist.title}`}
+                              className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-all disabled:opacity-50 cursor-pointer"
+                              title="حذف التوزيعة"
+                            >
+                              {isBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                            </button>
                           </div>
-                          <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-emerald-600 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          dist.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {dist.status === 'completed' ? 'مكتملة' : 'نشطة'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setSelectedScannerDistId(dist.id);
-                              setIsScannerOpen(true);
-                            }}
-                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all cursor-pointer"
-                            title="صرف وتسجيل بالباركود"
-                          >
-                            <Camera className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`هل أنت متأكد من حذف التوزيعة (${dist.title}) وإلغاء حجز المخزون؟`)) {
-                                onDeleteDistribution(dist.id);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-all cursor-pointer"
-                            title="حذف التوزيعة"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -2612,7 +2784,7 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
         <AidHandoverScannerModal
           isOpen={isScannerOpen}
           onClose={() => setIsScannerOpen(false)}
-          distributions={distributions}
+          distributions={activeDistributions}
           selectedDistributionId={selectedScannerDistId}
           beneficiaries={beneficiaries}
           handoverRecords={handoverRecords}
@@ -2803,6 +2975,145 @@ export const BeneficiariesMasterDashboard: React.FC<BeneficiariesMasterDashboard
           />
         );
       })()}
+
+      {/* SAFE DISTRIBUTION DELETE / ARCHIVE MODAL */}
+      {deleteModalDist && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="master-dist-delete-modal-title"
+        >
+          <div
+            className="relative bg-white dark:bg-neutral-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800 text-right space-y-4"
+            dir="rtl"
+          >
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                  deleteModalLinkedCount > 0
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="master-dist-delete-modal-title" className="text-base font-black text-neutral-900 dark:text-white">
+                    {deleteModalLinkedCount > 0 ? 'توزيعة مرتبطة بسجلات تسليم فعلية' : 'تأكيد حذف التوزيعة نهائياً'}
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">{deleteModalDist.title}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(deletingDistId)}
+                onClick={() => setDeleteModalDist(null)}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100 disabled:opacity-50 cursor-pointer"
+                aria-label="إغلاق"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {deleteModalLinkedCount > 0 ? (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1.5 leading-relaxed">
+                <p className="font-bold">
+                  تحتوي هذه التوزيعة على <span className="font-mono font-black">{deleteModalLinkedCount}</span> سجل تسليم وباركود موثق للمستفيدين.
+                </p>
+                <p className="text-[11px]">
+                  حفاظاً على سجلات المستفيدين، يمكنك <b>«أرشفة التوزيعة بأمان»</b> وإلغاء حجز المخزون غير المصروف مع إبقاء كافة سندات التسليم، أو تأكيد الحذف النهائي مع إزالة السجلات المرتبطة.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-900 leading-relaxed">
+                لا توجد سجلات تسليم مرتبطة بهذه التوزيعة. سيتم حذف الحملة نهائياً وإلغاء أي حجز مخزون غير مصروف دون المساس بملفات المستفيدين.
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                سبب الإجراء (يُسجّل في سجل التدقيق)
+              </label>
+              <input
+                type="text"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                disabled={Boolean(deletingDistId)}
+                placeholder="مثال: إلغاء الحملة / قرار إداري"
+                className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {deleteModalLinkedCount > 0 && (
+              <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-neutral-50 border border-neutral-200 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={forceDeleteConfirmed}
+                  onChange={(e) => setForceDeleteConfirmed(e.target.checked)}
+                  disabled={Boolean(deletingDistId)}
+                  className="mt-0.5 rounded border-neutral-300 text-red-600 focus:ring-red-500"
+                />
+                <span className="text-neutral-700 font-bold leading-relaxed">
+                  أؤكد رغبتي في الحذف النهائي للتوزيعة وإزالة ({deleteModalLinkedCount}) سجل تسليم مرتبط بها مع عكس قيود المخزون المصروفة.
+                </span>
+              </label>
+            )}
+
+            {deleteModalError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{deleteModalError}</span>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-neutral-100 flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={Boolean(deletingDistId)}
+                onClick={() => setDeleteModalDist(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 cursor-pointer"
+              >
+                إلغاء
+              </button>
+
+              {deleteModalLinkedCount > 0 ? (
+                <>
+                  {!(deleteModalDist.isArchived || deleteModalDist.status === 'archived') && (
+                    <button
+                      type="button"
+                      disabled={Boolean(deletingDistId)}
+                      onClick={() => handleConfirmDistAction('archive')}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm disabled:opacity-50 cursor-pointer"
+                    >
+                      {deletingDistId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+                      <span>أرشفة التوزيعة بأمان</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={Boolean(deletingDistId) || !forceDeleteConfirmed}
+                    onClick={() => handleConfirmDistAction('force_delete')}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {deletingDistId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    <span>حذف نهائي مع السجلات</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={Boolean(deletingDistId)}
+                  onClick={() => handleConfirmDistAction('delete')}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {deletingDistId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>تأكيد الحذف النهائي</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

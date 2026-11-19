@@ -3,8 +3,9 @@ import {
   Building2, Users, Calendar, BarChart3, Database, FileSpreadsheet, FileDown, 
   Trash2, Plus, Edit3, Shield, Copy, Archive, Check, AlertTriangle, 
   Moon, Sun, Search, Printer, RefreshCw, Smartphone, ShieldAlert, Lock, Trophy, Send, Eye, Settings, Activity, FileText, Globe, X,
-  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2, MoreHorizontal, Layers
+  Menu, ChevronDown, Briefcase, Network, Image as ImageIcon, ArrowRight, Home, LayoutDashboard, Wrench, CheckCircle2, MoreHorizontal, Layers, CalendarClock
 } from "lucide-react";
+import { PersonalTasksWorkspace } from "./PersonalTasksWorkspace";
 import { ExecutiveKpiDashboard } from "./ExecutiveKpiDashboard";
 import { 
   Department, VolunteerTeam, Volunteer, Initiative, OperationLog, SystemStats,
@@ -214,7 +215,7 @@ interface AdminDashboardProps {
   onDeleteLetter?: (letterId: string) => Promise<void>;
   onCreateDistribution?: (data: Partial<AidDistribution>) => Promise<boolean>;
   onUpdateDistribution?: (data: Partial<AidDistribution>) => Promise<boolean>;
-  onDeleteDistribution?: (id: string) => Promise<boolean>;
+  onDeleteDistribution?: (id: string, options?: { actionType?: 'delete' | 'archive' | 'force_delete' | 'restore'; reason?: string }) => Promise<boolean | any>;
   onHandoverSubmit?: (data: any) => Promise<any>;
   onCancelHandover?: (handoverId: string) => Promise<boolean>;
   onImportBeneficiaries?: (beneficiaries: Partial<Beneficiary>[], fileType: 'excel' | 'pdf') => Promise<boolean>;
@@ -323,7 +324,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRefreshGlobalData,
   onToggleMaintenance
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support' | 'registration_links' | 'beneficiaries_archive' | 'volunteers_archive'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'personal_tasks' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support' | 'registration_links' | 'beneficiaries_archive' | 'volunteers_archive'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -553,6 +554,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       description: "إدارة المستخدمين، الهيكلة، الإدارات، الموقع، الصلاحيات والتواصل",
       badge: safeDepartments.length || 0,
       items: [
+        { id: 'personal_tasks', label: 'مهامي ومواعيدي الشخصية', icon: CalendarClock, badge: 'خاص بك' },
         { id: 'users_mgmt', label: 'إدارة المستخدمين الشاملة', icon: Users, badge: 'شامل' },
         { id: 'permissions', label: 'الصلاحيات والأدوار', icon: Lock },
         { id: 'deps', label: 'هيكلة الإدارات', icon: Building2, badge: safeDepartments.length || 0 },
@@ -627,7 +629,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return allPrimaryCategories
       .map(cat => ({
         ...cat,
-        items: cat.items.filter(item => item.id === 'stats' || allowedPages.includes(item.id))
+        items: cat.items.filter(item => item.id === 'stats' || item.id === 'personal_tasks' || allowedPages.includes(item.id))
       }))
       .filter(cat => cat.items.length > 0);
   }, [allPrimaryCategories, authenticatedUser]);
@@ -651,6 +653,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     set.add('users_mgmt');
     set.add('partners_mgmt');
     set.add('stats');
+    set.add('personal_tasks');
     return set;
   }, [primaryCategories]);
 
@@ -1576,6 +1579,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     type="button"
+                    id="btn-admin-personal-tasks"
+                    onClick={() => handleSelectTab('personal_tasks')}
+                    className={`h-8 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer shrink-0 ${
+                      activeSubTab === 'personal_tasks'
+                        ? 'bg-[#0754C7] text-white border-[#0754C7] font-black'
+                        : 'bg-slate-50 dark:bg-[#142d50] text-[#071C43] dark:text-slate-100 border-slate-200 dark:border-[#244577] hover:bg-[#eaf3ff] dark:hover:bg-[#19355e]'
+                    }`}
+                    title="فتح قسم مهامي ومواعيدي الشخصية"
+                  >
+                    <CalendarClock className="w-3.5 h-3.5 text-[#0754C7] dark:text-blue-400" />
+                    <span>مهامي الشخصية</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => handleSelectTab('globalsearch')}
                     className={`h-8 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer shrink-0 ${
                       activeSubTab === 'globalsearch'
@@ -1803,6 +1821,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onRefreshData={onRefreshGlobalData}
               />
             </div>
+          )}
+
+          {/* TAB: PERSONAL TASKS & APPOINTMENTS («مهامي ومواعيدي الشخصية» - Independent Private Module) */}
+          {activeSubTab === 'personal_tasks' && (
+            <PersonalTasksWorkspace
+              currentUser={authenticatedUser}
+              isDark={isDark}
+            />
           )}
 
           {/* TAB: PASSWORD RESET REQUESTS (OPERATIONS MANAGEMENT) */}

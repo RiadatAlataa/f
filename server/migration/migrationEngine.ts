@@ -171,6 +171,12 @@ export class MigrationEngine {
       { field: 'initiativeId', validIds: initIds },
       { field: 'volunteerId', validIds: volIds }
     ]);
+    if (Array.isArray(dbSource.volunteerCharters)) {
+      collectionsReport['volunteerCharters'] = inspectCollection('volunteerCharters', dbSource.volunteerCharters, ['id'], [
+        { field: 'volunteerId', validIds: volIds },
+        { field: 'teamId', validIds: teamIds }
+      ]);
+    }
 
     // Inspect Financial, Inventory, and Organizational collections
     if (Array.isArray(dbSource.financialAccounts)) {

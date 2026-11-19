@@ -112,6 +112,51 @@ export function generateEmailHtml(
       ];
       break;
 
+    case 'password_reset_link':
+      title = "إعادة تعيين كلمة المرور - جمعية ريادة العطاء";
+      preheader = "رابط آمن ومؤقت لإعادة تعيين كلمة المرور (صالح لمدة 30 دقيقة)";
+      bodyParagraphs = [
+        "تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في منصة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة.",
+        "لإتمام تعيين كلمة مرور جديدة لحسابك، يرجى الضغط على الزر التالي (الرابط صالح للاستخدام مرة واحدة فقط ولمدة 30 دقيقة):"
+      ];
+      if (data.resetLink) {
+        actionButton = { text: "تعيين كلمة مرور جديدة الآن", url: data.resetLink };
+      }
+      keyValues = [
+        { label: "مدة صلاحية الرابط", value: `${data.expirationMinutes || 30} دقيقة فقط (استخدام لمرة واحدة)` },
+        { label: "تنبيه أمان", value: "إذا لم تقم بطلب إعادة تعيين كلمة المرور بنفسك، يمكنك تجاهل هذه الرسالة بأمان ولن يتغير أي شيء في حسابك." }
+      ];
+      break;
+
+    case 'personal_task_reminder':
+      title = `تذكير بمهمتك الشخصية: ${data.taskTitle || 'مهمة قادمة'}`;
+      preheader = `${data.remainingLabel || 'تذكير بموعد مهمتك'} - ${data.startDateAr || data.startDate || ''}`;
+      greeting = `مرحباً أ. ${data.recipientName || 'الزميل الكريم'}`;
+      bodyParagraphs = [
+        "هذا تذكير تلقائي من نظام «مهامي ومواعيدي الشخصية» التابع لجمعية ريادة العطاء لخدمة الإنسان بالعسيلة.",
+        data.remainingLabel
+          ? `موعد بداية مهمتك (${data.remainingLabel}) وفق توقيت المملكة العربية السعودية.`
+          : "نذكرك باقتراب موعد بداية مهمتك الشخصية المسجلة لديك."
+      ];
+      highlightBadge = {
+        label: "توقيت التنبيه",
+        value: data.remainingLabel || "موعد قريب",
+        color: "#0284c7"
+      };
+      keyValues = [
+        { label: "اسم المهمة", value: data.taskTitle || "-" },
+        ...(data.taskSubject ? [{ label: "موضوع المهمة", value: data.taskSubject }] : []),
+        ...(data.taskDetails ? [{ label: "التفاصيل", value: data.taskDetails }] : []),
+        { label: "تاريخ المهمة", value: data.startDateAr || data.startDate || "-" },
+        { label: "وقت البداية", value: data.startTimeAr || data.startTime || "-" },
+        { label: "المنطقة الزمنية", value: "توقيت المملكة العربية السعودية (الرياض)" },
+        { label: "ملاحظات إضافية", value: data.notes || "لا توجد ملاحظات إضافية" }
+      ];
+      if (data.dashboardUrl) {
+        actionButton = { text: "فتح قسم مهامي الشخصية", url: data.dashboardUrl };
+      }
+      break;
+
     case 'email_verification':
       title = "تأكيد عنوان البريد الإلكتروني";
       preheader = "رمز التحقق والتفعيل الرسمي";
@@ -535,6 +580,7 @@ export function generateEmailHtml(
   <div class="wrapper" dir="${isRtl ? 'rtl' : 'ltr'}">
     <div class="main-card">
       <div class="header-bar">
+        ${data.logoUrl ? `<img src="${data.logoUrl}" alt="${associationNameAr}" style="width:56px;height:56px;border-radius:50%;background:#ffffff;padding:4px;margin:0 auto 10px auto;display:block;object-fit:contain;" />` : ''}
         <h1 class="brand-logo-text">${associationNameAr}</h1>
         <p class="brand-sub">${associationSubAr}</p>
       </div>

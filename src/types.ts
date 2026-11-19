@@ -119,12 +119,21 @@ export interface TeamApplication {
   leaderBirthDate?: string;
   leaderCity?: string;
   leaderAddress?: string;
-  preferredContactMethod?: 'whatsapp' | 'call' | 'email' | 'telegram' | string;
+  preferredContactMethod?: 'whatsapp' | 'call' | 'email' | string;
+  leaderLicenseUrl?: string;
+  leaderLicenseName?: string;
+  leaderLicenseFileKey?: string;
 
-  // Vision, Mission, Goals, Services
+  // Vision, Mission, Goals, Services (Bilingual Support)
   vision?: string;
+  visionAr?: string;
+  visionEn?: string;
   mission?: string;
+  missionAr?: string;
+  missionEn?: string;
   goals?: string;
+  goalsAr?: string;
+  goalsEn?: string;
   services?: string[]; // Array of categories: الإغاثة، خدمة المجتمع، الفعاليات، التعليم والتدريب، الصحة، البيئة، رعاية كبار السن، خدمة ذوي الإعاقة، الأمن والسلامة...
 
   // Meaningful Idea for Society
@@ -157,11 +166,13 @@ export interface TeamApplication {
   agreementTimestamp: string;
 
   // Admin Review Fields
+  submittedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;
   approvedDepartmentId?: string;
   rejectionReason?: string;
   correctionNotes?: string;
+  reviewerNotes?: string;
   createdTeamId?: string;
 }
 
@@ -201,9 +212,18 @@ export interface VolunteerTeam {
   leaderPhone?: string;
   leaderEmail?: string;
   leaderNationalId?: string;
+  leaderLicenseUrl?: string;
+  leaderLicenseName?: string;
+  leaderLicenseFileKey?: string;
   vision?: string;
+  visionAr?: string;
+  visionEn?: string;
   mission?: string;
+  missionAr?: string;
+  missionEn?: string;
   goals?: string;
+  goalsAr?: string;
+  goalsEn?: string;
   services?: string[] | string;
   meaningfulIdea?: string;
   logoUrl?: string;
@@ -257,7 +277,10 @@ export interface Volunteer {
   departmentId: string;
   titleAr?: string;
   titleEn?: string;
-  status: 'active' | 'inactive' | 'suspended' | 'deactivated' | 'archived';
+  status: 'active' | 'inactive' | 'suspended' | 'deactivated' | 'archived' | 'awaiting_profile_completion';
+  profileCompleted?: boolean;
+  addedManually?: boolean;
+  temporaryPasswordActive?: boolean;
   isArchived?: boolean;
   archivedAt?: string;
   archivedBy?: string;
@@ -302,6 +325,9 @@ export interface Volunteer {
   card_image?: string; // alias
   city?: string;
   district?: string;
+  address?: string;
+  emergencyPhone?: string;
+  experiences?: string;
   monthlyPoints?: number;
   attendanceCount?: number;
 }
@@ -1468,6 +1494,27 @@ export interface AidDistribution {
   approvedBy?: string;
   approvedAt?: string;
   deliveryBatchNumber?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
+  previousStatus?: 'active' | 'planned' | 'completed' | 'archived';
+}
+
+export type DistributionDeleteActionType = 'delete' | 'archive' | 'force_delete' | 'restore';
+
+export interface DistributionDeleteResult {
+  ok: boolean;
+  actionType?: DistributionDeleteActionType;
+  message?: string;
+  error?: string;
+  code?: string;
+  linkedHandoversCount?: number;
+  releasedStock?: number;
+  removedHandoversCount?: number;
+  deletedId?: string;
+  archivedId?: string;
+  restoredId?: string;
 }
 
 export interface DistributionHandoverRecord {
@@ -1497,6 +1544,9 @@ export interface DistributionHandoverRecord {
   unit?: string;
   // Photo proof of handover (توثيق الاستلام بالصورة الحية)
   photoUrl?: string;
+  photoFileKey?: string;
+  photoStorageProvider?: string;
+  photoVerified?: boolean;
   proofPhotos?: string[];
   handedDepartment?: string;
   beneficiaryConfirmedReceipt?: boolean;
@@ -2281,4 +2331,188 @@ export interface MediaVideoItem {
   createdAt?: string;
   updatedAt?: string;
 }
+
+// ==========================================
+// Independent Personal Tasks & Appointments System
+// («مهامي ومواعيدي الشخصية» - Strictly Separate from Administrative Tasks)
+// ==========================================
+export type PersonalTaskStatus = 'not_started' | 'in_progress' | 'completed' | 'postponed';
+
+export type PersonalTaskReminderOption = '24h' | '1h' | '30m' | '15m' | 'at_start' | 'custom';
+
+export type PersonalTaskReminderStatus = 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled' | 'none';
+
+export interface PersonalTaskHistoryEntry {
+  id: string;
+  action: 'created' | 'updated' | 'status_changed' | 'postponed' | 'reminder_retried';
+  timestamp: string;
+  summary: string;
+  fromStatus?: PersonalTaskStatus;
+  toStatus?: PersonalTaskStatus;
+  previousStartDate?: string;
+  previousStartTime?: string;
+  newStartDate?: string;
+  newStartTime?: string;
+  reason?: string;
+}
+
+export interface PersonalTaskPostponeEntry {
+  id: string;
+  postponedAt: string;
+  fromStartDate: string;
+  fromStartTime: string;
+  toStartDate: string;
+  toStartTime: string;
+  newReminderOption?: PersonalTaskReminderOption;
+  reason?: string;
+}
+
+export interface PersonalTask {
+  id: string;
+  userId: string;
+  ownerName: string;
+  ownerEmail: string;
+  ownerRole?: string;
+  title: string;
+  subject: string;
+  details: string;
+  notes: string;
+  startDate: string; // YYYY-MM-DD (Asia/Riyadh)
+  startTime: string; // HH:mm (Asia/Riyadh)
+  startAtIso: string; // UTC ISO computed from Asia/Riyadh
+  reminderOption: PersonalTaskReminderOption;
+  customReminderAt?: string | null; // ISO or Riyadh YYYY-MM-DDTHH:mm
+  reminderAtIso?: string | null;
+  activeReminderId?: string | null;
+  status: PersonalTaskStatus;
+  reminderStatus: PersonalTaskReminderStatus;
+  reminderSentAt?: string | null;
+  reminderAttempts?: number;
+  lastReminderError?: string | null;
+  completedAt?: string | null;
+  postponedAt?: string | null;
+  postponeHistory: PersonalTaskPostponeEntry[];
+  editHistory: PersonalTaskHistoryEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersonalTaskReminder {
+  id: string;
+  taskId: string;
+  userId: string;
+  ownerName: string;
+  targetEmail: string;
+  reminderOption: PersonalTaskReminderOption;
+  reminderAtIso: string;
+  status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
+  claimToken?: string | null;
+  claimedAt?: string | null;
+  sentAt?: string | null;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAtMs?: number | null;
+  messageId?: string | null;
+  lastError?: string | null;
+  cancelledReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersonalTaskEmailLog {
+  id: string;
+  taskId: string;
+  reminderId: string;
+  userId: string;
+  targetEmail: string;
+  subject: string;
+  status: 'sent' | 'failed';
+  provider: 'resend' | 'smtp' | 'simulation' | string;
+  messageId?: string;
+  error?: string;
+  attemptNumber: number;
+  sentAt: string;
+}
+
+// ==========================================
+// Independent Electronic Volunteer Charter System
+// («ميثاق التطوع الإلكتروني» - Per-Volunteer & Versioned)
+// ==========================================
+export type VolunteerCharterStatus =
+  | 'awaiting_volunteer_signature'
+  | 'volunteer_signed'
+  | 'awaiting_leader_approval'
+  | 'approved_by_leader'
+  | 'rejected';
+
+export interface VolunteerCharterClause {
+  id: string;
+  order: number;
+  titleAr: string;
+  titleEn: string;
+  bodyAr: string;
+  bodyEn: string;
+}
+
+export interface VolunteerCharterVersion {
+  version: number;
+  titleAr: string;
+  titleEn: string;
+  clauses: VolunteerCharterClause[];
+  createdAt: string;
+  createdBy: string;
+  status: VolunteerCharterStatus;
+  volunteerAgreed?: boolean;
+  volunteerSignatureName?: string;
+  volunteerSignedAt?: string | null;
+  volunteerSignedIp?: string | null;
+  leaderId?: string | null;
+  leaderName?: string | null;
+  leaderApprovedAt?: string | null;
+  leaderRejectedAt?: string | null;
+  rejectionReason?: string | null;
+  leaderNotes?: string | null;
+  locked: boolean;
+}
+
+export interface VolunteerCharter {
+  id: string;
+  charterNumber: string;
+  associationNameAr: string;
+  associationNameEn: string;
+  volunteerId: string;
+  volunteerName: string;
+  volunteerNationalId?: string;
+  volunteerMembershipNumber?: string;
+  teamId: string;
+  teamNameAr: string;
+  teamNameEn?: string;
+  leaderId?: string;
+  leaderName: string;
+  acceptanceDate: string;
+  acceptanceSource: 'application' | 'manual_admin' | string;
+  currentVersion: number;
+  status: VolunteerCharterStatus;
+  locked: boolean;
+  volunteerAgreed: boolean;
+  volunteerSignatureName?: string;
+  volunteerSignedAt?: string | null;
+  leaderApprovedAt?: string | null;
+  leaderRejectedAt?: string | null;
+  rejectionReason?: string | null;
+  versions: VolunteerCharterVersion[];
+  auditLog?: Array<{
+    id: string;
+    action: string;
+    actorId: string;
+    actorName: string;
+    actorRole: string;
+    version: number;
+    timestamp: string;
+    notes?: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 

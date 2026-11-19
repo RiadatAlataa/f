@@ -49,8 +49,10 @@ import {
   CheckCircle,
   ArrowRightLeft,
   KeyRound,
-  BarChart3
+  BarChart3,
+  CalendarClock
 } from 'lucide-react';
+import { PersonalTasksWorkspace } from './PersonalTasksWorkspace';
 import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
 import { 
   Department, 
@@ -126,7 +128,7 @@ export interface DepartmentDashboardProps {
   onCopyInitiative?: (id: string, date: string, name: string) => void;
   onCreateDistribution?: (data: Partial<AidDistribution>) => Promise<boolean>;
   onUpdateDistribution?: (data: Partial<AidDistribution>) => Promise<boolean>;
-  onDeleteDistribution?: (id: string) => Promise<boolean>;
+  onDeleteDistribution?: (id: string, options?: { actionType?: 'delete' | 'archive' | 'force_delete' | 'restore'; reason?: string }) => Promise<boolean | any>;
   onHandoverSubmit?: (data: any) => Promise<any>;
   onCancelHandover?: (handoverId: string) => Promise<boolean>;
   onAddBeneficiary?: (data: Partial<Beneficiary>) => Promise<boolean>;
@@ -310,6 +312,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
   const allowedPages: string[] = currentUser?.allowedPages || [];
   const isPageAllowed = (pageKey: string): boolean => {
+    if (pageKey === 'personal_tasks') return true;
     if (isTopExecutive || userPermissions.includes('super_admin') || allowedPages.length === 0) return true;
     return allowedPages.includes(pageKey);
   };
@@ -341,6 +344,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
       tabs.push({ id: 'media_news', label: 'المركز الإعلامي والأخبار' });
       tabs.push({ id: 'media_gallery', label: 'معرض الصور والمواد الإعلامية' });
     }
+    tabs.push({ id: 'personal_tasks', label: 'مهامي الشخصية' });
     tabs.push({ id: 'directives', label: 'تكليفات الإدارة العليا' });
     tabs.push({ id: 'tasks', label: 'المهام والتكليفات' });
     tabs.push({ id: 'staff', label: 'كوادر الإدارة والتوظيف' });
@@ -800,6 +804,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     if (isPageAllowed('directives')) {
       items.push({ id: 'directives', label: 'تكليفات الإدارة العليا', badge: myDirectives.length, icon: <Send className="w-4 h-4 shrink-0" /> });
     }
+    items.push({ id: 'personal_tasks', label: 'مهامي الشخصية', icon: <CalendarClock className="w-4 h-4 shrink-0" /> });
     if (isPageAllowed('tasks')) {
       items.push({ id: 'tasks', label: 'المهام والتكليفات', badge: myAdministrativeTasks.length || deptTasks.length, icon: <CheckSquare className="w-4 h-4 shrink-0" /> });
     }
@@ -2453,12 +2458,18 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
           </div>
         )}
 
+        {/* 14.5 INDEPENDENT PERSONAL TASKS & APPOINTMENTS TAB */}
+        {activeTab === 'personal_tasks' && (
+          <PersonalTasksWorkspace currentUser={currentUser} />
+        )}
+
         {/* Fallback for unmapped tabs */}
         {![
           'inventory', 'volunteer_ops', 'volunteer_transfers', 'volunteers_archive',
           'team_support', 'beneficiary_stats', 'password_resets', 'requests',
           'beneficiaries', 'hr_staff', 'dept_users', 'finance_ledger', 'projects_list',
-          'media_news', 'media_gallery', 'directives', 'tasks', 'staff', 'letters', 'credentials'
+          'media_news', 'media_gallery', 'directives', 'tasks', 'staff', 'letters', 'credentials',
+          'personal_tasks'
         ].includes(activeTab) && (
           <AccessDeniedCard
             pageTitle={activeTab}
