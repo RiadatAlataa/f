@@ -3110,6 +3110,28 @@ export default function App() {
         initialTab={userSettingsInitialTab}
         initialSecurityAction={userSettingsSecurityAction}
         onRememberedStateChanged={() => setShowPinPromoBanner(false)}
+        onUserNameUpdated={(newName) => {
+          setAuthenticatedUser((prev: any) => {
+            if (!prev) return prev;
+            const nextUser = {
+              ...prev,
+              name: newName,
+              ...(prev.userName !== undefined ? { userName: newName } : {}),
+              ...(prev.directorName !== undefined ? { directorName: newName } : {}),
+            };
+            try {
+              const currentStored = getStoredSession();
+              if (currentStored) {
+                localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+                  ...currentStored,
+                  user: nextUser,
+                }));
+              }
+            } catch {}
+            return nextUser;
+          });
+          fetchDatabase(true).catch(() => {});
+        }}
       />
 
       {/* MANDATORY FORCE PASSWORD CHANGE MODAL */}

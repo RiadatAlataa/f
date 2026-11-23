@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Lock, ShieldCheck, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, XCircle, Check } from "lucide-react";
+import { buildApiUrl, getAuthHeaders } from "../config/api";
 
 interface ForceChangePasswordModalProps {
   isOpen: boolean;
@@ -69,9 +70,13 @@ export const ForceChangePasswordModal: React.FC<ForceChangePasswordModalProps> =
 
     setIsLoading(true);
     try {
-      const res = await fetch("/api/db/auth/change-password", {
+      const res = await fetch(buildApiUrl("/api/db/auth/change-password"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
+        credentials: "same-origin",
         body: JSON.stringify({
           userId,
           newPassword: newPassword.trim()
@@ -123,11 +128,11 @@ export const ForceChangePasswordModal: React.FC<ForceChangePasswordModalProps> =
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Informational Banner about Default Password */}
+          {/* Informational Banner about Temporary Password */}
           <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 p-3 rounded-2xl text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2 leading-relaxed">
             <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <span>
-              تم تفعيل حسابك بكلمة المرور المؤقتة الموحدة (<code className="font-mono font-black text-xs bg-amber-200/60 dark:bg-amber-900/60 px-1 py-0.5 rounded">A123b456</code>). يلزمك النظام الآن بتعيين كلمة مرور جديدة خاصة بك لإتمام الدخول.
+              تم تسجيل دخولك بكلمة المرور المؤقتة الخاصة بالحساب. لحماية بياناتك، يلزمك النظام الآن بتعيين كلمة مرور جديدة قوية خاصة بك قبل المتابعة.
             </span>
           </div>
 

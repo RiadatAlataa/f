@@ -2,13 +2,16 @@ import React, { useState } from "react";
 import { 
   User, ClipboardList, Bell, ShieldCheck, Phone, Mail, MapPin, 
   Users, CheckCircle2, AlertTriangle, Clock, Calendar, HelpCircle, 
-  Send, Plus, Eye, CheckCircle, Ban, Hourglass, Download, Printer,
-  Star, CheckCheck, Loader2, Package, Sparkles, ArrowRight, Home
+  Send, Plus, Eye, EyeOff, CheckCircle, Ban, Hourglass, Download, Printer,
+  Star, CheckCheck, Loader2, Package, Sparkles, ArrowRight, Home,
+  Lock, KeyRound, RefreshCw, AlertCircle
 } from "lucide-react";
 import { Beneficiary, BenefitRequest, Initiative, DistributionHandoverRecord, AidDistribution, BeneficiaryRating } from "../types";
 import { BeneficiaryRatingModal } from "./BeneficiaryRatingModal";
 import { BeneficiaryFormFields, BeneficiaryFormData } from "./BeneficiaryFormFields";
 import { normalizeLegacyBeneficiaryData, ResidencyStatus } from "../data/beneficiaryRegistryData";
+import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
+import { buildApiUrl, getAuthHeaders } from "../config/api";
 
 interface BeneficiaryDashboardProps {
   beneficiary: Beneficiary;
@@ -72,6 +75,17 @@ export function BeneficiaryDashboard({
     maritalStatus: beneficiary.maritalStatus || legacyProfile.maritalStatus || 'متزوج',
     orphanStatus: beneficiary.orphanStatus || legacyProfile.orphanStatus || 'غير ذلك / لا ينطبق'
   });
+
+  // Self-Service Password Change States (تغيير كلمة المرور للمستفيد)
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [isChangingPwd, setIsChangingPwd] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
 
   // Filter requests & handovers for current beneficiary
   const myRequests = requests.filter(r => r.beneficiaryId === beneficiary.id);
@@ -148,6 +162,80 @@ export function BeneficiaryDashboard({
       alert(lang === "ar" ? "تم تحديث الملف الشخصي بنجاح" : "Profile updated successfully");
     }
     setIsSubmitting(false);
+  };
+
+  const handleSelfChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdError(null);
+    setPwdSuccess(null);
+
+    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+      setPwdError(
+        lang === "ar"
+          ? "يرجى إدخال كلمة المرور الحالية وكلمة المرور الجديدة وتأكيدها."
+          : "Please fill in current, new, and confirm password fields."
+      );
+      return;
+    }
+
+    if (newPassword.trim() !== confirmPassword.trim()) {
+      setPwdError(
+        lang === "ar"
+          ? "كلمة المرور الجديدة وتأكيد كلمة المرور غير متطابقين."
+          : "New password and confirmation do not match."
+      );
+      return;
+    }
+
+    if (newPassword.trim() === currentPassword.trim()) {
+      setPwdError(
+        lang === "ar"
+          ? "يجب أن تكون كلمة المرور الجديدة مختلفة عن كلمة المرور الحالية."
+          : "New password must differ from current password."
+      );
+      return;
+    }
+
+    setIsChangingPwd(true);
+    try {
+      const res = await fetch(buildApiUrl("/api/db/auth/self-change-password"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          userId: beneficiary.id,
+          currentPassword: currentPassword.trim(),
+          newPassword: newPassword.trim(),
+          confirmPassword: confirmPassword.trim()
+        })
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setPwdError(
+          data?.error ||
+            (lang === "ar" ? "تعذر تحديث كلمة المرور. يرجى التحقق والمحاولة مرة أخرى." : "Failed to update password.")
+        );
+        return;
+      }
+
+      setPwdSuccess(
+        data?.message ||
+          (lang === "ar"
+            ? "تم تغيير كلمة المرور وتشفيرها بنجاح."
+            : "Your password has been updated securely.")
+      );
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      setPwdError(err?.message || (lang === "ar" ? "حدث خطأ في الاتصال بالخادم." : "Network error."));
+    } finally {
+      setIsChangingPwd(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -888,112 +976,254 @@ export function BeneficiaryDashboard({
           </div>
         )}
 
-        {/* TAB 5: MY PROFILE */}
+        {/* TAB 5: MY PROFILE & PASSWORD SECURITY */}
         {activeTab === "profile" && (
-          <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
-            <div className="border-b border-neutral-100 pb-4 mb-6">
-              <h2 className="text-sm font-black text-neutral-800 flex items-center gap-2">
-                <User className="w-5 h-5 text-emerald-600" />
-                <span>{lang === "ar" ? "الملف الشخصي وإدارة بيانات المستفيد" : "My Profile and Personal Settings"}</span>
-              </h2>
-              <p className="text-[11px] text-neutral-500 mt-1 leading-relaxed">
-                يمكنك تحديث بيانات الجوال والبريد الإلكتروني وحجم الأسرة لكي يتم تحديث قاعدة بيانات الباحثين تلقائياً.
-              </p>
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-neutral-100 dark:border-slate-800 shadow-sm">
+              <div className="border-b border-neutral-100 dark:border-slate-800 pb-4 mb-6">
+                <h2 className="text-sm font-black text-neutral-800 dark:text-white flex items-center gap-2">
+                  <User className="w-5 h-5 text-emerald-600" />
+                  <span>{lang === "ar" ? "الملف الشخصي وإدارة بيانات المستفيد" : "My Profile and Personal Settings"}</span>
+                </h2>
+                <p className="text-[11px] text-neutral-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  يمكنك تحديث بيانات الجوال والبريد الإلكتروني وحجم الأسرة لكي يتم تحديث قاعدة بيانات الباحثين تلقائياً.
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdateProfileSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1">{lang === "ar" ? "الاسم الرباعي الكامل (ثابت)" : "Full Name (Read-only)"}</label>
+                    <input
+                      type="text"
+                      value={beneficiary.name}
+                      disabled
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-100 dark:bg-slate-800 text-neutral-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1">{lang === "ar" ? "رقم الهوية الوطنية (ثابت)" : "National ID (Read-only)"}</label>
+                    <input
+                      type="text"
+                      value={beneficiary.nationalId}
+                      disabled
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-100 dark:bg-slate-800 text-neutral-500 font-mono outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1">{lang === "ar" ? "رقم الجوال الفعال" : "Mobile Phone"}</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      required
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-left text-neutral-900 dark:text-white"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1">{lang === "ar" ? "البريد الإلكتروني" : "Email Address"}</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-left text-neutral-900 dark:text-white"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1">{lang === "ar" ? "عدد أفراد الأسرة المسجلين بالصك" : "Number of Family Members"}</label>
+                    <input
+                      type="number"
+                      value={familySize}
+                      onChange={(e) => setFamilySize(Number(e.target.value))}
+                      min={1}
+                      required
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-neutral-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1">{lang === "ar" ? "عنوان وتفاصيل السكن الدقيق بالعسيلة" : "Detailed Address in Al-Asilah"}</label>
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      required
+                      placeholder={lang === "ar" ? "مثال: مكة المكرمة - العسيلة - الشارع التجاري" : "Mecca, Al-Asilah Scheme..."}
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-neutral-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Standardized Beneficiary Form Fields */}
+                <div className="pt-2 border-t border-neutral-100 dark:border-slate-800">
+                  <BeneficiaryFormFields
+                    values={profileFormData}
+                    onChange={(upd) => setProfileFormData(prev => ({ ...prev, ...upd }))}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-neutral-100 dark:border-slate-800">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-neutral-300 text-white rounded-xl font-bold text-xs transition-all cursor-pointer"
+                  >
+                    {lang === "ar" ? "حفظ وتعديل البيانات الشخصية" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
             </div>
 
-            <form onSubmit={handleUpdateProfileSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">{lang === "ar" ? "الاسم الرباعي الكامل (ثابت)" : "Full Name (Read-only)"}</label>
-                  <input
-                    type="text"
-                    value={beneficiary.name}
-                    disabled
-                    className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-100 text-neutral-500 outline-none"
-                  />
+            {/* Dedicated Change Password Card for Beneficiary Portal */}
+            <div
+              id="beneficiary-change-password-section"
+              className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/60 shadow-sm space-y-5"
+            >
+              <div className="border-b border-neutral-100 dark:border-slate-800 pb-4 flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center shrink-0">
+                  <KeyRound className="w-5 h-5" />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">{lang === "ar" ? "رقم الهوية الوطنية (ثابت)" : "National ID (Read-only)"}</label>
-                  <input
-                    type="text"
-                    value={beneficiary.nationalId}
-                    disabled
-                    className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-100 text-neutral-500 font-mono outline-none"
-                  />
+                  <h3 className="text-sm font-black text-neutral-900 dark:text-white">
+                    {lang === "ar" ? "تغيير كلمة المرور" : "Change Password"}
+                  </h3>
+                  <p className="text-[11px] text-neutral-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                    {lang === "ar"
+                      ? "قم بتحديث كلمة المرور الخاصة بحسابك لحماية بياناتك وطلباتك في الجمعية."
+                      : "Update your beneficiary portal password to keep your account protected."}
+                  </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pwdError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span className="font-bold">{pwdError}</span>
+                </div>
+              )}
+
+              {pwdSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span className="font-bold">{pwdSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSelfChangePassword} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">{lang === "ar" ? "رقم الجوال الفعال" : "Mobile Phone"}</label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    required
-                    className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 focus:bg-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-left"
-                    dir="ltr"
-                  />
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1.5">
+                    {lang === "ar" ? "كلمة المرور الحالية:" : "Current Password:"}
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="input-beneficiary-current-password"
+                      type={showCurrentPwd ? "text" : "password"}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder={lang === "ar" ? "أدخل كلمة المرور الحالية" : "Enter current password"}
+                      className="w-full px-4 py-2.5 pl-10 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-neutral-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPwd((v) => !v)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      tabIndex={-1}
+                    >
+                      {showCurrentPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">{lang === "ar" ? "البريد الإلكتروني" : "Email Address"}</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 focus:bg-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-left"
-                    dir="ltr"
-                  />
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1.5">
+                    {lang === "ar" ? "كلمة المرور الجديدة:" : "New Password:"}
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="input-beneficiary-new-password"
+                      type={showNewPwd ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder={lang === "ar" ? "أدخل كلمة مرور قوية (8 خانات فأكثر)" : "Enter strong new password"}
+                      className="w-full px-4 py-2.5 pl-10 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-neutral-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPwd((v) => !v)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      tabIndex={-1}
+                    >
+                      {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <PasswordStrengthMeter password={newPassword} />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">{lang === "ar" ? "عدد أفراد الأسرة المسجلين بالصك" : "Number of Family Members"}</label>
-                  <input
-                    type="number"
-                    value={familySize}
-                    onChange={(e) => setFamilySize(Number(e.target.value))}
-                    min={1}
-                    required
-                    className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 focus:bg-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
-                  />
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-slate-300 mb-1.5">
+                    {lang === "ar" ? "تأكيد كلمة المرور الجديدة:" : "Confirm New Password:"}
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="input-beneficiary-confirm-password"
+                      type={showConfirmPwd ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder={lang === "ar" ? "أعد إدخال كلمة المرور الجديدة" : "Re-enter new password"}
+                      className="w-full px-4 py-2.5 pl-10 text-xs rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-neutral-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPwd((v) => !v)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      tabIndex={-1}
+                    >
+                      {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {confirmPassword && newPassword !== confirmPassword && (
+                    <p className="text-[11px] text-rose-500 font-bold mt-1">
+                      {lang === "ar" ? "كلمتا المرور غير متطابقتين." : "Passwords do not match."}
+                    </p>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">{lang === "ar" ? "عنوان وتفاصيل السكن الدقيق بالعسيلة" : "Detailed Address in Al-Asilah"}</label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    required
-                    placeholder={lang === "ar" ? "مثال: مكة المكرمة - العسيلة - الشارع التجاري" : "Mecca, Al-Asilah Scheme..."}
-                    className="w-full px-4 py-2 text-xs rounded-xl border border-neutral-200 bg-neutral-50 focus:bg-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
-                  />
+                <div className="flex justify-end pt-2 border-t border-neutral-100 dark:border-slate-800">
+                  <button
+                    type="submit"
+                    id="btn-beneficiary-change-password"
+                    disabled={isChangingPwd || !currentPassword || !newPassword || newPassword !== confirmPassword}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                  >
+                    {isChangingPwd ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>{lang === "ar" ? "جاري التحديث..." : "Updating..."}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        <span>{lang === "ar" ? "حفظ كلمة المرور الجديدة" : "Update Password"}</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-              </div>
-
-              {/* Standardized Beneficiary Form Fields */}
-              <div className="pt-2 border-t border-neutral-100">
-                <BeneficiaryFormFields
-                  values={profileFormData}
-                  onChange={(upd) => setProfileFormData(prev => ({ ...prev, ...upd }))}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-neutral-100">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-neutral-300 text-white rounded-xl font-bold text-xs transition-all cursor-pointer"
-                >
-                  {lang === "ar" ? "حفظ وتعديل البيانات الشخصية" : "Save Changes"}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         )}
 

@@ -3,8 +3,9 @@ import {
   X, Volume2, VolumeX, Bell, BellRing, Sparkles, Moon, Sun,
   Check, Music, Sliders, ShieldCheck, Server, CheckCircle2,
   Lock, KeyRound, Eye, EyeOff, AlertCircle, RefreshCw,
-  Smartphone, Trash2, LogOut, Laptop, Fingerprint, ShieldAlert
+  Smartphone, Trash2, LogOut, Laptop, Fingerprint, ShieldAlert, UserCog
 } from 'lucide-react';
+import { buildApiUrl, getAuthHeaders } from '../config/api';
 import { useApplicationAudio, GENERAL_AUDIO_STORAGE_KEY } from '../utils/audioNotification';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 import { PinCodeInput } from './PinCodeInput';
@@ -46,6 +47,7 @@ interface UserSettingsModalProps {
   initialTab?: 'security' | 'preferences';
   initialSecurityAction?: 'pin_setup' | null;
   onRememberedStateChanged?: () => void;
+  onUserNameUpdated?: (newName: string) => void;
 }
 
 function getStoredAuthToken(): string {
@@ -87,7 +89,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onToggleDark,
   initialTab = 'security',
   initialSecurityAction = null,
-  onRememberedStateChanged
+  onRememberedStateChanged,
+  onUserNameUpdated
 }) => {
   const { isAudioEnabled, toggleAudio, testSound } = useApplicationAudio();
 
@@ -144,12 +147,34 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+  // Administrative Self-Service Display Name Edit State (تعديل الاسم للمستخدمين الإداريين)
+  const isAdminStaffAccount = [
+    'admin',
+    'super_admin',
+    'operations_manager',
+    'department_admin',
+    'employee',
+    'storekeeper',
+    'supervisor',
+    'support_manager',
+    'support_agent'
+  ].includes(String(currentUserRole || ''));
+  const [displayNameInput, setDisplayNameInput] = useState(
+    currentUser?.name || currentUser?.userName || currentUser?.directorName || ''
+  );
+  const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [displayNameSuccess, setDisplayNameSuccess] = useState<string | null>(null);
+
   const authHeaders = useCallback((): Record<string, string> => {
+    const base = getAuthHeaders();
     const token = getStoredAuthToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['x-session-token'] = token;
-    if (currentUser?.id || currentUser?.userId) headers['x-user-id'] = currentUser.id || currentUser.userId;
-    if (currentUserRole) headers['x-user-role'] = currentUserRole;
+    const headers: Record<string, string> = { ...base, 'Content-Type': 'application/json' };
+    if (token && !headers['x-session-token']) headers['x-session-token'] = token;
+    if ((currentUser?.id || currentUser?.userId) && !headers['x-user-id']) {
+      headers['x-user-id'] = currentUser.id || currentUser.userId;
+    }
+    if (currentUserRole && !headers['x-user-role']) headers['x-user-role'] = currentUserRole;
     return headers;
   }, [currentUser?.id, currentUser?.userId, currentUserRole]);
 
@@ -202,9 +227,12 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setPinCurrentPassword('');
       setPinMode(initialSecurityAction === 'pin_setup' ? 'setup' : 'closed');
       setShowPasswordSection(false);
+      setDisplayNameInput(currentUser?.name || currentUser?.userName || currentUser?.directorName || '');
+      setDisplayNameError(null);
+      setDisplayNameSuccess(null);
       loadSecurityOverview();
     }
-  }, [isOpen, initialTab, initialSecurityAction, loadSecurityOverview]);
+  }, [isOpen, initialTab, initialSecurityAction, loadSecurityOverview, currentUser?.name, currentUser?.userName, currentUser?.directorName]);
 
   if (!isOpen) return null;
 
@@ -497,6 +525,44 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
   };
 
+  const handleSelfUpdateDisplayName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDisplayNameError(null);
+    setDisplayNameSuccess(null);
+    const cleanName = displayNameInput.trim();
+    if (cleanName.length < 2 || cleanName.length > 80) {
+      setDisplayNameError('يرجى إدخال اسم صالح يتكون من حرفين إلى 80 حرفاً.');
+      return;
+    }
+
+    setIsSavingDisplayName(true);
+    try {
+      const res = await fetch(buildApiUrl('/api/db/auth/self-update-name'), {
+        method: 'POST',
+        headers: authHeaders(),
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          userId: currentUser?.id || currentUser?.userId,
+          name: cleanName
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || 'تعذر تحديث الاسم الشخصي.');
+      }
+
+      const updatedName = data.name || cleanName;
+      setDisplayNameInput(updatedName);
+      setDisplayNameSuccess(data.message || 'تم تحديث الاسم الشخصي بنجاح مع الحفاظ على جميع الصلاحيات.');
+      onUserNameUpdated?.(updatedName);
+      await loadSecurityOverview();
+    } catch (err: any) {
+      setDisplayNameError(err?.message || 'تعذر الاتصال بالخادم لتحديث الاسم.');
+    } finally {
+      setIsSavingDisplayName(false);
+    }
+  };
+
   const formatDateShort = (iso?: string) => {
     if (!iso) return '—';
     try {
@@ -654,6 +720,109 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2.5">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
                   <span className="font-bold leading-relaxed">{securitySuccess}</span>
+                </div>
+              )}
+
+              {/* 0. Administrative Account Display Name Editor */}
+              {isAdminStaffAccount && (
+                <div
+                  id="admin-self-update-name-section"
+                  className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#081426] border border-blue-200/80 dark:border-[#1E3B68] space-y-3.5"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#0754C7]/10 dark:bg-[#0E2447] text-[#0754C7] dark:text-blue-300 flex items-center justify-center shrink-0">
+                      <UserCog className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-black text-[#071C43] dark:text-white">
+                        تعديل الاسم الشخصي للحساب الإداري
+                      </h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                        يمكنك تعديل اسمك الظاهر في النظام وتوثيقه في سجل المراجعة دون تغيير البريد الإلكتروني أو الدور أو الصلاحيات.
+                      </p>
+                    </div>
+                  </div>
+
+                  {displayNameError && (
+                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                      <span className="font-bold">{displayNameError}</span>
+                    </div>
+                  )}
+
+                  {displayNameSuccess && (
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                      <span className="font-bold">{displayNameSuccess}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSelfUpdateDisplayName} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-black text-slate-700 dark:text-slate-300 mb-1.5">
+                          الاسم الشخصي (اسم العرض في اللوحة والسجلات):
+                        </label>
+                        <input
+                          id="input-admin-display-name"
+                          type="text"
+                          value={displayNameInput}
+                          onChange={(e) => setDisplayNameInput(e.target.value)}
+                          placeholder="أدخل الاسم الكامل"
+                          minLength={2}
+                          maxLength={80}
+                          required
+                          className="w-full bg-slate-50 dark:bg-[#0B1B34] border border-slate-200 dark:border-[#244577] rounded-xl p-2.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0754C7]/25 focus:border-[#0754C7]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                          البريد الإلكتروني (ثابت):
+                        </label>
+                        <input
+                          type="text"
+                          value={currentUser?.email || '—'}
+                          disabled
+                          dir="ltr"
+                          className="w-full bg-slate-100 dark:bg-[#091830] border border-slate-200 dark:border-[#1E3B68] rounded-xl p-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono text-left"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                          الدور والصلاحية (ثابتة):
+                        </label>
+                        <input
+                          type="text"
+                          value={getRoleArabicBadge(currentUserRole, currentUser)}
+                          disabled
+                          className="w-full bg-slate-100 dark:bg-[#091830] border border-slate-200 dark:border-[#1E3B68] rounded-xl p-2 text-[11px] font-bold text-slate-500 dark:text-slate-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        id="btn-submit-admin-display-name"
+                        disabled={isSavingDisplayName || displayNameInput.trim().length < 2}
+                        className="px-4 py-2 rounded-xl bg-[#0754C7] hover:bg-[#0645a8] disabled:opacity-50 text-white text-xs font-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                      >
+                        {isSavingDisplayName ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>جاري الحفظ...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>حفظ الاسم الجديد</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
                 </div>
               )}
 

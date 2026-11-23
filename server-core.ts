@@ -34,6 +34,11 @@ import {
   isPersonalTaskOwnedByUser
 } from "./server/personalTaskService";
 import { setupPasswordResetLinkRoutes } from "./server/passwordResetService";
+import {
+  createOrSyncVolunteerCharter,
+  filterVolunteerChartersForUser,
+  registerVolunteerCharterRoutes
+} from "./server/volunteerCharterService";
 import { 
   initPostgresTables, 
   getPostgresMaintenanceStatus, 
@@ -435,7 +440,9 @@ app.get(["/api/attachments/download/*", "/api/attachments/file/*"], async (req, 
 
     const attachment = await attachmentStorage.getAttachmentBuffer(cleanKey, {
       role: authContext.role,
-      id: authContext.userId
+      id: authContext.userId,
+      allowedDepartmentIds: authContext.allowedDepartmentIds,
+      permissions: authContext.permissions
     });
 
     // Audit Log for private file download / access
@@ -2202,6 +2209,7 @@ const defaultDb = {
     }
   ],
   administrativeTasks: [],
+  volunteerCharters: [],
   personalTasks: [],
   personalTaskReminders: [],
   personalTaskEmailLogs: [],
@@ -4451,7 +4459,35 @@ export function hashPassword(plainText: string): string {
   return bcrypt.hashSync(plainText, 10);
 }
 
-// Default initial password for all new beneficiaries and volunteers (Mandatory to change on first login)
+// Cryptographically random strong temporary password generator (unique per volunteer/user)
+export function generateStrongTemporaryPassword(length: number = 12): string {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const symbols = "@#$%&*!";
+  const all = upper + lower + digits + symbols;
+  const chars = [
+    upper[crypto.randomInt(0, upper.length)],
+    upper[crypto.randomInt(0, upper.length)],
+    lower[crypto.randomInt(0, lower.length)],
+    lower[crypto.randomInt(0, lower.length)],
+    digits[crypto.randomInt(0, digits.length)],
+    digits[crypto.randomInt(0, digits.length)],
+    symbols[crypto.randomInt(0, symbols.length)]
+  ];
+  while (chars.length < Math.max(10, length)) {
+    chars.push(all[crypto.randomInt(0, all.length)]);
+  }
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(0, i + 1);
+    const tmp = chars[i];
+    chars[i] = chars[j];
+    chars[j] = tmp;
+  }
+  return chars.join("");
+}
+
+// Default initial password for legacy compatibility (not used for manual volunteer creation)
 export const DEFAULT_NEW_ACCOUNT_PASSWORD = "A123b456";
 
 // Password Strength Evaluation Interface & Validator
@@ -4741,14 +4777,33 @@ function setDeviceTrustCookie(req: any, res: any, secretOrNull: string | null) {
     String(req.headers.origin || "").toLowerCase().startsWith("https://");
   const flags = isHttps ? "SameSite=None; Secure" : "SameSite=Lax";
   if (secretOrNull) {
-    res.setHeader(
+    res.append(
       "Set-Cookie",
       `reyadat_device_trust=${encodeURIComponent(secretOrNull)}; Path=/; HttpOnly; Max-Age=${90 * 24 * 60 * 60}; ${flags}`
     );
   } else {
-    res.setHeader(
+    res.append(
       "Set-Cookie",
       `reyadat_device_trust=; Path=/; HttpOnly; Max-Age=0; ${flags}`
+    );
+  }
+}
+
+function setSessionCookie(req: any, res: any, tokenOrNull: string | null) {
+  const isHttps =
+    req.secure ||
+    String(req.headers["x-forwarded-proto"] || "").toLowerCase().includes("https") ||
+    String(req.headers.origin || "").toLowerCase().startsWith("https://");
+  const flags = isHttps ? "SameSite=None; Secure" : "SameSite=Lax";
+  if (tokenOrNull) {
+    res.append(
+      "Set-Cookie",
+      `reyadat_session=${encodeURIComponent(tokenOrNull)}; Path=/; HttpOnly; Max-Age=${7 * 24 * 60 * 60}; ${flags}`
+    );
+  } else {
+    res.append(
+      "Set-Cookie",
+      `reyadat_session=; Path=/; HttpOnly; Max-Age=0; ${flags}`
     );
   }
 }
@@ -5539,11 +5594,12 @@ const rateLimitStores: Record<string, Map<string, RateLimitBucket>> = {
   forgotPassword: new Map(),
   forgotIdentify: new Map(),
   forgotSendOtp: new Map(),
-  registration: new Map()
+  registration: new Map(),
+  team_license_upload: new Map()
 };
 
 export function checkRateLimit(
-  bucket: 'login' | 'pinLogin' | 'forgotPassword' | 'forgotIdentify' | 'forgotSendOtp' | 'registration',
+  bucket: 'login' | 'pinLogin' | 'forgotPassword' | 'forgotIdentify' | 'forgotSendOtp' | 'registration' | 'team_license_upload',
   key: string,
   maxRequests: number,
   windowMs: number
@@ -5568,8 +5624,27 @@ export function checkRateLimit(
   return { allowed: true };
 }
 
+export interface UserAccessContext {
+  isAuthenticated: boolean;
+  isSuperAdmin: boolean;
+  isOperationsManager?: boolean;
+  role: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  nationalId?: string;
+  jobTitle: string;
+  primaryDepartmentId: string;
+  primaryDepartmentName: string;
+  additionalDepartmentIds?: string[];
+  allowedDepartmentIds: string[];
+  permissions: string[];
+  teamId?: string;
+  mustChangePassword?: boolean;
+}
+
 // 1. Resolve User Access Context from Verified Session (Prevents client header spoofing)
-function getUserAccessContext(req: any) {
+function getUserAccessContext(req: any): UserAccessContext {
   const db = readDb();
   const sessionToken = (req.headers['x-session-token'] as string) || 
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
@@ -5753,6 +5828,8 @@ function getUserAccessContext(req: any) {
       role: accessEntry.role || (isOps ? 'operations_manager' : isSuper ? 'admin' : 'employee'),
       userId: accessEntry.userId || accessEntry.id || userId,
       userName: accessEntry.userName || accessEntry.name || (isOps ? 'مدير العمليات' : isSuper ? 'مسؤول النظام' : 'موظف'),
+      userEmail: accessEntry.userEmail || accessEntry.email || (activeSession as any)?.user?.email || '',
+      nationalId: accessEntry.nationalId || nationalId || '',
       jobTitle: accessEntry.jobTitle || (isOps ? 'مدير العمليات والتشغيل' : isSuper ? 'المدير العام والمدير التنفيذي' : 'موظف'),
       primaryDepartmentId: accessEntry.primaryDepartmentId || 'dep-1',
       primaryDepartmentName: accessEntry.primaryDepartmentName || 'الإدارة العامة',
@@ -5841,6 +5918,8 @@ function getUserAccessContext(req: any) {
       role: 'volunteer',
       userId: vol?.id || userId || 'vol-1',
       userName: vol?.name || 'متطوع مسجل',
+      userEmail: vol?.email || (activeSession?.user as any)?.email || '',
+      nationalId: vol?.nationalId || nationalId || '',
       jobTitle: vol?.titleAr || 'فارس تطوعي',
       primaryDepartmentId: 'dep-5',
       primaryDepartmentName: 'إدارة التطوع والموارد البشرية',
@@ -5860,6 +5939,8 @@ function getUserAccessContext(req: any) {
       role: 'beneficiary',
       userId: ben?.id || userId || 'ben-1',
       userName: ben?.name || 'مستفيد مسجل',
+      userEmail: ben?.email || (activeSession?.user as any)?.email || '',
+      nationalId: ben?.nationalId || nationalId || '',
       jobTitle: 'مستفيد الجمعية',
       primaryDepartmentId: 'dep-4',
       primaryDepartmentName: 'إدارة شؤون المستفيدين والكفالات',
@@ -5939,6 +6020,7 @@ function getUserAccessContext(req: any) {
     role: userRole || 'user',
     userId: userId || 'user',
     userName: 'مستخدم',
+    nationalId: nationalId || '',
     jobTitle: 'مستخدم',
     primaryDepartmentId: departmentId || '',
     primaryDepartmentName: '',
@@ -6513,6 +6595,7 @@ function filterDatabaseForUser(db: any, context: any) {
         orgMembers: safeOrgMembers
       } : safeDb.homeSettings,
       administrativeTasks: Array.isArray(safeDb.administrativeTasks) ? safeDb.administrativeTasks : [],
+      volunteerCharters: filterVolunteerChartersForUser(db, context),
       personalTasks: (Array.isArray(safeDb.personalTasks) ? safeDb.personalTasks : []).filter((t: any) =>
         isPersonalTaskOwnedByUser(t, db, context)
       ),
@@ -6578,6 +6661,7 @@ function filterDatabaseForUser(db: any, context: any) {
       employees: [],
       employeeRequests: [],
       administrativeTasks: [],
+      volunteerCharters: [],
       personalTasks: [],
       personalTaskReminders: [],
       personalTaskEmailLogs: [],
@@ -6650,6 +6734,7 @@ function filterDatabaseForUser(db: any, context: any) {
       : (db.administrativeTasks || []).filter((t: any) =>
           t.assigneeUserId === context.userId || allowedDepts.includes(t.departmentId)
         ),
+    volunteerCharters: filterVolunteerChartersForUser(db, context),
 
     // Personal Tasks & Reminders: strictly private per userId (NEVER exposed across users)
     personalTasks: (db.personalTasks || []).filter((t: any) =>
@@ -10153,9 +10238,10 @@ app.post("/api/db/auth/change-password", (req, res) => {
   
   const vol = (db.volunteers || []).find((v: any) => v.id === userId || v.nationalId === userId || v.email === userId || (userEntry?.nationalId && v.nationalId === userEntry.nationalId));
   if (vol) {
-    vol.password = hashedPassword;
+    delete vol.password;
     vol.passwordHash = hashedPassword;
     vol.mustChangePassword = false;
+    vol.temporaryPasswordActive = false;
     vol.updatedAt = new Date().toISOString();
   }
 
@@ -10221,8 +10307,28 @@ app.post("/api/db/auth/validate-password-strength", (req, res) => {
 
 // User Self-Service Password Change (حسابي -> الأمان -> تغيير كلمة المرور)
 app.post("/api/db/auth/self-change-password", (req, res) => {
+  const authContext = getUserAccessContext(req);
+  if (!authContext.isAuthenticated || authContext.role === "public") {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً لتغيير كلمة المرور.", code: "UNAUTHORIZED" });
+  }
+
   const db = readDb();
-  const { userId, currentPassword, newPassword, confirmPassword } = req.body || {};
+  const bodyUserId = req.body?.userId ? String(req.body.userId).trim() : "";
+  const { currentPassword, newPassword, confirmPassword } = req.body || {};
+  const userId = bodyUserId || authContext.userId;
+
+  // Strict IDOR enforcement: a user can ONLY change their own password
+  const isSelfMatch =
+    !bodyUserId ||
+    bodyUserId === authContext.userId ||
+    (authContext.nationalId && bodyUserId === authContext.nationalId) ||
+    (authContext.userEmail && bodyUserId.toLowerCase() === String(authContext.userEmail).toLowerCase());
+  if (!isSelfMatch) {
+    return res.status(403).json({
+      error: "غير مصرح: لا يمكنك تغيير كلمة مرور حساب مستخدم آخر.",
+      code: "FORBIDDEN"
+    });
+  }
 
   if (!userId || !currentPassword || !newPassword) {
     return res.status(400).json({ error: "جميع الحقول (كلمة المرور الحالية، الجديدة، وتأكيدها) مطلوبة." });
@@ -10277,23 +10383,32 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   if (!storedHash && db.volunteers) {
     const vol = db.volunteers.find((v: any) => v.id === userId || v.nationalId === userId || v.email === userId);
     if (vol) {
-      storedHash = vol.passwordHash || vol.password;
-      if (!userEntry) userEntry = { id: vol.id, userName: vol.name, role: 'volunteer' };
+      storedHash = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      if (!userEntry) userEntry = { id: vol.id, userName: vol.name, nationalId: vol.nationalId, role: 'volunteer' };
     }
   }
 
-  // 5. teams
+  // 5. beneficiaries (first-class lookup so beneficiaries can always change their password)
+  if (!storedHash && db.beneficiaries) {
+    const benMatch = db.beneficiaries.find((b: any) => b.id === userId || b.nationalId === userId || b.email === userId || b.phone === userId);
+    if (benMatch) {
+      storedHash = benMatch.passwordHash || benMatch.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      if (!userEntry) userEntry = { id: benMatch.id, userName: benMatch.name, nationalId: benMatch.nationalId, role: 'beneficiary' };
+    }
+  }
+
+  // 6. teams
   if (!storedHash && db.teams) {
-    const team = db.teams.find((t: any) => t.id === userId || t.leaderEmail === userId || t.leaderPhone === userId);
+    const team = db.teams.find((t: any) => `leader-${t.id}` === userId || t.id === userId || t.leaderEmail === userId || t.leaderPhone === userId);
     if (team) {
       storedHash = team.passwordHash || team.password;
-      if (!userEntry) userEntry = { id: team.id, userName: team.leaderName, role: 'leader' };
+      if (!userEntry) userEntry = { id: `leader-${team.id}`, userName: team.leaderName, role: 'leader' };
     }
   }
 
   // Fallback for default admin/ops accounts or other collections via resolveLiveUserAccount
   if (!storedHash) {
-    const liveSelf = resolveLiveUserAccount(db, userId);
+    const liveSelf = resolveLiveUserAccount(db, userId, authContext.role, authContext.nationalId);
     if (liveSelf.found && liveSelf.storedPasswordHash) {
       storedHash = liveSelf.storedPasswordHash;
       if (!userEntry && liveSelf.user) {
@@ -10331,10 +10446,13 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
 
   // Update in userDepartmentAccess
   if (userEntry && db.userDepartmentAccess) {
-    userEntry.passwordHash = hashedPassword;
-    delete userEntry.password;
-    userEntry.mustChangePassword = false;
-    userEntry.updatedAt = new Date().toISOString();
+    const uda = db.userDepartmentAccess.find((u: any) => u.userId === userEntry.id || u.id === userEntry.id);
+    if (uda) {
+      uda.passwordHash = hashedPassword;
+      delete uda.password;
+      uda.mustChangePassword = false;
+      uda.updatedAt = new Date().toISOString();
+    }
   }
 
   // Synchronize across all collections
@@ -10344,21 +10462,27 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   const emp = (db.employees || []).find((e: any) => e.id === userId || e.nationalId === userId);
   if (emp) { emp.password = hashedPassword; emp.passwordHash = hashedPassword; }
 
-  const vol = (db.volunteers || []).find((v: any) => v.id === userId || v.nationalId === userId);
-  if (vol) { vol.password = hashedPassword; vol.passwordHash = hashedPassword; }
+  const vol = (db.volunteers || []).find((v: any) => v.id === userId || v.nationalId === userId || (authContext.nationalId && v.nationalId === authContext.nationalId));
+  if (vol) {
+    delete vol.password;
+    vol.passwordHash = hashedPassword;
+    vol.mustChangePassword = false;
+    vol.temporaryPasswordActive = false;
+  }
 
-  const tm = (db.teams || []).find((t: any) => t.id === userId || t.leaderEmail === userId);
+  const tm = (db.teams || []).find((t: any) => `leader-${t.id}` === userId || t.id === userId || t.leaderEmail === userId);
   if (tm) { tm.password = hashedPassword; tm.passwordHash = hashedPassword; }
 
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) { sk.password = hashedPassword; sk.passwordHash = hashedPassword; }
 
-  // Also check Beneficiaries & Support accounts if not yet matched
-  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId || (userEntry?.nationalId && b.nationalId === userEntry.nationalId));
+  // Also update Beneficiaries cleanly with bcrypt
+  const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId || (authContext.nationalId && b.nationalId === authContext.nationalId));
   if (ben) {
-    ben.password = hashedPassword;
+    delete ben.password;
     ben.passwordHash = hashedPassword;
     ben.mustChangePassword = false;
+    ben.updatedAt = new Date().toISOString();
   }
 
   // Revoke all trusted PIN devices on password change for strict security
@@ -10370,8 +10494,8 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
     id: `audit-self-pwd-${Date.now()}`,
     timestamp: new Date().toISOString(),
     userId: userId,
-    userName: userEntry?.userName || userEntry?.name || userId,
-    userRole: userEntry?.role || 'user',
+    userName: userEntry?.userName || userEntry?.name || authContext.userName || userId,
+    userRole: userEntry?.role || authContext.role || 'user',
     userDepartmentId: userEntry?.primaryDepartmentId || 'auth',
     targetDepartmentId: 'auth',
     action: 'self_change_password',
@@ -10389,10 +10513,226 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   invalidateUserSessions(userId, currentTok || undefined);
 
   return res.json({
+    ok: true,
     status: "success",
     revokedPinDevices,
     message: "تم تغيير كلمة المرور وتشفيرها بنجاح، وتم إلغاء ربط أجهزة الدخول السريع السابقة لحماية حسابك."
   });
+});
+
+// Self-Service Display Name Update for Administrative Accounts (تعديل الاسم للمستخدمين الإداريين)
+app.post("/api/db/auth/self-update-name", async (req, res) => {
+  const authContext = getUserAccessContext(req);
+  if (!authContext.isAuthenticated || authContext.role === "public") {
+    return res.status(401).json({ ok: false, error: "يجب تسجيل الدخول أولاً.", code: "UNAUTHORIZED" });
+  }
+
+  const allowedAdminStaffRoles = new Set([
+    "admin",
+    "super_admin",
+    "operations_manager",
+    "department_admin",
+    "employee",
+    "storekeeper",
+    "supervisor",
+    "support_manager",
+    "support_agent"
+  ]);
+  if (!allowedAdminStaffRoles.has(String(authContext.role || ""))) {
+    return res.status(403).json({
+      ok: false,
+      error: "هذه الميزة مخصصة للحسابات الإدارية وكوادر الإدارة فقط.",
+      code: "FORBIDDEN"
+    });
+  }
+
+  const { userId: requestedUserId, name, displayName } = req.body || {};
+  const targetUserId = requestedUserId ? String(requestedUserId).trim() : authContext.userId;
+  if (
+    targetUserId &&
+    targetUserId !== authContext.userId &&
+    !(authContext.nationalId && targetUserId === authContext.nationalId)
+  ) {
+    return res.status(403).json({
+      ok: false,
+      error: "ممنوع: لا يمكنك تعديل اسم حساب مستخدم إداري آخر.",
+      code: "FORBIDDEN"
+    });
+  }
+
+  const cleanName = String(name ?? displayName ?? "").trim();
+  if (cleanName.length < 2 || cleanName.length > 80) {
+    return res.status(400).json({
+      ok: false,
+      error: "يرجى إدخال اسم صالح يتكون من حرفين إلى 80 حرفاً."
+    });
+  }
+
+  try {
+    const outcome = await mutateDb((db) => {
+      const nowIso = new Date().toISOString();
+      let previousName = authContext.userName || "";
+
+      // Update userDepartmentAccess if entry exists (preserve email, role, permissions, department)
+      if (Array.isArray(db.userDepartmentAccess)) {
+        const uda = db.userDepartmentAccess.find(
+          (u: any) =>
+            u &&
+            (u.userId === authContext.userId ||
+              u.id === authContext.userId ||
+              (authContext.nationalId && u.nationalId === authContext.nationalId))
+        );
+        if (uda) {
+          previousName = uda.userName || uda.name || previousName;
+          uda.userName = cleanName;
+          if (uda.name !== undefined) uda.name = cleanName;
+          uda.updatedAt = nowIso;
+        }
+      }
+
+      // Update department directorName if caller is department director
+      if (Array.isArray(db.departments)) {
+        const dep = db.departments.find(
+          (d: any) =>
+            d &&
+            (`depadmin-${d.id}` === authContext.userId ||
+              d.directorUserId === authContext.userId ||
+              (authContext.role === "department_admin" && d.id === authContext.primaryDepartmentId))
+        );
+        if (dep) {
+          previousName = previousName || dep.directorName;
+          dep.directorName = cleanName;
+        }
+      }
+
+      // Update employee name
+      if (Array.isArray(db.employees)) {
+        const emp = db.employees.find(
+          (e: any) =>
+            e &&
+            (e.id === authContext.userId ||
+              e.userId === authContext.userId ||
+              (authContext.nationalId && e.nationalId === authContext.nationalId))
+        );
+        if (emp) {
+          previousName = previousName || emp.name || emp.fullName;
+          emp.name = cleanName;
+          if (emp.fullName !== undefined) emp.fullName = cleanName;
+        }
+      }
+
+      // Update storekeeper
+      if (Array.isArray(db.storekeepers)) {
+        const sk = db.storekeepers.find((s: any) => s && s.id === authContext.userId);
+        if (sk) {
+          previousName = previousName || sk.name;
+          sk.name = cleanName;
+        }
+      }
+
+      // Update supportManagers / supportAgents
+      if (Array.isArray(db.supportManagers)) {
+        const sm = db.supportManagers.find((m: any) => m && m.id === authContext.userId);
+        if (sm) {
+          previousName = previousName || sm.name;
+          sm.name = cleanName;
+        }
+      }
+      if (Array.isArray(db.supportAgents)) {
+        const sa = db.supportAgents.find((a: any) => a && a.id === authContext.userId);
+        if (sa) {
+          previousName = previousName || sa.name;
+          sa.name = cleanName;
+        }
+      }
+
+      // Sync rememberedHandles for returning greeting without touching credentials
+      if (Array.isArray(db.rememberedHandles)) {
+        db.rememberedHandles.forEach((h: any) => {
+          if (h && h.userId === authContext.userId) {
+            h.firstName = extractFirstNameArabic(cleanName);
+            h.displayName = cleanName;
+          }
+        });
+      }
+
+      // Sync active server sessions in memory & persisted DB
+      for (const [, sess] of activeSessions.entries()) {
+        if (sess && sess.userId === authContext.userId) {
+          sess.userName = cleanName;
+          if (sess.user) {
+            sess.user.name = cleanName;
+            if (sess.user.userName !== undefined) sess.user.userName = cleanName;
+            if (sess.user.directorName !== undefined) sess.user.directorName = cleanName;
+          }
+        }
+      }
+      if (Array.isArray(db.activeSessions)) {
+        db.activeSessions.forEach((sess: any) => {
+          if (sess && sess.userId === authContext.userId) {
+            sess.userName = cleanName;
+            if (sess.user) {
+              sess.user.name = cleanName;
+              if (sess.user.userName !== undefined) sess.user.userName = cleanName;
+              if (sess.user.directorName !== undefined) sess.user.directorName = cleanName;
+            }
+          }
+        });
+      }
+
+      // Audit logs (security + operations)
+      if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+      db.accessAuditLogs.unshift({
+        id: `audit-name-${Date.now()}`,
+        timestamp: nowIso,
+        userId: authContext.userId,
+        userName: cleanName,
+        userRole: authContext.role,
+        userDepartmentId: authContext.primaryDepartmentId || "auth",
+        targetDepartmentId: "auth",
+        action: "self_update_display_name",
+        resource: "إعدادات الحساب الإداري",
+        endpoint: "/api/db/auth/self-update-name",
+        status: "allowed",
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+        notes: `تعديل اسم العرض من (${previousName}) إلى (${cleanName}) مع الحفاظ على البريد والدور والصلاحيات`
+      });
+
+      if (!Array.isArray(db.logs)) db.logs = [];
+      db.logs.unshift({
+        id: `log-name-${Date.now()}`,
+        timestamp: nowIso,
+        user: cleanName,
+        action: `تحديث الاسم الشخصي للحساب الإداري من (${previousName}) إلى (${cleanName})`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "Web Client").substring(0, 100)
+      });
+
+      const live = resolveLiveUserAccount(db, authContext.userId, authContext.role, authContext.nationalId);
+      const updatedUser = live.user ? { ...live.user, name: cleanName } : {
+        id: authContext.userId,
+        name: cleanName,
+        role: authContext.role
+      };
+
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          status: "success",
+          previousName,
+          newName: cleanName,
+          user: updatedUser,
+          message: "تم تحديث اسمك الشخصي بنجاح مع الحفاظ الكامل على صلاحياتك وبريدك وبياناتك."
+        }
+      };
+    });
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || "فشل تحديث الاسم الشخصي." });
+  }
 });
 
 // Get User Activity Audit Logs
@@ -12552,8 +12892,26 @@ app.post("/api/db/teams/add", (req, res) => {
 
 // 3.5 Teams Leader Profile Update (Restricted: leader can only update own team details)
 app.post("/api/db/teams/leader-update", (req, res) => {
+  const authContext = getUserAccessContext(req);
   const db = readDb();
-  const { teamId, logoUrl, vision, mission, goals, descriptionAr, descriptionEn, leaderPhone, leaderEmail, socialLinks } = req.body;
+  const {
+    teamId,
+    logoUrl,
+    vision,
+    visionAr,
+    visionEn,
+    mission,
+    missionAr,
+    missionEn,
+    goals,
+    goalsAr,
+    goalsEn,
+    descriptionAr,
+    descriptionEn,
+    leaderPhone,
+    leaderEmail,
+    socialLinks
+  } = req.body;
   if (!teamId) {
     return res.status(400).json({ error: "معرف الفريق مطلوب" });
   }
@@ -12564,16 +12922,40 @@ app.post("/api/db/teams/leader-update", (req, res) => {
   }
 
   // Check role: Must be admin or the leader of this specific team
-  const userRole = (req.headers["x-user-role"] || "") as string;
-  const userTeamId = (req.headers["x-user-team-id"] || "") as string;
+  const userRole = (authContext?.role || req.headers["x-user-role"] || "") as string;
+  const userTeamId = (authContext?.teamId || req.headers["x-user-team-id"] || "") as string;
   if (userRole === "leader" && userTeamId && userTeamId !== teamId) {
     return res.status(403).json({ error: "غير مصرح لك بتعديل بيانات فريق آخر." });
   }
 
   if (logoUrl !== undefined) team.logoUrl = logoUrl;
-  if (vision !== undefined) team.vision = vision;
-  if (mission !== undefined) team.mission = mission;
-  if (goals !== undefined) team.goals = goals;
+  if (visionAr !== undefined) {
+    team.visionAr = visionAr;
+    team.vision = visionAr;
+  } else if (vision !== undefined) {
+    team.vision = vision;
+    team.visionAr = vision;
+  }
+  if (visionEn !== undefined) team.visionEn = visionEn;
+
+  if (missionAr !== undefined) {
+    team.missionAr = missionAr;
+    team.mission = missionAr;
+  } else if (mission !== undefined) {
+    team.mission = mission;
+    team.missionAr = mission;
+  }
+  if (missionEn !== undefined) team.missionEn = missionEn;
+
+  if (goalsAr !== undefined) {
+    team.goalsAr = goalsAr;
+    team.goals = goalsAr;
+  } else if (goals !== undefined) {
+    team.goals = goals;
+    team.goalsAr = goals;
+  }
+  if (goalsEn !== undefined) team.goalsEn = goalsEn;
+
   if (descriptionAr !== undefined) team.descriptionAr = descriptionAr;
   if (descriptionEn !== undefined) team.descriptionEn = descriptionEn;
   if (leaderPhone !== undefined) team.leaderPhone = leaderPhone;
@@ -12655,8 +13037,16 @@ app.post("/api/db/volunteers/add", (req, res) => {
     vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
     vol.passwordHash = hashPassword(vol.password);
     vol.mustChangePassword = true;
+    vol.profileCompleted = vol.profileCompleted !== undefined ? vol.profileCompleted : true;
 
     db.volunteers.push(vol);
+    const linkedTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
+    createOrSyncVolunteerCharter(db, {
+      volunteer: vol,
+      team: linkedTeam,
+      acceptanceSource: "manual_admin",
+      createdBy: auth.context.userName || "إدارة التطوع"
+    });
   } else {
     const index = db.volunteers.findIndex((v: any) => v.id === vol.id);
     if (index !== -1) {
@@ -12678,6 +13068,13 @@ app.post("/api/db/volunteers/add", (req, res) => {
       vol.passwordHash = hashPassword(vol.password);
       vol.mustChangePassword = true;
       db.volunteers.push(vol);
+      const linkedTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
+      createOrSyncVolunteerCharter(db, {
+        volunteer: vol,
+        team: linkedTeam,
+        acceptanceSource: "manual_admin",
+        createdBy: auth.context.userName || "إدارة التطوع"
+      });
     }
   }
   db.logs.unshift({
@@ -12690,6 +13087,163 @@ app.post("/api/db/volunteers/add", (req, res) => {
   });
   writeDb(db);
   res.json(db);
+});
+
+// 5.1 Manual Volunteer Creation by Admin / Volunteer Dept (Generates Unique Strong Temporary Password + Profile Completion Flow + Volunteer Charter)
+app.post("/api/db/volunteers/manual-create", async (req, res) => {
+  const auth = checkDepartmentPermission(req, res, "dep-5", "create_data", "إضافة متطوع يدوياً");
+  if (!auth.allowed) return;
+
+  const { name, nationalId, phone, email, teamId, departmentId, gender, titleAr, titleEn, photo } = req.body || {};
+  const cleanName = String(name || "").trim();
+  const cleanNationalId = String(nationalId || "").trim();
+  const cleanPhone = String(phone || "").trim();
+  const cleanEmail = String(email || "").trim().toLowerCase();
+
+  if (cleanName.length < 2) {
+    return res.status(400).json({ ok: false, error: "اسم المتطوع مطلوب." });
+  }
+  if (!cleanPhone && !cleanNationalId && !cleanEmail) {
+    return res.status(400).json({ ok: false, error: "يرجى إدخال رقم الجوال أو رقم الهوية أو البريد الإلكتروني." });
+  }
+
+  try {
+    const outcome = await mutateDb((db) => {
+      if (!Array.isArray(db.volunteers)) db.volunteers = [];
+      if (!Array.isArray(db.teams)) db.teams = [];
+
+      const duplicate = db.volunteers.find(
+        (v: any) =>
+          v &&
+          !v.isArchived &&
+          ((cleanNationalId && v.nationalId && String(v.nationalId).trim() === cleanNationalId) ||
+            (cleanEmail && v.email && String(v.email).trim().toLowerCase() === cleanEmail))
+      );
+      if (duplicate) {
+        return {
+          status: 409,
+          payload: {
+            ok: false,
+            error: `يوجد متطوع مسجل مسبقاً بنفس ${cleanNationalId && duplicate.nationalId === cleanNationalId ? "رقم الهوية" : "البريد الإلكتروني"} (${duplicate.name}).`
+          }
+        };
+      }
+
+      const selectedTeam =
+        (teamId ? db.teams.find((t: any) => t.id === teamId) : null) || db.teams[0];
+      if (!selectedTeam) {
+        return { status: 400, payload: { ok: false, error: "يرجى تحديد فريق تطوعي معتمد لربط المتطوع به." } };
+      }
+
+      const normGender = normalizeVolunteerGender(gender) || "male";
+      let assignedFileNumber = "";
+      try {
+        assignedFileNumber = generateUniqueVolunteerFileNumber(db, normGender);
+      } catch {
+        assignedFileNumber =
+          normGender === "female"
+            ? `B-${Math.floor(1000 + Math.random() * 9000)}`
+            : `A-${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      const tempPassword = generateStrongTemporaryPassword(12);
+      const passwordHash = hashPassword(tempPassword);
+      const seq = String(db.volunteers.length + 1).padStart(4, "0");
+      const nowIso = new Date().toISOString();
+      const expiry = new Date();
+      expiry.setFullYear(expiry.getFullYear() + 1);
+
+      const newVol: Volunteer = {
+        id: `vol-${Date.now()}-${crypto.randomBytes(2).toString("hex")}`,
+        name: cleanName,
+        email: cleanEmail || `vol.${Date.now()}@riadataleata.org.sa`,
+        phone: cleanPhone || "",
+        nationalId: cleanNationalId || "",
+        photo:
+          photo ||
+          (normGender === "female"
+            ? db.systemSettings?.files?.femaleUnifiedCardPhoto ||
+              "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80"
+            : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=300&h=300&fit=crop"),
+        membershipNumber: `V-${new Date().getFullYear()}-${seq}`,
+        fileNumber: assignedFileNumber,
+        file_number: assignedFileNumber,
+        barcode: `100088868${seq}`,
+        qrCode: `MEM-V-${new Date().getFullYear()}-${seq}`,
+        teamId: selectedTeam.id,
+        departmentId: departmentId || selectedTeam.departmentId || "dep-5",
+        titleAr: titleAr || "متطوع معتمد",
+        titleEn: titleEn || "Certified Volunteer",
+        status: "awaiting_profile_completion",
+        profileCompleted: false,
+        addedManually: true,
+        temporaryPasswordActive: true,
+        points: 0,
+        issueDate: nowIso.split("T")[0],
+        expiryDate: expiry.toISOString().split("T")[0],
+        joinDate: nowIso.split("T")[0],
+        gender: normGender,
+        role: "volunteer",
+        passwordHash,
+        mustChangePassword: true
+      };
+
+      savePostgresVolunteerFileNumber(assignedFileNumber, newVol.id, newVol.nationalId, normGender).catch(() => {});
+      db.volunteers.unshift(newVol);
+
+      const charter = createOrSyncVolunteerCharter(db, {
+        volunteer: newVol,
+        team: selectedTeam,
+        acceptanceSource: "manual_admin",
+        createdBy: auth.context.userName || "إدارة التطوع"
+      });
+
+      if (!Array.isArray(db.logs)) db.logs = [];
+      db.logs.unshift({
+        id: `log-vol-man-${Date.now()}`,
+        timestamp: nowIso,
+        user: auth.context.userName || "إدارة التطوع",
+        action: `إضافة متطوع يدوياً (${newVol.name}) وربطه بفريق (${selectedTeam.nameAr}) وإصدار ميثاق التطوع وكلمة مرور مؤقتة مشفرة`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "Admin Panel").substring(0, 100)
+      });
+
+      if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+      db.accessAuditLogs.unshift({
+        id: `audit-vol-man-${Date.now()}`,
+        timestamp: nowIso,
+        userId: auth.context.userId,
+        userName: auth.context.userName,
+        userRole: auth.context.role,
+        userDepartmentId: auth.context.primaryDepartmentId || "dep-5",
+        targetDepartmentId: "dep-5",
+        action: "manual_create_volunteer",
+        resource: "ملفات المتطوعين",
+        endpoint: "/api/db/volunteers/manual-create",
+        status: "allowed",
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
+        notes: `إنشاء حساب متطوع يدوياً (${newVol.id}) بحالة بانتظار استكمال البيانات`
+      });
+
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          status: "success",
+          volunteer: sanitizeSecretFields(newVol),
+          temporaryPassword: tempPassword,
+          charter,
+          db: filterDatabaseForUser(db, auth.context),
+          message: "تم إنشاء ملف المتطوع وإصدار ميثاق التطوع وكلمة المرور المؤقتة الفريدة بنجاح."
+        }
+      };
+    });
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || "فشل إضافة المتطوع يدوياً." });
+  }
 });
 
 // 5.5 Volunteer Profile Picture (WhatsApp Style - Distinct from Card Image)
@@ -12820,6 +13374,133 @@ app.post("/api/db/volunteers/update-profile", async (req, res) => {
     return res.json({ ok: true, volunteer: db.volunteers[index], db });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 5.65 Volunteer Self-Completion of Personal Profile (After Manual Admin Creation)
+app.post("/api/db/volunteers/complete-profile", async (req, res) => {
+  const authContext = getUserAccessContext(req);
+  if (!authContext.isAuthenticated || authContext.role === "public") {
+    return res.status(401).json({ ok: false, error: "يجب تسجيل الدخول أولاً.", code: "UNAUTHORIZED" });
+  }
+
+  const {
+    volunteerId,
+    phone,
+    email,
+    city,
+    district,
+    address,
+    birthDate,
+    bloodType,
+    nationality,
+    emergencyPhone,
+    experiences,
+    agreedToTerms
+  } = req.body || {};
+
+  const targetId = volunteerId || authContext.userId;
+  const isSelf =
+    targetId === authContext.userId ||
+    (authContext.nationalId && targetId === authContext.nationalId);
+  const isAdminOrVolDept =
+    authContext.isSuperAdmin ||
+    authContext.isOperationsManager ||
+    authContext.role === "admin" ||
+    authContext.role === "operations_manager" ||
+    (authContext.allowedDepartmentIds || []).includes("dep-5");
+
+  if (!isSelf && !isAdminOrVolDept) {
+    return res.status(403).json({ ok: false, error: "غير مصرح بتعديل ملف متطوع آخر.", code: "FORBIDDEN" });
+  }
+
+  if (!phone || !String(phone).trim() || !city || !String(city).trim() || !district || !String(district).trim()) {
+    return res.status(400).json({
+      ok: false,
+      error: "رقم الجوال والمدينة والحي حقول إلزامية لاستكمال البيانات الشخصية."
+    });
+  }
+  if (agreedToTerms !== undefined && agreedToTerms !== true) {
+    return res.status(400).json({ ok: false, error: "يرجى الإقرار بصحة البيانات المقدمة." });
+  }
+
+  try {
+    const outcome = await mutateDb((db) => {
+      const idx = (db.volunteers || []).findIndex(
+        (v: any) =>
+          v &&
+          (v.id === targetId || (authContext.nationalId && v.nationalId === authContext.nationalId))
+      );
+      if (idx === -1) {
+        return { status: 404, payload: { ok: false, error: "ملف المتطوع غير موجود." } };
+      }
+
+      const vol = db.volunteers[idx];
+      const nowIso = new Date().toISOString();
+
+      // Update personal data ONLY — NEVER alter teamId, permissions, fileNumber, or charter linkage
+      vol.phone = String(phone).trim();
+      if (email !== undefined && String(email).trim()) vol.email = String(email).trim().toLowerCase();
+      vol.city = String(city).trim();
+      vol.district = String(district).trim();
+      if (address !== undefined) vol.address = String(address).trim();
+      if (birthDate !== undefined) vol.birthDate = String(birthDate).trim();
+      if (bloodType !== undefined) vol.bloodType = String(bloodType).trim();
+      if (nationality !== undefined) vol.nationality = String(nationality).trim();
+      if (emergencyPhone !== undefined) vol.emergencyPhone = String(emergencyPhone).trim();
+      if (experiences !== undefined) vol.experiences = String(experiences).trim();
+
+      vol.profileCompleted = true;
+      if (!vol.status || vol.status === "awaiting_profile_completion") {
+        vol.status = "active";
+      }
+      vol.updatedAt = nowIso;
+
+      // Sync active server sessions so frontend refresh reflects profileCompleted: true
+      for (const [, sess] of activeSessions.entries()) {
+        if (sess && sess.userId === vol.id && sess.user) {
+          sess.user.profileCompleted = true;
+          sess.user.status = vol.status;
+          sess.user.phone = vol.phone;
+          sess.user.email = vol.email;
+          sess.user.city = vol.city;
+          sess.user.district = vol.district;
+        }
+      }
+      if (Array.isArray(db.activeSessions)) {
+        db.activeSessions.forEach((sess: any) => {
+          if (sess && sess.userId === vol.id && sess.user) {
+            sess.user.profileCompleted = true;
+            sess.user.status = vol.status;
+          }
+        });
+      }
+
+      if (!Array.isArray(db.logs)) db.logs = [];
+      db.logs.unshift({
+        id: `log-vol-prof-${Date.now()}`,
+        timestamp: nowIso,
+        user: vol.name,
+        action: `استكمال المتطوع (${vol.name}) لبياناته الشخصية بنجاح وتفعيل حسابه بالكامل`,
+        ip: req.ip || "127.0.0.1",
+        device: (req.headers["user-agent"] || "Volunteer Portal").substring(0, 100)
+      });
+
+      return {
+        status: 200,
+        payload: {
+          ok: true,
+          status: "success",
+          volunteer: sanitizeSecretFields(vol),
+          db: filterDatabaseForUser(db, authContext),
+          message: "تم استكمال وحفظ بياناتك الشخصية بنجاح وتفعيل حسابك بالكامل."
+        }
+      };
+    });
+
+    return res.status(outcome.status).json(outcome.payload);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || "تعذر استكمال البيانات الشخصية." });
   }
 });
 
@@ -14554,6 +15235,7 @@ app.post("/api/db/auth/logout", (req, res) => {
   if (sessionToken) {
     destroyServerSession(sessionToken);
   }
+  setSessionCookie(req, res, null);
   return res.json({ status: "logged_out", message: "تم تسجيل الخروج بنجاح." });
 });
 
@@ -14569,6 +15251,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
         deviceId: opts?.deviceId || String(req.body?.deviceId || ''),
         ip: clientIp
       });
+      setSessionCookie(req, res, session.token);
       body.sessionToken = session.token;
       body.authMethod = 'password';
 
@@ -15485,6 +16168,7 @@ app.post("/api/db/auth/google", async (req, res) => {
         deviceId: devId,
         ip: clientIp
       });
+      setSessionCookie(req, res, session.token);
       body.sessionToken = session.token;
       body.authMethod = "google";
       try {
@@ -17431,6 +18115,7 @@ app.post("/api/db/auth/pin/login", (req: any, res) => {
     notes: "تسجيل دخول ناجح برمز 6 أرقام على جهاز موثوق"
   });
   writeDb(db);
+  setSessionCookie(req, res, session.token);
 
   return res.json({
     status: "success",
@@ -21549,44 +22234,70 @@ app.post("/api/db/distributions/handover", async (req, res) => {
     });
   }
 
-  // 2. Upload / Persist Handover Photo into Permanent Project Storage (R2 / Postgres system_files)
+  // 2. Upload / Persist Handover Photo into Permanent Project Storage (R2 / Postgres / AttachmentStorage — Fail-Closed!)
   let permanentPhotoUrl = rawPhoto.trim();
+  let uploadedFileKey: string | undefined;
+  let uploadedStorageProvider: string | undefined;
+
   if (rawPhoto.startsWith("data:image/")) {
     try {
       const match = rawPhoto.match(/^data:([^;]+);base64,(.+)$/);
-      if (match) {
-        const mimeType = match[1] || "image/jpeg";
-        const base64Data = match[2];
-        const fileBuffer = Buffer.from(base64Data, "base64");
-        
-        // Validate buffer size: between 500 bytes and 15MB
-        if (fileBuffer.length < 500) {
-          return res.status(400).json({ error: "حجم الصورة الملتقطة غير صالح أو تالف. يرجى إعادة التقاط صورة المساعدة." });
-        }
-        if (fileBuffer.length > 15 * 1024 * 1024) {
-          return res.status(400).json({ error: "حجم الصورة كبير جداً (أكثر من 15 ميجابايت). يرجى التقاط صورة مناسبة." });
-        }
-
-        const ext = mimeType.includes("png") ? "png" : "jpg";
-        const uploadedRecord = await attachmentStorage.uploadAttachment(fileBuffer, {
-          originalFilename: `handover-${distributionId}-${Date.now()}.${ext}`,
-          mimeType,
-          entityType: "deliveries",
-          entityId: beneficiaryId || "handover",
-          fieldName: "handover_photo",
-          isPrivate: true,
-          accessRole: authContext.role,
-          uploadedBy: authContext.userId
-        });
-
-        if (uploadedRecord && (uploadedRecord.url || uploadedRecord.fileKey)) {
-          permanentPhotoUrl = uploadedRecord.url || `/api/attachments/stream/${encodeURIComponent(uploadedRecord.fileKey)}`;
-        }
+      if (!match) {
+        return res.status(400).json({ error: "تنسيق الصورة المرفوعة غير صالح." });
       }
-    } catch (uploadErr) {
-      console.error("[Handover Photo Upload Warning]:", uploadErr);
-      // Fallback preserves the valid Base64 URI if attachment storage encounters a transient error
+      const mimeType = match[1] || "image/jpeg";
+      const base64Data = match[2];
+      const fileBuffer = Buffer.from(base64Data, "base64");
+
+      // Validate buffer size: between 500 bytes and 15MB
+      if (fileBuffer.length < 500) {
+        return res.status(400).json({ error: "حجم الصورة الملتقطة غير صالح أو تالف. يرجى إعادة التقاط صورة المساعدة." });
+      }
+      if (fileBuffer.length > 15 * 1024 * 1024) {
+        return res.status(400).json({ error: "حجم الصورة كبير جداً (أكثر من 15 ميجابايت). يرجى التقاط صورة مناسبة." });
+      }
+
+      const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
+      const uploadedRecord = await attachmentStorage.uploadAttachment(fileBuffer, {
+        originalFilename: `handover-${distributionId}-${Date.now()}.${ext}`,
+        mimeType,
+        entityType: "deliveries",
+        entityId: beneficiaryId || distributionId || "handover",
+        fieldName: "handover_photo",
+        isPrivate: true,
+        accessRole: authContext.role || "storekeeper",
+        uploadedBy: authContext.userId || "staff"
+      });
+
+      if (!uploadedRecord || (!uploadedRecord.url && !uploadedRecord.fileKey)) {
+        return res.status(500).json({
+          ok: false,
+          error: "فشل رفع وحفظ صورة التوثيق في وحدة التخزين؛ تم إيقاف التسليم لحين نجاح حفظ الصورة.",
+          uploadFailed: true
+        });
+      }
+
+      uploadedFileKey = uploadedRecord.fileKey;
+      uploadedStorageProvider = uploadedRecord.storageProvider;
+      permanentPhotoUrl =
+        uploadedRecord.url || `/api/attachments/download/${encodeURIComponent(uploadedRecord.fileKey)}`;
+    } catch (uploadErr: any) {
+      console.error("[Handover Photo Upload Error]:", uploadErr);
+      return res.status(500).json({
+        ok: false,
+        error: `تعذر حفظ صورة توثيق التسليم (${uploadErr?.message || "خطأ تخزين"}). تم إلغاء التسليم ولن يتم خصم المخزون حتى نجاح رفع الصورة.`,
+        uploadFailed: true
+      });
     }
+  } else if (
+    !permanentPhotoUrl.startsWith("/api/attachments/") &&
+    !permanentPhotoUrl.startsWith("https://") &&
+    !permanentPhotoUrl.startsWith("http://")
+  ) {
+    return res.status(400).json({
+      ok: false,
+      error: "رابط صورة التوثيق غير صالح. يرجى التقاط أو رفع صورة حقيقية للمساعدة."
+    });
   }
 
   // 3. Atomic Database Mutation with Double-Click & Concurrency Lock
@@ -21704,6 +22415,9 @@ app.post("/api/db/distributions/handover", async (req, res) => {
         quantity: handoverQty,
         unit: dist.unit || "طرد",
         photoUrl: permanentPhotoUrl,
+        photoFileKey: uploadedFileKey,
+        photoStorageProvider: uploadedStorageProvider,
+        photoVerified: true,
         proofPhotos: [permanentPhotoUrl],
         beneficiaryConfirmedReceipt: true
       };
@@ -22696,6 +23410,13 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
   db.volunteers = db.volunteers || [];
   db.volunteers.push(newVol);
 
+  createOrSyncVolunteerCharter(db, {
+    volunteer: newVol,
+    team: selectedTeam,
+    acceptanceSource: "application",
+    createdBy: "إدارة التطوع"
+  });
+
   // Link approved volunteer to the opportunity if application was bound to one (Requirements 20, 21)
   if (appObj.opportunityId) {
     db.initiatives = db.initiatives || [];
@@ -22822,6 +23543,72 @@ app.get("/api/db/teamApplications", (req, res) => {
   res.json(db.teamApplications || []);
 });
 
+// 1.5 Upload Optional Team Leader License Document (Image or PDF via AttachmentStorage)
+app.post("/api/db/teamApplications/upload-license", async (req, res) => {
+  const clientIp =
+    (typeof req.headers["x-forwarded-for"] === "string"
+      ? req.headers["x-forwarded-for"].split(",")[0].trim()
+      : "") ||
+    req.ip ||
+    "127.0.0.1";
+  const rl = checkRateLimit("team_license_upload", clientIp, 15, 60 * 1000);
+  if (!rl.allowed) {
+    return res.status(429).json({ ok: false, error: "تم تجاوز الحد المسموح لرفع الملفات. يرجى الانتظار قليلاً." });
+  }
+
+  try {
+    const { dataUri, fileName, mimeType: declaredMime } = req.body || {};
+    if (!dataUri || typeof dataUri !== "string") {
+      return res.status(400).json({ ok: false, error: "بيانات ملف الرخصة مطلوبة." });
+    }
+
+    const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ ok: false, error: "صيغة ملف الرخصة غير صالحة." });
+    }
+
+    const mimeType = (declaredMime || match[1] || "application/octet-stream").toLowerCase();
+    const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
+    if (!allowedMimes.includes(mimeType)) {
+      return res.status(400).json({
+        ok: false,
+        error: "نوع الملف غير مدعوم. الأنواع المسموحة للرخصة: JPG، PNG، WebP، أو PDF."
+      });
+    }
+
+    const fileBuffer = Buffer.from(match[2], "base64");
+    if (fileBuffer.length < 100 || fileBuffer.length > 10 * 1024 * 1024) {
+      return res.status(400).json({
+        ok: false,
+        error: "حجم ملف الرخصة يجب أن يكون بين 100 بايت و 10 ميجابايت."
+      });
+    }
+
+    const safeExt = mimeType === "application/pdf" ? "pdf" : mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
+    const uploaded = await attachmentStorage.uploadAttachment(fileBuffer, {
+      originalFilename: String(fileName || `leader-license-${Date.now()}.${safeExt}`),
+      mimeType,
+      entityType: "licenses",
+      entityId: `teamapp-${Date.now()}`,
+      fieldName: "leaderLicense",
+      isPrivate: true,
+      accessRole: "dep-5",
+      uploadedBy: "team_applicant"
+    });
+
+    return res.json({
+      ok: true,
+      success: true,
+      url: uploaded.url || `/api/attachments/download/${encodeURIComponent(uploaded.fileKey)}`,
+      fileKey: uploaded.fileKey,
+      originalName: uploaded.originalName,
+      mimeType: uploaded.mimeType
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || "فشل حفظ ملف رخصة قائد الفريق." });
+  }
+});
+
 // 2. Submit new team application
 app.post("/api/db/teamApplications/submit", (req, res) => {
   const db = readDb();
@@ -22829,16 +23616,47 @@ app.post("/api/db/teamApplications/submit", (req, res) => {
     db.teamApplications = [];
   }
 
-  const appData = req.body;
+  const appData = req.body || {};
   if (!appData.teamName || !appData.leaderName || !appData.leaderPhone) {
     return res.status(400).json({ error: "اسم الفريق، واسم القائد، ورقم جوال القائد حقول إلزامية." });
   }
+
+  const visionArVal = String(appData.visionAr ?? appData.vision ?? "").trim();
+  const visionEnVal = String(appData.visionEn ?? "").trim();
+  const missionArVal = String(appData.missionAr ?? appData.mission ?? "").trim();
+  const missionEnVal = String(appData.missionEn ?? "").trim();
+  const goalsArVal = String(appData.goalsAr ?? appData.goals ?? "").trim();
+  const goalsEnVal = String(appData.goalsEn ?? "").trim();
+
+  // Ensure Telegram option is stripped completely from team join submissions
+  const cleanedSocialLinks = appData.socialLinks && typeof appData.socialLinks === "object"
+    ? { ...appData.socialLinks }
+    : undefined;
+  if (cleanedSocialLinks && "telegram" in cleanedSocialLinks) {
+    delete cleanedSocialLinks.telegram;
+  }
+  const safePreferredContact =
+    appData.preferredContactMethod === "telegram" ? "whatsapp" : appData.preferredContactMethod;
 
   const seqNumber = String(db.teamApplications.length + 1).padStart(4, "0");
   const applicationNumber = `TEAM-${new Date().getFullYear()}-${seqNumber}`;
 
   const newApp: TeamApplication = {
     ...appData,
+    preferredContactMethod: safePreferredContact,
+    socialLinks: cleanedSocialLinks,
+    vision: visionArVal || visionEnVal,
+    visionAr: visionArVal,
+    visionEn: visionEnVal,
+    mission: missionArVal || missionEnVal,
+    missionAr: missionArVal,
+    missionEn: missionEnVal,
+    goals: goalsArVal || goalsEnVal,
+    goalsAr: goalsArVal,
+    goalsEn: goalsEnVal,
+    leaderLicenseUrl: appData.leaderLicenseUrl ? String(appData.leaderLicenseUrl).trim() : undefined,
+    leaderLicenseName: appData.leaderLicenseName ? String(appData.leaderLicenseName).trim() : undefined,
+    leaderLicenseFileKey: appData.leaderLicenseFileKey ? String(appData.leaderLicenseFileKey).trim() : undefined,
     id: "t-app-" + Date.now(),
     applicationNumber: appData.applicationNumber || applicationNumber,
     status: "pending",
@@ -22896,6 +23714,8 @@ app.post("/api/db/teamApplications/submit", (req, res) => {
 
   writeDb(db);
   res.json({
+    ok: true,
+    success: true,
     status: "success",
     message: "تم استلام طلب انضمام الفريق بنجاح ووضعه قيد المراجعة الإدارية",
     application: newApp,
@@ -22947,9 +23767,18 @@ app.post("/api/db/teamApplications/accept", (req, res) => {
     leaderPhone: appObj.leaderPhone,
     leaderEmail: appObj.leaderEmail,
     leaderNationalId: appObj.leaderNationalId,
-    vision: appObj.vision,
-    mission: appObj.mission,
-    goals: appObj.goals,
+    leaderLicenseUrl: appObj.leaderLicenseUrl,
+    leaderLicenseName: appObj.leaderLicenseName,
+    leaderLicenseFileKey: appObj.leaderLicenseFileKey,
+    vision: appObj.visionAr || appObj.vision,
+    visionAr: appObj.visionAr || appObj.vision,
+    visionEn: appObj.visionEn || "",
+    mission: appObj.missionAr || appObj.mission,
+    missionAr: appObj.missionAr || appObj.mission,
+    missionEn: appObj.missionEn || "",
+    goals: appObj.goalsAr || appObj.goals,
+    goalsAr: appObj.goalsAr || appObj.goals,
+    goalsEn: appObj.goalsEn || "",
     services: appObj.services || [],
     meaningfulIdea: appObj.meaningfulIdea,
     logoUrl: appObj.logoUrl || "https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=200&h=200&fit=crop",
@@ -27536,6 +28365,12 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
   savePostgresVolunteerFileNumber(assignedFileNumber, newVol.id, newVol.nationalId, normGender).catch(() => {});
 
   db.volunteers.push(newVol);
+  createOrSyncVolunteerCharter(db, {
+    volunteer: newVol,
+    team: selectedTeam,
+    acceptanceSource: "application",
+    createdBy: adminName
+  });
 
   // AUTOMATICALLY ISSUE OFFICIAL ID CARD USING ACTIVE TEMPLATE
   db.issuedVolunteerCards = db.issuedVolunteerCards || [];
@@ -28112,6 +28947,13 @@ setupPasswordResetLinkRoutes(app, {
   invalidateUserSessions,
   revokeAllTrustedDevicesForUser,
   checkRateLimit
+});
+
+// Setup Electronic Volunteer Charter & Restricted Volunteer Teams Overview routes
+registerVolunteerCharterRoutes(app, {
+  readDb,
+  mutateDb,
+  getUserAccessContext
 });
 
 // Fallback 404 handler specifically for /api/* routes

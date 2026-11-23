@@ -19,7 +19,9 @@ import { CardTemplateEditor } from "./CardTemplateEditor";
 import { CardRenderer } from "./CardRenderer";
 import { VolunteerProfileCardSection } from "./VolunteerProfileCardSection";
 import { TeamSupportManager } from "./TeamSupportManager";
+import { VolunteerCharterTrackerPanel } from "./VolunteerCharterTrackerPanel";
 import { getAuthHeaders } from "../utils/authHeaders";
+import { buildApiUrl } from "../config/api";
 
 interface LeaderDashboardProps {
   currentTeam: VolunteerTeam;
@@ -95,7 +97,7 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
 }: LeaderDashboardProps) => {
   // Tabs for Leader
   const safeOpportunityRequests = useMemo(() => Array.isArray(opportunityRequests) ? opportunityRequests : [], [opportunityRequests]);
-  const [activeTab, setActiveTab] = useState<'home' | 'team' | 'applications' | 'team_settings' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards' | 'transfers' | 'support'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'team' | 'applications' | 'charters' | 'team_settings' | 'attendance' | 'notifications' | 'profile' | 'opportunities' | 'staff' | 'cards' | 'transfers' | 'support'>('home');
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
 
   // Formal Volunteer Transfer / Termination Request state for Leader
@@ -247,11 +249,14 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
     }
   };
 
-  // Team Profile Editing States for Leader
+  // Team Profile Editing States for Leader (Bilingual AR & EN)
   const [teamLogoUrl, setTeamLogoUrl] = useState(currentTeam.logoUrl || "");
-  const [teamVision, setTeamVision] = useState(currentTeam.vision || "");
-  const [teamMission, setTeamMission] = useState(currentTeam.mission || "");
-  const [teamGoals, setTeamGoals] = useState(currentTeam.goals || "");
+  const [teamVision, setTeamVision] = useState(currentTeam.visionAr || currentTeam.vision || "");
+  const [teamVisionEn, setTeamVisionEn] = useState(currentTeam.visionEn || "");
+  const [teamMission, setTeamMission] = useState(currentTeam.missionAr || currentTeam.mission || "");
+  const [teamMissionEn, setTeamMissionEn] = useState(currentTeam.missionEn || "");
+  const [teamGoals, setTeamGoals] = useState(currentTeam.goalsAr || currentTeam.goals || "");
+  const [teamGoalsEn, setTeamGoalsEn] = useState(currentTeam.goalsEn || "");
   const [teamDescriptionAr, setTeamDescriptionAr] = useState(currentTeam.descriptionAr || "");
   const [teamLeaderPhone, setTeamLeaderPhone] = useState(currentTeam.leaderPhone || "");
   const [teamLeaderEmail, setTeamLeaderEmail] = useState(currentTeam.leaderEmail || "");
@@ -261,9 +266,12 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
   // Sync team profile fields when currentTeam updates
   useEffect(() => {
     setTeamLogoUrl(currentTeam.logoUrl || "");
-    setTeamVision(currentTeam.vision || "");
-    setTeamMission(currentTeam.mission || "");
-    setTeamGoals(currentTeam.goals || "");
+    setTeamVision(currentTeam.visionAr || currentTeam.vision || "");
+    setTeamVisionEn(currentTeam.visionEn || "");
+    setTeamMission(currentTeam.missionAr || currentTeam.mission || "");
+    setTeamMissionEn(currentTeam.missionEn || "");
+    setTeamGoals(currentTeam.goalsAr || currentTeam.goals || "");
+    setTeamGoalsEn(currentTeam.goalsEn || "");
     setTeamDescriptionAr(currentTeam.descriptionAr || "");
     setTeamLeaderPhone(currentTeam.leaderPhone || "");
     setTeamLeaderEmail(currentTeam.leaderEmail || "");
@@ -273,39 +281,41 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
     e.preventDefault();
     setIsSavingTeamProfile(true);
     setTeamProfileFeedback(null);
+    const payloadFields = {
+      logoUrl: teamLogoUrl,
+      vision: teamVision || teamVisionEn,
+      visionAr: teamVision,
+      visionEn: teamVisionEn,
+      mission: teamMission || teamMissionEn,
+      missionAr: teamMission,
+      missionEn: teamMissionEn,
+      goals: teamGoals || teamGoalsEn,
+      goalsAr: teamGoals,
+      goalsEn: teamGoalsEn,
+      descriptionAr: teamDescriptionAr,
+      leaderPhone: teamLeaderPhone,
+      leaderEmail: teamLeaderEmail
+    };
     try {
       if (onLeaderUpdateTeam) {
-        const ok = await onLeaderUpdateTeam({
-          logoUrl: teamLogoUrl,
-          vision: teamVision,
-          mission: teamMission,
-          goals: teamGoals,
-          descriptionAr: teamDescriptionAr,
-          leaderPhone: teamLeaderPhone,
-          leaderEmail: teamLeaderEmail
-        });
+        const ok = await onLeaderUpdateTeam(payloadFields);
         if (ok) {
           setTeamProfileFeedback({ type: 'success', text: "تم حفظ وتحديث بيانات الفريق بنجاح وستظهر فوراً في صفحة الفريق بالموقع!" });
         } else {
           setTeamProfileFeedback({ type: 'error', text: "فشل حفظ بيانات الفريق، يرجى المحاولة مرة أخرى." });
         }
       } else {
-        const res = await fetch("/api/db/teams/leader-update", {
+        const res = await fetch(buildApiUrl("/api/db/teams/leader-update"), {
           method: "POST",
           headers: {
+            ...getAuthHeaders(),
             "Content-Type": "application/json",
             "x-user-role": "leader",
             "x-user-team-id": currentTeam.id
           },
           body: JSON.stringify({
             teamId: currentTeam.id,
-            logoUrl: teamLogoUrl,
-            vision: teamVision,
-            mission: teamMission,
-            goals: teamGoals,
-            descriptionAr: teamDescriptionAr,
-            leaderPhone: teamLeaderPhone,
-            leaderEmail: teamLeaderEmail
+            ...payloadFields
           })
         });
         if (res.ok) {
@@ -853,6 +863,14 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
               {myTeamApplications.filter(a => a.status === 'pending_leader_approval' || a.status === 'pending').length}
             </span>
           )}
+        </button>
+        <button
+          id="tab-leader-charters"
+          onClick={() => setActiveTab('charters')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold transition-all cursor-pointer border-b-2 ${activeTab === 'charters' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-neutral-500 hover:text-neutral-800'}`}
+        >
+          <FileText className="w-4 h-4 text-emerald-600" />
+          <span>ميثاق التطوع</span>
         </button>
         <button
           id="tab-leader-team-settings"
@@ -1598,46 +1616,91 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Vision */}
-              <div>
-                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
-                  رؤية الفريق:
-                </label>
-                <textarea
-                  rows={2}
-                  value={teamVision}
-                  onChange={(e) => setTeamVision(e.target.value)}
-                  placeholder="رؤية الفريق المعتمدة..."
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
-                />
+              {/* Bilingual Vision */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    رؤية الفريق (بالعربية):
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={teamVision}
+                    onChange={(e) => setTeamVision(e.target.value)}
+                    placeholder="رؤية الفريق المعتمدة باللغة العربية..."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    Team Vision (English):
+                  </label>
+                  <textarea
+                    rows={2}
+                    dir="ltr"
+                    value={teamVisionEn}
+                    onChange={(e) => setTeamVisionEn(e.target.value)}
+                    placeholder="Team vision in English..."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                  />
+                </div>
               </div>
 
-              {/* Mission */}
-              <div>
-                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
-                  رسالة الفريق:
-                </label>
-                <textarea
-                  rows={2}
-                  value={teamMission}
-                  onChange={(e) => setTeamMission(e.target.value)}
-                  placeholder="رسالة الفريق المعتمدة..."
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
-                />
+              {/* Bilingual Mission */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    رسالة الفريق (بالعربية):
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={teamMission}
+                    onChange={(e) => setTeamMission(e.target.value)}
+                    placeholder="رسالة الفريق المعتمدة باللغة العربية..."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    Team Mission (English):
+                  </label>
+                  <textarea
+                    rows={2}
+                    dir="ltr"
+                    value={teamMissionEn}
+                    onChange={(e) => setTeamMissionEn(e.target.value)}
+                    placeholder="Team mission in English..."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                  />
+                </div>
               </div>
 
-              {/* Goals */}
-              <div>
-                <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
-                  أهداف الفريق (افصل بين الأهداف بفاصلة أو سطر جديد):
-                </label>
-                <textarea
-                  rows={3}
-                  value={teamGoals}
-                  onChange={(e) => setTeamGoals(e.target.value)}
-                  placeholder="الهدف الأول، الهدف الثاني، الهدف الثالث..."
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
-                />
+              {/* Bilingual Goals */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    أهداف الفريق (بالعربية - افصل بفاصلة أو سطر):
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={teamGoals}
+                    onChange={(e) => setTeamGoals(e.target.value)}
+                    placeholder="الهدف الأول، الهدف الثاني، الهدف الثالث..."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-800 dark:text-slate-200 mb-1.5">
+                    Team Goals (English):
+                  </label>
+                  <textarea
+                    rows={3}
+                    dir="ltr"
+                    value={teamGoalsEn}
+                    onChange={(e) => setTeamGoalsEn(e.target.value)}
+                    placeholder="Goal 1, Goal 2, Goal 3..."
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-slate-900 dark:text-white"
+                  />
+                </div>
               </div>
 
               {/* Description */}
@@ -1695,6 +1758,13 @@ export const LeaderDashboard: React.FC<LeaderDashboardProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {/* TAB: TEAM VOLUNTEER CHARTERS TRACKER (Scoped to Leader's Team Only) */}
+        {activeTab === 'charters' && (
+          <div className="space-y-4">
+            <VolunteerCharterTrackerPanel mode="leader" teamId={currentTeam.id} />
           </div>
         )}
 

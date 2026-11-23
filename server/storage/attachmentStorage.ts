@@ -700,7 +700,7 @@ export class AttachmentStorageService {
    */
   public async getAttachmentBuffer(
     fileKey: string,
-    userContext?: { role?: string; id?: string }
+    userContext?: { role?: string; id?: string; allowedDepartmentIds?: string[]; permissions?: string[] }
   ): Promise<{ buffer: Buffer; record?: AttachmentRecord; mimeType: string }> {
     // Prevent traversal
     if (!fileKey || typeof fileKey !== 'string' || fileKey.includes('..') || path.isAbsolute(fileKey) || fileKey.includes('\0') || fileKey.includes('\\')) {
@@ -745,10 +745,28 @@ export class AttachmentStorageService {
 
     if (isPrivate) {
       const role = userContext?.role || 'guest';
+      const isStaffRole = ['department_admin', 'employee', 'supervisor', 'storekeeper', 'support_manager', 'support_agent'].includes(role);
+      const allowedDepts = Array.isArray(userContext?.allowedDepartmentIds) ? userContext!.allowedDepartmentIds! : [];
+      const isDeliveryDoc = fileKey.includes('deliveries/') || record?.entityType === 'deliveries';
+      const isLicenseOrVolDoc = fileKey.includes('licenses/') || fileKey.includes('volunteers/') || record?.entityType === 'licenses' || record?.entityType === 'volunteers';
+      const isDeliveryAuthorized =
+        isDeliveryDoc &&
+        isStaffRole &&
+        (role === 'storekeeper' ||
+          allowedDepts.includes('dep-8') ||
+          allowedDepts.includes('dep-4') ||
+          allowedDepts.includes('dep-1'));
+      const isVolunteerAdminAuthorized =
+        isLicenseOrVolDoc &&
+        isStaffRole &&
+        (allowedDepts.includes('dep-5') || allowedDepts.includes('dep-1'));
+
       const isAuthorized = 
         role === 'admin' || 
         role === 'operations_manager' || 
         role === 'super_admin' ||
+        isDeliveryAuthorized ||
+        isVolunteerAdminAuthorized ||
         (record && record.uploadedBy && record.uploadedBy === userContext?.id) ||
         (record && record.entityId && record.entityId === userContext?.id) ||
         (Boolean(userContext?.id) && userContext?.id !== 'guest' && userContext?.id !== 'public' && fileKey.includes(String(userContext?.id)));

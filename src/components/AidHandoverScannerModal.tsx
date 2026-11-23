@@ -26,12 +26,14 @@ import {
 import { Html5Qrcode } from 'html5-qrcode';
 import { AidDistribution, Beneficiary, DistributionHandoverRecord } from '../types';
 import { HandoverPhotoCapture } from './HandoverPhotoCapture';
+import { buildApiUrl } from '../config/api';
 
 interface AidHandoverScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   distributions: AidDistribution[];
   selectedDistributionId?: string;
+  initialBeneficiaryId?: string;
   beneficiaries: Beneficiary[];
   handoverRecords: DistributionHandoverRecord[];
   currentUser?: {
@@ -59,6 +61,7 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   onClose,
   distributions = [],
   selectedDistributionId: initialDistId,
+  initialBeneficiaryId,
   beneficiaries = [],
   handoverRecords = [],
   currentUser = { id: 'staff-1', name: 'مشرف التوزيع الميداني', role: 'staff' },
@@ -69,7 +72,8 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   const [activeDistId, setActiveDistId] = useState<string>(initialDistId || distributions[0]?.id || '');
   
   // Scan mode: camera vs manual / hardware scanner
-  const [scanMode, setScanMode] = useState<'camera' | 'hardware'>('camera');
+  const [scanMode, setScanMode] = useState<'camera' | 'hardware'>(initialBeneficiaryId ? 'hardware' : 'camera');
+  const [lastScanMethod, setLastScanMethod] = useState<'camera_scanner' | 'hardware_scanner' | 'manual_input'>('camera_scanner');
   const [manualInput, setManualInput] = useState('');
   const [isCameraRunning, setIsCameraRunning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -82,9 +86,11 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   const [isNotTargeted, setIsNotTargeted] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [lastSuccessBen, setLastSuccessBen] = useState<Beneficiary | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [handoverPhoto, setHandoverPhoto] = useState<string | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
@@ -154,6 +160,8 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
     const cleanCode = (barcode || '').trim();
     if (!cleanCode) return;
 
+    setLastScanMethod(method);
+    setSubmitError(null);
     setScannedBarcode(cleanCode);
     setNotFound(false);
     setIsDuplicate(false);
@@ -282,6 +290,22 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
     };
   }, [isOpen, scanMode]);
 
+  // Pre-select targeted beneficiary when opened from Quick Handover action
+  useEffect(() => {
+    if (!isOpen) return;
+    setSubmitError(null);
+    if (initialBeneficiaryId) {
+      setScanMode('hardware');
+      const targetBen = beneficiaries.find(b => b.id === initialBeneficiaryId);
+      if (targetBen) {
+        const lookupCode = targetBen.barcodeId || targetBen.beneficiaryNumber || targetBen.nationalId || targetBen.id;
+        setManualInput(lookupCode);
+        setHandoverPhoto(null);
+        evaluateBarcode(lookupCode, 'manual_input');
+      }
+    }
+  }, [isOpen, initialBeneficiaryId, activeDistId]);
+
   // Reset to Ready State
   const resetScannerState = () => {
     setFoundBeneficiary(null);
@@ -292,6 +316,7 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
     setNotFound(false);
     setManualInput('');
     setHandoverPhoto(null);
+    setSubmitError(null);
     if (scanMode === 'hardware') {
       manualInputRef.current?.focus();
     }
@@ -300,9 +325,10 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
   // Handle Confirmed Handover Button Click
   const handleConfirmHandover = async () => {
     if (!foundBeneficiary || !activeDistId || isDuplicate || isNotTargeted) return;
+    setSubmitError(null);
 
     if (!handoverPhoto) {
-      alert("التقاط صورة التسليم إلزامي لتوثيق الاستلام في ملف المستفيد!");
+      setSubmitError("التقاط صورة المساعدة إلزامي لتوثيق التسليم وحفظه في ملف المستفيد.");
       return;
     }
 
@@ -317,7 +343,7 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
         handedByUserId: currentUser.id || 'staff',
         handedByUserName: currentUser.name || 'مشرف التوزيع',
         handedByUserRole: currentUser.role || 'staff',
-        method: scanMode === 'camera' ? 'camera_scanner' : 'hardware_scanner',
+        method: lastScanMethod || (scanMode === 'camera' ? 'camera_scanner' : 'hardware_scanner'),
         notes: `تسليم ${currentDistribution?.quantityPerBeneficiary || 'المساعدة'}`
       });
 
@@ -331,12 +357,15 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
       } else if (result.alreadyReceived) {
         setIsDuplicate(true);
         if (result.record) setAlreadyReceivedRecord(result.record);
+        setSubmitError(result.error || "تم استلام هذه المساعدة مسبقاً.");
         playBeep('duplicate');
       } else {
-        alert(result.error || "تعذر إتمام التسليم");
+        setSubmitError(result.error || "تعذر إتمام التسليم. يرجى التحقق من الصورة والمحاولة مرة أخرى.");
+        playBeep('error');
       }
     } catch (err: any) {
-      alert("خطأ: " + (err?.message || "حدث خطأ غير متوقع أثناء التسليم"));
+      setSubmitError(err?.message || "حدث خطأ غير متوقع أثناء تسجيل التسليم.");
+      playBeep('error');
     } finally {
       setIsSubmitting(false);
     }
@@ -667,12 +696,21 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
 
                 {/* Photo Proof Capture Section (التقاط صورة التسليم إلزامي فقط للمستحقين) */}
                 {!isDuplicate && !isNotTargeted && (
-                  <div className="mt-3">
+                  <div className="mt-3 space-y-2.5">
                     <HandoverPhotoCapture
                       photo={handoverPhoto}
-                      onPhotoCaptured={setHandoverPhoto}
+                      onPhotoCaptured={(photo) => {
+                        setHandoverPhoto(photo);
+                        setSubmitError(null);
+                      }}
                       required={true}
                     />
+                    {submitError && (
+                      <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-bold text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                        <span>{submitError}</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -686,20 +724,23 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
                       <div>التاريخ والوقت: <strong>{alreadyReceivedRecord.date}</strong> الساعة <strong>{alreadyReceivedRecord.time}</strong></div>
                       <div>الموظف الذي قام بالتسليم: <strong>{alreadyReceivedRecord.handedByUserName}</strong></div>
-                      <div>طريقة التحقق: <strong>{alreadyReceivedRecord.method === 'camera_scanner' ? 'كاميرا الجوال' : 'قارئ باركود خارجي'}</strong></div>
+                      <div>طريقة التحقق: <strong>{alreadyReceivedRecord.method === 'camera_scanner' ? 'كاميرا الجوال' : alreadyReceivedRecord.method === 'manual_input' ? 'إدخال يدوي' : 'قارئ باركود خارجي'}</strong></div>
                       <div>رقم إيصال التسليم: <span className="font-mono">{alreadyReceivedRecord.id}</span></div>
                     </div>
-                    {alreadyReceivedRecord.photoUrl && (
-                      <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-900/60">
-                        <span className="text-[10px] text-red-700 dark:text-red-300 font-bold block mb-1">صورة التوثيق السابقة:</span>
-                        <img 
-                          src={alreadyReceivedRecord.photoUrl} 
-                          alt="توثيق سابق" 
-                          className="w-24 h-16 object-cover rounded-lg border border-red-300 cursor-pointer hover:opacity-80"
-                          onClick={() => window.open(alreadyReceivedRecord.photoUrl, '_blank')}
-                        />
-                      </div>
-                    )}
+                    {(alreadyReceivedRecord.photoUrl || (alreadyReceivedRecord.proofPhotos && alreadyReceivedRecord.proofPhotos[0])) && (() => {
+                      const prevPhoto = buildApiUrl(alreadyReceivedRecord.photoUrl || alreadyReceivedRecord.proofPhotos?.[0] || '');
+                      return (
+                        <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-900/60">
+                          <span className="text-[10px] text-red-700 dark:text-red-300 font-bold block mb-1">صورة التوثيق السابقة:</span>
+                          <img 
+                            src={prevPhoto} 
+                            alt="توثيق سابق" 
+                            className="w-24 h-16 object-cover rounded-lg border border-red-300 cursor-pointer hover:opacity-80"
+                            onClick={() => setPreviewPhotoUrl(prevPhoto)}
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -799,30 +840,78 @@ export const AidHandoverScannerModal: React.FC<AidHandoverScannerModalProps> = (
                 لم يتم تسجيل أي استلام في هذه التوزيعة حتى الآن. ابدأ بمسح أول باركود.
               </div>
             ) : (
-              <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                {currentHandovers.slice(0, 6).map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="p-2 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-[10px] font-bold">
-                        ✓
+              <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                {currentHandovers.slice(0, 6).map((rec) => {
+                  const rawThumb = rec.photoUrl || (rec.proofPhotos && rec.proofPhotos[0]) || '';
+                  const thumbUrl = rawThumb ? buildApiUrl(rawThumb) : '';
+                  return (
+                    <div
+                      key={rec.id}
+                      className="p-2 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {thumbUrl ? (
+                          <img
+                            src={thumbUrl}
+                            alt="صورة التسليم"
+                            onClick={() => setPreviewPhotoUrl(thumbUrl)}
+                            className="w-9 h-9 rounded-lg object-cover border border-emerald-300 dark:border-emerald-700 shrink-0 cursor-pointer hover:opacity-85"
+                          />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-[10px] font-bold shrink-0">
+                            ✓
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="truncate">
+                            <span className="font-bold text-neutral-900 dark:text-white">{rec.beneficiaryName}</span>
+                            <span className="text-[10px] text-neutral-400 mr-1.5 font-mono">({rec.barcodeId})</span>
+                          </div>
+                          <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
+                            {rec.itemName || currentDistribution?.aidTypeLabel} • {rec.quantity || 1} {rec.unit || 'وحدة'} • المسلّم: {rec.handedByUserName}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="font-bold text-neutral-900 dark:text-white">{rec.beneficiaryName}</span>
-                        <span className="text-[10px] text-neutral-400 mr-2 font-mono">({rec.barcodeId})</span>
+                      <div className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono shrink-0 text-left">
+                        <div>{rec.date}</div>
+                        <div>{rec.time}</div>
                       </div>
                     </div>
-                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono">
-                      {rec.time}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
+
+        {/* Inline Photo Preview Lightbox */}
+        {previewPhotoUrl && (
+          <div
+            className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setPreviewPhotoUrl(null)}
+          >
+            <div
+              className="bg-white dark:bg-neutral-900 rounded-2xl max-w-lg w-full p-3 space-y-2 border border-neutral-200 dark:border-neutral-800 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-neutral-800 dark:text-white">صورة توثيق تسليم المساعدة</span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhotoUrl(null)}
+                  className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <img
+                src={previewPhotoUrl}
+                alt="صورة توثيق التسليم"
+                className="w-full max-h-[65vh] object-contain rounded-xl bg-black"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between shrink-0">

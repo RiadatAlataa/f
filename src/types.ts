@@ -119,12 +119,23 @@ export interface TeamApplication {
   leaderBirthDate?: string;
   leaderCity?: string;
   leaderAddress?: string;
-  preferredContactMethod?: 'whatsapp' | 'call' | 'email' | 'telegram' | string;
+  preferredContactMethod?: 'whatsapp' | 'call' | 'email' | string;
+  leaderLicenseUrl?: string;
+  leaderLicenseName?: string;
+  leaderLicenseFileName?: string;
+  leaderLicenseMimeType?: string;
+  leaderLicenseFileKey?: string;
 
-  // Vision, Mission, Goals, Services
+  // Vision, Mission, Goals, Services (Bilingual Support)
   vision?: string;
+  visionAr?: string;
+  visionEn?: string;
   mission?: string;
+  missionAr?: string;
+  missionEn?: string;
   goals?: string;
+  goalsAr?: string;
+  goalsEn?: string;
   services?: string[]; // Array of categories: الإغاثة، خدمة المجتمع، الفعاليات، التعليم والتدريب، الصحة، البيئة، رعاية كبار السن، خدمة ذوي الإعاقة، الأمن والسلامة...
 
   // Meaningful Idea for Society
@@ -157,11 +168,13 @@ export interface TeamApplication {
   agreementTimestamp: string;
 
   // Admin Review Fields
+  submittedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;
   approvedDepartmentId?: string;
   rejectionReason?: string;
   correctionNotes?: string;
+  reviewerNotes?: string;
   createdTeamId?: string;
 }
 
@@ -201,9 +214,18 @@ export interface VolunteerTeam {
   leaderPhone?: string;
   leaderEmail?: string;
   leaderNationalId?: string;
+  leaderLicenseUrl?: string;
+  leaderLicenseName?: string;
+  leaderLicenseFileKey?: string;
   vision?: string;
+  visionAr?: string;
+  visionEn?: string;
   mission?: string;
+  missionAr?: string;
+  missionEn?: string;
   goals?: string;
+  goalsAr?: string;
+  goalsEn?: string;
   services?: string[] | string;
   meaningfulIdea?: string;
   logoUrl?: string;
@@ -257,7 +279,10 @@ export interface Volunteer {
   departmentId: string;
   titleAr?: string;
   titleEn?: string;
-  status: 'active' | 'inactive' | 'suspended' | 'deactivated' | 'archived';
+  status: 'active' | 'inactive' | 'suspended' | 'deactivated' | 'archived' | 'awaiting_profile_completion';
+  profileCompleted?: boolean;
+  addedManually?: boolean;
+  temporaryPasswordActive?: boolean;
   isArchived?: boolean;
   archivedAt?: string;
   archivedBy?: string;
@@ -302,6 +327,9 @@ export interface Volunteer {
   card_image?: string; // alias
   city?: string;
   district?: string;
+  address?: string;
+  emergencyPhone?: string;
+  experiences?: string;
   monthlyPoints?: number;
   attendanceCount?: number;
 }
@@ -1507,7 +1535,7 @@ export interface DistributionHandoverRecord {
   handedByUserId?: string;
   handedByUserName: string;
   handedByUserRole?: string;
-  method: 'camera_scanner' | 'hardware_scanner' | 'manual';
+  method: 'camera_scanner' | 'hardware_scanner' | 'manual' | 'manual_input';
   notes?: string;
   itemName?: string;
   inventoryItemId?: string;
@@ -1518,6 +1546,9 @@ export interface DistributionHandoverRecord {
   unit?: string;
   // Photo proof of handover (توثيق الاستلام بالصورة الحية)
   photoUrl?: string;
+  photoFileKey?: string;
+  photoStorageProvider?: string;
+  photoVerified?: boolean;
   proofPhotos?: string[];
   handedDepartment?: string;
   beneficiaryConfirmedReceipt?: boolean;
@@ -2404,4 +2435,86 @@ export interface PersonalTaskEmailLog {
   attemptNumber: number;
   sentAt: string;
 }
+
+// ==========================================
+// Independent Electronic Volunteer Charter System
+// («ميثاق التطوع الإلكتروني» - Per-Volunteer & Versioned)
+// ==========================================
+export type VolunteerCharterStatus =
+  | 'awaiting_volunteer_signature'
+  | 'volunteer_signed'
+  | 'awaiting_leader_approval'
+  | 'approved_by_leader'
+  | 'rejected';
+
+export interface VolunteerCharterClause {
+  id: string;
+  order: number;
+  titleAr: string;
+  titleEn: string;
+  bodyAr: string;
+  bodyEn: string;
+}
+
+export interface VolunteerCharterVersion {
+  version: number;
+  titleAr: string;
+  titleEn: string;
+  clauses: VolunteerCharterClause[];
+  createdAt: string;
+  createdBy: string;
+  status: VolunteerCharterStatus;
+  volunteerAgreed?: boolean;
+  volunteerSignatureName?: string;
+  volunteerSignedAt?: string | null;
+  volunteerSignedIp?: string | null;
+  leaderId?: string | null;
+  leaderName?: string | null;
+  leaderApprovedAt?: string | null;
+  leaderRejectedAt?: string | null;
+  rejectionReason?: string | null;
+  leaderNotes?: string | null;
+  locked: boolean;
+}
+
+export interface VolunteerCharter {
+  id: string;
+  charterNumber: string;
+  associationNameAr: string;
+  associationNameEn: string;
+  volunteerId: string;
+  volunteerName: string;
+  volunteerNationalId?: string;
+  volunteerMembershipNumber?: string;
+  teamId: string;
+  teamNameAr: string;
+  teamNameEn?: string;
+  leaderId?: string;
+  leaderName: string;
+  acceptanceDate: string;
+  acceptanceSource: 'application' | 'manual_admin' | string;
+  currentVersion: number;
+  status: VolunteerCharterStatus;
+  locked: boolean;
+  volunteerAgreed: boolean;
+  volunteerSignatureName?: string;
+  volunteerSignedAt?: string | null;
+  leaderApprovedAt?: string | null;
+  leaderRejectedAt?: string | null;
+  rejectionReason?: string | null;
+  versions: VolunteerCharterVersion[];
+  auditLog?: Array<{
+    id: string;
+    action: string;
+    actorId: string;
+    actorName: string;
+    actorRole: string;
+    version: number;
+    timestamp: string;
+    notes?: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 

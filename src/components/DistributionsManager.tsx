@@ -34,6 +34,7 @@ import { AidDistribution, Beneficiary, DistributionDeleteActionType, Distributio
 import { AidHandoverScannerModal } from './AidHandoverScannerModal';
 import { BeneficiaryBarcodeCard } from './BeneficiaryBarcodeCard';
 import { BeneficiaryHistoryModal } from './BeneficiaryHistoryModal';
+import { buildApiUrl } from '../config/api';
 
 interface DistributionsManagerProps {
   distributions: AidDistribution[];
@@ -114,6 +115,7 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
   
   // Modals
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerTargetBeneficiaryId, setScannerTargetBeneficiaryId] = useState<string | undefined>(undefined);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingDist, setEditingDist] = useState<AidDistribution | null>(null);
   const [selectedBarcodeBen, setSelectedBarcodeBen] = useState<Beneficiary | null>(null);
@@ -585,27 +587,11 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
     printWindow.document.close();
   };
 
-  // Quick Direct Handover Click
-  const handleQuickHandover = async (ben: Beneficiary) => {
+  // Quick Direct Handover Click — routes through mandatory Barcode + Photo Capture Modal (no unverified bypass)
+  const handleQuickHandover = (ben: Beneficiary) => {
     if (!currentDist) return;
-    try {
-      const res = await onHandoverSubmit({
-        distributionId: currentDist.id,
-        beneficiaryId: ben.id,
-        barcodeId: ben.barcodeId || `BC-BEN-${ben.id}`,
-        handedByUserId: currentUser.id || 'admin',
-        handedByUserName: currentUser.name || 'المشرف',
-        handedByUserRole: currentUser.role || 'admin',
-        method: 'manual_input',
-        notes: `تسليم يدوي فوري: ${currentDist.quantityPerBeneficiary}`
-      });
-
-      if (!res.success) {
-        alert(res.error || "تعذر التسليم");
-      }
-    } catch (err: any) {
-      alert("خطأ: " + err?.message);
-    }
+    setScannerTargetBeneficiaryId(ben.id);
+    setIsScannerOpen(true);
   };
 
   // Quick Cancel Handover Click
@@ -638,7 +624,10 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
-            onClick={() => setIsScannerOpen(true)}
+            onClick={() => {
+              setScannerTargetBeneficiaryId(undefined);
+              setIsScannerOpen(true);
+            }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
           >
             <Camera className="w-4 h-4" />
@@ -874,7 +863,10 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsScannerOpen(true)}
+                onClick={() => {
+                  setScannerTargetBeneficiaryId(undefined);
+                  setIsScannerOpen(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all cursor-pointer"
               >
                 <Camera className="w-4 h-4" />
@@ -1030,27 +1022,47 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
                           )}
                         </td>
                         <td className="p-3 text-[11px]">
-                          {ben.hasReceived && ben.handoverRecord ? (
-                            <div className="space-y-0.5">
-                              <div className="font-mono text-neutral-700 dark:text-neutral-300">
-                                {ben.handoverRecord.date} - {ben.handoverRecord.time}
+                          {ben.hasReceived && ben.handoverRecord ? (() => {
+                            const rawPhoto = ben.handoverRecord.photoUrl || (ben.handoverRecord.proofPhotos && ben.handoverRecord.proofPhotos[0]) || '';
+                            const resolvedPhoto = rawPhoto ? buildApiUrl(rawPhoto) : '';
+                            return (
+                              <div className="flex items-center gap-2.5">
+                                {resolvedPhoto && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryBeneficiary(ben)}
+                                    className="shrink-0 rounded-lg overflow-hidden border border-emerald-300 dark:border-emerald-700 hover:opacity-90 cursor-pointer"
+                                    title="عرض صورة التوثيق المعتمدة"
+                                  >
+                                    <img
+                                      src={resolvedPhoto}
+                                      alt="صورة توثيق التسليم"
+                                      className="w-11 h-11 object-cover"
+                                    />
+                                  </button>
+                                )}
+                                <div className="space-y-0.5 min-w-0">
+                                  <div className="font-mono text-neutral-700 dark:text-neutral-300">
+                                    {ben.handoverRecord.date} - {ben.handoverRecord.time}
+                                  </div>
+                                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                                    المسلّم: {ben.handoverRecord.handedByUserName} • {ben.handoverRecord.quantity || 1} {ben.handoverRecord.unit || 'وحدة'}
+                                  </div>
+                                  {resolvedPhoto && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setHistoryBeneficiary(ben)}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 underline cursor-pointer"
+                                      title="عرض صورة التوثيق المعتمدة"
+                                    >
+                                      <Camera className="w-3 h-3 text-emerald-600" />
+                                      <span>صورة المساعدة موثقة ✓</span>
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="text-[10px] text-neutral-400">
-                                الموظف: {ben.handoverRecord.handedByUserName}
-                              </div>
-                              {(ben.handoverRecord.photoUrl || (ben.handoverRecord.proofPhotos && ben.handoverRecord.proofPhotos[0])) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setHistoryBeneficiary(ben)}
-                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
-                                  title="عرض صورة التوثيق المعتمدة"
-                                >
-                                  <Camera className="w-3 h-3 text-emerald-600" />
-                                  <span>صورة المساعدة موثقة ✓</span>
-                                </button>
-                              )}
-                            </div>
-                          ) : (
+                            );
+                          })() : (
                             <span className="text-neutral-400">---</span>
                           )}
                         </td>
@@ -1125,9 +1137,13 @@ export const DistributionsManager: React.FC<DistributionsManagerProps> = ({
       {isScannerOpen && (
         <AidHandoverScannerModal
           isOpen={isScannerOpen}
-          onClose={() => setIsScannerOpen(false)}
+          onClose={() => {
+            setIsScannerOpen(false);
+            setScannerTargetBeneficiaryId(undefined);
+          }}
           distributions={activeDistributions}
           selectedDistributionId={selectedDistId}
+          initialBeneficiaryId={scannerTargetBeneficiaryId}
           beneficiaries={beneficiaries}
           handoverRecords={handoverRecords}
           currentUser={currentUser}

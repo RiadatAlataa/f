@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Beneficiary, DistributionHandoverRecord } from "../types";
 import { OfficialLetterheadTemplate } from "./OfficialLetterheadTemplate";
+import { buildApiUrl } from "../config/api";
 
 interface BeneficiaryHistoryModalProps {
   beneficiary: Beneficiary | null;
@@ -190,7 +191,8 @@ export const BeneficiaryHistoryModal: React.FC<BeneficiaryHistoryModalProps> = (
                 <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
                   {myHandovers.map((rec, idx) => {
                     const hasPhoto = !!rec.photoUrl || (rec.proofPhotos && rec.proofPhotos.length > 0);
-                    const photoSrc = rec.photoUrl || (rec.proofPhotos && rec.proofPhotos[0]) || "";
+                    const rawPhotoSrc = rec.photoUrl || (rec.proofPhotos && rec.proofPhotos[0]) || "";
+                    const photoSrc = rawPhotoSrc ? buildApiUrl(rawPhotoSrc) : "";
 
                     return (
                       <tr key={rec.id} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">

@@ -16,7 +16,9 @@ import { InitiativeRatingModal } from "./InitiativeRatingModal";
 import { VolunteerMonthlyReportModal } from "./VolunteerMonthlyReportModal";
 import { VolunteerKnightsModal } from "./VolunteerKnights";
 import { TeamSupportManager } from "./TeamSupportManager";
-import { Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, Department, VolunteerTeam, IssuedCertificate, CertificateTemplate, InitiativeRating, VolunteerCardTemplate } from "../types";
+import { VolunteerCharterModal, getCharterStatusMeta } from "./VolunteerCharterModal";
+import { buildApiUrl, getAuthHeaders } from "../config/api";
+import { Volunteer, Initiative, JoinRequest, AttendanceRecord, Evaluation, Department, VolunteerTeam, IssuedCertificate, CertificateTemplate, InitiativeRating, VolunteerCardTemplate, VolunteerCharter } from "../types";
 
 interface VolunteerDashboardProps {
   currentVolunteer: Volunteer;
@@ -55,7 +57,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   onSubmitRating,
   onBackToHome
 }) => {
-  const [activeTab, setActiveTab] = useState<'home' | 'certificates' | 'leaderboard' | 'initiatives' | 'notifications' | 'assistant' | 'profile' | 'support'>(() => {
+  const [activeTab, setActiveTab] = useState<'home' | 'charter' | 'certificates' | 'leaderboard' | 'initiatives' | 'notifications' | 'assistant' | 'profile' | 'support'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_volunteer_tab');
       if (saved) return saved as any;
@@ -68,6 +70,98 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   useEffect(() => {
     setVolunteerState(currentVolunteer);
   }, [currentVolunteer]);
+
+  // Independent Electronic Volunteer Charter State
+  const [myCharters, setMyCharters] = useState<VolunteerCharter[]>([]);
+  const [loadingCharters, setLoadingCharters] = useState(false);
+  const [activeCharterModal, setActiveCharterModal] = useState<VolunteerCharter | null>(null);
+
+  const loadMyCharters = async () => {
+    setLoadingCharters(true);
+    try {
+      const res = await fetch(buildApiUrl("/api/volunteer-charters"), {
+        headers: getAuthHeaders(),
+        credentials: "same-origin"
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(json.charters)) {
+        setMyCharters(json.charters);
+      }
+    } catch (e) {
+      console.warn("Could not load volunteer charters:", e);
+    } finally {
+      setLoadingCharters(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMyCharters();
+  }, [volunteerState.id]);
+
+  // Guided Profile Completion state (for manually added volunteers)
+  const needsProfileCompletion = Boolean(
+    volunteerState.addedManually &&
+    (!volunteerState.profileCompleted || volunteerState.status === 'awaiting_profile_completion')
+  );
+  const [cpName, setCpName] = useState(volunteerState.name || "");
+  const [cpEmail, setCpEmail] = useState(volunteerState.email || "");
+  const [cpPhone, setCpPhone] = useState(volunteerState.phone || "");
+  const [cpNationalId, setCpNationalId] = useState(volunteerState.nationalId || "");
+  const [cpCity, setCpCity] = useState(volunteerState.city || "مكة المكرمة");
+  const [cpDistrict, setCpDistrict] = useState(volunteerState.district || "العسيلة");
+  const [cpAddress, setCpAddress] = useState(volunteerState.address || "");
+  const [cpEmergencyPhone, setCpEmergencyPhone] = useState(volunteerState.emergencyPhone || "");
+  const [cpExperiences, setCpExperiences] = useState(volunteerState.experiences || "");
+  const [isCompletingProfile, setIsCompletingProfile] = useState(false);
+  const [cpFeedback, setCpFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    setCpName(volunteerState.name || "");
+    setCpEmail(volunteerState.email || "");
+    setCpPhone(volunteerState.phone || "");
+    setCpNationalId(volunteerState.nationalId || "");
+    setCpCity(volunteerState.city || "مكة المكرمة");
+    setCpDistrict(volunteerState.district || "العسيلة");
+    setCpAddress(volunteerState.address || "");
+    setCpEmergencyPhone(volunteerState.emergencyPhone || "");
+    setCpExperiences(volunteerState.experiences || "");
+  }, [volunteerState]);
+
+  const handleCompleteVolunteerProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCompletingProfile(true);
+    setCpFeedback(null);
+    try {
+      const res = await fetch(buildApiUrl("/api/db/volunteers/complete-profile"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "same-origin",
+        body: JSON.stringify({
+          volunteerId: volunteerState.id,
+          name: cpName.trim(),
+          email: cpEmail.trim(),
+          phone: cpPhone.trim(),
+          nationalId: cpNationalId.trim(),
+          city: cpCity.trim(),
+          district: cpDistrict.trim(),
+          address: cpAddress.trim(),
+          emergencyPhone: cpEmergencyPhone.trim(),
+          experiences: cpExperiences.trim()
+        })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.ok && json.volunteer) {
+        setVolunteerState(json.volunteer);
+        setCpFeedback({ type: 'success', text: 'تم استكمال بيانات ملفك الشخصي وتفعيل حسابك التطوعي بنجاح!' });
+      } else {
+        setCpFeedback({ type: 'error', text: json.error || 'تعذر حفظ استكمال البيانات الشخصية.' });
+      }
+    } catch (err: any) {
+      setCpFeedback({ type: 'error', text: err?.message || 'حدث خطأ أثناء الاتصال بالخادم.' });
+    } finally {
+      setIsCompletingProfile(false);
+    }
+  };
 
   // WhatsApp Profile Photo Cropper Modal State
   const [showProfileCropModal, setShowProfileCropModal] = useState(false);
@@ -222,9 +316,10 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     setIsSavingProfile(true);
     setProfileSaveFeedback(null);
     try {
-      const res = await fetch("/api/db/volunteers/update-profile", {
+      const res = await fetch(buildApiUrl("/api/db/volunteers/update-profile"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
+        credentials: "same-origin",
         body: JSON.stringify({
           volunteerId: volunteerState.id,
           phone: editPhone.trim(),
@@ -256,9 +351,10 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     setChangeRequestError(null);
     setChangeRequestSuccess(null);
     try {
-      const res = await fetch("/api/db/volunteers/request-data-change", {
+      const res = await fetch(buildApiUrl("/api/db/volunteers/request-data-change"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
+        credentials: "same-origin",
         body: JSON.stringify({
           volunteerId: volunteerState.id,
           fieldName: changeRequestField,
@@ -413,6 +509,27 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         >
           <User className="w-4 h-4" />
           <span>حسابي</span>
+          {needsProfileCompletion && (
+            <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+              استكمال
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('charter')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-black transition-all cursor-pointer border-b-2 ${
+            activeTab === 'charter' 
+              ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <FileText className="w-4 h-4 text-emerald-600" />
+          <span>ميثاق التطوع</span>
+          {myCharters.some(c => c.status === 'awaiting_volunteer_signature') && (
+            <span className="bg-amber-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+              بانتظار التوقيع
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('leaderboard')}
@@ -493,6 +610,101 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         {/* 1. HOME VIEW: 6 Distinctive Brand Sections */}
         {activeTab === 'home' && (
           <div className="space-y-6">
+
+            {/* Guided Profile Completion Form for Manually Added Volunteers */}
+            {needsProfileCompletion && (
+              <div className="bg-gradient-to-br from-blue-50 via-white to-emerald-50 border-2 border-[#0754C7]/30 rounded-3xl p-5 sm:p-6 shadow-md space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-[#0754C7] text-white flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-[#071C43]">استكمال البيانات الشخصية وتفعيل العضوية التطوعية</h3>
+                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                      تم تسجيل حسابك المبدئي من قِبل الإدارة. يرجى استكمال بياناتك الشخصية أدناه لاعتماد ملفك التطوعي وتفعيله بالكامل.
+                    </p>
+                  </div>
+                </div>
+
+                {cpFeedback && (
+                  <div className={`p-3 rounded-xl text-xs font-bold ${cpFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
+                    {cpFeedback.text}
+                  </div>
+                )}
+
+                <form onSubmit={handleCompleteVolunteerProfile} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">الاسم الكامل *</label>
+                    <input type="text" required value={cpName} onChange={(e) => setCpName(e.target.value)} className="w-full rounded-xl border border-slate-200 p-2.5 bg-white" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">رقم الهوية الوطنية / الإقامة *</label>
+                    <input type="text" required maxLength={10} value={cpNationalId} onChange={(e) => setCpNationalId(e.target.value)} placeholder="10xxxxxxxx" dir="ltr" className="w-full rounded-xl border border-slate-200 p-2.5 bg-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">رقم الجوال *</label>
+                    <input type="tel" required value={cpPhone} onChange={(e) => setCpPhone(e.target.value)} dir="ltr" className="w-full rounded-xl border border-slate-200 p-2.5 bg-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">البريد الإلكتروني</label>
+                    <input type="email" value={cpEmail} onChange={(e) => setCpEmail(e.target.value)} dir="ltr" className="w-full rounded-xl border border-slate-200 p-2.5 bg-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">المدينة *</label>
+                    <input type="text" required value={cpCity} onChange={(e) => setCpCity(e.target.value)} className="w-full rounded-xl border border-slate-200 p-2.5 bg-white" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">الحي / العنوان السكني</label>
+                    <input type="text" value={cpAddress || cpDistrict} onChange={(e) => { setCpAddress(e.target.value); setCpDistrict(e.target.value); }} className="w-full rounded-xl border border-slate-200 p-2.5 bg-white" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">رقم جوال الطوارئ</label>
+                    <input type="tel" value={cpEmergencyPhone} onChange={(e) => setCpEmergencyPhone(e.target.value)} dir="ltr" placeholder="05xxxxxxxx" className="w-full rounded-xl border border-slate-200 p-2.5 bg-white font-mono" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-slate-700 block mb-1">المهارات والخبرات التطوعية</label>
+                    <input type="text" value={cpExperiences} onChange={(e) => setCpExperiences(e.target.value)} placeholder="الإسعافات، التنظيم الميداني، العلاقات العامة..." className="w-full rounded-xl border border-slate-200 p-2.5 bg-white" />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3 flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={isCompletingProfile}
+                      className="px-6 py-2.5 rounded-xl bg-[#0754C7] hover:bg-blue-700 text-white font-black text-xs shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{isCompletingProfile ? 'جارٍ اعتماد البيانات...' : 'حفظ واستكمال الملف الشخصي الآن'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Electronic Volunteer Charter Alert Banner */}
+            {myCharters.some(c => c.status === 'awaiting_volunteer_signature') && (
+              <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black">ميثاق التطوع الإلكتروني بانتظار توقيعك!</h4>
+                    <p className="text-[11px] text-emerald-100 mt-0.5">
+                      يرجى مراجعة بنود ميثاق العمل التطوعي والموافقة الإلكترونية ليصل إلى قائد الفريق للاعتماد الرسمي.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pending = myCharters.find(c => c.status === 'awaiting_volunteer_signature') || myCharters[0];
+                    if (pending) setActiveCharterModal(pending);
+                  }}
+                  className="bg-white text-emerald-900 font-black text-xs px-4 py-2 rounded-xl hover:bg-emerald-50 cursor-pointer shrink-0 shadow-xs"
+                >
+                  مراجعة وتوقيع الميثاق
+                </button>
+              </div>
+            )}
             
             {/* Mandatory Rating Warning Banner if certificates are locked */}
             {lockedCertificates.length > 0 && (
@@ -1296,10 +1508,11 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                         onClick={async () => {
                           if (confirm("هل تريد حذف صورة الحساب الشخصية والرجوع للصورة الرسمية؟")) {
                             try {
-                              const res = await fetch("/api/db/volunteers/profile-image", {
+                              const res = await fetch(buildApiUrl("/api/db/volunteers/profile-image"), {
                                 method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ volunteerId: volunteerState.id, remove: true })
+                                headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+                                credentials: "same-origin",
+                                body: JSON.stringify({ volunteerId: volunteerState.id, action: "delete" })
                               });
                               const data = await res.json();
                               if (res.ok && data.ok) {
@@ -1558,6 +1771,80 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
               title="قسم: بطاقة المتطوع الرسمية (المعاينة والطباعة)"
               onReissue={() => onReissueCard(volunteerState.id)}
             />
+          </div>
+        )}
+
+        {/* INDEPENDENT ELECTRONIC VOLUNTEER CHARTER TAB */}
+        {activeTab === 'charter' && (
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-emerald-600" />
+                  <span>ميثاق التطوع الإلكتروني الرسمي</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  وثيقة التزام مستقلّة باسمك وإصداراتها الموثقة لدى جمعية ريادة العطاء لخدمة الإنسان بالعسيلة
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadMyCharters}
+                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer self-start"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingCharters ? 'animate-spin' : ''}`} />
+                <span>تحديث</span>
+              </button>
+            </div>
+
+            {myCharters.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {myCharters.map((ch) => {
+                  const meta = getCharterStatusMeta(ch.status);
+                  return (
+                    <div key={ch.id} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[11px] font-mono text-slate-500 block">{ch.charterNumber}</span>
+                          <h4 className="text-sm font-black text-slate-900">{ch.teamNameAr || myTeam?.nameAr}</h4>
+                          <span className="text-[11px] text-slate-500">الإصدار: v{ch.currentVersion}</span>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${meta.badgeClass}`}>
+                          {meta.labelAr}
+                        </span>
+                      </div>
+
+                      {ch.rejectionReason && (
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                          <strong>ملاحظة الرفض:</strong> {ch.rejectionReason}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200/70">
+                        <span className="text-[11px] text-slate-500">
+                          {ch.leaderApprovedAt
+                            ? `اعتمد بتاريخ: ${new Date(ch.leaderApprovedAt).toLocaleDateString('ar-SA')}`
+                            : ch.volunteerSignedAt
+                            ? `وقّعت بتاريخ: ${new Date(ch.volunteerSignedAt).toLocaleDateString('ar-SA')}`
+                            : 'بانتظار مراجعتك وتوقيعك'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveCharterModal(ch)}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black cursor-pointer"
+                        >
+                          {ch.status === 'awaiting_volunteer_signature' ? 'توقيع الميثاق الآن' : 'عرض / طباعة PDF'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">
+                لا يوجد ميثاق تطوع صادر باسمك حتى الآن.
+              </div>
+            )}
           </div>
         )}
 
@@ -1851,6 +2138,19 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
             </div>
           </form>
         </div>
+      )}
+
+      {/* Electronic Volunteer Charter Interactive & Printable Modal */}
+      {activeCharterModal && (
+        <VolunteerCharterModal
+          charter={activeCharterModal}
+          viewerRole="volunteer"
+          onClose={() => setActiveCharterModal(null)}
+          onUpdated={(updated) => {
+            setMyCharters(prev => prev.map(item => item.id === updated.id ? updated : item));
+            setActiveCharterModal(updated);
+          }}
+        />
       )}
 
     </div>

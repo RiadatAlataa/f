@@ -68,6 +68,8 @@ import { DepartmentPermissionsModal } from "./DepartmentPermissionsModal";
 import { DepartmentStaffModal } from "./DepartmentStaffModal";
 import { DepartmentTasksModal } from "./DepartmentTasksModal";
 import { DepartmentDeleteModal } from "./DepartmentDeleteModal";
+import { VolunteerTeamsDirectoryPanel } from "./VolunteerTeamsDirectoryPanel";
+import { VolunteerCharterTrackerPanel } from "./VolunteerCharterTrackerPanel";
 
 const DEFAULT_ADMIN_HOMESETTINGS: HomeSettings = {
   logoUrl: "/logo.png",
@@ -324,7 +326,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRefreshGlobalData,
   onToggleMaintenance
 }: AdminDashboardProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'personal_tasks' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'password_resets' | 'team_support' | 'registration_links' | 'beneficiaries_archive' | 'volunteers_archive'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'maintenance_status' | 'stats' | 'personal_tasks' | 'deps' | 'org_chart' | 'hero_slides' | 'partners_mgmt' | 'users_mgmt' | 'employee_requests' | 'teams' | 'vols' | 'cards' | 'init' | 'logs' | 'backup' | 'permissions' | 'notifications' | 'leaderboard' | 'globalsearch' | 'homepage' | 'attendance_archive' | 'joinrequests' | 'team_join_requests' | 'chat' | 'support' | 'system_settings' | 'email_settings' | 'official_identity' | 'whatsapp_settings' | 'opp_requests' | 'enterprise_finance' | 'store_finance' | 'inventory' | 'custody' | 'beneficiaries' | 'distributions' | 'beneficiary_ratings' | 'letters' | 'volunteer_mgmt_dashboard' | 'hr_dashboard' | 'volunteer_transfers' | 'volunteers_teams_directory' | 'volunteer_charters' | 'password_resets' | 'team_support' | 'registration_links' | 'beneficiaries_archive' | 'volunteers_archive'>(() => {
     try {
       const saved = localStorage.getItem('reyadat_admin_subtab');
       if (saved) return saved as any;
@@ -519,6 +521,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'vols', label: 'سجلات وساعات المتطوعين', icon: Users, badge: activeVolunteers.length || 0 },
         { id: 'volunteers_archive', label: 'أرشيف المتطوعين', icon: Archive, badge: archivedVolunteersCount || undefined },
         { id: 'teams', label: 'الفرق التطوعية وقادتها', icon: UsersRound, badge: safeTeams.length || 0 },
+        { id: 'volunteers_teams_directory', label: 'الفرق التطوعية وأعضاؤها', icon: UsersRound, badge: 'متكامل' },
+        { id: 'volunteer_charters', label: 'متابعة ميثاق التطوع', icon: FileText, badge: 'توثيق' },
         { id: 'joinrequests', label: 'طلبات انضمام الأفراد', icon: FileText, badge: safeVolunteerApplications.filter(a => a.status === 'pending').length || undefined },
         { id: 'team_join_requests', label: 'طلبات انضمام الفرق', icon: UsersRound, badge: safeTeamApplications.filter(a => a.status === 'pending').length || undefined },
         { id: 'volunteer_transfers', label: 'طلبات نقل المتطوعين وإنهاء الارتباط', icon: ArrowRightLeft, badge: 'جديد' },
@@ -723,6 +727,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showVolModal, setShowVolModal] = useState(false);
   const [editingVol, setEditingVol] = useState<Partial<Volunteer> | null>(null);
   const [archiveTargetVolunteer, setArchiveTargetVolunteer] = useState<Volunteer | null>(null);
+  const [isSavingManualVol, setIsSavingManualVol] = useState(false);
+  const [manualVolError, setManualVolError] = useState<string | null>(null);
+  const [createdManualCreds, setCreatedManualCreds] = useState<{
+    name: string;
+    membershipNumber: string;
+    loginIdentifier: string;
+    temporaryPassword: string;
+  } | null>(null);
+  const [copiedManualCreds, setCopiedManualCreds] = useState(false);
 
   // Volunteer Monthly Report Modal State
   const [showReportModal, setShowReportModal] = useState(false);
@@ -871,12 +884,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSaveVolunteer = (e: React.FormEvent) => {
+  const handleSaveVolunteer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingVol) {
+    if (!editingVol) return;
+
+    if (editingVol.id) {
       onAddVolunteer(editingVol);
       setShowVolModal(false);
       setEditingVol(null);
+      return;
+    }
+
+    // Creating a new volunteer manually: use hardened backend route that generates unique strong temporary password + Charter
+    setIsSavingManualVol(true);
+    setManualVolError(null);
+    try {
+      const res = await fetch(buildApiUrl("/api/db/volunteers/manual-create"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "same-origin",
+        body: JSON.stringify({
+          name: editingVol.name,
+          email: editingVol.email,
+          phone: editingVol.phone,
+          nationalId: editingVol.nationalId,
+          teamId: editingVol.teamId,
+          departmentId: editingVol.departmentId,
+          titleAr: editingVol.titleAr,
+          titleEn: editingVol.titleEn,
+          gender: editingVol.gender,
+          photo: editingVol.photo
+        })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setManualVolError(json.error || "تعذر إضافة المتطوع يدوياً.");
+        return;
+      }
+      setShowVolModal(false);
+      setEditingVol(null);
+      if (json.credentials) {
+        setCreatedManualCreds(json.credentials);
+      }
+      if (onRefreshGlobalData) {
+        await onRefreshGlobalData();
+      }
+    } catch (err: any) {
+      setManualVolError(err?.message || "حدث خطأ أثناء إضافة المتطوع.");
+    } finally {
+      setIsSavingManualVol(false);
     }
   };
 
@@ -1811,6 +1867,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* TAB: VOLUNTEER TRANSFERS & TERMINATION REQUESTS */}
+          {activeSubTab === 'volunteers_teams_directory' && (
+            <div className="space-y-6">
+              <VolunteerTeamsDirectoryPanel
+                viewerRole="admin"
+                onRefreshDatabase={onRefreshGlobalData}
+              />
+            </div>
+          )}
+
+          {activeSubTab === 'volunteer_charters' && (
+            <div className="space-y-6">
+              <VolunteerCharterTrackerPanel
+                mode="admin"
+                onRefreshDatabase={onRefreshGlobalData}
+              />
+            </div>
+          )}
+
           {activeSubTab === 'volunteer_transfers' && (
             <div className="space-y-6">
               <VolunteerTeamTransferManager
@@ -5036,6 +5110,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
               <div className="space-y-1">
+                <label className="text-[10px] font-bold text-neutral-400">رقم الهوية الوطنية / الإقامة (اختياري الآن - يستكمله المتطوع لاحقاً):</label>
+                <input
+                  id="modal-vol-national-id"
+                  type="text"
+                  maxLength={10}
+                  value={editingVol.nationalId || ""}
+                  onChange={(e) => setEditingVol({ ...editingVol, nationalId: e.target.value })}
+                  placeholder="10xxxxxxxx"
+                  className="w-full border border-neutral-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-emerald-500/20"
+                  dir="ltr"
+                />
+              </div>
+              <div className="space-y-1">
                 <label className="text-[10px] font-bold text-neutral-400">الفريق المعين له:</label>
                 <select
                   id="modal-vol-team"
@@ -5095,23 +5182,107 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
+            {manualVolError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                {manualVolError}
+              </div>
+            )}
+
             <div className="flex gap-2 pt-3">
               <button
                 id="modal-vol-submit"
                 type="submit"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-lg cursor-pointer"
+                disabled={isSavingManualVol}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs py-2 rounded-lg cursor-pointer"
               >
-                حفظ المتطوع
+                {isSavingManualVol ? "جارٍ الإنشاء وتوليد كلمة المرور المؤقتة..." : (editingVol.id ? "حفظ التعديلات" : "إضافة المتطوع وتوليد الدخول")}
               </button>
               <button
                 type="button"
-                onClick={() => setShowVolModal(false)}
+                onClick={() => {
+                  setShowVolModal(false);
+                  setManualVolError(null);
+                }}
                 className="flex-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2 rounded-lg cursor-pointer"
               >
                 إلغاء
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* One-time Copyable Temporary Credentials Modal after Manual Volunteer Creation */}
+      {createdManualCreds && (
+        <div className="fixed inset-0 bg-black/65 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-right space-y-4 border border-emerald-200 shadow-2xl" dir="rtl">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div className="flex items-center gap-2 text-emerald-700">
+                <CheckCircle2 className="w-5 h-5" />
+                <h3 className="text-sm font-black">تم إضافة المتطوع وإنشاء ميثاق التطوع تلقائياً</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatedManualCreds(null);
+                  setCopiedManualCreds(false);
+                }}
+                className="text-neutral-400 hover:text-neutral-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              تظهر بيانات الدخول المؤقتة لمرة واحدة فقط. سيُطلب من المتطوع تغيير كلمة المرور المؤقتة واستكمال ملفه الشخصي عند أول تسجيل دخول.
+            </p>
+
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">اسم المتطوع:</span>
+                <strong className="text-neutral-900">{createdManualCreds.name}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">رقم العضوية:</span>
+                <strong className="font-mono text-neutral-900">{createdManualCreds.membershipNumber}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500 font-bold">معرّف الدخول:</span>
+                <strong className="font-mono text-neutral-900" dir="ltr">{createdManualCreds.loginIdentifier}</strong>
+              </div>
+              <div className="flex justify-between items-center pt-1.5 border-t border-emerald-200">
+                <span className="text-emerald-900 font-black">كلمة المرور المؤقتة:</span>
+                <strong className="font-mono text-sm bg-white px-2.5 py-1 rounded-lg border border-emerald-300 text-emerald-800 select-all" dir="ltr">
+                  {createdManualCreds.temporaryPassword}
+                </strong>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `بيانات دخول المتطوع:\nالاسم: ${createdManualCreds.name}\nرقم العضوية: ${createdManualCreds.membershipNumber}\nمعرّف الدخول: ${createdManualCreds.loginIdentifier}\nكلمة المرور المؤقتة: ${createdManualCreds.temporaryPassword}\n(يجب تغيير كلمة المرور واستكمال البيانات عند أول دخول)`;
+                  navigator.clipboard.writeText(text);
+                  setCopiedManualCreds(true);
+                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {copiedManualCreds ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedManualCreds ? "تم النسخ" : "نسخ بيانات الدخول"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatedManualCreds(null);
+                  setCopiedManualCreds(false);
+                }}
+                className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

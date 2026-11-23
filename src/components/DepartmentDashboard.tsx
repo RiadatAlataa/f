@@ -54,6 +54,8 @@ import {
 } from 'lucide-react';
 import { PersonalTasksWorkspace } from './PersonalTasksWorkspace';
 import { BeneficiariesStatisticsModal } from './BeneficiariesStatisticsModal';
+import { VolunteerTeamsDirectoryPanel } from './VolunteerTeamsDirectoryPanel';
+import { VolunteerCharterTrackerPanel } from './VolunteerCharterTrackerPanel';
 import { 
   Department, 
   DepartmentDirective, 
@@ -325,6 +327,8 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     const tabs: { id: string; label: string }[] = [];
     if (isWarehouseDept) tabs.push({ id: 'inventory', label: 'إدارة المخزون والمستودعات' });
     if (isVolunteerDept) {
+      tabs.push({ id: 'volunteer_teams', label: 'الفرق التطوعية' });
+      tabs.push({ id: 'volunteer_charters', label: 'متابعة ميثاق التطوع' });
       tabs.push({ id: 'volunteer_ops', label: 'الفرص والمبادرات التطوعية' });
       tabs.push({ id: 'volunteer_transfers', label: 'طلبات نقل وإنهاء ارتباط المتطوعين' });
       tabs.push({ id: 'volunteers_archive', label: 'أرشيف المتطوعين' });
@@ -758,6 +762,12 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
     const items: { id: string; label: string; badge?: string | number; icon: React.ReactNode }[] = [];
     if (isWarehouseDept && isPageAllowed('inventory')) {
       items.push({ id: 'inventory', label: 'إدارة المخزون والمستودعات', badge: `${inventoryItems.length} صنف`, icon: <Boxes className="w-4 h-4 shrink-0" /> });
+    }
+    if (isVolunteerDept && isPageAllowed('volunteer_teams')) {
+      items.push({ id: 'volunteer_teams', label: 'الفرق التطوعية', badge: `${teams.length} فريق`, icon: <Users className="w-4 h-4 shrink-0" /> });
+    }
+    if (isVolunteerDept && isPageAllowed('volunteer_charters')) {
+      items.push({ id: 'volunteer_charters', label: 'متابعة ميثاق التطوع', icon: <FileText className="w-4 h-4 shrink-0" /> });
     }
     if (isVolunteerDept && isPageAllowed('volunteer_ops')) {
       items.push({ id: 'volunteer_ops', label: 'الفرص والمبادرات التطوعية', badge: `${initiatives.length} فرصة`, icon: <Sparkles className="w-4 h-4 shrink-0" /> });
@@ -1246,6 +1256,24 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
         )}
 
         {/* 2.1 VOLUNTEER TRANSFERS & TERMINATION TAB FOR VOLUNTEER DEPT */}
+        {activeTab === 'volunteer_teams' && isVolunteerDept && (
+          <div className="bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#1e3a66] shadow-xs rounded-3xl p-4 sm:p-6">
+            <VolunteerTeamsDirectoryPanel
+              viewerRole="department_admin"
+              onRefreshDatabase={onRefreshGlobalData}
+            />
+          </div>
+        )}
+
+        {activeTab === 'volunteer_charters' && isVolunteerDept && (
+          <div className="bg-white dark:bg-[#0e213d] border border-slate-200 dark:border-[#1e3a66] shadow-xs rounded-3xl p-4 sm:p-6">
+            <VolunteerCharterTrackerPanel
+              mode="department_admin"
+              onRefreshDatabase={onRefreshGlobalData}
+            />
+          </div>
+        )}
+
         {activeTab === 'volunteer_transfers' && (
           <div className="space-y-6">
             <VolunteerTeamTransferManager
@@ -2465,7 +2493,7 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
         {/* Fallback for unmapped tabs */}
         {![
-          'inventory', 'volunteer_ops', 'volunteer_transfers', 'volunteers_archive',
+          'inventory', 'volunteer_teams', 'volunteer_charters', 'volunteer_ops', 'volunteer_transfers', 'volunteers_archive',
           'team_support', 'beneficiary_stats', 'password_resets', 'requests',
           'beneficiaries', 'hr_staff', 'dept_users', 'finance_ledger', 'projects_list',
           'media_news', 'media_gallery', 'directives', 'tasks', 'staff', 'letters', 'credentials',

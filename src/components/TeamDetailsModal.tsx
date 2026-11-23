@@ -49,20 +49,28 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
   const basePoints = Number(team.points) || 0;
   const totalPoints = Math.max(basePoints, membersPointsSum);
 
+  const isEn = lang === "en";
+  const primaryVision = isEn ? (team.visionEn || team.visionAr || team.vision) : (team.visionAr || team.vision || team.visionEn);
+  const secondaryVision = isEn ? (team.visionAr && team.visionAr !== primaryVision ? team.visionAr : "") : (team.visionEn && team.visionEn !== primaryVision ? team.visionEn : "");
+  const primaryMission = isEn ? (team.missionEn || team.missionAr || team.mission) : (team.missionAr || team.mission || team.missionEn);
+  const secondaryMission = isEn ? (team.missionAr && team.missionAr !== primaryMission ? team.missionAr : "") : (team.missionEn && team.missionEn !== primaryMission ? team.missionEn : "");
+  const rawPrimaryGoals = isEn ? (team.goalsEn || team.goalsAr || team.goals) : (team.goalsAr || team.goals || team.goalsEn);
+  const rawSecondaryGoals = isEn ? (team.goalsAr && team.goalsAr !== rawPrimaryGoals ? team.goalsAr : "") : (team.goalsEn && team.goalsEn !== rawPrimaryGoals ? team.goalsEn : "");
+
   // Parse goals into array if comma or newline separated
   const goalsList: string[] = React.useMemo(() => {
-    if (!team.goals) return [];
-    if (Array.isArray(team.goals)) return team.goals;
-    return team.goals
+    if (!rawPrimaryGoals) return [];
+    if (Array.isArray(rawPrimaryGoals)) return rawPrimaryGoals;
+    return String(rawPrimaryGoals)
       .split(/[\n،,]+/)
       .map((g) => g.trim())
       .filter(Boolean);
-  }, [team.goals]);
+  }, [rawPrimaryGoals]);
 
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs overflow-y-auto animate-fade-in"
-      dir="rtl"
+      dir={isEn ? "ltr" : "rtl"}
     >
       <div 
         className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden my-6 relative flex flex-col max-h-[90vh]"
@@ -111,9 +119,9 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>فريق تطوعي معتمد ومسجل</span>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black truncate">{team.nameAr}</h2>
+              <h2 className="text-xl sm:text-2xl font-black truncate">{isEn ? (team.nameEn || team.nameAr) : team.nameAr}</h2>
               <p className="text-xs text-white/80 mt-0.5 font-medium flex items-center gap-2">
-                <span>القائد: <strong className="font-bold text-white">{team.leaderName || "قائد معتمد"}</strong></span>
+                <span>{isEn ? "Leader:" : "القائد:"} <strong className="font-bold text-white">{team.leaderName || (isEn ? "Certified Leader" : "قائد معتمد")}</strong></span>
                 {team.city && <span>• {team.city}</span>}
               </p>
             </div>
@@ -121,12 +129,12 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-right">
+        <div className={`p-6 overflow-y-auto space-y-6 flex-1 ${isEn ? "text-left" : "text-right"}`}>
           {/* Live Stats Cards Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-slate-50 dark:bg-neutral-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-neutral-700/60 text-center">
               <Users className="w-5 h-5 text-blue-600 dark:text-blue-400 mx-auto mb-1" />
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">المتطوعون النشطون</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">{isEn ? "Active Volunteers" : "المتطوعون النشطون"}</span>
               <strong className="text-lg font-black text-slate-900 dark:text-white font-mono">
                 {activeMembers.length || Number(team.membersCount) || 0}
               </strong>
@@ -134,7 +142,7 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
 
             <div className="bg-slate-50 dark:bg-neutral-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-neutral-700/60 text-center">
               <Award className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">مجموع النقاط</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">{isEn ? "Total Points" : "مجموع النقاط"}</span>
               <strong className="text-lg font-black text-blue-600 dark:text-blue-400 font-mono">
                 {totalPoints}
               </strong>
@@ -142,7 +150,7 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
 
             <div className="bg-slate-50 dark:bg-neutral-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-neutral-700/60 text-center">
               <Activity className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mx-auto mb-1" />
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">المبادرات المنفذة</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">{isEn ? "Initiatives" : "المبادرات المنفذة"}</span>
               <strong className="text-lg font-black text-slate-900 dark:text-white font-mono">
                 {teamInitiatives.length || Number(team.initiativesCount) || 0}
               </strong>
@@ -150,45 +158,55 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
 
             <div className="bg-slate-50 dark:bg-neutral-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-neutral-700/60 text-center">
               <Calendar className="w-5 h-5 text-purple-600 dark:text-purple-400 mx-auto mb-1" />
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">سنة التأسيس</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block">{isEn ? "Established" : "سنة التأسيس"}</span>
               <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-white font-mono">
                 {team.establishedDate ? team.establishedDate.split("-")[0] : "2026"}
               </strong>
             </div>
           </div>
 
-          {/* 1. Team Vision */}
-          {team.vision && (
+          {/* 1. Team Vision (Bilingual) */}
+          {primaryVision && (
             <div className="space-y-2">
               <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <Compass className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span>رؤية الفريق</span>
+                <span>{isEn ? "Team Vision" : "رؤية الفريق"}</span>
               </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-blue-50/60 dark:bg-blue-950/30 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/40">
-                {team.vision}
-              </p>
+              <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-blue-50/60 dark:bg-blue-950/30 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-900/40 space-y-2">
+                <p>{primaryVision}</p>
+                {secondaryVision && (
+                  <p dir={isEn ? "rtl" : "ltr"} className="text-[11px] text-slate-500 dark:text-slate-400 pt-2 border-t border-blue-200/60 dark:border-blue-800/40">
+                    {secondaryVision}
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
-          {/* 2. Team Mission */}
-          {team.mission && (
+          {/* 2. Team Mission (Bilingual) */}
+          {primaryMission && (
             <div className="space-y-2">
               <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>رسالة الفريق</span>
+                <span>{isEn ? "Team Mission" : "رسالة الفريق"}</span>
               </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-emerald-50/60 dark:bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-100 dark:border-emerald-900/40">
-                {team.mission}
-              </p>
+              <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-emerald-50/60 dark:bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 space-y-2">
+                <p>{primaryMission}</p>
+                {secondaryMission && (
+                  <p dir={isEn ? "rtl" : "ltr"} className="text-[11px] text-slate-500 dark:text-slate-400 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/40">
+                    {secondaryMission}
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
-          {/* 3. Team Goals */}
+          {/* 3. Team Goals (Bilingual) */}
           {goalsList.length > 0 && (
             <div className="space-y-2.5">
               <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-amber-500" />
-                <span>أهداف الفريق</span>
+                <span>{isEn ? "Team Goals" : "أهداف الفريق"}</span>
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {goalsList.map((goal, idx) => (
@@ -203,6 +221,11 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
                   </div>
                 ))}
               </div>
+              {rawSecondaryGoals && (
+                <p dir={isEn ? "rtl" : "ltr"} className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-neutral-800/40 p-3 rounded-xl border border-slate-100 dark:border-neutral-800">
+                  {rawSecondaryGoals}
+                </p>
+              )}
             </div>
           )}
 
@@ -216,12 +239,14 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 block">قيادة الفريق المعتمدة</span>
+              <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 block">{isEn ? "Certified Team Leadership" : "قيادة الفريق المعتمدة"}</span>
               <h5 className="text-sm font-black text-slate-900 dark:text-white truncate">
-                {team.leaderName || "قائد الفريق"}
+                {team.leaderName || (isEn ? "Team Leader" : "قائد الفريق")}
               </h5>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                مسؤول الإشراف الميداني وتنسيق شؤون المتطوعين لفريق {team.nameAr}
+                {isEn
+                  ? `Field supervision & volunteer coordination for ${team.nameEn || team.nameAr}`
+                  : `مسؤول الإشراف الميداني وتنسيق شؤون المتطوعين لفريق ${team.nameAr}`}
               </p>
             </div>
           </div>
@@ -234,7 +259,7 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
             onClick={onClose}
             className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
           >
-            إغلاق
+            {isEn ? "Close" : "إغلاق"}
           </button>
 
           <button
@@ -246,7 +271,7 @@ export const TeamDetailsModal: React.FC<TeamDetailsModalProps> = ({
             className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
-            <span>انضم إلى هذا الفريق</span>
+            <span>{isEn ? "Join This Team" : "انضم إلى هذا الفريق"}</span>
           </button>
         </div>
       </div>

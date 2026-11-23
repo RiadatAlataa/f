@@ -108,7 +108,7 @@ export const VolunteerTeamsCarousel: React.FC<VolunteerTeamsCarouselProps> = ({
     <section 
       id="volunteer-teams"
       className="py-14 sm:py-20 relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-slate-50 dark:from-neutral-900 dark:via-neutral-850 dark:to-neutral-900 border-t border-b border-slate-200/80 dark:border-neutral-800"
-      dir="rtl"
+      dir={lang === "en" ? "ltr" : "rtl"}
     >
       {/* Decorative Brand Ambient Background */}
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-blue-500/5 dark:bg-blue-400/5 rounded-full blur-3xl pointer-events-none" />
@@ -229,37 +229,60 @@ export const VolunteerTeamsCarousel: React.FC<VolunteerTeamsCarouselProps> = ({
                       </div>
 
                       <h3 className="text-base font-black text-slate-900 dark:text-white truncate mt-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                        {team.nameAr}
+                        {lang === "en" ? (team.nameEn || team.nameAr) : team.nameAr}
                       </h3>
 
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
                         <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span>القائد: <strong className="text-slate-700 dark:text-slate-200 font-bold">{team.leaderName || "قائد معتمد"}</strong></span>
+                        <span>{lang === "en" ? "Leader:" : "القائد:"} <strong className="text-slate-700 dark:text-slate-200 font-bold">{team.leaderName || (lang === "en" ? "Certified Leader" : "قائد معتمد")}</strong></span>
                       </p>
                     </div>
                   </div>
 
-                  {/* Team Vision / Brief */}
-                  <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed mb-4 min-h-[36px]">
-                    {team.vision || team.descriptionAr || "فريق تطوعي نوعي معتمد تحت مظلة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة."}
-                  </p>
+                  {/* Team Bilingual Vision / Mission / Goals Preview before joining */}
+                  <div className="space-y-1.5 mb-4 min-h-[56px]">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                      <span className="font-bold text-blue-700 dark:text-blue-300">
+                        {lang === "en" ? "Vision: " : "الرؤية: "}
+                      </span>
+                      {lang === "en"
+                        ? (team.visionEn || team.visionAr || team.vision || team.descriptionEn || team.descriptionAr || "Specialized accredited volunteer team under Reyadat Al-Ata.")
+                        : (team.visionAr || team.vision || team.visionEn || team.descriptionAr || "فريق تطوعي نوعي معتمد تحت مظلة جمعية ريادة العطاء لخدمة الإنسان بالعسيلة بمكة المكرمة.")}
+                    </p>
+                    {(lang === "en" ? (team.missionEn || team.missionAr || team.mission) : (team.missionAr || team.mission || team.missionEn)) && (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed">
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                          {lang === "en" ? "Mission: " : "الرسالة: "}
+                        </span>
+                        {lang === "en" ? (team.missionEn || team.missionAr || team.mission) : (team.missionAr || team.mission || team.missionEn)}
+                      </p>
+                    )}
+                    {(lang === "en" ? (team.goalsEn || team.goalsAr || team.goals) : (team.goalsAr || team.goals || team.goalsEn)) && (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed">
+                        <span className="font-bold text-amber-700 dark:text-amber-400">
+                          {lang === "en" ? "Goals: " : "الأهداف: "}
+                        </span>
+                        {lang === "en" ? (team.goalsEn || team.goalsAr || team.goals) : (team.goalsAr || team.goals || team.goalsEn)}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Live Stats Row */}
                   <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-neutral-900/70 p-2.5 rounded-xl border border-slate-100 dark:border-neutral-800 text-center mb-4">
                     <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">المتطوعون</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">{lang === "en" ? "Volunteers" : "المتطوعون"}</span>
                       <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-white font-mono">
                         {stats.membersCount}
                       </strong>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">المبادرات</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">{lang === "en" ? "Initiatives" : "المبادرات"}</span>
                       <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-white font-mono">
                         {stats.initiativesCount}
                       </strong>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">النقاط</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">{lang === "en" ? "Points" : "النقاط"}</span>
                       <strong className="text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400 font-mono">
                         {stats.points}
                       </strong>
@@ -275,7 +298,7 @@ export const VolunteerTeamsCarousel: React.FC<VolunteerTeamsCarouselProps> = ({
                     className="flex-1 py-2 px-3 text-xs font-black text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-700 dark:hover:bg-neutral-600 rounded-xl transition-colors flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                    <span>تفاصيل الفريق</span>
+                    <span>{lang === "en" ? "Details" : "تفاصيل الفريق"}</span>
                   </button>
 
                   <button
@@ -284,7 +307,7 @@ export const VolunteerTeamsCarousel: React.FC<VolunteerTeamsCarouselProps> = ({
                     className="flex-1 py-2 px-3 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <UserCheck className="w-3.5 h-3.5" />
-                    <span>انضم للفريق</span>
+                    <span>{lang === "en" ? "Join Team" : "انضم للفريق"}</span>
                   </button>
                 </div>
               </div>

@@ -36,8 +36,16 @@ export const TeamPublicProfileModal: React.FC<TeamPublicProfileModalProps> = ({
     ? team.services 
     : (typeof team.services === 'string' ? team.services.split(',').map(s => s.trim()) : []);
 
+  const isEn = lang === 'en';
+  const visionText = isEn ? (team.visionEn || team.visionAr || team.vision) : (team.visionAr || team.vision || team.visionEn);
+  const visionAlt = isEn ? (team.visionAr && team.visionAr !== visionText ? team.visionAr : '') : (team.visionEn && team.visionEn !== visionText ? team.visionEn : '');
+  const missionText = isEn ? (team.missionEn || team.missionAr || team.mission) : (team.missionAr || team.mission || team.missionEn);
+  const missionAlt = isEn ? (team.missionAr && team.missionAr !== missionText ? team.missionAr : '') : (team.missionEn && team.missionEn !== missionText ? team.missionEn : '');
+  const goalsText = isEn ? (team.goalsEn || team.goalsAr || team.goals) : (team.goalsAr || team.goals || team.goalsEn);
+  const goalsAlt = isEn ? (team.goalsAr && team.goalsAr !== goalsText ? team.goalsAr : '') : (team.goalsEn && team.goalsEn !== goalsText ? team.goalsEn : '');
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto" dir="rtl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto" dir={isEn ? 'ltr' : 'rtl'}>
       <div className="bg-white dark:bg-neutral-900 w-full max-w-3xl rounded-3xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Banner with Team Color */}
@@ -164,25 +172,28 @@ export const TeamPublicProfileModal: React.FC<TeamPublicProfileModalProps> = ({
             </div>
           )}
 
-          {/* Strategic Pillar (Vision, Mission, Goals) */}
-          {(team.vision || team.mission || team.goals) && (
+          {/* Strategic Pillar (Bilingual Vision, Mission, Goals) */}
+          {(visionText || missionText || goalsText) && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {team.vision && (
+              {visionText && (
                 <div className="bg-emerald-50/60 dark:bg-emerald-950/30 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 space-y-1.5">
-                  <span className="text-xs font-black text-emerald-900 dark:text-emerald-300 block">رؤية الفريق</span>
-                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">{team.vision}</p>
+                  <span className="text-xs font-black text-emerald-900 dark:text-emerald-300 block">{isEn ? 'Team Vision' : 'رؤية الفريق'}</span>
+                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">{visionText}</p>
+                  {visionAlt && <p dir={isEn ? 'rtl' : 'ltr'} className="text-[11px] text-neutral-500 pt-1.5 border-t border-emerald-200/50">{visionAlt}</p>}
                 </div>
               )}
-              {team.mission && (
+              {missionText && (
                 <div className="bg-blue-50/60 dark:bg-blue-950/30 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50 space-y-1.5">
-                  <span className="text-xs font-black text-blue-900 dark:text-blue-300 block">رسالة الفريق</span>
-                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">{team.mission}</p>
+                  <span className="text-xs font-black text-blue-900 dark:text-blue-300 block">{isEn ? 'Team Mission' : 'رسالة الفريق'}</span>
+                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">{missionText}</p>
+                  {missionAlt && <p dir={isEn ? 'rtl' : 'ltr'} className="text-[11px] text-neutral-500 pt-1.5 border-t border-blue-200/50">{missionAlt}</p>}
                 </div>
               )}
-              {team.goals && (
+              {goalsText && (
                 <div className="bg-amber-50/60 dark:bg-amber-950/30 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/50 space-y-1.5">
-                  <span className="text-xs font-black text-amber-900 dark:text-amber-300 block">أهداف الفريق</span>
-                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">{team.goals}</p>
+                  <span className="text-xs font-black text-amber-900 dark:text-amber-300 block">{isEn ? 'Team Goals' : 'أهداف الفريق'}</span>
+                  <p className="text-neutral-700 dark:text-neutral-300 leading-relaxed">{goalsText}</p>
+                  {goalsAlt && <p dir={isEn ? 'rtl' : 'ltr'} className="text-[11px] text-neutral-500 pt-1.5 border-t border-amber-200/50">{goalsAlt}</p>}
                 </div>
               )}
             </div>

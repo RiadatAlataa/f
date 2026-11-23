@@ -4,11 +4,12 @@ import {
   CreditCard, Compass, Target, Sparkles, Image as ImageIcon, FileText, 
   Upload, CheckCircle2, ShieldCheck, ArrowRight, ArrowLeft, X, 
   Search, AlertCircle, Clock, Link as LinkIcon, Award, MessageSquare, 
-  Check, RefreshCw, Eye, ExternalLink, HelpCircle, Send
+  Check, RefreshCw, Eye, ExternalLink, HelpCircle, FileBadge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TeamApplication, TeamAttachment, TeamSocialLinks } from '../types';
 import { DEFAULT_SAUDI_CITIES, VOLUNTEER_DOMAINS_AND_SERVICES, TEAM_COLOR_PRESETS } from '../data/saudiCities';
+import { buildApiUrl } from '../config/api';
 
 interface TeamRegistrationModalProps {
   isOpen: boolean;
@@ -43,6 +44,9 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
   const [teamColor, setTeamColor] = useState(TEAM_COLOR_PRESETS[0].value);
   const [description, setDescription] = useState('');
 
+  const isEn = lang === 'en';
+  const [formError, setFormError] = useState<string | null>(null);
+
   // Leader Info
   const [leaderName, setLeaderName] = useState('');
   const [leaderPhone, setLeaderPhone] = useState('');
@@ -51,12 +55,22 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
   const [leaderBirthDate, setLeaderBirthDate] = useState('');
   const [leaderCity, setLeaderCity] = useState(DEFAULT_SAUDI_CITIES[0]);
   const [leaderAddress, setLeaderAddress] = useState('');
-  const [preferredContactMethod, setPreferredContactMethod] = useState<'whatsapp' | 'call' | 'email' | 'telegram'>('whatsapp');
+  const [preferredContactMethod, setPreferredContactMethod] = useState<'whatsapp' | 'call' | 'email'>('whatsapp');
 
-  // Vision, Mission, Goals, Services
-  const [vision, setVision] = useState('');
-  const [mission, setMission] = useState('');
-  const [goals, setGoals] = useState('');
+  // Optional Team Leader License
+  const [leaderLicenseUrl, setLeaderLicenseUrl] = useState('');
+  const [leaderLicenseFileKey, setLeaderLicenseFileKey] = useState('');
+  const [leaderLicenseFileName, setLeaderLicenseFileName] = useState('');
+  const [leaderLicenseMimeType, setLeaderLicenseMimeType] = useState('');
+  const [isUploadingLicense, setIsUploadingLicense] = useState(false);
+
+  // Vision, Mission, Goals (Bilingual AR & EN), Services
+  const [visionAr, setVisionAr] = useState('');
+  const [visionEn, setVisionEn] = useState('');
+  const [missionAr, setMissionAr] = useState('');
+  const [missionEn, setMissionEn] = useState('');
+  const [goalsAr, setGoalsAr] = useState('');
+  const [goalsEn, setGoalsEn] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>([
     "الإغاثة والمساعدات الإنسانية",
     "خدمة المجتمع والتنمية"
@@ -75,7 +89,7 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
   const [newAttachmentType, setNewAttachmentType] = useState<'license' | 'profile' | 'certificates' | 'other'>('profile');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
 
-  // Social Links
+  // Social Links (Telegram intentionally excluded on Team Join page)
   const [socialLinks, setSocialLinks] = useState<TeamSocialLinks>({
     x: '',
     instagram: '',
@@ -84,7 +98,6 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
     youtube: '',
     facebook: '',
     whatsapp: '',
-    telegram: '',
     website: ''
   });
 
@@ -123,8 +136,9 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
   // Add attachment handler
   const handleAddAttachment = () => {
+    setFormError(null);
     if (!newAttachmentTitle || !newAttachmentUrl) {
-      alert("يرجى إدخال مسمى المرفق والرابط أو رفع الملف");
+      setFormError(isEn ? "Please enter attachment title and file or link." : "يرجى إدخال مسمى المرفق والرابط أو رفع الملف");
       return;
     }
     const newAtt: TeamAttachment = {
@@ -138,6 +152,60 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
     setAttachments(prev => [...prev, newAtt]);
     setNewAttachmentTitle('');
     setNewAttachmentUrl('');
+  };
+
+  // Optional Team Leader License Upload -> attachmentStorage
+  const handleLeaderLicenseUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFormError(null);
+
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
+    if (!allowed.includes(file.type.toLowerCase())) {
+      setFormError(isEn
+        ? 'Unsupported file type. Allowed formats for leader license: JPG, PNG, WebP, or PDF.'
+        : 'نوع الملف غير مدعوم. الأنواع المسموحة لرخصة قائد الفريق: JPG، PNG، WebP، أو PDF.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setFormError(isEn ? 'License file size must not exceed 10 MB.' : 'حجم ملف الرخصة يجب ألا يتجاوز 10 ميجابايت.');
+      return;
+    }
+
+    setIsUploadingLicense(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const dataUri = typeof reader.result === 'string' ? reader.result : '';
+        if (!dataUri) throw new Error('Invalid file data');
+        const res = await fetch(buildApiUrl('/api/db/teamApplications/upload-license'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dataUri,
+            fileName: file.name,
+            mimeType: file.type
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || (isEn ? 'Failed to upload license file.' : 'فشل رفع ملف رخصة قائد الفريق.'));
+        }
+        setLeaderLicenseUrl(data.url || '');
+        setLeaderLicenseFileKey(data.fileKey || '');
+        setLeaderLicenseFileName(data.originalName || file.name);
+        setLeaderLicenseMimeType(data.mimeType || file.type);
+      } catch (err: any) {
+        setFormError(err?.message || (isEn ? 'Failed to upload license file.' : 'حدث خطأ أثناء رفع رخصة قائد الفريق.'));
+      } finally {
+        setIsUploadingLicense(false);
+      }
+    };
+    reader.onerror = () => {
+      setIsUploadingLicense(false);
+      setFormError(isEn ? 'Could not read the selected file.' : 'تعذر قراءة الملف المحدد.');
+    };
+    reader.readAsDataURL(file);
   };
 
   // Handle Logo Upload Simulation / File
@@ -173,53 +241,54 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
   // Step Validation
   const validateCurrentStep = (): boolean => {
+    setFormError(null);
     if (currentStep === 1) {
       if (!teamName.trim()) {
-        alert("يرجى إدخال اسم الفريق التطوعي");
+        setFormError(isEn ? "Please enter the volunteer team name." : "يرجى إدخال اسم الفريق التطوعي");
         return false;
       }
       if (!city) {
-        alert("يرجى تحديد المدينة");
+        setFormError(isEn ? "Please select the city." : "يرجى تحديد المدينة");
         return false;
       }
       if (!establishedDate) {
-        alert("يرجى تحديد تاريخ تأسيس الفريق");
+        setFormError(isEn ? "Please specify team establishment date." : "يرجى تحديد تاريخ تأسيس الفريق");
         return false;
       }
       if (!membersCount || Number(membersCount) < 1) {
-        alert("يرجى إدخال عدد أعضاء الفريق (عضو واحد على الأقل)");
+        setFormError(isEn ? "Please enter members count (at least 1)." : "يرجى إدخال عدد أعضاء الفريق (عضو واحد على الأقل)");
         return false;
       }
       if (!teamColor) {
-        alert("يرجى اختيار لون الفريق");
+        setFormError(isEn ? "Please choose team color." : "يرجى اختيار لون الفريق");
         return false;
       }
     } else if (currentStep === 2) {
       if (!leaderName.trim()) {
-        alert("يرجى إدخال اسم قائد الفريق");
+        setFormError(isEn ? "Please enter team leader name." : "يرجى إدخال اسم قائد الفريق");
         return false;
       }
       if (!leaderPhone.trim()) {
-        alert("يرجى إدخال رقم جوال قائد الفريق");
+        setFormError(isEn ? "Please enter leader phone number." : "يرجى إدخال رقم جوال قائد الفريق");
         return false;
       }
       if (!leaderPhone.startsWith("05") || leaderPhone.length !== 10) {
-        alert("يرجى التأكد من كتابة رقم جوال سعودي صحيح يبدأ بـ 05 ويتكون من 10 أرقام");
+        setFormError(isEn ? "Please enter a valid 10-digit Saudi mobile starting with 05." : "يرجى التأكد من كتابة رقم جوال سعودي صحيح يبدأ بـ 05 ويتكون من 10 أرقام");
         return false;
       }
     } else if (currentStep === 3) {
       if (selectedServices.length === 0) {
-        alert("يرجى اختيار مجال واحد على الأقل من مجالات وخدمات الفريق");
+        setFormError(isEn ? "Please select at least one service domain." : "يرجى اختيار مجال واحد على الأقل من مجالات وخدمات الفريق");
         return false;
       }
     } else if (currentStep === 4) {
       if (!meaningfulIdea.trim()) {
-        alert("يرجى كتابة فكرة أو مشروع مبتكر يساهم في تطوير المجتمع");
+        setFormError(isEn ? "Please describe a community initiative or idea." : "يرجى كتابة فكرة أو مشروع مبتكر يساهم في تطوير المجتمع");
         return false;
       }
     } else if (currentStep === 7) {
       if (!agreedToTerms || !agreedToVolunteerPolicy || !agreedToPrivacyPolicy || !agreedToDataAccuracy || !agreedToRegulations) {
-        alert("يرجى الموافقة على جميع الشروط والإقرارات المعتمدة للمتابعة");
+        setFormError(isEn ? "Please agree to all policies and declarations to submit." : "يرجى الموافقة على جميع الشروط والإقرارات المعتمدة للمتابعة");
         return false;
       }
     }
@@ -233,6 +302,7 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
   };
 
   const handlePrevStep = () => {
+    setFormError(null);
     setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
@@ -241,7 +311,23 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
     if (!validateCurrentStep()) return;
 
     setIsSubmitting(true);
+    setFormError(null);
     const chosenCity = city === "أخرى (إضافة يدوية)" ? (customCity || "مكة المكرمة") : city;
+
+    const cleanSocialLinks: TeamSocialLinks = {
+      x: socialLinks.x || '',
+      instagram: socialLinks.instagram || '',
+      snapchat: socialLinks.snapchat || '',
+      tiktok: socialLinks.tiktok || '',
+      youtube: socialLinks.youtube || '',
+      facebook: socialLinks.facebook || '',
+      whatsapp: socialLinks.whatsapp || '',
+      website: socialLinks.website || ''
+    };
+
+    const combinedVision = visionAr.trim() || visionEn.trim();
+    const combinedMission = missionAr.trim() || missionEn.trim();
+    const combinedGoals = goalsAr.trim() || goalsEn.trim();
 
     const payload: Partial<TeamApplication> = {
       id: editingAppId || undefined,
@@ -262,10 +348,20 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
       leaderCity,
       leaderAddress: leaderAddress.trim(),
       preferredContactMethod,
+      ...(leaderLicenseUrl ? { leaderLicenseUrl } : {}),
+      ...(leaderLicenseFileKey ? { leaderLicenseFileKey } : {}),
+      ...(leaderLicenseFileName ? { leaderLicenseFileName } : {}),
+      ...(leaderLicenseMimeType ? { leaderLicenseMimeType } : {}),
 
-      vision: vision.trim(),
-      mission: mission.trim(),
-      goals: goals.trim(),
+      vision: combinedVision,
+      mission: combinedMission,
+      goals: combinedGoals,
+      visionAr: visionAr.trim(),
+      visionEn: visionEn.trim(),
+      missionAr: missionAr.trim(),
+      missionEn: missionEn.trim(),
+      goalsAr: goalsAr.trim(),
+      goalsEn: goalsEn.trim(),
       services: selectedServices,
 
       meaningfulIdeaTitle: meaningfulIdeaTitle.trim(),
@@ -273,7 +369,7 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
       logoUrl: logoUrl || undefined,
       attachments,
-      socialLinks,
+      socialLinks: cleanSocialLinks,
 
       pastBeneficiariesCount: Number(pastBeneficiariesCount) || 0,
       pastVolunteerHours: Number(pastVolunteerHours) || 0,
@@ -293,6 +389,9 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
     const res = await onSubmitApplication(payload);
     setIsSubmitting(false);
+    if (!res?.success && res?.message) {
+      setFormError(res.message);
+    }
 
     if (res.success && res.applicationNumber) {
       setSubmissionSuccess({
@@ -340,11 +439,19 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
     setLeaderBirthDate(app.leaderBirthDate || '');
     setLeaderCity(app.leaderCity || DEFAULT_SAUDI_CITIES[0]);
     setLeaderAddress(app.leaderAddress || '');
-    setPreferredContactMethod((app.preferredContactMethod as any) || 'whatsapp');
+    const method = (app.preferredContactMethod as string);
+    setPreferredContactMethod(method === 'call' || method === 'email' ? method : 'whatsapp');
+    setLeaderLicenseUrl(app.leaderLicenseUrl || '');
+    setLeaderLicenseFileKey(app.leaderLicenseFileKey || '');
+    setLeaderLicenseFileName(app.leaderLicenseFileName || '');
+    setLeaderLicenseMimeType(app.leaderLicenseMimeType || '');
 
-    setVision(app.vision || '');
-    setMission(app.mission || '');
-    setGoals(app.goals || '');
+    setVisionAr(app.visionAr || app.vision || '');
+    setVisionEn(app.visionEn || '');
+    setMissionAr(app.missionAr || app.mission || '');
+    setMissionEn(app.missionEn || '');
+    setGoalsAr(app.goalsAr || app.goals || '');
+    setGoalsEn(app.goalsEn || '');
     setSelectedServices(app.services || ["الإغاثة والمساعدات الإنسانية"]);
 
     setMeaningfulIdeaTitle(app.meaningfulIdeaTitle || '');
@@ -352,7 +459,16 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
     setLogoUrl(app.logoUrl || '');
     setAttachments(app.attachments || []);
-    setSocialLinks(app.socialLinks || {});
+    setSocialLinks({
+      x: app.socialLinks?.x || '',
+      instagram: app.socialLinks?.instagram || '',
+      snapchat: app.socialLinks?.snapchat || '',
+      tiktok: app.socialLinks?.tiktok || '',
+      youtube: app.socialLinks?.youtube || '',
+      facebook: app.socialLinks?.facebook || '',
+      whatsapp: app.socialLinks?.whatsapp || '',
+      website: app.socialLinks?.website || ''
+    });
 
     setPastBeneficiariesCount(app.pastBeneficiariesCount || '');
     setPastVolunteerHours(app.pastVolunteerHours || '');
@@ -372,18 +488,28 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
     setCurrentStep(1);
   };
 
-  const stepsHeader = [
-    { num: 1, title: "بيانات الفريق" },
-    { num: 2, title: "بيانات القائد" },
-    { num: 3, title: "الرؤية والخدمات" },
-    { num: 4, title: "فكرة المجتمع" },
-    { num: 5, title: "الشعار والملفات" },
-    { num: 6, title: "التواصل والخبرات" },
-    { num: 7, title: "الإقرار والإرسال" }
-  ];
+  const stepsHeader = isEn
+    ? [
+        { num: 1, title: "Team Info" },
+        { num: 2, title: "Leader & License" },
+        { num: 3, title: "Vision & Services" },
+        { num: 4, title: "Community Idea" },
+        { num: 5, title: "Logo & Files" },
+        { num: 6, title: "Social & Experience" },
+        { num: 7, title: "Review & Submit" }
+      ]
+    : [
+        { num: 1, title: "بيانات الفريق" },
+        { num: 2, title: "بيانات القائد" },
+        { num: 3, title: "الرؤية والخدمات" },
+        { num: 4, title: "فكرة المجتمع" },
+        { num: 5, title: "الشعار والملفات" },
+        { num: 6, title: "التواصل والخبرات" },
+        { num: 7, title: "الإقرار والإرسال" }
+      ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto" dir="rtl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto" dir={isEn ? 'ltr' : 'rtl'}>
       <div className="bg-white dark:bg-neutral-900 w-full max-w-4xl rounded-3xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Modal Top Header */}
@@ -400,15 +526,17 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="p-1.5 rounded-lg bg-emerald-500/30 text-emerald-200 text-xs font-bold flex items-center gap-1">
                   <Users className="w-4 h-4" />
-                  <span>بوابة انضمام الفرق التطوعية</span>
+                  <span>{isEn ? 'Volunteer Teams Portal' : 'بوابة انضمام الفرق التطوعية'}</span>
                 </span>
                 <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full font-bold">
-                  ريادة العطاء
+                  {isEn ? 'Reyadat Al-Ata' : 'ريادة العطاء'}
                 </span>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight">تسجيل فريق تطوعي</h2>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">{isEn ? 'Register a Volunteer Team' : 'تسجيل فريق تطوعي'}</h2>
               <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-1">
-                انضم كفريق تطوعي وكن جزءاً من ريادة العطاء • <span className="font-bold text-amber-300">فريق واحد .. أثر واحد</span>
+                {isEn
+                  ? <>Join as an accredited volunteer team • <span className="font-bold text-amber-300">One Team .. One Impact</span></>
+                  : <>انضم كفريق تطوعي وكن جزءاً من ريادة العطاء • <span className="font-bold text-amber-300">فريق واحد .. أثر واحد</span></>}
               </p>
             </div>
 
@@ -539,6 +667,22 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {formError && (
+                    <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 p-3.5 rounded-2xl flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200 font-bold">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <span>{formError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormError(null)}
+                        className="text-rose-500 hover:text-rose-700 cursor-pointer shrink-0"
+                        aria-label="Close error"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Correction Banner if editing */}
                   {isEditingCorrection && (
@@ -826,19 +970,18 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
                         <div>
                           <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                            وسيلة التواصل المفضلة
+                            {isEn ? 'Preferred Contact Method' : 'وسيلة التواصل المفضلة'}
                           </label>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             {[
-                              { id: 'whatsapp', label: 'واتساب مباشر', icon: MessageSquare },
-                              { id: 'call', label: 'اتصال هاتفي', icon: Phone },
-                              { id: 'email', label: 'بريد إلكتروني', icon: Mail },
-                              { id: 'telegram', label: 'تيليجرام', icon: Send }
+                              { id: 'whatsapp', label: isEn ? 'WhatsApp' : 'واتساب مباشر', icon: MessageSquare },
+                              { id: 'call', label: isEn ? 'Phone Call' : 'اتصال هاتفي', icon: Phone },
+                              { id: 'email', label: isEn ? 'Email' : 'بريد إلكتروني', icon: Mail }
                             ].map((method) => (
                               <button
                                 key={method.id}
                                 type="button"
-                                onClick={() => setPreferredContactMethod(method.id as any)}
+                                onClick={() => setPreferredContactMethod(method.id as 'whatsapp' | 'call' | 'email')}
                                 className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                                   preferredContactMethod === method.id
                                     ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-1 ring-emerald-500'
@@ -852,29 +995,108 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
                           </div>
                         </div>
                       </div>
+
+                      {/* Optional Team Leader License Upload */}
+                      <div className="bg-emerald-50/50 dark:bg-emerald-950/20 p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/50 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-600/15 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                              <FileBadge className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-black text-neutral-900 dark:text-neutral-100">
+                                {isEn ? 'Team Leader License (Optional)' : 'رخصة قائد الفريق (اختياري)'}
+                              </h4>
+                              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                                {isEn
+                                  ? 'Upload an image or PDF file of the team leader license if available (JPG, PNG, WebP, PDF).'
+                                  : 'يمكن لقائد الفريق رفع صورة أو ملف PDF لرخصة قائد الفريق إن وُجدت (إجراء اختياري).'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <label className={`px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs shrink-0 ${
+                            isUploadingLicense
+                              ? 'bg-neutral-300 text-neutral-600 cursor-wait'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                          }`}>
+                            {isUploadingLicense ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                            <span>{isUploadingLicense ? (isEn ? 'Uploading...' : 'جارٍ الرفع...') : (isEn ? 'Upload License' : 'رفع ملف الرخصة')}</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              disabled={isUploadingLicense}
+                              onChange={handleLeaderLicenseUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+
+                        {leaderLicenseUrl && (
+                          <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-neutral-900 border border-emerald-200 dark:border-emerald-800">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {leaderLicenseMimeType?.startsWith('image/') ? (
+                                <img
+                                  src={buildApiUrl(leaderLicenseUrl)}
+                                  alt={leaderLicenseFileName || 'Leader license'}
+                                  className="w-11 h-11 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700 shrink-0"
+                                />
+                              ) : (
+                                <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 block truncate">
+                                  {leaderLicenseFileName || (isEn ? 'Leader License File' : 'ملف رخصة قائد الفريق')}
+                                </span>
+                                <span className="text-[10.5px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                  {isEn ? 'Uploaded successfully' : 'تم الرفع بنجاح'}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLeaderLicenseUrl('');
+                                setLeaderLicenseFileKey('');
+                                setLeaderLicenseFileName('');
+                                setLeaderLicenseMimeType('');
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer shrink-0"
+                            >
+                              {isEn ? 'Remove' : 'إزالة'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
-                  {/* STEP 3: Vision, Mission, Goals, and Services */}
+                  {/* STEP 3: Bilingual Vision, Mission, Goals, and Services */}
                   {currentStep === 3 && (
                     <div className="space-y-5">
                       <div className="border-b border-neutral-100 dark:border-neutral-800 pb-3">
                         <h3 className="text-base font-black text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
                           <Compass className="w-5 h-5 text-emerald-600" />
-                          <span>رؤية ورسالة وأهداف الفريق والمجالات</span>
+                          <span>{isEn ? 'Team Vision, Mission, Goals & Domains' : 'رؤية ورسالة وأهداف الفريق والمجالات'}</span>
                         </h3>
-                        <p className="text-xs text-neutral-500 mt-0.5">التوجه الاستراتيجي ومجالات العمل التطوعي للفريق</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          {isEn
+                            ? 'Enter independent Arabic & English content for your team profile before volunteers join.'
+                            : 'التوجه الاستراتيجي ومجالات العمل التطوعي للفريق باللغتين العربية والإنجليزية (محتوى مستقل لكل لغة)'}
+                        </p>
                       </div>
 
+                      {/* Vision AR / EN */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                            رؤية الفريق (Vision)
+                            رؤية الفريق (بالعربية)
                           </label>
                           <textarea
                             rows={3}
-                            value={vision}
-                            onChange={(e) => setVision(e.target.value)}
+                            dir="rtl"
+                            value={visionAr}
+                            onChange={(e) => setVisionAr(e.target.value)}
                             placeholder="ما الذي يطمح الفريق للوصول إليه في المستقبل؟"
                             className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
                           />
@@ -882,29 +1104,79 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
 
                         <div>
                           <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                            رسالة الفريق (Mission)
+                            Team Vision (English)
                           </label>
                           <textarea
                             rows={3}
-                            value={mission}
-                            onChange={(e) => setMission(e.target.value)}
-                            placeholder="ما هي الغاية الأساسية والأثر الذي يعمل الفريق على تحقيقه يومياً؟"
+                            dir="ltr"
+                            value={visionEn}
+                            onChange={(e) => setVisionEn(e.target.value)}
+                            placeholder="What long-term impact does your volunteer team aspire to achieve?"
                             className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
                           />
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                          أهداف الفريق الرئيسية (Goals)
-                        </label>
-                        <textarea
-                          rows={3}
-                          value={goals}
-                          onChange={(e) => setGoals(e.target.value)}
-                          placeholder="اكتب الأهداف التي يسعى الفريق لتحقيقها (مثال: تأهيل 100 متطوع، تنفيذ 10 مبادرات مجتمعية نوعية...)"
-                          className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
-                        />
+                      {/* Mission AR / EN */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                            رسالة الفريق (بالعربية)
+                          </label>
+                          <textarea
+                            rows={3}
+                            dir="rtl"
+                            value={missionAr}
+                            onChange={(e) => setMissionAr(e.target.value)}
+                            placeholder="ما هي الغاية الأساسية والأثر الذي يعمل الفريق على تحقيقه يومياً؟"
+                            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                            Team Mission (English)
+                          </label>
+                          <textarea
+                            rows={3}
+                            dir="ltr"
+                            value={missionEn}
+                            onChange={(e) => setMissionEn(e.target.value)}
+                            placeholder="Describe the core purpose and daily mission of the team..."
+                            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Goals AR / EN */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                            أهداف الفريق الرئيسية (بالعربية)
+                          </label>
+                          <textarea
+                            rows={3}
+                            dir="rtl"
+                            value={goalsAr}
+                            onChange={(e) => setGoalsAr(e.target.value)}
+                            placeholder="اكتب الأهداف التي يسعى الفريق لتحقيقها (مثال: تأهيل 100 متطوع، تنفيذ 10 مبادرات...)"
+                            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                            Team Goals (English)
+                          </label>
+                          <textarea
+                            rows={3}
+                            dir="ltr"
+                            value={goalsEn}
+                            onChange={(e) => setGoalsEn(e.target.value)}
+                            placeholder="List the measurable goals of your team..."
+                            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 focus:bg-white dark:focus:bg-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-hidden font-medium resize-none leading-relaxed"
+                          />
+                        </div>
                       </div>
 
                       {/* Services & Volunteer Domains Checkboxes */}
@@ -1183,7 +1455,6 @@ export const TeamRegistrationModal: React.FC<TeamRegistrationModalProps> = ({
                             { key: 'tiktok', label: 'تيك توك TikTok', placeholder: 'https://tiktok.com/@team' },
                             { key: 'youtube', label: 'قناة يوتيوب YouTube', placeholder: 'https://youtube.com/@team' },
                             { key: 'whatsapp', label: 'رابط واتساب الفريق', placeholder: 'https://wa.me/966xxxxxxxxx' },
-                            { key: 'telegram', label: 'قناة تيليجرام', placeholder: 'https://t.me/team' },
                             { key: 'facebook', label: 'صفحة فيسبوك', placeholder: 'https://facebook.com/team' },
                             { key: 'website', label: 'الموقع الإلكتروني الرسمي', placeholder: 'https://team.org' }
                           ].map((item) => (
