@@ -23,7 +23,6 @@ jobs:
     timeout-minutes: 25
     env:
       CI: "true"
-      NODE_ENV: test
       # Make sure no storage backend or cloud credentials can be picked up by the tests.
       DATABASE_URL: ""
       STORAGE_BACKEND: ""
@@ -50,6 +49,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Security tests (phase 1)
+        env:
+          NODE_ENV: test
         run: npm run test:security
 
       - name: Production build
