@@ -253,6 +253,123 @@ app.use((req: any, _res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// SECURITY: Central route access policy (deny-by-default for routes that had NO check of their own).
+// Found by test/security/route-matrix.test.ts: these handlers answered anonymous callers or never
+// consulted the session. The policy runs before the handler, using ONLY the verified server session.
+//   authenticated → any signed-in account
+//   staff         → signed-in, not volunteer / beneficiary (team leaders included)
+//   admin         → super admin / operations manager
+//   dept:<ids>    → admin, or staff (not leaders) whose allowed departments include one of <ids>
+// ---------------------------------------------------------------------------
+type RoutePolicy = 'authenticated' | 'staff' | 'admin' | `dept:${string}`;
+const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
+  // admin / system
+  ['GET', '/api/logs/developer-error', 'admin'],
+  ['GET', '/api/admin/freeze/status', 'admin'],
+  ['GET', '/api/tools/download-extractor-zip', 'admin'],
+  ['POST', '/api/db/systemSettings', 'admin'],
+  ['POST', '/api/db/license/upload', 'admin'],
+  ['POST', '/api/db/license/delete', 'admin'],
+  // any signed-in account (handlers scope to the caller)
+  ['POST', '/api/db/permissions/test-access', 'authenticated'],
+  ['POST', '/api/db/reissue-card', 'authenticated'],
+  ['POST', '/api/volunteers/:id/reissue-card', 'authenticated'],
+  ['POST', '/api/db/attendance/record', 'authenticated'],
+  ['POST', '/api/db/attendance/checkout', 'authenticated'],
+  ['POST', '/api/db/initiatives/apply', 'authenticated'],
+  ['POST', '/api/db/initiatives/rate-by-volunteer', 'authenticated'],
+  ['POST', '/api/db/notifications/mark-read', 'authenticated'],
+  ['POST', '/api/db/notifications/delete', 'authenticated'],
+  ['POST', '/api/db/ratings/add', 'authenticated'],
+  ['POST', '/api/requests', 'authenticated'],
+  ['POST', '/api/attendance', 'authenticated'],
+  // staff (incl. team leaders)
+  ['GET', '/api/db/departments/overview', 'staff'],
+  ['POST', '/api/db/admin-tasks/save', 'staff'],
+  ['POST', '/api/db/admin-tasks/status', 'staff'],
+  ['POST', '/api/db/initiatives/add', 'staff'],
+  ['POST', '/api/db/initiatives/copy', 'staff'],
+  ['POST', '/api/db/initiatives/evaluate-points', 'staff'],
+  ['POST', '/api/db/opportunity-requests/add', 'staff'],
+  ['POST', '/api/db/opportunity-requests/resubmit', 'staff'],
+  ['POST', '/api/db/opportunity-requests/update', 'staff'],
+  ['POST', '/api/db/teams/broadcast', 'staff'],
+  ['POST', '/api/db/evaluations/add', 'staff'],
+  ['POST', '/api/db/departmentDirectives/add', 'staff'],
+  ['POST', '/api/db/departmentDirectives/updateStatus', 'staff'],
+  ['POST', '/api/db/departmentDirectives/delete', 'staff'],
+  ['POST', '/api/db/notifications/send', 'staff'],
+  ['POST', '/api/db/notifications/add', 'staff'],
+  ['POST', '/api/db/notifications/resend', 'staff'],
+  ['POST', '/api/initiatives', 'staff'],
+  ['POST', '/api/initiatives/copy', 'staff'],
+  ['POST', '/api/teams/broadcast', 'staff'],
+  ['POST', '/api/evaluations', 'staff'],
+  ['POST', '/api/db/certificates/templates/add', 'staff'],
+  ['POST', '/api/db/certificates/templates/delete', 'staff'],
+  ['POST', '/api/db/certificates/issue', 'staff'],
+  // volunteer management (dep-5)
+  ['POST', '/api/db/volunteers/batch', 'dept:dep-5'],
+  ['POST', '/api/db/volunteers/toggle-status', 'dept:dep-5'],
+  ['POST', '/api/db/volunteers/permissions', 'dept:dep-5'],
+  ['POST', '/api/teams', 'dept:dep-5'],
+  ['DELETE', '/api/teams/:id', 'dept:dep-5'],
+  // public website content (media dep-6)
+  ['POST', '/api/db/homeSettings', 'dept:dep-6'],
+  ['POST', '/api/db/news/add', 'dept:dep-6'],
+  ['POST', '/api/db/news/delete', 'dept:dep-6'],
+  ['POST', '/api/db/partners/add', 'dept:dep-6'],
+  ['POST', '/api/db/partners/delete', 'dept:dep-6'],
+  ['POST', '/api/db/gallery/add', 'dept:dep-6'],
+  ['POST', '/api/db/gallery/delete', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/add', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/delete', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/batch', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/toggle-active', 'dept:dep-6'],
+  // fundraising projects (finance dep-2 / partnerships dep-7)
+  ['POST', '/api/db/store/projects/add', 'dept:dep-2,dep-7'],
+  // beneficiaries (dep-4) and aid distributions (dep-4 / warehouse dep-8)
+  ['POST', '/api/db/beneficiaries/export-log', 'dept:dep-4'],
+  ['POST', '/api/db/beneficiaries/import', 'dept:dep-4'],
+  ['GET', '/api/db/beneficiaries/statistics', 'dept:dep-4,dep-8'],
+  ['GET', '/api/db/distributions/reports', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/create-advanced', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/workflow-status', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/create', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/handover/cancel', 'dept:dep-4,dep-8']
+];
+const COMPILED_ROUTE_POLICIES = ROUTE_POLICIES.map(([method, pattern, policy]) => ({
+  method,
+  rx: new RegExp('^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\?:[A-Za-z_]+/g, '[^/]+') + '/?$'),
+  policy
+}));
+export function evaluateRoutePolicy(policy: RoutePolicy, ctx: any): { status: number; error: string } | null {
+  if (!ctx || !ctx.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
+  const role = String(ctx.role || '');
+  const isAdmin = Boolean(ctx.isSuperAdmin || ctx.isOperationsManager || role === 'admin' || role === 'operations_manager');
+  if (policy === 'authenticated') return null;
+  if (isAdmin) return null;
+  const isEndUser = ['volunteer', 'beneficiary', 'public'].includes(role);
+  if (policy === 'staff') return isEndUser ? { status: 403, error: "غير مصرح: هذه العملية مخصصة لكوادر الجمعية." } : null;
+  if (policy === 'admin') return { status: 403, error: "غير مصرح: هذه العملية مخصصة للإدارة العليا." };
+  const depts = policy.slice('dept:'.length).split(',');
+  const allowed: string[] = Array.isArray(ctx.allowedDepartmentIds) ? ctx.allowedDepartmentIds : [];
+  if (isEndUser || role === 'leader' || !depts.some((d) => allowed.includes(d))) {
+    return { status: 403, error: "غير مصرح: هذه العملية خارج نطاق صلاحيات إدارتك." };
+  }
+  return null;
+}
+app.use((req: any, res: any, next) => {
+  const p = String(req.path || '');
+  if (!p.startsWith('/api')) return next();
+  const rule = COMPILED_ROUTE_POLICIES.find((r) => r.method === req.method && r.rx.test(p));
+  if (!rule) return next();
+  const denied = evaluateRoutePolicy(rule.policy, getUserAccessContext(req));
+  if (denied) return res.status(denied.status).json({ error: denied.error, code: denied.status === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN' });
+  next();
+});
+
+// ---------------------------------------------------------------------------
 // SECURITY: No API response may ever contain the raw database.
 // ~120 legacy handlers end with res.json(db) or res.json({ ..., db }). This guard replaces any raw
 // database object in a JSON response with the same role-filtered, secret-free view that GET /api/db
@@ -374,8 +491,9 @@ app.use((req, res, next) => {
   // (global middleware: not counted as a handler-level access check by the route-matrix test)
   const probeBefore = __accessProbe.calls;
   const authContext = getUserAccessContext(req);
+  const forcedBySession = Boolean((getServerSession(resolveSessionTokenFromRequest(req) || undefined) as any)?.forcePasswordChange);
   __accessProbe.calls = probeBefore;
-  if (authContext.isAuthenticated && (authContext as any).mustChangePassword) {
+  if (authContext.isAuthenticated && ((authContext as any).mustChangePassword || forcedBySession)) {
     return res.status(403).json({
       ok: false,
       error: "يجب تغيير كلمة المرور المؤقتة أولاً قبل إجراء أي عمليات أو استعلامات على النظام.",
@@ -3689,7 +3807,7 @@ export function readDb() {
             (u: any) => u.userId === linkedAccessId || u.id === linkedAccessId || (d.nationalId && String(u.nationalId || "").trim() === String(d.nationalId).trim())
           );
           if (!accRow && d.directorName) {
-            const legacyPwd = d.password && String(d.password).trim() ? String(d.password).trim() : DEFAULT_NEW_ACCOUNT_PASSWORD;
+            const legacyPwd = d.password && String(d.password).trim() ? String(d.password).trim() : generateStrongTemporaryPassword(16);
             accRow = {
               id: `perm-${d.id}`,
               userId: linkedAccessId,
@@ -4579,8 +4697,34 @@ export function generateStrongTemporaryPassword(length: number = 12): string {
   return chars.join("");
 }
 
-// Default initial password for legacy compatibility (not used for manual volunteer creation)
+// Legacy shared initial password. SECURITY: it is no longer issued to new accounts (see
+// issueInitialTemporaryCredential) and it can no longer be used to sign in (see KNOWN_PUBLIC_DEFAULT_PASSWORDS).
 export const DEFAULT_NEW_ACCOUNT_PASSWORD = "A123b456";
+
+// Passwords that were published in this repository / used as shared defaults. A sign-in that succeeds
+// with one of them is NOT a proof of identity: no session is issued and the account must be recovered
+// through the verified reset flow (OTP / approved reset request).
+export const KNOWN_PUBLIC_DEFAULT_PASSWORDS = new Set<string>(["123", "mosa11", DEFAULT_NEW_ACCOUNT_PASSWORD]);
+
+// A stored credential that is not one of the supported hash formats is a legacy plain-text password.
+export function isLegacyPlaintextCredential(stored?: string): boolean {
+  return typeof stored === "string" && stored.trim().length > 0 && !/^(\$2[aby]\$|pbkdf2\$|sha256\$)/.test(stored);
+}
+
+// Set by verifyPasswordAgainstHash when the match came from a legacy plain-text record (read synchronously
+// by the login handler right after verification).
+let lastVerificationUsedLegacyPlaintext = false;
+
+// Unique per-account temporary password for staff-created accounts (replaces the shared default).
+// Only the bcrypt hash is stored; the plain value is returned ONCE to the authorised creator.
+export function issueInitialTemporaryCredential(record: any): string {
+  const temp = generateStrongTemporaryPassword(12);
+  record.passwordHash = hashPassword(temp);
+  delete record.password;
+  record.mustChangePassword = true;
+  record.temporaryPasswordActive = true;
+  return temp;
+}
 
 // Password Strength Evaluation Interface & Validator
 export interface PasswordValidationResult {
@@ -4597,6 +4741,9 @@ export function validatePasswordStrength(pwd: string): PasswordValidationResult 
   }
 
   const trimmed = pwd.trim();
+  if (KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(trimmed)) {
+    return { isValid: false, score: 0, strength: 'weak', errors: ["هذه كلمة مرور افتراضية عامة ولا يمكن استخدامها. يرجى اختيار كلمة مرور خاصة بك."] };
+  }
   if (trimmed.length < 8) {
     errors.push("يجب ألا تقل كلمة المرور عن 8 خانات.");
   }
@@ -4682,9 +4829,11 @@ export function verifyPasswordAgainstHash(plainText: string, storedHash?: string
     return safeEqualStrings(testHash, hash);
   }
 
-  // Legacy plain-text records (kept only so existing users are not locked out;
-  // new writes never store plain text — see hashPassword usages).
-  return safeEqualStrings(storedHash, plainText);
+  // Legacy plain-text records: still verified so existing users are not locked out, but the login
+  // handler forces an immediate password change (no permanent plain-text sign-in).
+  const plainMatch = safeEqualStrings(storedHash, plainText);
+  if (plainMatch) lastVerificationUsedLegacyPlaintext = true;
+  return plainMatch;
 }
 
 // Server-side Session Management (session_start persistence)
@@ -4706,6 +4855,28 @@ export interface ServerSession {
   createdAt: number;
   lastActive: number;
   expiresAt: number;
+  // Set when the sign-in used a legacy plain-text credential: every API call except the password
+  // change is refused until the password is changed.
+  forcePasswordChange?: boolean;
+}
+
+// Clears the forced-change flag on every live and persisted session of a user after a successful change.
+function clearForcedPasswordChange(db: any, userIds: string[]) {
+  const ids = new Set(userIds.filter(Boolean));
+  for (const sess of activeSessions.values()) {
+    if (sess && ids.has(sess.userId)) {
+      delete sess.forcePasswordChange;
+      if (sess.user) sess.user.mustChangePassword = false;
+    }
+  }
+  if (db && Array.isArray(db.activeSessions)) {
+    for (const s of db.activeSessions) {
+      if (s && ids.has(s.userId)) {
+        delete s.forcePasswordChange;
+        if (s.user) s.user.mustChangePassword = false;
+      }
+    }
+  }
 }
 
 const activeSessions = new Map<string, ServerSession>();
@@ -4720,12 +4891,14 @@ export function createServerSession(
     trustedDeviceId?: string;
     deviceLabel?: string;
     ip?: string;
+    forcePasswordChange?: boolean;
   }
 ): ServerSession {
   const token = `sess_${Date.now()}_${crypto.randomBytes(32).toString("hex")}`;
   const now = Date.now();
   const authMethod = meta?.authMethod || 'password';
   const session: ServerSession = {
+    ...(meta?.forcePasswordChange ? { forcePasswordChange: true } : {}),
     token,
     userId: user?.id || 'user',
     role: role || user?.role || 'user',
@@ -10446,8 +10619,30 @@ app.post(["/api/db/users/verify-email", "/api/users/verify-email"], (req, res) =
 
 // User Self-Service / Mandatory Password Change Endpoint
 app.post("/api/db/auth/change-password", (req, res) => {
+  // SECURITY: this endpoint previously had NO authentication — anyone could set the password of ANY
+  // account (including super admins) by sending its userId. It is the forced first-login change, so it
+  // now requires a verified session, only changes the session owner's own password, and only while
+  // that account is flagged to change its temporary password. Normal changes use self-change-password
+  // (which verifies the current password).
+  const changeCtx = getUserAccessContext(req);
+  if (!changeCtx.isAuthenticated) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً.", code: "UNAUTHORIZED" });
+  }
   const db = readDb();
-  const { userId, newPassword } = req.body || {};
+  const { newPassword } = req.body || {};
+  const requestedUserId = req.body?.userId ? String(req.body.userId).trim() : "";
+  const ownIds = [changeCtx.userId, changeCtx.nationalId, changeCtx.userEmail].filter(Boolean).map((x: any) => String(x).toLowerCase());
+  if (requestedUserId && !ownIds.includes(requestedUserId.toLowerCase())) {
+    return res.status(403).json({ error: "غير مصرح: لا يمكنك تغيير كلمة مرور حساب مستخدم آخر.", code: "FORBIDDEN" });
+  }
+  const changeSession: any = getServerSession(resolveSessionTokenFromRequest(req) || undefined);
+  if (!changeCtx.mustChangePassword && !changeSession?.forcePasswordChange) {
+    return res.status(403).json({
+      error: "هذا المسار مخصص لتغيير كلمة المرور المؤقتة فقط. استخدم (حسابي ← الأمان) مع كلمة المرور الحالية.",
+      code: "USE_SELF_CHANGE_PASSWORD"
+    });
+  }
+  const userId = changeCtx.userId;
 
   if (!userId || !newPassword || typeof newPassword !== 'string') {
     return res.status(400).json({ error: "معرف المستخدم وكلمة المرور الجديدة مطلوبان." });
@@ -10502,7 +10697,12 @@ app.post("/api/db/auth/change-password", (req, res) => {
   }
 
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
-  if (sk) sk.password = hashedPassword;
+  if (sk) { sk.passwordHash = hashedPassword; delete sk.password; }
+  // Support staff previously kept plain-text passwords and were never updated here.
+  for (const coll of ['supportManagers', 'supportAgents']) {
+    const rec = (db[coll] || []).find((s: any) => s && s.id === userId);
+    if (rec) { rec.passwordHash = hashedPassword; delete rec.password; }
+  }
 
   // Real-time memory and persisted session update
   try {
@@ -10539,6 +10739,8 @@ app.post("/api/db/auth/change-password", (req, res) => {
   });
 
   revokeAllTrustedDevicesForUser(db, userId, userEntry?.nationalId);
+  clearForcedPasswordChange(db, [userId, vol?.id, ben?.id]);
+  if (vol) delete vol.temporaryPasswordActive;
   writeDb(db);
   res.json({
     status: "success",
@@ -10720,6 +10922,10 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
 
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) { sk.password = hashedPassword; sk.passwordHash = hashedPassword; }
+  for (const coll of ['supportManagers', 'supportAgents']) {
+    const rec = (db[coll] || []).find((s: any) => s && s.id === userId);
+    if (rec) { rec.passwordHash = hashedPassword; delete rec.password; }
+  }
 
   // Also update Beneficiaries cleanly with bcrypt
   const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId || (authContext.nationalId && b.nationalId === authContext.nationalId));
@@ -10752,6 +10958,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
     notes: `قام المستخدم بتغيير وتشفير كلمة المرور الخاصة بحسابه بنجاح باستخدام Bcrypt وإلغاء (${revokedPinDevices}) من أجهزة الدخول السريع المرتبطة`
   });
 
+  clearForcedPasswordChange(db, [userId, authContext.userId, vol?.id, ben?.id]);
   writeDb(db);
 
   const currentTok = (req.headers['x-session-token'] as string) || req.cookies?.['reyadat_session'];
@@ -12189,7 +12396,7 @@ app.post("/api/db/departments/assign-director", async (req, res) => {
         };
       } else if (accessIdx === -1 || !db.userDepartmentAccess[accessIdx]?.passwordHash) {
         pwdHashUpdate = {
-          passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+          passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
           mustChangePassword: mustChangePassword !== undefined ? Boolean(mustChangePassword) : true
         };
       } else if (mustChangePassword !== undefined) {
@@ -12530,7 +12737,7 @@ app.post("/api/db/departments/add-staff", async (req, res) => {
       // Upsert into db.userDepartmentAccess
       if (!Array.isArray(db.userDepartmentAccess)) db.userDepartmentAccess = [];
       let accIdx = db.userDepartmentAccess.findIndex((u: any) => u.userId === targetUserId || u.id === targetUserId);
-      const pwdToHash = newPassword && String(newPassword).trim() ? String(newPassword).trim() : DEFAULT_NEW_ACCOUNT_PASSWORD;
+      const pwdToHash = newPassword && String(newPassword).trim() ? String(newPassword).trim() : generateStrongTemporaryPassword(16);
       const existingAcc = accIdx !== -1 ? db.userDepartmentAccess[accIdx] : null;
       const accPayload: any = {
         ...(existingAcc || { id: `perm-${Date.now()}`, createdAt: nowIso, mustChangePassword: true }),
@@ -12788,7 +12995,7 @@ app.post("/api/db/departments/permissions/update", async (req, res) => {
             allowedDepartmentIds: [dep.id],
             permissions: cleanPerms,
             status: dep.status || 'active',
-            passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+            passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
             createdAt: nowIso,
             updatedAt: nowIso,
             updatedBy: context.userName
@@ -13257,7 +13464,23 @@ app.post("/api/db/volunteers/add", (req, res) => {
   if (!auth.allowed) return;
 
   const db = readDb();
-  const vol = req.body;
+  // SECURITY: credential / privilege fields are never taken from the body (an edit could otherwise
+  // overwrite a volunteer's passwordHash or role). A password chosen by staff for a NEW account is
+  // validated and hashed; otherwise a unique temporary password is issued and returned once.
+  const chosenPassword = typeof req.body?.password === "string" ? req.body.password.trim() : "";
+  const vol = stripCredentialAndPrivilegeFields(req.body || {});
+  let issuedTemporaryPassword = "";
+  const setInitialCredential = (record: any): string | null => {
+    if (chosenPassword) {
+      const check = validatePasswordStrength(chosenPassword);
+      if (!check.isValid) return `كلمة المرور غير مطابقة لسياسة الأمان: ${check.errors.join(" ")}`;
+      record.passwordHash = hashPassword(chosenPassword);
+      record.mustChangePassword = true;
+    } else {
+      issuedTemporaryPassword = issueInitialTemporaryCredential(record);
+    }
+    return null;
+  };
   if (!vol.id) {
     vol.id = "vol-" + Date.now();
     const seq = String(db.volunteers.length + 1).padStart(4, "0");
@@ -13279,12 +13502,8 @@ app.post("/api/db/volunteers/add", (req, res) => {
       vol.file_number = fn;
     }
 
-    // SECURITY: store only the bcrypt hash, never the plain-text password.
-    vol.passwordHash = hashPassword(
-      typeof vol.password === "string" && vol.password.trim() ? vol.password.trim() : DEFAULT_NEW_ACCOUNT_PASSWORD
-    );
-    delete vol.password;
-    vol.mustChangePassword = true;
+    const credErr = setInitialCredential(vol);
+    if (credErr) return res.status(400).json({ error: credErr });
     vol.profileCompleted = vol.profileCompleted !== undefined ? vol.profileCompleted : true;
 
     db.volunteers.push(vol);
@@ -13302,7 +13521,7 @@ app.post("/api/db/volunteers/add", (req, res) => {
       // Requirement: Volunteer file number cannot be changed manually or overwritten
       const existingFileNumber = db.volunteers[index].fileNumber || db.volunteers[index].file_number;
       const existingTeamId = db.volunteers[index].teamId;
-      const effectiveRole = (req.headers['x-user-role'] || auth.context.userRole || '') as string;
+      const effectiveRole = String(auth.context.role || '');
       const finalTeamId = (effectiveRole === 'leader') ? existingTeamId : (vol.teamId || existingTeamId);
       db.volunteers[index] = { 
         ...db.volunteers[index], 
@@ -13312,12 +13531,8 @@ app.post("/api/db/volunteers/add", (req, res) => {
         file_number: existingFileNumber || vol.fileNumber
       };
     } else {
-      // SECURITY: store only the bcrypt hash, never the plain-text password.
-      vol.passwordHash = hashPassword(
-        typeof vol.password === "string" && vol.password.trim() ? vol.password.trim() : DEFAULT_NEW_ACCOUNT_PASSWORD
-      );
-      delete vol.password;
-      vol.mustChangePassword = true;
+      const credErr = setInitialCredential(vol);
+      if (credErr) return res.status(400).json({ error: credErr });
       db.volunteers.push(vol);
       const linkedTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
       createOrSyncVolunteerCharter(db, {
@@ -13337,7 +13552,11 @@ app.post("/api/db/volunteers/add", (req, res) => {
     device: req.headers["user-agent"] || "System"
   });
   writeDb(db);
-  res.json(db);
+  // Same filtered view as before (front-end compatible) + the one-time temporary password for the creator.
+  res.json({
+    ...filterDatabaseForUser(db, auth.context),
+    ...(issuedTemporaryPassword ? { temporaryPassword: issuedTemporaryPassword } : {})
+  });
 });
 
 // 5.1 Manual Volunteer Creation by Admin / Volunteer Dept (Generates Unique Strong Temporary Password + Profile Completion Flow + Volunteer Charter)
@@ -14102,7 +14321,7 @@ app.post("/api/db/volunteers/batch", (req, res) => {
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
-      passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+      passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
       mustChangePassword: true
     };
     db.volunteers.push(vol);
@@ -15514,14 +15733,32 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // Wrap res.json to automatically generate and attach a persistent server session
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
   const originalJson = res.json.bind(res);
+  lastVerificationUsedLegacyPlaintext = false;
   res.json = function(body: any) {
     if (body && body.status === "success" && body.user) {
+      // SECURITY: a shared/published default password is not proof of identity → no session; recover instead.
+      if (KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim())) {
+        res.status(403);
+        return originalJson({
+          error: "كلمة المرور الحالية لهذا الحساب كلمة افتراضية عامة ولم تعد مقبولة. يرجى استخدام (نسيت كلمة المرور) للتحقق من هويتك وتعيين كلمة مرور جديدة، أو مراجعة إدارة الجمعية.",
+          code: "PASSWORD_RESET_REQUIRED",
+          requirePasswordReset: true
+        });
+      }
+      // Legacy plain-text credential: allowed ONCE, with a mandatory change before any other action.
+      const forceChange = lastVerificationUsedLegacyPlaintext;
+      lastVerificationUsedLegacyPlaintext = false;
+      if (forceChange) {
+        body.user = { ...body.user, mustChangePassword: true };
+      }
       const session = createServerSession(body.user, body.role || body.user?.role || 'admin', {
         authMethod: 'password',
         passwordVerifiedAt: Date.now(),
         deviceId: opts?.deviceId || String(req.body?.deviceId || ''),
-        ip: clientIp
+        ip: clientIp,
+        forcePasswordChange: forceChange
       });
+      if (forceChange) body.mustChangePassword = true;
       setSessionCookie(req, res, session.token);
       body.sessionToken = session.token;
       body.authMethod = 'password';
@@ -16074,6 +16311,13 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
     const pwdToVerify = vol.passwordHash || vol.password;
+    if (!pwdToVerify) {
+      return res.status(403).json({
+        error: "لا توجد كلمة مرور مفعّلة لهذا الحساب. يرجى استخدام (نسيت كلمة المرور) للتحقق من هويتك وتعيين كلمة مرور، أو طلب ذلك من قائد الفريق.",
+        code: "PASSWORD_SETUP_REQUIRED",
+        requirePasswordReset: true
+      });
+    }
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
@@ -16140,6 +16384,13 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
 
     const pwdToVerify = ben.passwordHash || ben.password;
+    if (!pwdToVerify) {
+      return res.status(403).json({
+        error: "لا توجد كلمة مرور مفعّلة لهذا الحساب. يرجى استخدام (نسيت كلمة المرور) للتحقق من هويتك وتعيين كلمة مرور، أو مراجعة الجمعية.",
+        code: "PASSWORD_SETUP_REQUIRED",
+        requirePasswordReset: true
+      });
+    }
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
@@ -16322,6 +16573,13 @@ app.post("/api/db/auth/login-remembered", (req: any, res) => {
 });
 
 // Helper: Secure Verification for Google Identity Services (GIS) ID Tokens
+// Development-only auth shortcuts require an explicit opt-in AND a non-hosted dev/test runtime.
+function isExplicitDevAuthBypassAllowed(): boolean {
+  const env = String(process.env.NODE_ENV || '').toLowerCase();
+  const hosted = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.VERCEL || process.env.VERCEL_ENV);
+  return !hosted && (env === 'development' || env === 'test') && process.env.ALLOW_DEV_GOOGLE_TEST_TOKENS === 'true';
+}
+
 async function verifyGoogleIdToken(credential?: string): Promise<{
   valid: boolean;
   email?: string;
@@ -16339,10 +16597,11 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
 
   const cleanCred = credential.trim();
 
-  // 1. Support development / simulated test token ONLY in non-production environments
+  // 1. Simulated test tokens: FAIL CLOSED. Previously accepted whenever NODE_ENV was not exactly
+  // "production" — e.g. a Render service without NODE_ENV would let anyone sign in as ANY email.
   if (cleanCred.startsWith('dev_test_token:')) {
-    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-      return { valid: false, error: "حظر أمني: رموز الاختبار التجريبية محظورة تماماً في بيئة الإنتاج." };
+    if (!isExplicitDevAuthBypassAllowed()) {
+      return { valid: false, error: "حظر أمني: رموز الاختبار التجريبية غير مسموحة في هذه البيئة." };
     }
     try {
       const raw = cleanCred.replace('dev_test_token:', '');
@@ -16386,9 +16645,14 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
       return { valid: false, error: "انتهت صلاحية رمز Google (ID Token Expired)." };
     }
 
-    // Verify audience if GOOGLE_CLIENT_ID is configured on Render
-    const serverClientId = process.env.GOOGLE_CLIENT_ID;
-    if (serverClientId && payload.aud !== serverClientId) {
+    // Verify audience. FAIL CLOSED: without a configured client id, a Google token minted for ANY
+    // other application would be accepted here.
+    const serverClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+    if (!serverClientId) {
+      console.warn("[Google Auth] GOOGLE_CLIENT_ID is not configured — Google sign-in refused.");
+      return { valid: false, error: "تسجيل الدخول عبر Google غير مهيأ على الخادم (GOOGLE_CLIENT_ID)." };
+    }
+    if (payload.aud !== serverClientId) {
       console.warn(`[Google Auth] Audience mismatch: token.aud=${payload.aud}, serverClientId=${serverClientId}`);
       return {
         valid: false,
@@ -16416,7 +16680,7 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
     console.error("[Google Auth] Network error verifying token with Google:", netErr);
 
     // Fallback ONLY when explicit offline flag is enabled in dev environment
-    if (process.env.ALLOW_DEV_JWT_FALLBACK === 'true' && process.env.NODE_ENV !== 'production' && cleanCred.includes('.')) {
+    if (process.env.ALLOW_DEV_JWT_FALLBACK === 'true' && isExplicitDevAuthBypassAllowed() && cleanCred.includes('.')) {
       try {
         const parts = cleanCred.split('.');
         if (parts.length === 3) {
@@ -16529,9 +16793,9 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 1. Check in userDepartmentAccess (Admin, Operations Manager, Directors, Staff)
   const accessUser = (db.userDepartmentAccess || []).find((u: any) => 
     (u.userEmail && u.userEmail.toLowerCase().trim() === cleanEmail) ||
-    (u.email && u.email.toLowerCase().trim() === cleanEmail) ||
-    ((u.userId === 'admin-user' || u.role === 'admin') && (cleanEmail === 'admin@riadataleata.org.sa' || cleanEmail.includes('admin'))) ||
-    ((u.userId === 'ops-manager' || u.role === 'operations_manager') && cleanEmail === 'operations@riadataleata.org.sa')
+    (u.email && u.email.toLowerCase().trim() === cleanEmail)
+    // SECURITY: removed heuristics that mapped ANY Google email containing "admin" (and fixed
+    // addresses) to the first admin record. Access now requires an exact email match on the record.
   );
 
   if (accessUser) {
@@ -19089,6 +19353,7 @@ app.post("/api/volunteers", (req, res) => {
   if (!auth.allowed) return;
   const db = readDb();
   const vol = stripCredentialAndPrivilegeFields(req.body || {});
+  let legacyIssuedTemporaryPassword = "";
   if (!vol.id) {
     vol.id = "vol-" + Date.now();
     // Auto generate membership numbers & barcodes
@@ -19102,12 +19367,8 @@ app.post("/api/volunteers", (req, res) => {
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
     vol.expiryDate = vol.expiryDate || expiry.toISOString().split('T')[0];
-    // SECURITY: store only the bcrypt hash, never the plain-text password.
-    vol.passwordHash = hashPassword(
-      typeof vol.password === "string" && vol.password.trim() ? vol.password.trim() : DEFAULT_NEW_ACCOUNT_PASSWORD
-    );
-    delete vol.password;
-    vol.mustChangePassword = true;
+    // SECURITY: unique temporary password (hash only stored), returned once to the creator.
+    legacyIssuedTemporaryPassword = issueInitialTemporaryCredential(vol);
     db.volunteers.push(vol);
   } else {
     const index = db.volunteers.findIndex((v: any) => v.id === vol.id);
@@ -19128,7 +19389,11 @@ app.post("/api/volunteers", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ status: "success", volunteer: stripSecretRecordFields(vol) });
+  res.json({
+    status: "success",
+    volunteer: stripSecretRecordFields(vol),
+    ...(legacyIssuedTemporaryPassword ? { temporaryPassword: legacyIssuedTemporaryPassword } : {})
+  });
 });
 
 app.post("/api/volunteers/batch-create", (req, res) => {
@@ -19160,7 +19425,7 @@ app.post("/api/volunteers/batch-create", (req, res) => {
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
-      passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+      passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
       mustChangePassword: true
     };
     db.volunteers.push(vol);
@@ -20716,7 +20981,7 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           orphanStatus: cleanOrphanStatus,
           role: "beneficiary", // Strictly beneficiary
           status: ben.status || "pending",   // Strictly pending approval unless admin creates approved
-          passwordHash: hashPassword(ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
+          passwordHash: hashPassword(typeof ben.password === "string" && ben.password.trim() ? ben.password.trim() : generateStrongTemporaryPassword(16)),
           mustChangePassword: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -21185,7 +21450,7 @@ app.post("/api/db/beneficiaries/import", (req, res) => {
         category: item.category || "أسر متعففة",
         notes: item.notes || "",
         status: item.status || "approved",
-        passwordHash: hashPassword(item.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
+        passwordHash: hashPassword(typeof item.password === "string" && item.password.trim() ? item.password.trim() : generateStrongTemporaryPassword(16)),
         mustChangePassword: true,
         createdAt: new Date().toISOString()
       };
@@ -23697,7 +23962,7 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+    passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
     mustChangePassword: true,
     role: "volunteer"
   };
@@ -28720,7 +28985,7 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+    passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
     mustChangePassword: true,
     role: "volunteer",
     gender: normGender

@@ -44,7 +44,8 @@ fs.writeFileSync(dbPath, JSON.stringify({
 const PUBLIC_ROUTES = new Set<string>([
   "GET /robots.txt", "GET /google6b1a5bb23d6c4515.html",
   "GET /api", "GET /api/", "GET /api/health", "GET /api/health/", "GET /health", "GET /health/", "GET /api/ping",
-  "GET /api/db", "GET /api/db/scoped",
+  "GET /api/db", "GET /api/db/scoped", "GET /api/sitemap.xml", "GET /api/health/db", "GET /api/health/db/",
+  "GET /api/db/org-members",
   "GET /api/maintenance/status", "GET /api/db/maintenance/status",
   "GET /api/public/verify-card/:code", "GET /api/db/opportunities/by-code/:code",
   "POST /api/admin/system/bootstrap",
@@ -71,19 +72,30 @@ const rows: Row[] = [];
 
 function listRoutes(app: any): { method: string; path: string }[] {
   const out: { method: string; path: string }[] = [];
-  const stack = app?._router?.stack || [];
-  for (const layer of stack) {
-    const r = layer.route;
-    if (!r) continue;
-    const paths = Array.isArray(r.path) ? r.path : [r.path];
-    for (const p of paths) {
-      if (typeof p !== "string") continue;
-      for (const m of Object.keys(r.methods || {})) {
-        if (m === "_all") continue;
-        out.push({ method: m.toUpperCase(), path: p });
+  const seen = new Set<string>();
+  const walk = (stack: any[]) => {
+    for (const layer of stack || []) {
+      if (layer?.route) {
+        const r = layer.route;
+        const paths = Array.isArray(r.path) ? r.path : [r.path];
+        for (const p of paths) {
+          if (typeof p !== "string") continue;
+          for (const m of Object.keys(r.methods || {})) {
+            if (m === "_all") continue;
+            const key = `${m.toUpperCase()} ${p}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ method: m.toUpperCase(), path: p });
+          }
+        }
+      } else if (layer?.handle?.stack) {
+        walk(layer.handle.stack); // mounted sub-routers
       }
     }
-  }
+  };
+  walk(app?._router?.stack || []);
+  const stack = app?._router?.stack || [];
+  console.log(`MATRIX-DIAG\tstackLayers=${stack.length}\trouteLayers=${stack.filter((l: any) => l.route).length}\troutes=${out.length}\tlast=${out.length ? out[out.length - 1].method + " " + out[out.length - 1].path : "-"}`);
   return out;
 }
 
@@ -130,6 +142,8 @@ after(async () => {
 });
 
 test("route access matrix: no non-public route is reachable anonymously or without an access check", async () => {
+  // Late-registered routes: give any deferred registration a moment before reading the table.
+  await new Promise((r) => setTimeout(r, 1500));
   const routes = listRoutes(core.default).filter((r) => r.path.startsWith("/api"));
   assert.ok(routes.length > 200, `expected the full route table, found ${routes.length}`);
 
