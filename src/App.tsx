@@ -42,6 +42,7 @@ import {
   getHttpStatusDescription
 } from "./config/api";
 import { resolveRouteSeo, applyRouteSeo } from "./utils/seo";
+import { showOneTimeCredential } from "./components/OneTimeCredentialDialog";
 import {
   saveRememberedAccount,
   getOrCreateDeviceId,
@@ -744,7 +745,15 @@ export default function App() {
         throw new Error(errJson?.error || `فشل الخادم في تنفيذ العملية: ${actionDescription}`);
       }
       const updatedData = await res.json();
-      
+
+      // SECURITY: a newly issued temporary password is shown ONCE to the creator and never kept in
+      // application state (it is removed from the response before the data is stored).
+      if (updatedData && typeof updatedData.temporaryPassword === 'string' && updatedData.temporaryPassword) {
+        const oneTimePassword = updatedData.temporaryPassword;
+        delete updatedData.temporaryPassword;
+        showOneTimeCredential(String(payload?.name || ''), oneTimePassword);
+      }
+
       // Update state with robust response matching
       if (updatedData && updatedData.departments && updatedData.teams) {
         setDbData(updatedData);
@@ -779,17 +788,8 @@ export default function App() {
       userId: userId
     };
 
-    console.log(`[Maintenance Toggle Request]:`, {
-      requestUrl: finalUrl,
-      httpMethod: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        ...authHeaders,
-        'x-user-role': userRole,
-        'x-user-id': userId
-      },
-      payload
-    });
+    // SECURITY: never log request headers — they carry the session token.
+    console.log(`[Maintenance Toggle Request]:`, { requestUrl: finalUrl, httpMethod: 'POST', enabled });
 
     try {
       const res = await fetch(finalUrl, {

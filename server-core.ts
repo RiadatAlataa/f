@@ -74,10 +74,17 @@ app.use((req, res, next) => {
   } else if (!req.socket.remoteAddress) {
     (req.socket as any).remoteAddress = '127.0.0.1';
   }
-  const forwarded = req.headers['x-forwarded-for'];
-  const clientIp = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '') || 
-                   (req.headers['x-real-ip'] as string) || 
-                   '127.0.0.1';
+  // SECURITY: the client IP is taken from the right-hand side of X-Forwarded-For, i.e. the address
+  // appended by OUR proxy, never from values the client can prepend. TRUSTED_PROXY_HOPS (default 1 =
+  // Render's edge) says how many right-most entries were added by trusted proxies. The normalised value
+  // replaces X-Forwarded-For / X-Real-IP so every legacy `split(',')[0]` read gets the trusted address.
+  // The two-tier identity (trusted address + per-visitor key) is computed from the ORIGINAL header first.
+  const network = resolveClientNetwork(req);
+  (req as any).clientNetwork = network;
+  recordNetworkTopologySample(network);
+  const clientIp = network.trustedIp;
+  req.headers['x-forwarded-for'] = clientIp;
+  req.headers['x-real-ip'] = clientIp;
   try {
     Object.defineProperty(req, 'ip', {
       value: clientIp,
@@ -87,6 +94,121 @@ app.use((req, res, next) => {
   } catch {}
   next();
 });
+
+export function resolveTrustedClientIp(req: any): string {
+  const hopsRaw = Number(process.env.TRUSTED_PROXY_HOPS);
+  const hops = Number.isFinite(hopsRaw) && hopsRaw >= 0 && hopsRaw <= 5 ? Math.floor(hopsRaw) : 1;
+  const xff = req.headers?.['x-forwarded-for'];
+  const chain = (Array.isArray(xff) ? xff.join(',') : String(xff || ''))
+    .split(',').map((s: string) => s.trim()).filter(Boolean);
+  const socketIp = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '') || '127.0.0.1';
+  // Full chain as seen by this process: [...client-supplied/upstream entries, connecting peer].
+  const full = [...chain, socketIp];
+  // The entry just left of the trusted hops is the address that connected to our first trusted proxy.
+  const idx = Math.max(0, full.length - 1 - hops);
+  const candidate = (full[idx] || socketIp).replace(/^::ffff:/, '');
+  return /^[0-9a-fA-F:.]{3,45}$/.test(candidate) ? candidate : socketIp;
+}
+
+// --- Two-tier client identity for rate limits ----------------------------------------------------
+// The number of proxies in front of production is NOT known, and all website traffic arrives through
+// the Vercel rewrite, so the TRUSTED address (right-hand side, appended by infrastructure, cannot be
+// forged) may be shared by many real visitors. The CLAIMED address (left-most X-Forwarded-For entry)
+// distinguishes visitors behind a shared egress but CAN be forged. Therefore:
+//   • trustedIp  → only high "flood" ceilings (resource protection; never a per-person limit);
+//   • visitorKey → normal per-visitor limits (fairness only; forging it buys a new bucket, nothing more);
+//   • per-ACCOUNT limits (login failures, OTP issuance, per-code attempts) are the real defence and do
+//     not depend on any address.
+// Nothing here treats the claimed address as proof of identity.
+export interface ClientNetwork {
+  trustedIp: string;
+  claimedIp: string | null;
+  visitorKey: string;
+  chainLength: number;
+}
+const IP_SHAPE = /^[0-9a-fA-F:.]{3,45}$/;
+export function resolveClientNetwork(req: any): ClientNetwork {
+  const trustedIp = resolveTrustedClientIp(req);
+  const xff = req.headers?.['x-forwarded-for'];
+  const chain = (Array.isArray(xff) ? xff.join(',') : String(xff || ''))
+    .split(',').map((s: string) => s.trim()).filter(Boolean);
+  const left = (chain[0] || '').replace(/^::ffff:/, '');
+  const claimedIp = IP_SHAPE.test(left) ? left : null;
+  return { trustedIp, claimedIp, visitorKey: `${trustedIp}|${claimedIp || trustedIp}`, chainLength: chain.length };
+}
+export function getClientNetwork(req: any): ClientNetwork {
+  return req?.clientNetwork || resolveClientNetwork(req);
+}
+
+// Limits per route: `visitor` = existing per-client value (unchanged), `flood` = ceiling per trusted
+// address, sized so that hundreds of visitors behind one shared egress are not blocked.
+export const NETWORK_LIMITS = {
+  login:                   { visitor: 200, flood: 3000, windowMs: 15 * 60 * 1000 },
+  loginVisitorAccount:     { visitor: 10,  windowMs: 15 * 60 * 1000 },
+  forgotPassword:          { visitor: 5,   flood: 600,  windowMs: 15 * 60 * 1000 },
+  forgotIdentify:          { visitor: 12,  flood: 1200, windowMs: 15 * 60 * 1000 },
+  forgotSendOtp:           { visitor: 8,   flood: 600,  windowMs: 15 * 60 * 1000 },
+  requestLink:             { visitor: 6,   flood: 600,  windowMs: 15 * 60 * 1000 },
+  resetCode:               { visitor: 10,  flood: 600,  windowMs: 15 * 60 * 1000 },
+  googleRegistration:      { visitor: 15,  flood: 600,  windowMs: 30 * 60 * 1000 },
+  beneficiaryRegistration: { visitor: 15,  flood: 600,  windowMs: 30 * 60 * 1000 },
+  volunteerApplication:    { visitor: 20,  flood: 800,  windowMs: 30 * 60 * 1000 },
+  teamLicenseUpload:       { visitor: 15,  flood: 300,  windowMs: 60 * 1000 },
+  aiGuest:                 { visitor: 10,  flood: 400,  windowMs: 10 * 60 * 1000 }
+} as const;
+export type NetworkLimitProfile = Exclude<keyof typeof NETWORK_LIMITS, 'loginVisitorAccount'>;
+
+export function checkClientRateLimit(
+  bucket: 'login' | 'forgotPassword' | 'forgotIdentify' | 'forgotSendOtp' | 'registration' | 'team_license_upload',
+  profile: NetworkLimitProfile,
+  req: any
+): { allowed: boolean; retryAfterSec?: number } {
+  const lim = NETWORK_LIMITS[profile];
+  const net = getClientNetwork(req);
+  // Visitor first: a visitor that is already blocked does not keep consuming the shared flood budget.
+  const visitor = checkRateLimit(bucket, `v:${profile}:${net.visitorKey}`, lim.visitor, lim.windowMs);
+  if (!visitor.allowed) return visitor;
+  return checkRateLimit(bucket, `t:${profile}:${net.trustedIp}`, lim.flood, lim.windowMs);
+}
+
+// Read-only topology evidence (counts only — no address is ever exposed): how many X-Forwarded-For
+// entries requests arrive with, and how many distinct visitors share one trusted address. Used to
+// establish the real proxy count from production traffic instead of assuming it.
+const topology = {
+  since: Date.now(),
+  windowStart: Date.now(),
+  chainLengths: {} as Record<string, number>,
+  visitorsPerTrusted: new Map<string, Set<string>>()
+};
+const anonymise = (s: string) => crypto.createHash('sha256').update('topology:' + s).digest('hex').slice(0, 16);
+export function recordNetworkTopologySample(net: ClientNetwork) {
+  try {
+    const now = Date.now();
+    if (now - topology.windowStart > 60 * 60 * 1000) { topology.windowStart = now; topology.visitorsPerTrusted.clear(); }
+    const k = String(Math.min(net.chainLength, 6));
+    topology.chainLengths[k] = (topology.chainLengths[k] || 0) + 1;
+    if (topology.visitorsPerTrusted.size < 5000) {
+      const tk = anonymise(net.trustedIp);
+      let set = topology.visitorsPerTrusted.get(tk);
+      if (!set) { set = new Set(); topology.visitorsPerTrusted.set(tk, set); }
+      if (set.size < 5000) set.add(anonymise(net.visitorKey));
+    }
+  } catch {}
+}
+export function getNetworkTopologySummary() {
+  const perTrusted = [...topology.visitorsPerTrusted.values()].map((s) => s.size).sort((a, b) => b - a);
+  const hopsRaw = Number(process.env.TRUSTED_PROXY_HOPS);
+  return {
+    configuredTrustedProxyHops: Number.isFinite(hopsRaw) && hopsRaw >= 0 && hopsRaw <= 5 ? Math.floor(hopsRaw) : 1,
+    sampledSince: new Date(topology.since).toISOString(),
+    forwardedForEntriesHistogram: { ...topology.chainLengths },
+    currentHour: {
+      distinctTrustedAddresses: perTrusted.length,
+      maxDistinctVisitorsBehindOneTrustedAddress: perTrusted[0] || 0,
+      top5VisitorCounts: perTrusted.slice(0, 5)
+    }
+  };
+}
 
 /**
  * Strict CORS Origin Validator
@@ -206,6 +328,290 @@ app.use((req: any, _res, next) => {
   next();
 });
 
+// ---------------------------------------------------------------------------
+// SECURITY: Client identity headers are NEVER trusted.
+// Browsers send x-user-id / x-user-role / x-department-id / x-national-id / x-team-id / x-user-name,
+// and some legacy handlers read them. This middleware discards every client-supplied value and
+// re-derives them from the verified server session (or removes them when there is no session),
+// so no handler can be tricked into granting a role by editing a request header.
+// ---------------------------------------------------------------------------
+const CLIENT_IDENTITY_HEADERS = ['x-user-id', 'x-user-role', 'x-user-name', 'x-department-id', 'x-national-id', 'x-team-id'];
+const toHeaderSafe = (val: any): string => {
+  const s = String(val ?? '').trim();
+  return /^[\x20-\x7E]*$/.test(s) ? s : encodeURIComponent(s);
+};
+export function resolveSessionTokenFromRequest(req: any): string | null {
+  const auth = req.headers?.authorization;
+  return (req.headers?.['x-session-token'] as string) ||
+    (typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.substring(7) : null) ||
+    req.cookies?.['reyadat_session'] ||
+    null;
+}
+app.use((req: any, _res, next) => {
+  if (!String(req.path || '').startsWith('/api')) return next();
+  for (const h of CLIENT_IDENTITY_HEADERS) delete req.headers[h];
+  // Legacy handlers also read ?userRole= / body.userRole — neutralise those too.
+  if (req.query && typeof req.query === 'object' && 'userRole' in req.query) delete req.query.userRole;
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body) && 'userRole' in req.body) delete req.body.userRole;
+
+  if (resolveSessionTokenFromRequest(req)) {
+    const probeBefore = __accessProbe.calls;
+    try {
+      const ctx = getUserAccessContext(req);
+      __accessProbe.calls = probeBefore;
+      if (ctx && ctx.isAuthenticated) {
+        req.headers['x-user-id'] = toHeaderSafe(ctx.userId);
+        req.headers['x-user-role'] = toHeaderSafe(ctx.role);
+        if (ctx.userName) req.headers['x-user-name'] = toHeaderSafe(ctx.userName);
+        if (ctx.primaryDepartmentId) req.headers['x-department-id'] = toHeaderSafe(ctx.primaryDepartmentId);
+        if (ctx.nationalId) req.headers['x-national-id'] = toHeaderSafe(ctx.nationalId);
+        if (ctx.teamId) req.headers['x-team-id'] = toHeaderSafe(ctx.teamId);
+      }
+    } catch {
+      // On any resolution error the request simply proceeds without identity headers (least privilege).
+    }
+  }
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// SECURITY: Central route access policy (deny-by-default for routes that had NO check of their own).
+// Found by test/security/route-matrix.test.ts: these handlers answered anonymous callers or never
+// consulted the session. The policy runs before the handler, using ONLY the verified server session.
+//   authenticated → any signed-in account
+//   staff         → signed-in, not volunteer / beneficiary (team leaders included)
+//   admin         → super admin / operations manager
+//   dept:<ids>    → admin, or staff (not leaders) whose allowed departments include one of <ids>
+// ---------------------------------------------------------------------------
+// 'deptx:<ids>' = like dept but WITHOUT role-implied departments (e.g. a storekeeper cannot manage storekeepers).
+type RoutePolicy = 'public' | 'authenticated' | 'staff' | 'admin' | `dept:${string}` | `deptx:${string}`;
+// First matching rule wins. Method '*' = any method; a pattern ending in '/*' also matches its base path.
+const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
+  // explicit public exceptions that sit under protected prefixes
+  ['POST', '/api/whatsapp/webhook', 'public'],
+  ['POST', '/api/db/teamApplications/submit', 'public'],
+  ['POST', '/api/db/teamApplications/upload-license', 'public'],
+  ['POST', '/api/db/volunteerApplications/submit', 'public'],
+  // finance (dep-2); donors shared with partnerships (dep-7)
+  ['POST', '/api/db/finance/donors/save', 'dept:dep-2,dep-7'],
+  ['*', '/api/db/finance/*', 'dept:dep-2'],
+  // HR (dep-9)
+  ['*', '/api/db/hr/*', 'dept:dep-9'],
+  // warehouse & inventory (dep-8; storekeepers implied) — managing storekeeper accounts is admin-only
+  ['POST', '/api/db/inventory/storekeepers/add', 'deptx:dep-8'],
+  ['POST', '/api/db/inventory/storekeepers/delete', 'deptx:dep-8'],
+  ['*', '/api/db/inventory/*', 'dept:dep-8'],
+  // messaging / integrations configuration (secrets, logs) — admin only
+  ['*', '/api/whatsapp/*', 'admin'],
+  ['*', '/api/db/email-settings/*', 'admin'],
+  ['*', '/api/db/email-logs/*', 'admin'],
+  ['*', '/api/db/resend/*', 'admin'],
+  ['*', '/api/db/dns/*', 'admin'],
+  ['POST', '/api/db/email/test', 'admin'],
+  ['GET', '/api/notifications/logs', 'admin'],
+  ['POST', '/api/notifications/send-centralized', 'staff'],
+  // internal messaging, support, letters, custody, staff requests
+  ['*', '/api/chat/*', 'authenticated'],
+  ['GET', '/api/support/tickets', 'authenticated'],
+  ['POST', '/api/support/tickets/create', 'authenticated'],
+  ['POST', '/api/support/tickets/reply', 'authenticated'],
+  ['POST', '/api/support/tickets/status', 'staff'],
+  ['POST', '/api/support/team-tickets/create', 'authenticated'],
+  ['POST', '/api/support/team-tickets/reply', 'authenticated'],
+  ['POST', '/api/support/team-tickets/assign', 'staff'],
+  ['POST', '/api/support/team-tickets/status', 'staff'],
+  ['*', '/api/support/agents/*', 'staff'],
+  ['*', '/api/support/tasks/*', 'staff'],
+  ['*', '/api/db/letters/*', 'staff'],
+  ['*', '/api/db/custodies/*', 'staff'],
+  ['*', '/api/db/employee-requests/*', 'staff'],
+  ['GET', '/api/db/staff-members', 'staff'],
+  ['*', '/api/db/team-staff/*', 'staff'], // + per-team scope enforced in the handlers
+  // volunteer / team applications review (dep-5); leaders act on their own team's queue
+  ['GET', '/api/db/teamApplications', 'dept:dep-5'],
+  ['*', '/api/db/teamApplications/*', 'dept:dep-5'],
+  ['POST', '/api/db/volunteerApplications/leader-action', 'staff'],
+  ['*', '/api/db/volunteerApplications/*', 'dept:dep-5'],
+  // cards & templates
+  ['GET', '/api/db/card-templates', 'authenticated'],
+  ['GET', '/api/db/team-card-template/:teamId', 'authenticated'],
+  ['POST', '/api/db/team-card-template/save', 'staff'],
+  ['POST', '/api/db/team-cards/bulk-issue', 'staff'],
+  ['POST', '/api/db/card-templates/add', 'dept:dep-5'],
+  ['POST', '/api/db/card-templates/delete', 'dept:dep-5'],
+  ['POST', '/api/db/card-templates/upload-image', 'dept:dep-5'],
+  ['POST', '/api/db/systemSettings/femaleUnifiedPhoto', 'dept:dep-5'],
+  ['*', '/api/db/cards/*', 'staff'],
+  // beneficiary self-service vs. case management
+  ['POST', '/api/db/benefitRequests/add', 'authenticated'],
+  ['POST', '/api/db/benefitRequests/status', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/aid/confirm-receipt', 'authenticated'],
+  ['POST', '/api/db/beneficiaryRatings/add', 'authenticated'],
+  // website content
+  ['POST', '/api/db/partners/batch-update', 'dept:dep-6'],
+  ['POST', '/api/db/social-links/update', 'dept:dep-6'],
+  ['POST', '/api/db/license/update', 'admin'],
+  // admin / system
+  ['GET', '/api/logs/developer-error', 'admin'],
+  ['GET', '/api/admin/freeze/status', 'admin'],
+  ['GET', '/api/admin/security/network-topology', 'admin'],
+  ['GET', '/api/tools/download-extractor-zip', 'admin'],
+  ['POST', '/api/db/systemSettings', 'admin'],
+  ['POST', '/api/db/license/upload', 'admin'],
+  ['POST', '/api/db/license/delete', 'admin'],
+  // any signed-in account (handlers scope to the caller)
+  ['POST', '/api/db/permissions/test-access', 'authenticated'],
+  ['POST', '/api/db/reissue-card', 'authenticated'],
+  ['POST', '/api/volunteers/:id/reissue-card', 'authenticated'],
+  ['POST', '/api/db/attendance/record', 'authenticated'],
+  ['POST', '/api/db/attendance/checkout', 'authenticated'],
+  ['POST', '/api/db/initiatives/apply', 'authenticated'],
+  ['POST', '/api/db/initiatives/rate-by-volunteer', 'authenticated'],
+  ['POST', '/api/db/notifications/mark-read', 'authenticated'],
+  ['POST', '/api/db/notifications/delete', 'authenticated'],
+  ['POST', '/api/db/ratings/add', 'authenticated'],
+  ['POST', '/api/requests', 'authenticated'],
+  ['POST', '/api/attendance', 'authenticated'],
+  // staff (incl. team leaders)
+  ['GET', '/api/db/departments/overview', 'staff'],
+  ['POST', '/api/db/admin-tasks/save', 'staff'],
+  ['POST', '/api/db/admin-tasks/status', 'staff'],
+  ['POST', '/api/db/initiatives/add', 'staff'],
+  ['POST', '/api/db/initiatives/copy', 'staff'],
+  ['POST', '/api/db/initiatives/evaluate-points', 'staff'],
+  ['POST', '/api/db/opportunity-requests/add', 'staff'],
+  ['POST', '/api/db/opportunity-requests/resubmit', 'staff'],
+  ['POST', '/api/db/opportunity-requests/update', 'staff'],
+  ['POST', '/api/db/teams/broadcast', 'staff'],
+  ['POST', '/api/db/evaluations/add', 'staff'],
+  ['POST', '/api/db/departmentDirectives/add', 'staff'],
+  ['POST', '/api/db/departmentDirectives/updateStatus', 'staff'],
+  ['POST', '/api/db/departmentDirectives/delete', 'staff'],
+  ['POST', '/api/db/notifications/send', 'staff'],
+  ['POST', '/api/db/notifications/add', 'staff'],
+  ['POST', '/api/db/notifications/resend', 'staff'],
+  ['POST', '/api/initiatives', 'staff'],
+  ['POST', '/api/initiatives/copy', 'staff'],
+  ['POST', '/api/teams/broadcast', 'staff'],
+  ['POST', '/api/evaluations', 'staff'],
+  ['POST', '/api/db/certificates/templates/add', 'staff'],
+  ['POST', '/api/db/certificates/templates/delete', 'staff'],
+  ['POST', '/api/db/certificates/issue', 'staff'],
+  // volunteer management (dep-5)
+  ['POST', '/api/db/volunteers/batch', 'dept:dep-5'],
+  ['POST', '/api/db/volunteers/toggle-status', 'dept:dep-5'],
+  ['POST', '/api/db/volunteers/permissions', 'dept:dep-5'],
+  ['POST', '/api/teams', 'dept:dep-5'],
+  ['DELETE', '/api/teams/:id', 'dept:dep-5'],
+  // public website content (media dep-6)
+  ['POST', '/api/db/homeSettings', 'dept:dep-6'],
+  ['POST', '/api/db/news/add', 'dept:dep-6'],
+  ['POST', '/api/db/news/delete', 'dept:dep-6'],
+  ['POST', '/api/db/partners/add', 'dept:dep-6'],
+  ['POST', '/api/db/partners/delete', 'dept:dep-6'],
+  ['POST', '/api/db/gallery/add', 'dept:dep-6'],
+  ['POST', '/api/db/gallery/delete', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/add', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/delete', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/batch', 'dept:dep-6'],
+  ['POST', '/api/db/hero-slides/toggle-active', 'dept:dep-6'],
+  // fundraising projects (finance dep-2 / partnerships dep-7)
+  ['POST', '/api/db/store/projects/add', 'dept:dep-2,dep-7'],
+  // beneficiaries (dep-4) and aid distributions (dep-4 / warehouse dep-8)
+  ['POST', '/api/db/beneficiaries/export-log', 'dept:dep-4'],
+  ['POST', '/api/db/beneficiaries/import', 'dept:dep-4'],
+  ['GET', '/api/db/beneficiaries/statistics', 'dept:dep-4,dep-8'],
+  ['GET', '/api/db/distributions/reports', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/create-advanced', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/workflow-status', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/create', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/distributions/handover/cancel', 'dept:dep-4,dep-8']
+];
+const COMPILED_ROUTE_POLICIES = ROUTE_POLICIES.map(([method, pattern, policy]) => {
+  const isPrefix = pattern.endsWith('/*');
+  const base = isPrefix ? pattern.slice(0, -2) : pattern;
+  const body = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z_]+/g, '[^/]+');
+  return { method, rx: new RegExp('^' + body + (isPrefix ? '(/.*)?$' : '/?$')), policy };
+});
+// Exposed read-only for the route-matrix test (pattern → policy; no data).
+export const __routePolicyTable = COMPILED_ROUTE_POLICIES;
+// Roles that imply a department scope without an explicit userDepartmentAccess grant.
+const ROLE_IMPLIED_DEPARTMENTS: Record<string, string[]> = { storekeeper: ['dep-8'] };
+export function evaluateRoutePolicy(policy: RoutePolicy, ctx: any): { status: number; error: string } | null {
+  if (policy === 'public') return null;
+  if (!ctx || !ctx.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
+  const role = String(ctx.role || '');
+  const isAdmin = Boolean(ctx.isSuperAdmin || ctx.isOperationsManager || role === 'admin' || role === 'operations_manager');
+  if (policy === 'authenticated') return null;
+  if (isAdmin) return null;
+  const isEndUser = ['volunteer', 'beneficiary', 'public'].includes(role);
+  if (policy === 'staff') return isEndUser ? { status: 403, error: "غير مصرح: هذه العملية مخصصة لكوادر الجمعية." } : null;
+  if (policy === 'admin') return { status: 403, error: "غير مصرح: هذه العملية مخصصة للإدارة العليا." };
+  const strict = policy.startsWith('deptx:');
+  const depts = policy.slice(policy.indexOf(':') + 1).split(',');
+  const allowed: string[] = [
+    ...(Array.isArray(ctx.allowedDepartmentIds) ? ctx.allowedDepartmentIds : []),
+    ...(strict ? [] : (ROLE_IMPLIED_DEPARTMENTS[role] || []))
+  ];
+  if (isEndUser || role === 'leader' || (strict && ROLE_IMPLIED_DEPARTMENTS[role]) || !depts.some((d) => allowed.includes(d))) {
+    return { status: 403, error: "غير مصرح: هذه العملية خارج نطاق صلاحيات إدارتك." };
+  }
+  return null;
+}
+app.use((req: any, res: any, next) => {
+  const p = String(req.path || '');
+  if (!p.startsWith('/api')) return next();
+  const rule = COMPILED_ROUTE_POLICIES.find((r) => (r.method === '*' || r.method === req.method) && r.rx.test(p));
+  if (!rule || rule.policy === 'public') return next();
+  const denied = evaluateRoutePolicy(rule.policy, getUserAccessContext(req));
+  if (denied) return res.status(denied.status).json({ error: denied.error, code: denied.status === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN' });
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// SECURITY: No API response may ever contain the raw database.
+// ~120 legacy handlers end with res.json(db) or res.json({ ..., db }). This guard replaces any raw
+// database object in a JSON response with the same role-filtered, secret-free view that GET /api/db
+// returns for the caller, so existing front-end code keeps working while nothing leaks.
+// Encrypted backup/export endpoints (already restricted to super admins) are exempt by design.
+// ---------------------------------------------------------------------------
+const RAW_DB_RESPONSE_EXEMPT_PREFIXES = ['/api/db/backup', '/api/admin/backup'];
+export function looksLikeRawDatabase(obj: any): boolean {
+  return Boolean(
+    obj && typeof obj === 'object' && !Array.isArray(obj) &&
+    !('currentUserContext' in obj) &&
+    Array.isArray(obj.volunteers) &&
+    (Array.isArray(obj.departments) || Array.isArray(obj.beneficiaries) || 'systemSettings' in obj || Array.isArray(obj.userDepartmentAccess))
+  );
+}
+app.use((req: any, res: any, next) => {
+  const p = String(req.path || '');
+  if (!p.startsWith('/api') || RAW_DB_RESPONSE_EXEMPT_PREFIXES.some((x) => p.startsWith(x))) return next();
+  const originalJson = res.json.bind(res);
+  // (response guard: not counted as a handler-level access check by the route-matrix test)
+  const uncountedContext = () => {
+    const before = __accessProbe.calls;
+    try { return getUserAccessContext(req); } finally { __accessProbe.calls = before; }
+  };
+  res.json = (body: any) => {
+    try {
+      if (looksLikeRawDatabase(body)) {
+        return originalJson(filterDatabaseForUser(body, uncountedContext()));
+      }
+      if (body && typeof body === 'object' && !Array.isArray(body) && looksLikeRawDatabase(body.db)) {
+        return originalJson({ ...body, db: filterDatabaseForUser(body.db, uncountedContext()) });
+      }
+    } catch {
+      // Fail closed: never fall back to sending the raw database.
+      if (looksLikeRawDatabase(body) || (body && looksLikeRawDatabase(body.db))) {
+        return originalJson({ ok: false, error: "تعذر تجهيز الاستجابة بشكل آمن." });
+      }
+    }
+    return originalJson(body);
+  };
+  next();
+});
+
 // Write Freeze Barrier Middleware (Protects data consistency during snapshots/migrations)
 app.use((req, res, next) => {
   if (writeCoordinator.getIsWriteFrozen() && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
@@ -281,8 +687,12 @@ app.use((req, res, next) => {
 
   if (exempt) return next();
 
+  // (global middleware: not counted as a handler-level access check by the route-matrix test)
+  const probeBefore = __accessProbe.calls;
   const authContext = getUserAccessContext(req);
-  if (authContext.isAuthenticated && (authContext as any).mustChangePassword) {
+  const forcedBySession = Boolean((getServerSession(resolveSessionTokenFromRequest(req) || undefined) as any)?.forcePasswordChange);
+  __accessProbe.calls = probeBefore;
+  if (authContext.isAuthenticated && ((authContext as any).mustChangePassword || forcedBySession)) {
     return res.status(403).json({
       ok: false,
       error: "يجب تغيير كلمة المرور المؤقتة أولاً قبل إجراء أي عمليات أو استعلامات على النظام.",
@@ -2937,7 +3347,7 @@ export function readDb() {
             nationalId: "1010000099",
             phone: "0559998877",
             email: "storekeeper@riadataleata.org.sa",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             assignedWarehouseId: "wh-1",
             assignedWarehouseName: "المستودع الرئيسي - العسيلة",
             status: "active",
@@ -2951,7 +3361,7 @@ export function readDb() {
             nationalId: "1010000098",
             phone: "0558887766",
             email: "sk2@riadataleata.org.sa",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             assignedWarehouseId: "wh-2",
             assignedWarehouseName: "مستودع السلال الغذائية والتموين",
             status: "active",
@@ -3596,7 +4006,7 @@ export function readDb() {
             (u: any) => u.userId === linkedAccessId || u.id === linkedAccessId || (d.nationalId && String(u.nationalId || "").trim() === String(d.nationalId).trim())
           );
           if (!accRow && d.directorName) {
-            const legacyPwd = d.password && String(d.password).trim() ? String(d.password).trim() : DEFAULT_NEW_ACCOUNT_PASSWORD;
+            const legacyPwd = d.password && String(d.password).trim() ? String(d.password).trim() : generateStrongTemporaryPassword(16);
             accRow = {
               id: `perm-${d.id}`,
               userId: linkedAccessId,
@@ -3892,7 +4302,7 @@ export function readDb() {
             id: "sm-1",
             name: "م. عبد العزيز بن سلطان السلمي",
             username: "support_manager",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             email: "support.manager@riadataleata.org.sa",
             phone: "0550001122",
             role: "support_manager",
@@ -3909,7 +4319,7 @@ export function readDb() {
             id: "sa-1",
             name: "م. عبد الرحمن المكي",
             username: "support_agent",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             email: "abdulrahman.support@riadataleata.org.sa",
             phone: "0551122334",
             role: "support_agent",
@@ -3924,7 +4334,7 @@ export function readDb() {
             id: "sa-2",
             name: "أ. سارة الحربي",
             username: "sara_support",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             email: "sara.support@riadataleata.org.sa",
             phone: "0552233445",
             role: "support_agent",
@@ -4069,9 +4479,8 @@ export function readDb() {
             allowedDepartmentIds: ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-6", "dep-7", "dep-8"],
             status: "active",
             notes: "حساب إداري بصلاحيات Administrator كاملة للتحكم وإجراء عمليات الإدارة والحذف",
-            password: "mosa11",
-            passwordHash: "$2b$10$3wi69fD5oprWYJp7g7htMuFZiZmxMWyPsuAJ2VnaT0QiADE/Xww9i",
-            mustChangePassword: false,
+            // SECURITY: seeded credential removed (it was published in this repository).
+            mustChangePassword: true,
             updatedAt: "2026-10-04T18:40:00Z",
             updatedBy: "النظام المركزي"
           },
@@ -4487,8 +4896,48 @@ export function generateStrongTemporaryPassword(length: number = 12): string {
   return chars.join("");
 }
 
-// Default initial password for legacy compatibility (not used for manual volunteer creation)
+// Legacy shared initial password. SECURITY: it is no longer issued to new accounts (see
+// issueInitialTemporaryCredential) and it can no longer be used to sign in (see KNOWN_PUBLIC_DEFAULT_PASSWORDS).
 export const DEFAULT_NEW_ACCOUNT_PASSWORD = "A123b456";
+
+// Passwords that were published in this repository / used as shared defaults. A sign-in that succeeds
+// with one of them is NOT a proof of identity: no session is issued and the account must be recovered
+// through the verified reset flow (OTP / approved reset request).
+export const KNOWN_PUBLIC_DEFAULT_PASSWORDS = new Set<string>(["123", "mosa11", DEFAULT_NEW_ACCOUNT_PASSWORD]);
+
+// A stored credential that is not one of the supported hash formats is a legacy plain-text password.
+export function isLegacyPlaintextCredential(stored?: string): boolean {
+  return typeof stored === "string" && stored.trim().length > 0 && !/^(\$2[aby]\$|pbkdf2\$|sha256\$)/.test(stored);
+}
+
+// Set by verifyPasswordAgainstHash when the match came from a legacy plain-text record (read synchronously
+// by the login handler right after verification).
+let lastVerificationUsedLegacyPlaintext = false;
+
+// Unique per-account temporary password for staff-created accounts (replaces the shared default).
+// Only the bcrypt hash is stored; the plain value is returned ONCE to the authorised creator.
+// ROLLBACK COMPATIBILITY: the previous version verifies support managers / agents (and reads storekeepers
+// on one path) from the `password` field only. The SAME bcrypt hash is therefore written to both fields —
+// never plain text — so a password changed after deploy still verifies if the previous version is restored.
+// (The pattern already used by the OTP / reset-link recovery paths.)
+export function setCompatiblePasswordHash(record: any, bcryptHash: string) {
+  record.passwordHash = bcryptHash;
+  record.password = bcryptHash;
+}
+// Support staff are verified from `password` first (as the previous version does), then `passwordHash`,
+// so both versions always agree on which credential is current.
+export function supportStaffStoredCredential(record: any): string | undefined {
+  return (typeof record?.password === 'string' && record.password) || record?.passwordHash || undefined;
+}
+
+export function issueInitialTemporaryCredential(record: any): string {
+  const temp = generateStrongTemporaryPassword(12);
+  record.passwordHash = hashPassword(temp);
+  delete record.password;
+  record.mustChangePassword = true;
+  record.temporaryPasswordActive = true;
+  return temp;
+}
 
 // Password Strength Evaluation Interface & Validator
 export interface PasswordValidationResult {
@@ -4505,6 +4954,9 @@ export function validatePasswordStrength(pwd: string): PasswordValidationResult 
   }
 
   const trimmed = pwd.trim();
+  if (KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(trimmed)) {
+    return { isValid: false, score: 0, strength: 'weak', errors: ["هذه كلمة مرور افتراضية عامة ولا يمكن استخدامها. يرجى اختيار كلمة مرور خاصة بك."] };
+  }
   if (trimmed.length < 8) {
     errors.push("يجب ألا تقل كلمة المرور عن 8 خانات.");
   }
@@ -4539,9 +4991,26 @@ export function validatePasswordStrength(pwd: string): PasswordValidationResult 
 }
 
 // Password Verification supporting Bcrypt, legacy formats, and plain text
+// Constant-time string comparison (prevents timing side channels on legacy formats)
+function safeEqualStrings(a: string, b: string): boolean {
+  const ab = Buffer.from(String(a), "utf8");
+  const bb = Buffer.from(String(b), "utf8");
+  if (ab.length !== bb.length) {
+    crypto.timingSafeEqual(ab, ab);
+    return false;
+  }
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+// Single-use reset codes are high-entropy random values; a SHA-256 digest is sufficient for storage.
+export function hashResetCode(code: string): string {
+  return crypto.createHash("sha256").update("reyadat_reset_code_v1:" + String(code || "").trim()).digest("hex");
+}
+
 export function verifyPasswordAgainstHash(plainText: string, storedHash?: string): boolean {
-  if (!storedHash) return true;
-  if (typeof storedHash !== "string") return false;
+  // SECURITY: an account without a stored credential must NEVER authenticate.
+  if (!storedHash || typeof storedHash !== "string" || !storedHash.trim()) return false;
+  if (typeof plainText !== "string" || !plainText) return false;
 
   // Bcrypt format check ($2a$, $2b$, $2y$)
   if (storedHash.startsWith("$2a$") || storedHash.startsWith("$2b$") || storedHash.startsWith("$2y$")) {
@@ -4558,8 +5027,9 @@ export function verifyPasswordAgainstHash(plainText: string, storedHash?: string
     const iterations = parseInt(parts[1], 10);
     const salt = parts[2];
     const hash = parts[3];
+    if (!salt || !hash || !Number.isFinite(iterations) || iterations <= 0) return false;
     const testHash = crypto.pbkdf2Sync(plainText, salt, iterations, 32, "sha256").toString("hex");
-    return testHash === hash;
+    return safeEqualStrings(testHash, hash);
   }
 
   // Legacy SHA256 format
@@ -4567,12 +5037,16 @@ export function verifyPasswordAgainstHash(plainText: string, storedHash?: string
     const parts = storedHash.split("$");
     const salt = parts[1];
     const hash = parts[2];
+    if (!salt || !hash) return false;
     const testHash = crypto.createHmac("sha256", salt).update(plainText).digest("hex");
-    return testHash === hash;
+    return safeEqualStrings(testHash, hash);
   }
 
-  // Fallback for legacy plain text mock passwords
-  return storedHash === plainText;
+  // Legacy plain-text records: still verified so existing users are not locked out, but the login
+  // handler forces an immediate password change (no permanent plain-text sign-in).
+  const plainMatch = safeEqualStrings(storedHash, plainText);
+  if (plainMatch) lastVerificationUsedLegacyPlaintext = true;
+  return plainMatch;
 }
 
 // Server-side Session Management (session_start persistence)
@@ -4594,6 +5068,28 @@ export interface ServerSession {
   createdAt: number;
   lastActive: number;
   expiresAt: number;
+  // Set when the sign-in used a legacy plain-text credential: every API call except the password
+  // change is refused until the password is changed.
+  forcePasswordChange?: boolean;
+}
+
+// Clears the forced-change flag on every live and persisted session of a user after a successful change.
+function clearForcedPasswordChange(db: any, userIds: string[]) {
+  const ids = new Set(userIds.filter(Boolean));
+  for (const sess of activeSessions.values()) {
+    if (sess && ids.has(sess.userId)) {
+      delete sess.forcePasswordChange;
+      if (sess.user) sess.user.mustChangePassword = false;
+    }
+  }
+  if (db && Array.isArray(db.activeSessions)) {
+    for (const s of db.activeSessions) {
+      if (s && ids.has(s.userId)) {
+        delete s.forcePasswordChange;
+        if (s.user) s.user.mustChangePassword = false;
+      }
+    }
+  }
 }
 
 const activeSessions = new Map<string, ServerSession>();
@@ -4608,12 +5104,14 @@ export function createServerSession(
     trustedDeviceId?: string;
     deviceLabel?: string;
     ip?: string;
+    forcePasswordChange?: boolean;
   }
 ): ServerSession {
   const token = `sess_${Date.now()}_${crypto.randomBytes(32).toString("hex")}`;
   const now = Date.now();
   const authMethod = meta?.authMethod || 'password';
   const session: ServerSession = {
+    ...(meta?.forcePasswordChange ? { forcePasswordChange: true } : {}),
     token,
     userId: user?.id || 'user',
     role: role || user?.role || 'user',
@@ -4645,7 +5143,12 @@ export function createServerSession(
   return session;
 }
 
+// Test instrumentation: counts calls to the access-control resolvers so the route-matrix test can
+// detect handlers that never check identity. A plain counter — no data, no side effects.
+export const __accessProbe = { calls: 0 };
+
 export function getServerSession(token?: string): ServerSession | null {
+  __accessProbe.calls++;
   if (!token) return null;
   const now = Date.now();
   let session = activeSessions.get(token);
@@ -4895,7 +5398,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!mosaEntry?.mustChangePassword,
       status: mosaEntry?.status || "active"
     };
-    return { found: true, active: true, role: "admin", user: mosaUser, storedPasswordHash: mosaEntry?.passwordHash || mosaEntry?.password || "mosa11" };
+    return { found: true, active: true, role: "admin", user: mosaUser, storedPasswordHash: mosaEntry?.passwordHash || mosaEntry?.password || undefined };
   }
 
   // 2. Primary Admin
@@ -4926,7 +5429,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!adminCustom?.mustChangePassword,
       status: adminCustom?.status || "active"
     };
-    return { found: true, active: true, role: "admin", user: adminUser, storedPasswordHash: adminCustom?.passwordHash || adminCustom?.password || "123" };
+    return { found: true, active: true, role: "admin", user: adminUser, storedPasswordHash: adminCustom?.passwordHash || adminCustom?.password || undefined };
   }
 
   // 3. Operations Manager
@@ -4960,7 +5463,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!opsCustom?.mustChangePassword,
       status: opsCustom?.status || "active"
     };
-    return { found: true, active: true, role: "operations_manager", user: opsUser, storedPasswordHash: opsCustom?.passwordHash || opsCustom?.password || "123" };
+    return { found: true, active: true, role: "operations_manager", user: opsUser, storedPasswordHash: opsCustom?.passwordHash || opsCustom?.password || undefined };
   }
 
   // 4. Supervisor sup-1
@@ -5166,7 +5669,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!skObj.mustChangePassword,
       status: skObj.status || "active"
     };
-    return { found: true, active: true, role: "storekeeper", user: skUser, storedPasswordHash: skObj.passwordHash || skObj.password || "123" };
+    return { found: true, active: true, role: "storekeeper", user: skUser, storedPasswordHash: skObj.passwordHash || skObj.password || undefined };
   }
 
   // 9. Volunteers
@@ -5239,7 +5742,7 @@ function resolveLiveUserAccount(
         role: "support_manager",
         status: smObj.status || "active"
       },
-      storedPasswordHash: smObj.passwordHash || smObj.password
+      storedPasswordHash: supportStaffStoredCredential(smObj)
     };
   }
 
@@ -5266,7 +5769,7 @@ function resolveLiveUserAccount(
         managerId: saObj.managerId,
         status: saObj.status || "active"
       },
-      storedPasswordHash: saObj.passwordHash || saObj.password
+      storedPasswordHash: supportStaffStoredCredential(saObj)
     };
   }
 
@@ -5645,6 +6148,7 @@ export interface UserAccessContext {
 
 // 1. Resolve User Access Context from Verified Session (Prevents client header spoofing)
 function getUserAccessContext(req: any): UserAccessContext {
+  __accessProbe.calls++;
   const db = readDb();
   const sessionToken = (req.headers['x-session-token'] as string) || 
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
@@ -6531,8 +7035,69 @@ export function maskNationalId(val?: string | null): string {
 
 export function sanitizeSecretFields<T extends Record<string, any>>(obj: T): T {
   if (!obj || typeof obj !== 'object') return obj;
-  const { password, passwordHash, tempPassword, hash, secret, bootstrapSecret, resetToken, passwordResetToken, ...rest } = obj as any;
+  const {
+    password, passwordHash, tempPassword, hash, secret, bootstrapSecret, resetToken, passwordResetToken,
+    resetTokenHash, passwordResetTokenHash, pinHash, deviceSecretHash, codeHash,
+    ...rest
+  } = obj as any;
   return rest as T;
+}
+
+// Fields that must never leave the server inside ANY API response record.
+const SECRET_RECORD_FIELDS = [
+  'password', 'passwordHash', 'tempPassword', 'bootstrapSecret', 'resetToken', 'passwordResetToken',
+  'resetTokenHash', 'passwordResetTokenHash', 'pinHash', 'deviceSecretHash', 'codeHash', 'googleSub', 'requestIdHash'
+];
+
+export function stripSecretRecordFields(obj: any): any {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  let changed = false;
+  for (const k of SECRET_RECORD_FIELDS) {
+    if (k in obj) { changed = true; break; }
+  }
+  if (!changed) return obj;
+  const copy: any = { ...obj };
+  for (const k of SECRET_RECORD_FIELDS) delete copy[k];
+  return copy;
+}
+
+export function sanitizePasswordResetRequestForClient(r: any) {
+  if (!r || typeof r !== 'object') return r;
+  const { resetToken, resetTokenHash, resetTokenExpiresAt, ...rest } = r;
+  return { ...rest, hasActiveResetCode: Boolean((resetToken || resetTokenHash) && (!resetTokenExpiresAt || Date.now() < resetTokenExpiresAt)) };
+}
+
+// Redacts password-reset codes inside notifications that do not belong to the viewer.
+export function redactNotificationForViewer(n: any, viewerUserId: string) {
+  if (!n || typeof n !== 'object') return n;
+  const isResetCode = n.type === 'password_reset_token' || 'token' in n;
+  if (!isResetCode) return n;
+  const ownerId = n.userId || n.targetUserId;
+  if (ownerId && viewerUserId && ownerId === viewerUserId) return n;
+  const { token, ...rest } = n;
+  if (n.type === 'password_reset_token') {
+    return { ...rest, bodyAr: 'تم إرسال كود إعادة تعيين كلمة المرور إلى صاحب الحساب.', bodyEn: 'A password reset code was sent to the account owner.' };
+  }
+  return rest;
+}
+
+// Final defence: scrub secret fields from every record of every top-level collection.
+export function scrubDatabaseSecrets(db: any, viewerUserId: string) {
+  if (!db || typeof db !== 'object') return db;
+  const out: any = { ...db };
+  for (const key of Object.keys(out)) {
+    const val = out[key];
+    if (Array.isArray(val)) {
+      if (key === 'notifications') {
+        out[key] = val.map((n: any) => stripSecretRecordFields(redactNotificationForViewer(n, viewerUserId)));
+      } else if (key === 'passwordResetRequests') {
+        out[key] = val.map(sanitizePasswordResetRequestForClient);
+      } else {
+        out[key] = val.map(stripSecretRecordFields);
+      }
+    }
+  }
+  return out;
 }
 
 export function sanitizeDepartmentForClient(d: any, canViewFullNationalId: boolean = true) {
@@ -6571,7 +7136,74 @@ export function sanitizeOrgMemberForAdmin(m: any, canViewFullId: boolean = true)
 }
 
 // 3. Database Isolation Filter (Enforces Data Segregation at DB level)
+// Fields a client may NEVER set through generic create/update payloads (credentials, privilege, reset state).
+const CLIENT_FORBIDDEN_RECORD_FIELDS = [
+  'password', 'passwordHash', 'tempPassword', 'resetToken', 'passwordResetToken', 'passwordResetTokenHash',
+  'passwordResetExpiresAt', 'pinHash', 'deviceSecretHash', 'role', 'permissions', 'allowedDepartmentIds',
+  'isSuperAdmin', 'isOperationsManager', 'mustChangePassword', 'loginDisabled', 'hasLoginAccount'
+];
+export function stripCredentialAndPrivilegeFields(input: any): any {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out: any = { ...input };
+  for (const k of CLIENT_FORBIDDEN_RECORD_FIELDS) delete out[k];
+  return out;
+}
+
+// Volunteer card guard: the volunteer themself, the leader of their team, or volunteer-management staff.
+function assertVolunteerCardAccess(context: any, vol: any): { status: number; error: string } | null {
+  if (!context || !context.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
+  const role = String(context.role || '');
+  if (role === 'volunteer') {
+    return context.userId === vol?.id ? null : { status: 403, error: "غير مصرح: يمكنك إدارة بطاقتك فقط." };
+  }
+  return assertTeamScopedStaffAccess(context, vol?.teamId || '');
+}
+
+// Team-scoped staff guard: leaders only for their own team; volunteers/beneficiaries/public never;
+// other staff need volunteer-management (dep-5) scope or super-admin / operations rights.
+function assertTeamScopedStaffAccess(context: any, teamId: string): { status: number; error: string } | null {
+  if (!context || !context.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
+  const role = String(context.role || '');
+  if (role === 'leader') {
+    return context.teamId && context.teamId === teamId
+      ? null
+      : { status: 403, error: "غير مصرح: صلاحيتك محصورة بفريقك فقط." };
+  }
+  if (['volunteer', 'beneficiary', 'public'].includes(role)) return { status: 403, error: "غير مصرح." };
+  const ok = context.isSuperAdmin || context.isOperationsManager || role === 'operations_manager' ||
+    (Array.isArray(context.allowedDepartmentIds) && context.allowedDepartmentIds.includes('dep-5'));
+  return ok ? null : { status: 403, error: "غير مصرح: لا تملك صلاحية إدارة بطاقات الفرق." };
+}
+
+function canReviewPasswordResetRequests(context: any): boolean {
+  // NOTE: leader/volunteer contexts also carry allowedDepartmentIds ['dep-5'], so they are excluded explicitly.
+  if (!context || ['leader', 'volunteer', 'beneficiary', 'public'].includes(String(context.role || ''))) return false;
+  return Boolean(
+    context && context.isAuthenticated && (
+      context.isSuperAdmin ||
+      context.isOperationsManager ||
+      context.role === 'operations_manager' ||
+      (Array.isArray(context.allowedDepartmentIds) && context.allowedDepartmentIds.includes('dep-5'))
+    )
+  );
+}
+
 function filterDatabaseForUser(db: any, context: any) {
+  const filtered: any = filterDatabaseForUserCore(db, context);
+  if (!filtered || typeof filtered !== 'object') return filtered;
+  // Password-reset requests: reviewers see all; leaders see their team only; everyone else sees none.
+  const allResetRequests = Array.isArray(db?.passwordResetRequests) ? db.passwordResetRequests : [];
+  if (canReviewPasswordResetRequests(context)) {
+    filtered.passwordResetRequests = allResetRequests;
+  } else if (context?.isAuthenticated && context.role === 'leader' && context.teamId) {
+    filtered.passwordResetRequests = allResetRequests.filter((r: any) => r && r.teamId === context.teamId);
+  } else {
+    filtered.passwordResetRequests = [];
+  }
+  return scrubDatabaseSecrets(filtered, context?.userId || '');
+}
+
+function filterDatabaseForUserCore(db: any, context: any) {
   const sanitizedEmail = getSanitizedEmailConfig(db);
   const { activeSessions, ...safeDb } = db || {};
   const stripArrSecrets = (arr: any) => (Array.isArray(arr) ? arr.map(sanitizeSecretFields) : []);
@@ -6774,11 +7406,13 @@ function filterDatabaseForUser(db: any, context: any) {
 
     // Beneficiaries & aid distributions: available to dep-4 (Beneficiary Care), dep-8 / storekeeper (Warehouse & Aid Handover), dep-1 (Executive Management), operations_manager, admin, and authenticated beneficiaries
     // STRICT IDOR PREVENTION: Beneficiaries only receive THEIR OWN record!
-    beneficiaries: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
-      ? stripArrSecrets(db.beneficiaries || [])
-      : (context.role === 'beneficiary'
-        ? stripArrSecrets((db.beneficiaries || []).filter((b: any) => b.id === context.userId || (context.nationalId && b.nationalId === context.nationalId)))
-        : []),
+    // SECURITY FIX: the beneficiary context itself carries allowedDepartmentIds ['dep-4'], so the
+    // beneficiary role MUST be checked first — otherwise every beneficiary received all records.
+    beneficiaries: (context.role === 'beneficiary')
+      ? stripArrSecrets((db.beneficiaries || []).filter((b: any) => b.id === context.userId || (context.nationalId && b.nationalId === context.nationalId)))
+      : (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
+        ? stripArrSecrets(db.beneficiaries || [])
+        : [],
     benefitRequests: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : (db.benefitRequests || []))
       : (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : []),
@@ -10198,8 +10832,30 @@ app.post(["/api/db/users/verify-email", "/api/users/verify-email"], (req, res) =
 
 // User Self-Service / Mandatory Password Change Endpoint
 app.post("/api/db/auth/change-password", (req, res) => {
+  // SECURITY: this endpoint previously had NO authentication — anyone could set the password of ANY
+  // account (including super admins) by sending its userId. It is the forced first-login change, so it
+  // now requires a verified session, only changes the session owner's own password, and only while
+  // that account is flagged to change its temporary password. Normal changes use self-change-password
+  // (which verifies the current password).
+  const changeCtx = getUserAccessContext(req);
+  if (!changeCtx.isAuthenticated) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً.", code: "UNAUTHORIZED" });
+  }
   const db = readDb();
-  const { userId, newPassword } = req.body || {};
+  const { newPassword } = req.body || {};
+  const requestedUserId = req.body?.userId ? String(req.body.userId).trim() : "";
+  const ownIds = [changeCtx.userId, changeCtx.nationalId, changeCtx.userEmail].filter(Boolean).map((x: any) => String(x).toLowerCase());
+  if (requestedUserId && !ownIds.includes(requestedUserId.toLowerCase())) {
+    return res.status(403).json({ error: "غير مصرح: لا يمكنك تغيير كلمة مرور حساب مستخدم آخر.", code: "FORBIDDEN" });
+  }
+  const changeSession: any = getServerSession(resolveSessionTokenFromRequest(req) || undefined);
+  if (!changeCtx.mustChangePassword && !changeSession?.forcePasswordChange) {
+    return res.status(403).json({
+      error: "هذا المسار مخصص لتغيير كلمة المرور المؤقتة فقط. استخدم (حسابي ← الأمان) مع كلمة المرور الحالية.",
+      code: "USE_SELF_CHANGE_PASSWORD"
+    });
+  }
+  const userId = changeCtx.userId;
 
   if (!userId || !newPassword || typeof newPassword !== 'string') {
     return res.status(400).json({ error: "معرف المستخدم وكلمة المرور الجديدة مطلوبان." });
@@ -10254,7 +10910,12 @@ app.post("/api/db/auth/change-password", (req, res) => {
   }
 
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
-  if (sk) sk.password = hashedPassword;
+  if (sk) setCompatiblePasswordHash(sk, hashedPassword);
+  // Support staff previously kept plain-text passwords and were never updated here.
+  for (const coll of ['supportManagers', 'supportAgents']) {
+    const rec = (db[coll] || []).find((s: any) => s && s.id === userId);
+    if (rec) setCompatiblePasswordHash(rec, hashedPassword);
+  }
 
   // Real-time memory and persisted session update
   try {
@@ -10291,6 +10952,8 @@ app.post("/api/db/auth/change-password", (req, res) => {
   });
 
   revokeAllTrustedDevicesForUser(db, userId, userEntry?.nationalId);
+  clearForcedPasswordChange(db, [userId, vol?.id, ben?.id]);
+  if (vol) delete vol.temporaryPasswordActive;
   writeDb(db);
   res.json({
     status: "success",
@@ -10383,7 +11046,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   if (!storedHash && db.volunteers) {
     const vol = db.volunteers.find((v: any) => v.id === userId || v.nationalId === userId || v.email === userId);
     if (vol) {
-      storedHash = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      storedHash = vol.passwordHash || vol.password;
       if (!userEntry) userEntry = { id: vol.id, userName: vol.name, nationalId: vol.nationalId, role: 'volunteer' };
     }
   }
@@ -10392,7 +11055,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   if (!storedHash && db.beneficiaries) {
     const benMatch = db.beneficiaries.find((b: any) => b.id === userId || b.nationalId === userId || b.email === userId || b.phone === userId);
     if (benMatch) {
-      storedHash = benMatch.passwordHash || benMatch.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      storedHash = benMatch.passwordHash || benMatch.password;
       if (!userEntry) userEntry = { id: benMatch.id, userName: benMatch.name, nationalId: benMatch.nationalId, role: 'beneficiary' };
     }
   }
@@ -10419,11 +11082,8 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
           role: liveSelf.role || "user"
         };
       }
-    } else if (userId === 'admin' || userId === 'admin-user' || userId === '1000000000') {
-      storedHash = "123";
-    } else if (userId === 'operations' || userId === 'ops-manager' || userId === '1020000000') {
-      storedHash = "123";
     }
+    // SECURITY: removed hard-coded "123" fallbacks for admin/operations accounts.
   }
 
   // Verify Current Password with Bcrypt / Stored Hash
@@ -10475,6 +11135,10 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
 
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
   if (sk) { sk.password = hashedPassword; sk.passwordHash = hashedPassword; }
+  for (const coll of ['supportManagers', 'supportAgents']) {
+    const rec = (db[coll] || []).find((s: any) => s && s.id === userId);
+    if (rec) setCompatiblePasswordHash(rec, hashedPassword);
+  }
 
   // Also update Beneficiaries cleanly with bcrypt
   const ben = (db.beneficiaries || []).find((b: any) => b.id === userId || b.nationalId === userId || (authContext.nationalId && b.nationalId === authContext.nationalId));
@@ -10507,6 +11171,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
     notes: `قام المستخدم بتغيير وتشفير كلمة المرور الخاصة بحسابه بنجاح باستخدام Bcrypt وإلغاء (${revokedPinDevices}) من أجهزة الدخول السريع المرتبطة`
   });
 
+  clearForcedPasswordChange(db, [userId, authContext.userId, vol?.id, ben?.id]);
   writeDb(db);
 
   const currentTok = (req.headers['x-session-token'] as string) || req.cookies?.['reyadat_session'];
@@ -11384,6 +12049,13 @@ app.get("/api/admin/freeze/status", (req, res) => {
   });
 });
 
+// Read-only evidence for the real proxy count (admin only; counts only, never an address).
+app.get("/api/admin/security/network-topology", (req, res) => {
+  const denied = evaluateRoutePolicy('admin', getUserAccessContext(req));
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  res.json({ ok: true, ...getNetworkTopologySummary() });
+});
+
 app.post("/api/admin/freeze/acquire", async (req, res) => {
   const sessionToken = (req.headers['x-session-token'] as string) || 
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
@@ -11944,7 +12616,7 @@ app.post("/api/db/departments/assign-director", async (req, res) => {
         };
       } else if (accessIdx === -1 || !db.userDepartmentAccess[accessIdx]?.passwordHash) {
         pwdHashUpdate = {
-          passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+          passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
           mustChangePassword: mustChangePassword !== undefined ? Boolean(mustChangePassword) : true
         };
       } else if (mustChangePassword !== undefined) {
@@ -12285,7 +12957,7 @@ app.post("/api/db/departments/add-staff", async (req, res) => {
       // Upsert into db.userDepartmentAccess
       if (!Array.isArray(db.userDepartmentAccess)) db.userDepartmentAccess = [];
       let accIdx = db.userDepartmentAccess.findIndex((u: any) => u.userId === targetUserId || u.id === targetUserId);
-      const pwdToHash = newPassword && String(newPassword).trim() ? String(newPassword).trim() : DEFAULT_NEW_ACCOUNT_PASSWORD;
+      const pwdToHash = newPassword && String(newPassword).trim() ? String(newPassword).trim() : generateStrongTemporaryPassword(16);
       const existingAcc = accIdx !== -1 ? db.userDepartmentAccess[accIdx] : null;
       const accPayload: any = {
         ...(existingAcc || { id: `perm-${Date.now()}`, createdAt: nowIso, mustChangePassword: true }),
@@ -12543,7 +13215,7 @@ app.post("/api/db/departments/permissions/update", async (req, res) => {
             allowedDepartmentIds: [dep.id],
             permissions: cleanPerms,
             status: dep.status || 'active',
-            passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+            passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
             createdAt: nowIso,
             updatedAt: nowIso,
             updatedBy: context.userName
@@ -13012,7 +13684,23 @@ app.post("/api/db/volunteers/add", (req, res) => {
   if (!auth.allowed) return;
 
   const db = readDb();
-  const vol = req.body;
+  // SECURITY: credential / privilege fields are never taken from the body (an edit could otherwise
+  // overwrite a volunteer's passwordHash or role). A password chosen by staff for a NEW account is
+  // validated and hashed; otherwise a unique temporary password is issued and returned once.
+  const chosenPassword = typeof req.body?.password === "string" ? req.body.password.trim() : "";
+  const vol = stripCredentialAndPrivilegeFields(req.body || {});
+  let issuedTemporaryPassword = "";
+  const setInitialCredential = (record: any): string | null => {
+    if (chosenPassword) {
+      const check = validatePasswordStrength(chosenPassword);
+      if (!check.isValid) return `كلمة المرور غير مطابقة لسياسة الأمان: ${check.errors.join(" ")}`;
+      record.passwordHash = hashPassword(chosenPassword);
+      record.mustChangePassword = true;
+    } else {
+      issuedTemporaryPassword = issueInitialTemporaryCredential(record);
+    }
+    return null;
+  };
   if (!vol.id) {
     vol.id = "vol-" + Date.now();
     const seq = String(db.volunteers.length + 1).padStart(4, "0");
@@ -13034,9 +13722,8 @@ app.post("/api/db/volunteers/add", (req, res) => {
       vol.file_number = fn;
     }
 
-    vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
-    vol.passwordHash = hashPassword(vol.password);
-    vol.mustChangePassword = true;
+    const credErr = setInitialCredential(vol);
+    if (credErr) return res.status(400).json({ error: credErr });
     vol.profileCompleted = vol.profileCompleted !== undefined ? vol.profileCompleted : true;
 
     db.volunteers.push(vol);
@@ -13054,7 +13741,7 @@ app.post("/api/db/volunteers/add", (req, res) => {
       // Requirement: Volunteer file number cannot be changed manually or overwritten
       const existingFileNumber = db.volunteers[index].fileNumber || db.volunteers[index].file_number;
       const existingTeamId = db.volunteers[index].teamId;
-      const effectiveRole = (req.headers['x-user-role'] || auth.context.userRole || '') as string;
+      const effectiveRole = String(auth.context.role || '');
       const finalTeamId = (effectiveRole === 'leader') ? existingTeamId : (vol.teamId || existingTeamId);
       db.volunteers[index] = { 
         ...db.volunteers[index], 
@@ -13064,9 +13751,8 @@ app.post("/api/db/volunteers/add", (req, res) => {
         file_number: existingFileNumber || vol.fileNumber
       };
     } else {
-      vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
-      vol.passwordHash = hashPassword(vol.password);
-      vol.mustChangePassword = true;
+      const credErr = setInitialCredential(vol);
+      if (credErr) return res.status(400).json({ error: credErr });
       db.volunteers.push(vol);
       const linkedTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
       createOrSyncVolunteerCharter(db, {
@@ -13086,7 +13772,11 @@ app.post("/api/db/volunteers/add", (req, res) => {
     device: req.headers["user-agent"] || "System"
   });
   writeDb(db);
-  res.json(db);
+  // Same filtered view as before (front-end compatible) + the one-time temporary password for the creator.
+  res.json({
+    ...filterDatabaseForUser(db, auth.context),
+    ...(issuedTemporaryPassword ? { temporaryPassword: issuedTemporaryPassword } : {})
+  });
 });
 
 // 5.1 Manual Volunteer Creation by Admin / Volunteer Dept (Generates Unique Strong Temporary Password + Profile Completion Flow + Volunteer Charter)
@@ -13851,8 +14541,7 @@ app.post("/api/db/volunteers/batch", (req, res) => {
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
-      password: DEFAULT_NEW_ACCOUNT_PASSWORD,
-      passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+      passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
       mustChangePassword: true
     };
     db.volunteers.push(vol);
@@ -14361,9 +15050,12 @@ app.post("/api/db/opportunity-requests/update", (req, res) => {
 // 10. Re-issue Card
 app.post("/api/db/reissue-card", (req, res) => {
   const db = readDb();
-  const { volunteerId } = req.body;
+  const { volunteerId } = req.body || {};
   const vol = db.volunteers.find((v: any) => v.id === volunteerId);
   if (!vol) return res.status(404).json({ error: "Volunteer not found" });
+  // SECURITY: previously unauthenticated. Owner, own-team leader or volunteer-management staff only.
+  const cardGuard = assertVolunteerCardAccess(getUserAccessContext(req), vol);
+  if (cardGuard) return res.status(cardGuard.status).json({ error: cardGuard.error });
   vol.issueDate = new Date().toISOString().split('T')[0];
   const expiry = new Date();
   expiry.setFullYear(expiry.getFullYear() + 1);
@@ -14382,12 +15074,23 @@ app.post("/api/db/reissue-card", (req, res) => {
 
 // 11. Request Action (Accept, Reject, Waitlist, Transfer)
 app.post("/api/db/requests/action", (req, res) => {
+  // SECURITY: previously unauthenticated. Only staff/leaders (from the verified session) may act on requests.
+  const actionCtx = getUserAccessContext(req);
+  if (!actionCtx.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
+  }
+  if (['volunteer', 'beneficiary', 'public'].includes(String(actionCtx.role))) {
+    return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية معالجة طلبات الانضمام.", code: "FORBIDDEN" });
+  }
   const db = readDb();
-  const { requestId, action, targetTeamId } = req.body;
+  const { requestId, action, targetTeamId } = req.body || {};
   const reqObj = db.requests.find((r: any) => r.id === requestId);
   if (!reqObj) return res.status(404).json({ error: "Request not found" });
   const init = db.initiatives.find((i: any) => i.id === reqObj.initiativeId);
   if (!init) return res.status(404).json({ error: "Initiative not found" });
+  if (actionCtx.role === 'leader' && init.teamId && actionCtx.teamId && init.teamId !== actionCtx.teamId) {
+    return res.status(403).json({ error: "غير مصرح: يمكن لقائد الفريق معالجة طلبات مبادرات فريقه فقط.", code: "FORBIDDEN_TEAM_SCOPE" });
+  }
 
   init.acceptedVolunteerIds = (init.acceptedVolunteerIds || []).filter((vId: string) => vId !== reqObj.volunteerId);
   init.waitlistVolunteerIds = (init.waitlistVolunteerIds || []).filter((vId: string) => vId !== reqObj.volunteerId);
@@ -14436,8 +15139,15 @@ app.post("/api/db/requests/action", (req, res) => {
     // SECURITY ENFORCEMENT:
     // Team leaders are strictly forbidden from transferring volunteers directly.
     // They must submit a formal request via /api/db/volunteerTransfers/submit to the Volunteer Department.
-    const userRole = (req.headers['x-user-role'] || req.body.userRole || '') as string;
-    if (userRole === 'leader' || (!['admin', 'operations_manager', 'supervisor'].includes(userRole) && userRole !== '')) {
+    // SECURITY: role comes ONLY from the verified session (headers/body are client-controlled).
+    const transferCtx = getUserAccessContext(req);
+    const userRole = transferCtx.isAuthenticated ? String(transferCtx.role || '') : '';
+    const canTransfer = transferCtx.isAuthenticated && (
+      transferCtx.isSuperAdmin || transferCtx.isOperationsManager ||
+      ['admin', 'operations_manager', 'supervisor'].includes(userRole) ||
+      (Array.isArray(transferCtx.allowedDepartmentIds) && transferCtx.allowedDepartmentIds.includes('dep-5') && userRole !== 'leader' && userRole !== 'volunteer')
+    );
+    if (!canTransfer) {
       return res.status(403).json({
         error: "غير مصرح: لا يملك قائد الفريق صلاحية نقل المتطوعين مباشرة إلى فريق آخر. يتوجب تقديم طلب نقل رسمي عبر قسم (طلبات نقل المتطوعين) للإحالة إلى إدارة التطوع للاعتماد."
       });
@@ -15239,18 +15949,95 @@ app.post("/api/db/auth/logout", (req, res) => {
   return res.json({ status: "logged_out", message: "تم تسجيل الخروج بنجاح." });
 });
 
+// --- Account lockout that cannot be used against the legitimate user --------------------------
+// Failed attempts are counted PER ACCOUNT, independent of any address, in separate classes:
+//   'device:<h>' – a valid trusted-device cookie (HttpOnly secret; cryptographic proof) → a budget of its
+//                  own for THIS account, so nobody else can exhaust it;
+//   'known'      – a visitor key that signed in successfully to this account before → its own budget;
+//   'unknown'    – everything else → its own budget.
+// The visitor key contains the forgeable left-most address, so 'known' is NOT treated as proof: it only
+// selects a separate, equally bounded budget. Every class is bounded, so no address or cookie gives
+// unlimited guesses; an attacker without the user's cookie / visitor key cannot touch the user's budget.
+const ACCOUNT_FAILURE_CEILING = 30;           // failed attempts per account / 15 min, per source class
+const ACCOUNT_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const KNOWN_SOURCE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+type LoginSourceClass = string; // 'known' | 'unknown' | `device:${hash}`
+const loginFailures = new Map<string, { count: number; resetAt: number }>(); // `${class}:${account}`
+const knownLoginSources = new Map<string, Map<string, number>>(); // account → (visitorKey → lastSuccessAt)
+
+function getLoginFailureState(acct: string, cls: LoginSourceClass) {
+  const now = Date.now();
+  const s = loginFailures.get(`${cls}:${acct}`);
+  if (!s || now > s.resetAt) return { count: 0, resetAt: now + ACCOUNT_FAILURE_WINDOW_MS };
+  return s;
+}
+function recordLoginFailure(acct: string, cls: LoginSourceClass) {
+  const s = getLoginFailureState(acct, cls);
+  loginFailures.set(`${cls}:${acct}`, { count: s.count + 1, resetAt: s.resetAt });
+  if (loginFailures.size > 50000) loginFailures.clear(); // memory guard
+}
+function recordLoginSuccess(acct: string, visitorKey: string, cls: LoginSourceClass) {
+  loginFailures.delete(`known:${acct}`);
+  loginFailures.delete(`unknown:${acct}`);
+  loginFailures.delete(`${cls}:${acct}`);
+  let m = knownLoginSources.get(acct);
+  if (!m) { m = new Map(); knownLoginSources.set(acct, m); }
+  m.set(visitorKey, Date.now());
+  if (m.size > 20) m.delete(m.keys().next().value as string);
+  if (knownLoginSources.size > 50000) knownLoginSources.clear();
+}
+function classifyLoginSource(acct: string, visitorKey: string, req: any): LoginSourceClass {
+  // A valid trusted-device cookie (HttpOnly secret issued after a full sign-in) proves the source.
+  try {
+    const secret = req.cookies?.['reyadat_device_trust'];
+    if (secret) {
+      const h = hashDeviceSecret(secret);
+      if ((readDb().trustedDevices || []).some((t: any) => t && !t.revokedAt && t.deviceSecretHash === h)) return `device:${h.slice(0, 24)}`;
+    }
+  } catch {}
+  const seen = knownLoginSources.get(acct)?.get(visitorKey);
+  if (seen && Date.now() - seen < KNOWN_SOURCE_TTL_MS) return 'known';
+  return 'unknown';
+}
+
 function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwordRaw: string, opts?: { auditEndpoint?: string; deviceId?: string }) {
   // Wrap res.json to automatically generate and attach a persistent server session
-  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const clientNet = getClientNetwork(req);
+  const clientIp = clientNet.trustedIp;
   const originalJson = res.json.bind(res);
+  lastVerificationUsedLegacyPlaintext = false;
+  const loginAcctKey = String(identifierRaw || '').trim().toLowerCase();
+  // Set below, once the request passed validation; failures/successes are attributed to this class.
+  let loginSourceClass: LoginSourceClass | null = null;
   res.json = function(body: any) {
+    // Account-level failure accounting (wrong credentials only; validation/429 responses are not counted).
+    if (res.statusCode === 401 && loginAcctKey && loginSourceClass) recordLoginFailure(loginAcctKey, loginSourceClass);
+    const usedPublicDefault = KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim());
+    if (body && body.status === "success" && body.user && loginAcctKey && !usedPublicDefault) recordLoginSuccess(loginAcctKey, clientNet.visitorKey, loginSourceClass || 'unknown');
     if (body && body.status === "success" && body.user) {
+      // SECURITY: a shared/published default password is not proof of identity → no session; recover instead.
+      if (KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim())) {
+        res.status(403);
+        return originalJson({
+          error: "كلمة المرور الحالية لهذا الحساب كلمة افتراضية عامة ولم تعد مقبولة. يرجى استخدام (نسيت كلمة المرور) للتحقق من هويتك وتعيين كلمة مرور جديدة، أو مراجعة إدارة الجمعية.",
+          code: "PASSWORD_RESET_REQUIRED",
+          requirePasswordReset: true
+        });
+      }
+      // Legacy plain-text credential: allowed ONCE, with a mandatory change before any other action.
+      const forceChange = lastVerificationUsedLegacyPlaintext;
+      lastVerificationUsedLegacyPlaintext = false;
+      if (forceChange) {
+        body.user = { ...body.user, mustChangePassword: true };
+      }
       const session = createServerSession(body.user, body.role || body.user?.role || 'admin', {
         authMethod: 'password',
         passwordVerifiedAt: Date.now(),
         deviceId: opts?.deviceId || String(req.body?.deviceId || ''),
-        ip: clientIp
+        ip: clientIp,
+        forcePasswordChange: forceChange
       });
+      if (forceChange) body.mustChangePassword = true;
       setSessionCookie(req, res, session.token);
       body.sessionToken = session.token;
       body.authMethod = 'password';
@@ -15293,8 +16080,22 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   password = password.trim();
 
   // Rate Limiting Protection (Anti-Brute Force)
-  const rateLimitKey = `${clientIp}:${identifier.toLowerCase()}`;
-  const rateCheck = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
+  // PRIMARY: per-ACCOUNT failed-attempt budgets by source class (see classifyLoginSource) — independent of
+  // any address, so forging X-Forwarded-For never yields more guesses.
+  // SECONDARY (fairness / resource protection): per visitor+account and per visitor (forgeable key, so
+  // never relied on for security), and a high flood ceiling per trusted address (unforgeable, possibly
+  // shared by many visitors behind one egress, hence high).
+  const acctKey = identifier.toLowerCase();
+  const visitorAcctLimit = NETWORK_LIMITS.loginVisitorAccount;
+  const rateCheckVisitorAcct = checkRateLimit('login', `va:${clientNet.visitorKey}:${acctKey}`, visitorAcctLimit.visitor, visitorAcctLimit.windowMs);
+  const rateCheckNet = rateCheckVisitorAcct.allowed ? checkClientRateLimit('login', 'login', req) : { allowed: true };
+  loginSourceClass = classifyLoginSource(acctKey, clientNet.visitorKey, req);
+  const acctFailures = getLoginFailureState(acctKey, loginSourceClass);
+  const rateCheckAcct = acctFailures.count >= ACCOUNT_FAILURE_CEILING
+    ? { allowed: false, retryAfterSec: Math.max(1, Math.ceil((acctFailures.resetAt - Date.now()) / 1000)) }
+    : { allowed: true };
+  const rateCheck: { allowed: boolean; retryAfterSec?: number } =
+    [rateCheckAcct, rateCheckVisitorAcct, rateCheckNet].find((r) => !r.allowed) || { allowed: true };
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لمحاولات تسجيل الدخول. يرجى الانتظار لمدة ${rateCheck.retryAfterSec} ثانية قبل المحاولة مجدداً.`,
@@ -15376,8 +16177,9 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // 1.0 Check Temporary Administrative Account: mosa
   if (identifier.toLowerCase() === "mosa" || matches("mosa@riadataleata.org.sa") || identifier === "perm-mosa") {
     const mosaEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'mosa' || u.username === 'mosa' || u.id === 'perm-mosa');
-    const pwdToVerify = mosaEntry?.passwordHash || mosaEntry?.password || "mosa11";
-    if (!verifyPasswordAgainstHash(password, pwdToVerify) && password !== "mosa11") {
+    // SECURITY: no hard-coded fallback or master credential. A stored credential is mandatory.
+    const pwdToVerify = mosaEntry?.passwordHash || mosaEntry?.password;
+    if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: "mosa", name: "موسى (مسؤول النظام Administrator)", role: "admin" }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
@@ -15419,7 +16221,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // 1. Check Admin / Management
   if (identifier === "admin" || matches("admin@riadataleata.org.sa") || matches("0550000000") || identifier === "1000000000" || identifier === "المدير التنفيذي") {
     const adminCustom = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'admin-user' || u.role === 'admin');
-    const pwdToVerify = adminCustom?.passwordHash || adminCustom?.password || "123";
+    const pwdToVerify = adminCustom?.passwordHash || adminCustom?.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: "admin-user", name: "مجلس الجمعية", role: "admin" }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -15459,7 +16261,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // 1.1 Check Operations Manager (مدير العمليات والتشغيل - أعلى صلاحيات تشغيلية)
   if (identifier === "operations" || identifier === "operations_manager" || identifier === "ops" || matches("operations@riadataleata.org.sa") || matches("0559000000") || identifier === "1020000000" || identifier === "مدير العمليات" || identifier === "سلطان الزهراني") {
     const opsCustom = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'ops-manager' || u.role === 'operations_manager' || u.nationalId === '1020000000');
-    const pwdToVerify = opsCustom?.passwordHash || opsCustom?.password || "123";
+    const pwdToVerify = opsCustom?.passwordHash || opsCustom?.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: "ops-manager", name: "مدير العمليات", role: "operations_manager" }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -15534,7 +16336,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
         return res.status(403).json({ error: empStatusCheck.error });
       }
     }
-    const pwdToVerify = accessUser.passwordHash || accessUser.password || "123";
+    const pwdToVerify = accessUser.passwordHash || accessUser.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -15749,7 +16551,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     const statusCheck = checkStatus(storekeeper.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
-    const pwdToVerify = storekeeper.passwordHash || storekeeper.password || "123";
+    const pwdToVerify = storekeeper.passwordHash || storekeeper.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
@@ -15801,18 +16603,26 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     const statusCheck = checkStatus(vol.status, vol.isArchived);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
-    const pwdToVerify = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    const pwdToVerify = vol.passwordHash || vol.password;
+    if (!pwdToVerify) {
+      return res.status(403).json({
+        error: "لا توجد كلمة مرور مفعّلة لهذا الحساب. يرجى استخدام (نسيت كلمة المرور) للتحقق من هويتك وتعيين كلمة مرور، أو طلب ذلك من قائد الفريق.",
+        code: "PASSWORD_SETUP_REQUIRED",
+        requirePasswordReset: true
+      });
+    }
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
     const isUsingDefaultPasswordVol = password === DEFAULT_NEW_ACCOUNT_PASSWORD;
     const volUser = {
-      ...vol,
+      ...stripSecretRecordFields(vol),
       mustChangePassword: vol.mustChangePassword !== undefined ? Boolean(vol.mustChangePassword) : isUsingDefaultPasswordVol
     };
     delete volUser.password;
     delete volUser.passwordHash;
+    delete volUser.passwordResetExpiresAt;
 
     return res.json({
       status: "success",
@@ -15866,14 +16676,21 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status, ben.isArchived);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
 
-    const pwdToVerify = ben.passwordHash || ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    const pwdToVerify = ben.passwordHash || ben.password;
+    if (!pwdToVerify) {
+      return res.status(403).json({
+        error: "لا توجد كلمة مرور مفعّلة لهذا الحساب. يرجى استخدام (نسيت كلمة المرور) للتحقق من هويتك وتعيين كلمة مرور، أو مراجعة الجمعية.",
+        code: "PASSWORD_SETUP_REQUIRED",
+        requirePasswordReset: true
+      });
+    }
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
     const isUsingDefaultPasswordBen = password === DEFAULT_NEW_ACCOUNT_PASSWORD;
     const benUser = {
-      ...ben,
+      ...stripSecretRecordFields(ben),
       mustChangePassword: ben.mustChangePassword !== undefined ? Boolean(ben.mustChangePassword) : isUsingDefaultPasswordBen
     };
     delete benUser.password;
@@ -15888,6 +16705,20 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
 
   // 7. Check Supervisors
   if (identifier.includes("مشرف") || identifier === "supervisor" || identifier === "sup-1") {
+    // SECURITY: previously this account logged in WITHOUT any password check.
+    // A stored credential (userDepartmentAccess entry for sup-1 / role supervisor) is now mandatory.
+    const supEntry = (db.userDepartmentAccess || []).find(
+      (u: any) => u && (u.userId === "sup-1" || u.id === "sup-1" || u.username === "supervisor" || u.role === "supervisor")
+    );
+    const supPwd = supEntry?.passwordHash || supEntry?.password;
+    if (!verifyPasswordAgainstHash(password, supPwd)) {
+      logLoginAttempt('denied', { id: "sup-1", name: "مشرف الإدارة", role: "supervisor" }, 'كلمة المرور غير صحيحة أو لا توجد كلمة مرور محفوظة');
+      return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
+    }
+    if (supEntry) {
+      const supStatus = checkStatus(supEntry.status || "active", Boolean(supEntry.isArchived));
+      if (!supStatus.ok) return res.status(403).json({ error: supStatus.error });
+    }
     return res.json({
       status: "success",
       role: "supervisor",
@@ -15921,7 +16752,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     }
     const statusCheck = checkStatus(supportManager.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(supportManager.password)) {
+    if (!verifyPassword(undefined, supportStaffStoredCredential(supportManager))) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
@@ -15956,7 +16787,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     }
     const statusCheck = checkStatus(supportAgent.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(supportAgent.password)) {
+    if (!verifyPassword(undefined, supportStaffStoredCredential(supportAgent))) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
@@ -16035,6 +16866,13 @@ app.post("/api/db/auth/login-remembered", (req: any, res) => {
 });
 
 // Helper: Secure Verification for Google Identity Services (GIS) ID Tokens
+// Development-only auth shortcuts require an explicit opt-in AND a non-hosted dev/test runtime.
+function isExplicitDevAuthBypassAllowed(): boolean {
+  const env = String(process.env.NODE_ENV || '').toLowerCase();
+  const hosted = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.VERCEL || process.env.VERCEL_ENV);
+  return !hosted && (env === 'development' || env === 'test') && process.env.ALLOW_DEV_GOOGLE_TEST_TOKENS === 'true';
+}
+
 async function verifyGoogleIdToken(credential?: string): Promise<{
   valid: boolean;
   email?: string;
@@ -16052,10 +16890,11 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
 
   const cleanCred = credential.trim();
 
-  // 1. Support development / simulated test token ONLY in non-production environments
+  // 1. Simulated test tokens: FAIL CLOSED. Previously accepted whenever NODE_ENV was not exactly
+  // "production" — e.g. a Render service without NODE_ENV would let anyone sign in as ANY email.
   if (cleanCred.startsWith('dev_test_token:')) {
-    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-      return { valid: false, error: "حظر أمني: رموز الاختبار التجريبية محظورة تماماً في بيئة الإنتاج." };
+    if (!isExplicitDevAuthBypassAllowed()) {
+      return { valid: false, error: "حظر أمني: رموز الاختبار التجريبية غير مسموحة في هذه البيئة." };
     }
     try {
       const raw = cleanCred.replace('dev_test_token:', '');
@@ -16099,9 +16938,14 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
       return { valid: false, error: "انتهت صلاحية رمز Google (ID Token Expired)." };
     }
 
-    // Verify audience if GOOGLE_CLIENT_ID is configured on Render
-    const serverClientId = process.env.GOOGLE_CLIENT_ID;
-    if (serverClientId && payload.aud !== serverClientId) {
+    // Verify audience. FAIL CLOSED: without a configured client id, a Google token minted for ANY
+    // other application would be accepted here.
+    const serverClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+    if (!serverClientId) {
+      console.warn("[Google Auth] GOOGLE_CLIENT_ID is not configured — Google sign-in refused.");
+      return { valid: false, error: "تسجيل الدخول عبر Google غير مهيأ على الخادم (GOOGLE_CLIENT_ID)." };
+    }
+    if (payload.aud !== serverClientId) {
       console.warn(`[Google Auth] Audience mismatch: token.aud=${payload.aud}, serverClientId=${serverClientId}`);
       return {
         valid: false,
@@ -16129,7 +16973,7 @@ async function verifyGoogleIdToken(credential?: string): Promise<{
     console.error("[Google Auth] Network error verifying token with Google:", netErr);
 
     // Fallback ONLY when explicit offline flag is enabled in dev environment
-    if (process.env.ALLOW_DEV_JWT_FALLBACK === 'true' && process.env.NODE_ENV !== 'production' && cleanCred.includes('.')) {
+    if (process.env.ALLOW_DEV_JWT_FALLBACK === 'true' && isExplicitDevAuthBypassAllowed() && cleanCred.includes('.')) {
       try {
         const parts = cleanCred.split('.');
         if (parts.length === 3) {
@@ -16242,9 +17086,9 @@ app.post("/api/db/auth/google", async (req, res) => {
   // 1. Check in userDepartmentAccess (Admin, Operations Manager, Directors, Staff)
   const accessUser = (db.userDepartmentAccess || []).find((u: any) => 
     (u.userEmail && u.userEmail.toLowerCase().trim() === cleanEmail) ||
-    (u.email && u.email.toLowerCase().trim() === cleanEmail) ||
-    ((u.userId === 'admin-user' || u.role === 'admin') && (cleanEmail === 'admin@riadataleata.org.sa' || cleanEmail.includes('admin'))) ||
-    ((u.userId === 'ops-manager' || u.role === 'operations_manager') && cleanEmail === 'operations@riadataleata.org.sa')
+    (u.email && u.email.toLowerCase().trim() === cleanEmail)
+    // SECURITY: removed heuristics that mapped ANY Google email containing "admin" (and fixed
+    // addresses) to the first admin record. Access now requires an exact email match on the record.
   );
 
   if (accessUser) {
@@ -16258,11 +17102,37 @@ app.post("/api/db/auth/google", async (req, res) => {
       return res.status(403).json({ error: statusCheck.error, status: accessUser.status });
     }
 
-    accessUser.lastLogin = new Date().toISOString();
-    writeDb(db);
-
     const isOps = accessUser.role === 'operations_manager' || accessUser.userId === 'ops-manager';
     const isAdmin = accessUser.role === 'admin' || accessUser.userId === 'admin-user';
+
+    // SECURITY: Google sign-in for a PRIVILEGED account (admin / operations / super-admin permissions)
+    // requires an explicit approval recorded on that account (granted by a super admin after
+    // re-entering their own password) and is then bound to the Google account's immutable id (sub).
+    // A matching email alone is never enough for admin rights.
+    if (isPrivilegedAccessRecord(accessUser)) {
+      const sub = String(verification.sub || "");
+      if (accessUser.googleSignInApproved !== true) {
+        logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'دخول Google لحساب إداري غير معتمد');
+        return res.status(403).json({
+          error: "الدخول عبر Google لحسابات الإدارة يتطلب اعتماداً مسبقاً. سجّل الدخول بكلمة المرور ثم فعّل الدخول عبر Google من إعدادات الأمان.",
+          code: "GOOGLE_ADMIN_APPROVAL_REQUIRED"
+        });
+      }
+      if (!sub) {
+        return res.status(401).json({ error: "تعذر التحقق من معرّف حساب Google.", code: "GOOGLE_SUB_MISSING" });
+      }
+      if (accessUser.googleSub && accessUser.googleSub !== sub) {
+        logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'حساب Google مختلف عن الحساب المعتمد');
+        return res.status(403).json({
+          error: "حساب Google هذا ليس الحساب المعتمد لهذا المستخدم الإداري.",
+          code: "GOOGLE_ACCOUNT_MISMATCH"
+        });
+      }
+      if (!accessUser.googleSub) accessUser.googleSub = sub; // bind on first approved sign-in
+    }
+
+    accessUser.lastLogin = new Date().toISOString();
+    writeDb(db);
 
     const loggedUser = {
       id: accessUser.userId || accessUser.id,
@@ -16291,30 +17161,8 @@ app.post("/api/db/auth/google", async (req, res) => {
     });
   }
 
-  // 1.1 Direct match for primary admin / executive email
-  if (cleanEmail === "admin@riadataleata.org.sa" || cleanEmail === "riadataleata@gmail.com") {
-    const adminUser = {
-      id: "admin-user",
-      name: name || "مجلس الجمعية والمدير التنفيذي",
-      email: cleanEmail,
-      phone: "0550000000",
-      nationalId: "1000000000",
-      role: "admin",
-      jobTitle: "المدير العام والمدير التنفيذي",
-      primaryDepartmentId: "dep-1",
-      primaryDepartmentName: "الإدارة التنفيذية",
-      allowedDepartmentIds: (db.departments || []).map((d: any) => d.id),
-      permissions: ["all_permissions", "super_admin", "manage_staff", "view_reports"],
-      status: "active",
-      lastLogin: new Date().toISOString()
-    };
-    logLoginAttempt('allowed', adminUser, 'تسجيل دخول الإدارة العليا بنجاح عبر حساب Google المعتمد');
-    return res.json({
-      status: "success",
-      role: "admin",
-      user: adminUser
-    });
-  }
+  // SECURITY: removed the hard-coded addresses that granted super-admin rights to anyone who could
+  // sign in to Google with them. Admin access via Google now requires an approved, sub-bound record.
 
   // 1.2 Maintenance Mode Guard: Block non-administrative Google logins during maintenance mode
   const isMaintenanceModeActive = Boolean(
@@ -16512,14 +17360,100 @@ app.post("/api/db/auth/google", async (req, res) => {
     googleEmail: cleanEmail,
     googleName: name || cleanEmail.split("@")[0],
     googlePicture: picture || null,
+    // Single-use, 20-minute proof that THIS email was verified by Google — required by complete-registration.
+    registrationTicket: issueGoogleRegistrationTicket(cleanEmail, verification.sub || ""),
     message: "حساب Google موثق ولكنه غير مسجل مسبقًا في الجمعية. يرجى اختيار نوع الحساب لإكمال نموذج التسجيل المطلوب."
   });
 });
 
+// Privileged = admin / operations role, or any super-admin-grade permission.
+function isPrivilegedAccessRecord(u: any): boolean {
+  if (!u) return false;
+  const role = String(u.role || '');
+  const perms: string[] = Array.isArray(u.permissions) ? u.permissions : [];
+  return role === 'admin' || role === 'operations_manager' || u.userId === 'admin-user' || u.userId === 'ops-manager' ||
+    perms.includes('super_admin') || perms.includes('all_permissions') || perms.includes('operations_manager');
+}
+
+// Approve / revoke Google sign-in for a privileged account. Super admin only, and the caller must
+// re-enter THEIR OWN password (a stolen session alone cannot enable Google access). Approval clears
+// any previous binding so the next verified Google sign-in binds the account's immutable Google id.
+app.post("/api/db/auth/google-signin/approval", (req: any, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "يجب تسجيل الدخول." });
+  if (!(ctx.isSuperAdmin || ctx.role === 'admin' || ctx.role === 'operations_manager')) {
+    return res.status(403).json({ error: "غير مصرح: الاعتماد متاح للإدارة العليا فقط." });
+  }
+  const { targetUserId, approve, currentPassword } = req.body || {};
+  if (typeof currentPassword !== "string" || !currentPassword) {
+    return res.status(400).json({ error: "يرجى إدخال كلمة المرور الحالية لتأكيد العملية." });
+  }
+  const pwdRate = checkRateLimit('login', `google-approval:${ctx.userId}`, 5, 15 * 60 * 1000);
+  if (!pwdRate.allowed) return res.status(429).json({ error: `محاولات كثيرة. انتظر ${pwdRate.retryAfterSec} ثانية.` });
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, ctx.userId, ctx.role, ctx.nationalId);
+  if (!live.storedPasswordHash || !verifyPasswordAgainstHash(currentPassword.trim(), live.storedPasswordHash)) {
+    return res.status(403).json({ error: "كلمة المرور الحالية غير صحيحة." });
+  }
+  const targetId = typeof targetUserId === "string" && targetUserId.trim() ? targetUserId.trim() : ctx.userId;
+  const record = (db.userDepartmentAccess || []).find((u: any) => u && (u.userId === targetId || u.id === targetId));
+  if (!record) return res.status(404).json({ error: "الحساب الإداري غير موجود." });
+  if (!record.userEmail && !record.email) return res.status(400).json({ error: "لا يوجد بريد مسجل لهذا الحساب." });
+  const nowIso = new Date().toISOString();
+  if (approve === true) {
+    record.googleSignInApproved = true;
+    record.googleSignInApprovedBy = ctx.userId;
+    record.googleSignInApprovedAt = nowIso;
+    delete record.googleSub; // re-bind on next verified sign-in
+  } else {
+    record.googleSignInApproved = false;
+    record.googleSignInRevokedBy = ctx.userId;
+    record.googleSignInRevokedAt = nowIso;
+    delete record.googleSub;
+  }
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-google-approval-${Date.now()}`,
+    timestamp: nowIso,
+    userId: ctx.userId,
+    userName: ctx.userName,
+    userRole: ctx.role,
+    action: approve === true ? 'approve_google_signin' : 'revoke_google_signin',
+    resource: 'أمان الحسابات',
+    endpoint: '/api/db/auth/google-signin/approval',
+    status: 'allowed',
+    ip: req.ip,
+    notes: `${approve === true ? 'اعتماد' : 'إلغاء'} الدخول عبر Google للحساب الإداري (${record.userId || record.id})`
+  });
+  writeDb(db);
+  res.json({ status: "success", googleSignInApproved: record.googleSignInApproved === true });
+});
+
+// SECURITY: registration tickets bind the registration form to an email Google actually verified.
+// Stored in memory as SHA-256 hashes only; single use; 20-minute lifetime.
+const googleRegistrationTickets = new Map<string, { email: string; sub: string; expiresAt: number }>();
+function issueGoogleRegistrationTicket(email: string, sub: string): string {
+  const now = Date.now();
+  for (const [k, v] of googleRegistrationTickets) if (v.expiresAt < now) googleRegistrationTickets.delete(k);
+  const ticket = `grt_${crypto.randomBytes(24).toString("hex")}`;
+  googleRegistrationTickets.set(crypto.createHash("sha256").update(ticket).digest("hex"), { email, sub, expiresAt: now + 20 * 60 * 1000 });
+  return ticket;
+}
+function peekGoogleRegistrationTicket(ticket: any): { key: string; email: string; sub: string } | null {
+  if (typeof ticket !== "string" || !ticket.startsWith("grt_")) return null;
+  const key = crypto.createHash("sha256").update(ticket).digest("hex");
+  const rec = googleRegistrationTickets.get(key);
+  if (!rec || rec.expiresAt < Date.now()) { googleRegistrationTickets.delete(key); return null; }
+  return { key, email: rec.email, sub: rec.sub };
+}
+function consumeGoogleRegistrationTicket(key: string) {
+  googleRegistrationTickets.delete(key);
+}
+
 // Endpoint: Complete New Google User Registration (Volunteer or Beneficiary ONLY - Status: Pending Review)
 app.post("/api/db/auth/google/complete-registration", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('registration', 'googleRegistration', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لطلبات التسجيل عبر Google. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -16562,11 +17496,17 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
     });
   }
 
-  // 2. Validate Email
-  if (!googleEmail || typeof googleEmail !== 'string' || !googleEmail.includes('@')) {
-    return res.status(400).json({ error: "البريد الإلكتروني الموثق عبر Google مطلوب." });
+  // 2. Verified email — SECURITY: taken ONLY from the server-issued ticket created after Google verified
+  // the ID token. The googleEmail field sent by the browser is ignored (it could be any address).
+  const ticket = peekGoogleRegistrationTicket(req.body?.registrationTicket);
+  if (!ticket) {
+    return res.status(401).json({
+      error: "انتهت صلاحية جلسة التحقق عبر Google أو أنها غير صالحة. يرجى تسجيل الدخول عبر Google مرة أخرى لإكمال التسجيل.",
+      code: "GOOGLE_VERIFICATION_REQUIRED"
+    });
   }
-  const cleanEmail = googleEmail.toLowerCase().trim();
+  void googleEmail;
+  const cleanEmail = ticket.email;
 
   // 3. Validate Mandatory Personal Details
   if (!name || typeof name !== 'string' || name.trim().length < 3) {
@@ -16710,6 +17650,8 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
       }
     });
 
+    consumeGoogleRegistrationTicket(ticket.key); // single use, only after the account was created
+
     // Send acknowledgement email to user
     try {
       const refreshedDb = readDb();
@@ -16748,7 +17690,8 @@ const OTP_SECRET_SALT = "reyadat_otp_salt_2026_secure";
 // 1. Request Password Recovery OTP (Anti-Enumeration & Rate-Limited)
 app.post("/api/db/auth/forgot-password", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('forgotPassword', clientIp, 5, 15 * 60 * 1000);
+  // Per visitor + flood ceiling per trusted address; the per-ACCOUNT OTP cap below is the real defence.
+  const rateCheck = checkClientRateLimit('forgotPassword', 'forgotPassword', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لطلبات استعادة كلمة المرور. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -16858,20 +17801,20 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     }
   }
 
-  // Fallback for default admin
-  if (!userEmail && (cleanId === "admin" || cleanId === "1000000000")) {
-    userEmail = db.emailSettings?.testRecipientEmail || "riadataleata@gmail.com";
-    userName = "مجلس الإدارة والمدير التنفيذي";
-    targetUserId = "admin-user";
-  }
+  // SECURITY: removed the hard-coded fallback that sent the "admin" recovery code to a fixed mailbox.
 
-  // USER ENUMERATION SHIELD: If identifier not found, return generic success without leaking account existence
-  if (!userEmail || !userEmail.includes("@") || !userEmail.trim()) {
-    return res.json({
-      status: "success",
-      message: "إذا كان المعرّف المدخل مسجلاً في النظام، فقد تم إرسال تعليمات ورمز استعادة كلمة المرور إلى البريد الإلكتروني المرتبط به."
-    });
-  }
+  // ANTI-ENUMERATION: one identical response for every identifier — no email, no masked email, no
+  // provider errors — returned BEFORE any account work, which then continues in the background.
+  // The opaque requestId is used (instead of the email) to verify the code in the next step.
+  const requestId = `rq_${crypto.randomBytes(18).toString("hex")}`;
+  res.json({
+    status: "success",
+    requestId,
+    message: "إذا كان المعرّف المدخل مسجلاً في النظام، فقد تم إرسال رمز التحقق إلى وسيلة التواصل المسجلة لديه. الرمز صالح لمدة 15 دقيقة."
+  });
+  if (!userEmail || !userEmail.includes("@") || !userEmail.trim()) return;
+  // Per-account issuance cap: an attacker cannot mint unlimited codes for one account (IP-independent).
+  if (!checkRateLimit('forgotPassword', `otp-acct:${targetUserId}`, 5, 60 * 60 * 1000).allowed) return;
 
   // Generate 6-digit cryptographically secure random numeric OTP
   const otpCode = crypto.randomInt(100000, 1000000).toString();
@@ -16889,6 +17832,7 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     userName,
     codeHash, // Secure hashed OTP
     resetToken: `rtok_${crypto.randomBytes(24).toString("hex")}`,
+    requestIdHash: crypto.createHash("sha256").update(requestId).digest("hex"),
     expiresAt: Date.now() + (15 * 60 * 1000), // Valid for 15 minutes
     attempts: 0,
     maxAttempts: 5,
@@ -16898,8 +17842,9 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   };
 
   db.passwordResetOtps.push(otpRecord);
+  writeDb(db);
 
-  // Send OTP Email via Central Email Service
+  // Send OTP Email via Central Email Service (background — the response was already sent)
   const baseUrl = (req.headers.origin as string) || "https://riadataleata.com";
   const resetLink = `${baseUrl}/?resetToken=${otpRecord.resetToken}&email=${encodeURIComponent(userEmail.toLowerCase())}`;
 
@@ -16930,9 +17875,8 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   }
 
   if (emailSendFailed) {
-    return res.status(502).json({
-      error: `تعذر إرسال رسالة استعادة كلمة المرور عبر مزود البريد (${emailErrorMsg}). يرجى المحاولة لاحقاً أو مراجعة إدارة الجمعية.`
-    });
+    // Never revealed to the requester (would disclose that the account exists).
+    console.warn("[forgot-password] email provider failure:", emailErrorMsg ? "see email logs" : "unknown");
   }
 
   // Log audit event
@@ -16955,56 +17899,47 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   });
 
   writeDb(db);
-
-  // Masked email for display
-  const maskedEmail = userEmail.replace(/(.{2})(.*)(@.*)/, "$1•••$3");
-
-  return res.json({
-    status: "success",
-    email: userEmail.toLowerCase(),
-    maskedEmail,
-    message: `إذا كان الحساب مسجلاً لدينا، فقد تم إرسال رمز التحقق OTP إلى البريد الإلكتروني (${maskedEmail}) بنجاح. الرمز صالح لمدة 15 دقيقة.`
-  });
 });
 
 // 2. Verify OTP Code
 app.post("/api/db/auth/verify-otp", (req, res) => {
-  const { email, otpCode } = req.body || {};
-  if (!email || !otpCode || typeof otpCode !== "string") {
-    return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني ورمز التحقق OTP المكون من 6 أرقام." });
+  const { email, otpCode, requestId } = req.body || {};
+  if ((!email && !requestId) || !otpCode || typeof otpCode !== "string") {
+    return res.status(400).json({ error: "يرجى إدخال رمز التحقق OTP المكون من 6 أرقام." });
   }
+  // ANTI-ENUMERATION: one generic answer whether the request/email exists, expired, or the code is wrong.
+  const GENERIC_OTP_ERROR = "رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى المحاولة مجدداً أو طلب رمز جديد.";
 
   const db = readDb();
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const requestIdHash = typeof requestId === "string" && requestId ? crypto.createHash("sha256").update(requestId).digest("hex") : "";
   const cleanCode = otpCode.trim();
 
   if (!db.passwordResetOtps) db.passwordResetOtps = [];
-  const otpRecord = db.passwordResetOtps.find((o: any) => o.email === cleanEmail && !o.used);
+  const otpRecord = db.passwordResetOtps.find((o: any) =>
+    o && !o.used && (requestIdHash ? o.requestIdHash === requestIdHash : (cleanEmail && o.email === cleanEmail))
+  );
 
   if (!otpRecord) {
-    return res.status(400).json({ error: "لا يوجد طلب استعادة فعال لهذا البريد، يرجى طلب رمز تحقق جديد." });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Check expiration
   if (Date.now() > otpRecord.expiresAt) {
-    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق (صالح لمدة 15 دقيقة فقط)، يرجى طلب رمز جديد." });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Check max attempts
   if (otpRecord.attempts >= otpRecord.maxAttempts) {
-    return res.status(429).json({ error: "تم تجاوز الحد الأقصى للمحاولات الخاطئة (5 محاولات). يرجى طلب رمز تحقق جديد لأسباب أمنية." });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Verify hash
   const testHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + cleanCode).digest("hex");
-  if (testHash !== otpRecord.codeHash) {
+  if (!safeEqualStrings(testHash, String(otpRecord.codeHash || ""))) {
     otpRecord.attempts = (otpRecord.attempts || 0) + 1;
     writeDb(db);
-    const remaining = otpRecord.maxAttempts - otpRecord.attempts;
-    return res.status(400).json({
-      error: `رمز التحقق غير صحيح. متبقي لديك (${remaining}) ${remaining === 1 ? 'محاولة واحدة' : 'محاولات'}.`,
-      remainingAttempts: remaining
-    });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Generate or return secure single-use reset token
@@ -17060,7 +17995,8 @@ app.post("/api/db/auth/verify-reset-token", (req, res) => {
 app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
   const { email, resetToken, newPassword, confirmPassword } = req.body || {};
 
-  if (!email || !resetToken || !newPassword || typeof newPassword !== "string") {
+  // email is optional: the 192-bit single-use resetToken (issued only after a correct OTP) identifies the request.
+  if (!resetToken || typeof resetToken !== "string" || !newPassword || typeof newPassword !== "string") {
     return res.status(400).json({ error: "جميع الحقول مطلوبة لإتمام تعيين كلمة المرور." });
   }
 
@@ -17078,13 +18014,14 @@ app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
   }
 
   const db = readDb();
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
   if (!db.passwordResetOtps) db.passwordResetOtps = [];
-  const otpRecord = db.passwordResetOtps.find((o: any) => 
-    o.email === cleanEmail && 
-    o.resetToken === resetToken && 
-    o.verified && 
+  const otpRecord = db.passwordResetOtps.find((o: any) =>
+    o &&
+    (!cleanEmail || o.email === cleanEmail) &&
+    typeof o.resetToken === "string" && safeEqualStrings(o.resetToken, resetToken) &&
+    o.verified &&
     !o.used
   );
 
@@ -17288,52 +18225,41 @@ function findRecoveryAccountRecord(db: any, identifierOrRememberId: string, reme
 
 app.post("/api/db/auth/forgot-password/identify", (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('forgotIdentify', clientIp, 12, 15 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('forgotIdentify', 'forgotIdentify', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
   }
-  const { identifier, rememberId } = req.body || {};
-  const db = readDb();
-  const found = findRecoveryAccountRecord(db, identifier, rememberId);
-
-  const maskMail = (e: string) => (e && e.includes("@") ? e.replace(/(.{2})(.*)(@.*)/, "$1•••$3") : "");
-  const maskPhone = (p: string) => (p && p.length >= 4 ? `••••••${p.slice(-4)}` : "");
-
-  if (!found) {
-    // Anti-enumeration fallback channels UI or generic error
-    return res.json({
-      status: "success",
-      availableChannels: {
-        email: { available: true, masked: "re•••@riadataleata.org.sa" },
-        whatsapp: { available: true, masked: "••••••0000" }
-      }
-    });
-  }
-
+  // ANTI-ENUMERATION: the answer is IDENTICAL for every identifier (existing or not) and carries no
+  // masked email/phone. Previously unknown accounts got a fixed fake mask, which made real accounts
+  // distinguishable. Only email delivery is implemented server-side, so only email is offered.
   return res.json({
     status: "success",
     availableChannels: {
-      email: { available: Boolean(found.email && found.email.includes("@")), masked: maskMail(found.email) },
-      whatsapp: { available: Boolean(found.phone && found.phone.trim().length >= 8), masked: maskPhone(found.phone) }
+      email: { available: true, masked: "مسجل" },
+      whatsapp: { available: false, masked: "" }
     }
   });
 });
 
 app.post("/api/db/auth/forgot-password/send-otp", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('forgotSendOtp', clientIp, 8, 15 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('forgotSendOtp', 'forgotSendOtp', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
   }
-  const { identifier, rememberId, channel } = req.body || {};
+  const { identifier, rememberId } = req.body || {};
+  const channel = "email"; // only email delivery is implemented server-side
   const db = readDb();
   const found = findRecoveryAccountRecord(db, identifier, rememberId);
-  if (!found) {
-    return res.json({
-      status: "success",
-      message: "إذا كان الحساب مسجلاً لدينا، فقد تم إرسال رمز التحقق بنجاح."
-    });
-  }
+
+  // ANTI-ENUMERATION: identical, immediate response for every identifier; delivery happens in the background.
+  res.json({
+    status: "success",
+    message: "إذا كان الحساب مسجلاً لدينا وله بريد إلكتروني مسجل، فقد تم إرسال رمز التحقق إليه. الرمز صالح لمدة 15 دقيقة."
+  });
+  if (!found || !found.email || !String(found.email).includes("@")) return;
+  // Per-account issuance cap (IP-independent): at most 5 codes per hour → at most 25 guesses per hour.
+  if (!checkRateLimit('forgotSendOtp', `otp-acct:${found.userId}`, 5, 60 * 60 * 1000).allowed) return;
 
   const otpCode = crypto.randomInt(100000, 1000000).toString();
   const codeHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode).digest("hex");
@@ -17387,14 +18313,9 @@ app.post("/api/db/auth/forgot-password/send-otp", async (req, res) => {
     status: "allowed",
     ip: clientIp,
     device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
-    notes: `طلب إرسال رمز تحقق OTP لاستعادة كلمة المرور عبر (${channel === "whatsapp" ? "واتساب" : "البريد الإلكتروني"})`
+    notes: "طلب إرسال رمز تحقق OTP لاستعادة كلمة المرور عبر البريد الإلكتروني"
   });
   writeDb(db);
-
-  return res.json({
-    status: "success",
-    message: `تم إرسال رمز التحقق بنجاح عبر (${channel === "whatsapp" ? "واتساب" : "البريد الإلكتروني"}).`
-  });
 });
 
 app.post("/api/db/auth/forgot-password/verify-otp", (req, res) => {
@@ -17402,23 +18323,25 @@ app.post("/api/db/auth/forgot-password/verify-otp", (req, res) => {
   if (!otpCode || typeof otpCode !== "string" || !/^\d{6}$/.test(otpCode.trim())) {
     return res.status(400).json({ error: "يرجى إدخال رمز التحقق المكون من 6 أرقام." });
   }
+  // ANTI-ENUMERATION: one generic answer for unknown account / no request / expired / locked / wrong code.
+  const GENERIC = "رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى المحاولة مجدداً أو طلب رمز جديد.";
   const db = readDb();
   const found = findRecoveryAccountRecord(db, identifier, rememberId);
   if (!found || !Array.isArray(db.passwordResetOtps)) {
-    return res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية." });
+    return res.status(400).json({ error: GENERIC });
   }
   const otpRecord = db.passwordResetOtps.find((o: any) => o && o.userId === found.userId && !o.used);
   if (!otpRecord || Date.now() > otpRecord.expiresAt) {
-    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق أو لا يوجد طلب نشط." });
+    return res.status(400).json({ error: GENERIC });
   }
   if (otpRecord.attempts >= (otpRecord.maxAttempts || 5)) {
-    return res.status(429).json({ error: "تم تجاوز الحد الأقصى للمحاولات، يرجى طلب رمز جديد." });
+    return res.status(400).json({ error: GENERIC });
   }
   const testHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode.trim()).digest("hex");
-  if (testHash !== otpRecord.codeHash) {
+  if (!safeEqualStrings(testHash, String(otpRecord.codeHash || ""))) {
     otpRecord.attempts = (otpRecord.attempts || 0) + 1;
     writeDb(db);
-    return res.status(400).json({ error: `رمز التحقق غير صحيح. متبقي ${(otpRecord.maxAttempts || 5) - otpRecord.attempts} محاولات.` });
+    return res.status(400).json({ error: GENERIC });
   }
   otpRecord.verified = true;
   writeDb(db);
@@ -18590,8 +19513,11 @@ app.post("/api/db/notifications/add", (req, res) => {
 
 // Mark Notification(s) as Read
 app.post("/api/db/notifications/mark-read", (req, res) => {
+  const notifCtx = getUserAccessContext(req);
+  if (!notifCtx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { notificationId, userId, markAll } = req.body;
+  const { notificationId, markAll } = req.body || {};
+  const userId = notifCtx.userId; // identity from the session only
   db.notifications = db.notifications || [];
   const nowStr = new Date().toISOString();
 
@@ -18623,8 +19549,12 @@ app.post("/api/db/notifications/mark-read", (req, res) => {
 
 // Delete Notification(s)
 app.post("/api/db/notifications/delete", (req, res) => {
+  const delCtx = getUserAccessContext(req);
+  if (!delCtx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { notificationId, userId, clearAll } = req.body;
+  const { notificationId, clearAll } = req.body || {};
+  const userId = delCtx.userId; // identity from the session only
+  const isStaffDeleter = isPrivilegedViewer(delCtx) || !['volunteer', 'beneficiary', 'leader'].includes(String(delCtx.role));
   db.notifications = db.notifications || [];
 
   if (clearAll && userId) {
@@ -18633,6 +19563,11 @@ app.post("/api/db/notifications/delete", (req, res) => {
       return true;
     });
   } else if (notificationId) {
+    const target = db.notifications.find((n: any) => n.id === notificationId);
+    // End users may only delete their own notifications (not broadcasts or other people's).
+    if (target && !isStaffDeleter && target.userId !== userId) {
+      return res.status(403).json({ error: "غير مصرح: يمكنك حذف إشعاراتك فقط." });
+    }
     db.notifications = db.notifications.filter((n: any) => n.id !== notificationId);
   }
 
@@ -18795,8 +19730,14 @@ app.delete("/api/teams/:id", async (req, res) => {
 
 // Volunteers CRUD & Import
 app.post("/api/volunteers", (req, res) => {
+  // SECURITY: previously unauthenticated — anyone could create volunteers or overwrite ANY volunteer
+  // record (including credentials and status). Same policy as /api/db/volunteers/add now applies.
+  const isEditReq = Boolean(req.body?.id);
+  const auth = checkDepartmentPermission(req, res, 'dep-5', isEditReq ? 'edit_data' : 'create_data', 'ملف المتطوع');
+  if (!auth.allowed) return;
   const db = readDb();
-  const vol = req.body;
+  const vol = stripCredentialAndPrivilegeFields(req.body || {});
+  let legacyIssuedTemporaryPassword = "";
   if (!vol.id) {
     vol.id = "vol-" + Date.now();
     // Auto generate membership numbers & barcodes
@@ -18810,9 +19751,8 @@ app.post("/api/volunteers", (req, res) => {
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
     vol.expiryDate = vol.expiryDate || expiry.toISOString().split('T')[0];
-    vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
-    vol.passwordHash = hashPassword(vol.password);
-    vol.mustChangePassword = true;
+    // SECURITY: unique temporary password (hash only stored), returned once to the creator.
+    legacyIssuedTemporaryPassword = issueInitialTemporaryCredential(vol);
     db.volunteers.push(vol);
   } else {
     const index = db.volunteers.findIndex((v: any) => v.id === vol.id);
@@ -18826,17 +19766,24 @@ app.post("/api/volunteers", (req, res) => {
   db.logs.unshift({
     id: "log-" + Date.now(),
     timestamp: new Date().toISOString(),
-    user: "إدارة التطوع",
+    user: auth.context.userName || "إدارة التطوع",
     action: `إضافة/تعديل ملف متطوع: ${vol.name}`,
     ip: req.ip || "127.0.0.1",
     device: req.headers["user-agent"] || "System"
   });
 
   writeDb(db);
-  res.json({ status: "success", volunteer: vol });
+  res.json({
+    status: "success",
+    volunteer: stripSecretRecordFields(vol),
+    ...(legacyIssuedTemporaryPassword ? { temporaryPassword: legacyIssuedTemporaryPassword } : {})
+  });
 });
 
 app.post("/api/volunteers/batch-create", (req, res) => {
+  // SECURITY: previously unauthenticated bulk account creation.
+  const auth = checkDepartmentPermission(req, res, 'dep-5', 'create_data', 'استيراد المتطوعين');
+  if (!auth.allowed) return;
   const db = readDb();
   const list = req.body.volunteers;
   if (!Array.isArray(list)) return res.status(400).json({ error: "Invalid data format" });
@@ -18862,8 +19809,7 @@ app.post("/api/volunteers/batch-create", (req, res) => {
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
-      password: DEFAULT_NEW_ACCOUNT_PASSWORD,
-      passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+      passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
       mustChangePassword: true
     };
     db.volunteers.push(vol);
@@ -18880,7 +19826,7 @@ app.post("/api/volunteers/batch-create", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ status: "success", count: added.length, volunteers: added });
+  res.json({ status: "success", count: added.length, volunteers: added.map(stripSecretRecordFields) });
 });
 
 app.delete("/api/volunteers/:id", handleVolunteerArchiveOrDelete);
@@ -19419,6 +20365,9 @@ app.post("/api/volunteers/:id/reissue-card", (req, res) => {
   const id = req.params.id;
   const vol = db.volunteers.find((v: any) => v.id === id);
   if (!vol) return res.status(404).json({ error: "Volunteer not found" });
+  // SECURITY: previously unauthenticated. Owner, own-team leader or volunteer-management staff only.
+  const cardGuard = assertVolunteerCardAccess(getUserAccessContext(req), vol);
+  if (cardGuard) return res.status(cardGuard.status).json({ error: cardGuard.error });
 
   vol.issueDate = new Date().toISOString().split('T')[0];
   const expiry = new Date();
@@ -20297,7 +21246,7 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
     }
   } else {
     // New registration rate limit
-    const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
+    const rateCheck = checkClientRateLimit('registration', 'beneficiaryRegistration', req);
     if (!rateCheck.allowed) {
       return res.status(429).json({
         error: `تم تجاوز الحد المسموح به لطلبات تسجيل المستفيدين. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -20416,8 +21365,7 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           orphanStatus: cleanOrphanStatus,
           role: "beneficiary", // Strictly beneficiary
           status: ben.status || "pending",   // Strictly pending approval unless admin creates approved
-          password: ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD,
-          passwordHash: hashPassword(ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
+          passwordHash: hashPassword(typeof ben.password === "string" && ben.password.trim() ? ben.password.trim() : generateStrongTemporaryPassword(16)),
           mustChangePassword: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -20886,8 +21834,7 @@ app.post("/api/db/beneficiaries/import", (req, res) => {
         category: item.category || "أسر متعففة",
         notes: item.notes || "",
         status: item.status || "approved",
-        password: item.password || DEFAULT_NEW_ACCOUNT_PASSWORD,
-        passwordHash: hashPassword(item.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
+        passwordHash: hashPassword(typeof item.password === "string" && item.password.trim() ? item.password.trim() : generateStrongTemporaryPassword(16)),
         mustChangePassword: true,
         createdAt: new Date().toISOString()
       };
@@ -23075,7 +24022,7 @@ app.post("/api/db/social-links/update", (req, res) => {
 // 23. Volunteer Applications: Submit New Application (Atomic mutateDb & Rate Limited)
 app.post("/api/db/volunteerApplications/submit", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('registration', clientIp, 20, 30 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('registration', 'volunteerApplication', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لتقديم طلبات التطوع. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -23399,8 +24346,7 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    password: DEFAULT_NEW_ACCOUNT_PASSWORD,
-    passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+    passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
     mustChangePassword: true,
     role: "volunteer"
   };
@@ -23551,7 +24497,7 @@ app.post("/api/db/teamApplications/upload-license", async (req, res) => {
       : "") ||
     req.ip ||
     "127.0.0.1";
-  const rl = checkRateLimit("team_license_upload", clientIp, 15, 60 * 1000);
+  const rl = checkClientRateLimit("team_license_upload", "teamLicenseUpload", req);
   if (!rl.allowed) {
     return res.status(429).json({ ok: false, error: "تم تجاوز الحد المسموح لرفع الملفات. يرجى الانتظار قليلاً." });
   }
@@ -24000,20 +24946,82 @@ app.post("/api/db/teamApplications/delete", (req, res) => {
 // -------------------------------------------------------------
 
 // Get Chat Conversations
-app.get("/api/chat/conversations", (req, res) => {
-  const db = readDb();
-  const userId = req.query.userId as string;
-  let convs = db.chatConversations || [];
-  if (userId) {
-    convs = convs.filter((c: any) => c.participantIds && c.participantIds.includes(userId));
+// Resolves a chat participant id to { kind, teamId, active } from stored records (never from the client).
+function resolveChatParticipant(db: any, id: string): { kind: 'staff' | 'leader' | 'volunteer' | 'beneficiary'; teamId?: string; active: boolean } | null {
+  const inactive = (s: any) => ['suspended', 'inactive', 'archived', 'deactivated', 'banned', 'rejected'].includes(String(s?.status || '')) || s?.isArchived === true || s?.loginDisabled === true;
+  const vol = (db.volunteers || []).find((v: any) => v && v.id === id);
+  if (vol) return { kind: 'volunteer', teamId: vol.teamId, active: !inactive(vol) };
+  const ben = (db.beneficiaries || []).find((b: any) => b && b.id === id);
+  if (ben) return { kind: 'beneficiary', active: !inactive(ben) };
+  if (id.startsWith('leader-')) {
+    const team = (db.teams || []).find((t: any) => t && t.id === id.slice('leader-'.length));
+    if (team) return { kind: 'leader', teamId: team.id, active: !inactive(team) };
   }
+  const staff =
+    (db.userDepartmentAccess || []).find((u: any) => u && (u.userId === id || u.id === id)) ||
+    (db.employees || []).find((e: any) => e && (e.id === id || e.userId === id)) ||
+    (db.supportAgents || []).find((s: any) => s && s.id === id) ||
+    (db.supportManagers || []).find((s: any) => s && s.id === id) ||
+    (db.storekeepers || []).find((s: any) => s && s.id === id);
+  if (staff) return { kind: 'staff', active: !inactive(staff) };
+  return null;
+}
+
+// Who may start a conversation with whom:
+//   staff / admin → any active account
+//   team leader   → staff, and the volunteers of their own team
+//   volunteer     → staff, their own team's leader and their own team's volunteers
+//   beneficiary   → staff only
+function validateChatParticipants(db: any, ctx: any, others: string[]): string | null {
+  const role = String(ctx.role || '');
+  const isStaffCreator = !['leader', 'volunteer', 'beneficiary', 'public'].includes(role);
+  for (const id of others) {
+    const p = resolveChatParticipant(db, id);
+    if (!p || !p.active) return "لا يمكن إضافة مشارك غير معروف أو غير نشط إلى المحادثة.";
+    if (isStaffCreator || p.kind === 'staff') continue;
+    if (role === 'leader' && p.kind === 'volunteer' && p.teamId && p.teamId === ctx.teamId) continue;
+    if (role === 'volunteer' && (p.kind === 'volunteer' || p.kind === 'leader') && p.teamId && p.teamId === ctx.teamId) continue;
+    return "غير مصرح: لا يمكنك إضافة هذا المشارك إلى محادثة (خارج نطاق صلاحياتك).";
+  }
+  return null;
+}
+
+// SECURITY: chat is bound to the session identity — a user only sees / writes conversations they take part in.
+function isChatParticipant(ctx: any, conv: any): boolean {
+  return Boolean(conv && Array.isArray(conv.participantIds) && conv.participantIds.includes(ctx.userId));
+}
+function isPrivilegedViewer(ctx: any): boolean {
+  return Boolean(ctx && (ctx.isSuperAdmin || ctx.isOperationsManager || ctx.role === 'admin' || ctx.role === 'operations_manager'));
+}
+
+app.get("/api/chat/conversations", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
+  const db = readDb();
+  const convs = (db.chatConversations || []).filter((c: any) => isChatParticipant(ctx, c));
   res.json(convs);
 });
 
 // Create New Conversation (Direct or Group)
 app.post("/api/chat/conversations", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { type, name, participantIds, participantNames, teamId, avatar } = req.body;
+  const { type, name, participantNames, avatar } = req.body || {};
+  // The creator is always a participant (identity from the session).
+  const participantIds: string[] = Array.from(new Set([
+    ctx.userId,
+    ...(Array.isArray(req.body?.participantIds) ? req.body.participantIds.map(String) : [])
+  ])).slice(0, 200);
+  // SECURITY: every other participant must be a known, active account within the creator's scope.
+  const scopeError = validateChatParticipants(db, ctx, participantIds.filter((p) => p !== ctx.userId));
+  if (scopeError) return res.status(403).json({ error: scopeError });
+  // A team group can only be bound to the creator's own team (unless staff/admin).
+  const requestedTeamId = typeof req.body?.teamId === "string" ? req.body.teamId : undefined;
+  if (requestedTeamId && ['leader', 'volunteer', 'beneficiary'].includes(String(ctx.role)) && requestedTeamId !== ctx.teamId) {
+    return res.status(403).json({ error: "غير مصرح: لا يمكنك إنشاء محادثة لفريق آخر." });
+  }
+  const teamId = requestedTeamId;
 
   db.chatConversations = db.chatConversations || [];
   
@@ -24060,20 +25068,31 @@ app.post("/api/chat/conversations", (req, res) => {
 
 // Get Messages for a Conversation
 app.get("/api/chat/messages/:conversationId", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
   const { conversationId } = req.params;
+  const conv = (db.chatConversations || []).find((c: any) => c.id === conversationId);
+  if (!isChatParticipant(ctx, conv)) return res.status(403).json({ error: "غير مصرح: لست مشاركاً في هذه المحادثة." });
   const messages = (db.chatMessages || []).filter((m: any) => m.conversationId === conversationId);
   res.json(messages);
 });
 
 // Send a Chat Message
 app.post("/api/chat/messages", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { conversationId, senderId, senderName, senderAvatar, senderRole, type, content, fileName, fileSize } = req.body;
+  const { conversationId, senderAvatar, senderRole, type, content, fileName, fileSize } = req.body || {};
+  // Sender identity comes from the session, never from the body.
+  const senderId = ctx.userId;
+  const senderName = ctx.userName;
 
   if (!conversationId || !senderId || !content) {
     return res.status(400).json({ error: "بيانات الرسالة غير اكتمال" });
   }
+  const targetConv = (db.chatConversations || []).find((c: any) => c.id === conversationId);
+  if (!isChatParticipant(ctx, targetConv)) return res.status(403).json({ error: "غير مصرح: لست مشاركاً في هذه المحادثة." });
 
   db.chatMessages = db.chatMessages || [];
   db.chatConversations = db.chatConversations || [];
@@ -24122,8 +25141,13 @@ app.post("/api/chat/messages", (req, res) => {
 
 // Mark Conversation as Read for User
 app.post("/api/chat/mark-read", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { conversationId, userId } = req.body;
+  const { conversationId } = req.body || {};
+  const userId = ctx.userId;
+  const markConv = (db.chatConversations || []).find((c: any) => c.id === conversationId);
+  if (!isChatParticipant(ctx, markConv)) return res.status(403).json({ error: "غير مصرح: لست مشاركاً في هذه المحادثة." });
 
   if (db.chatConversations) {
     const conv = db.chatConversations.find((c: any) => c.id === conversationId);
@@ -24150,8 +25174,13 @@ app.post("/api/chat/mark-read", (req, res) => {
 
 // Get All Support Tickets
 app.get("/api/support/tickets", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  res.json(db.supportTickets || []);
+  const all = db.supportTickets || [];
+  const isSupportStaff = isPrivilegedViewer(ctx) || ['support', 'support_manager', 'support_agent'].includes(String(ctx.role));
+  // End users only see their own tickets; support staff and admins see the queue.
+  res.json(isSupportStaff ? all : all.filter((t: any) => t && (t.requesterId === ctx.userId || t.volunteerId === ctx.userId)));
 });
 
 // Create Support Ticket
@@ -24679,35 +25708,49 @@ app.post("/api/db/volunteerTransfers/action", async (req, res) => {
 
 // 1. Get Password Reset Requests
 app.get("/api/db/passwordResetRequests", (req, res) => {
-  const db = readDb();
-  db.passwordResetRequests = db.passwordResetRequests || [];
-  const teamId = req.query.teamId as string;
-  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
-  let list = db.passwordResetRequests;
-  if (teamId && userRole === 'leader') {
-    list = list.filter((r: any) => r.teamId === teamId);
+  // SECURITY: identity and role come ONLY from the verified server session.
+  const context = getUserAccessContext(req);
+  if (!context.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
   }
-  // Sanitize so tokens are not exposed to leader
-  const sanitized = list.map((r: any) => {
-    if (userRole === 'leader') {
-      const { resetToken, ...rest } = r;
-      return rest;
+  const db = readDb();
+  const all = Array.isArray(db.passwordResetRequests) ? db.passwordResetRequests : [];
+
+  let list: any[];
+  if (context.role === 'leader') {
+    // Leaders only see requests for their own team (team id taken from the session, never from the query).
+    list = context.teamId ? all.filter((r: any) => r && r.teamId === context.teamId) : [];
+  } else {
+    if (!canReviewPasswordResetRequests(context)) {
+      return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية عرض طلبات إعادة تعيين كلمات المرور.", code: "FORBIDDEN" });
     }
-    return r;
-  });
-  res.json(sanitized);
+    list = all;
+  }
+
+  // Reset codes are NEVER returned to anyone through the API.
+  res.json(list.map(sanitizePasswordResetRequestForClient));
 });
 
 // 2. Submit Password Reset Request by Team Leader
 app.post("/api/db/passwordResetRequests/submit", (req, res) => {
+  // SECURITY: only an authenticated team leader (for their own team) or an authorised reviewer may submit.
+  const submitContext = getUserAccessContext(req);
+  if (!submitContext.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
+  }
+  const isLeaderSubmitter = submitContext.role === 'leader';
+  if (!isLeaderSubmitter && !canReviewPasswordResetRequests(submitContext)) {
+    return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية رفع طلب إعادة تعيين كلمة المرور.", code: "FORBIDDEN" });
+  }
   const db = readDb();
   const {
     volunteerId,
     reason,
-    additionalNotes,
-    leaderId,
-    leaderName
-  } = req.body;
+    additionalNotes
+  } = req.body || {};
+  // Leader identity comes from the session, never from the request body.
+  const leaderId = submitContext.userId;
+  const leaderName = submitContext.userName;
 
   if (!volunteerId) {
     return res.status(400).json({ error: "معرف المتطوع مطلوب" });
@@ -24720,6 +25763,12 @@ app.post("/api/db/passwordResetRequests/submit", (req, res) => {
   const vol = db.volunteers.find((v: any) => v.id === volunteerId);
   if (!vol) {
     return res.status(404).json({ error: "سجل المتطوع غير موجود" });
+  }
+  if (isLeaderSubmitter && (!submitContext.teamId || vol.teamId !== submitContext.teamId)) {
+    return res.status(403).json({ error: "غير مصرح: يمكن لقائد الفريق رفع طلبات لمتطوعي فريقه فقط.", code: "FORBIDDEN_TEAM_SCOPE" });
+  }
+  if (typeof reason !== "string") {
+    return res.status(400).json({ error: "يرجى توضيح سبب طلب إعادة تعيين كلمة المرور" });
   }
 
   const team = (db.teams || []).find((t: any) => t.id === vol.teamId);
@@ -24736,7 +25785,7 @@ app.post("/api/db/passwordResetRequests/submit", (req, res) => {
     leaderId: leaderId || "leader",
     leaderName: leaderName || team?.leaderName || "قائد الفريق",
     reason: reason.trim(),
-    additionalNotes: additionalNotes ? additionalNotes.trim() : "",
+    additionalNotes: typeof additionalNotes === "string" ? additionalNotes.trim() : "",
     status: "new",
     createdAt: new Date().toISOString()
   };
@@ -24769,7 +25818,7 @@ app.post("/api/db/passwordResetRequests/submit", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ status: "success", request: newReq, db });
+  res.json({ status: "success", request: newReq, db: filterDatabaseForUser(db, submitContext) });
 });
 
 // 3. Action Password Reset Request by Operations Manager
@@ -24808,20 +25857,32 @@ app.post("/api/db/passwordResetRequests/action", (req, res) => {
     reqObj.reviewedBy = adminName;
     reqObj.reviewerNotes = notes || "قيد التحقق والمراجعة من قبل مدير العمليات";
   } else if (action === "send_reset_link" || action === "approve") {
-    // Generate secure temporary token (24-hour expiry) using cryptographically secure random bytes
-    const token = "RST-" + crypto.randomBytes(6).toString("hex").toUpperCase() + "-" + Date.now().toString(36).toUpperCase();
+    // Generate secure single-use code (24-hour expiry). Only its SHA-256 hash is stored on the account;
+    // the plain code is delivered once in the owner's private notification and is never returned by the API.
+    const token = "RST-" + crypto.randomBytes(12).toString("hex").toUpperCase();
     const expiry = Date.now() + 24 * 60 * 60 * 1000;
 
-    if (vol) {
-      vol.passwordResetToken = token;
-      vol.passwordResetExpiresAt = expiry;
+    if (!vol) {
+      return res.status(404).json({ error: "حساب المتطوع المرتبط بالطلب غير موجود." });
+    }
+
+    // Issuing a new code invalidates any previous code for this account.
+    delete vol.passwordResetToken;
+    vol.passwordResetTokenHash = hashResetCode(token);
+    vol.passwordResetExpiresAt = expiry;
+    vol.passwordResetAttempts = 0;
+    for (const other of db.passwordResetRequests) {
+      if (other && other !== reqObj && other.volunteerId === reqObj.volunteerId && other.status === "reset_link_sent") {
+        other.status = "superseded";
+        delete other.resetToken;
+      }
     }
 
     reqObj.status = "reset_link_sent";
     reqObj.reviewedAt = nowIso;
-    reqObj.reviewedBy = adminName;
+    reqObj.reviewedBy = auth.context.userName || adminName;
     reqObj.resetLinkSentAt = nowIso;
-    reqObj.resetToken = token;
+    delete reqObj.resetToken;
     reqObj.resetTokenExpiresAt = expiry;
     reqObj.reviewerNotes = notes || "تم التحقق من هوية المتطوع وإرسال آلية التعيين الآمنة بنجاح.";
 
@@ -24894,32 +25955,62 @@ app.post("/api/db/passwordResetRequests/action", (req, res) => {
   }
 
   writeDb(db);
-  res.json({ status: "success", request: reqObj, db });
+  // SECURITY: never return the whole database; return a role-filtered view without secrets.
+  res.json({ status: "success", request: sanitizePasswordResetRequestForClient(reqObj), db: filterDatabaseForUser(db, auth.context) });
 });
 
 // 4. Secure Password Reset Completion with Token by Volunteer
 app.post("/api/auth/reset-password-with-token", (req, res) => {
   const db = readDb();
-  const { token, newPassword } = req.body;
+  const { token, newPassword } = req.body || {};
 
-  if (!token || !newPassword) {
+  if (!token || !newPassword || typeof token !== "string" || typeof newPassword !== "string") {
     return res.status(400).json({ error: "كود التحقق وكلمة المرور الجديدة حقول مطلوبة" });
   }
 
+  // Abuse control per visitor + flood ceiling per trusted address. Codes carry 96 bits of randomness and
+  // are single-use, so guessing is not feasible regardless of the address.
+  const resetRate = checkClientRateLimit('forgotPassword', 'resetCode', req);
+  if (!resetRate.allowed) {
+    return res.status(429).json({ error: `محاولات كثيرة. يرجى الانتظار ${resetRate.retryAfterSec} ثانية ثم المحاولة مجدداً.`, retryAfterSec: resetRate.retryAfterSec });
+  }
+
+  const cleanToken = token.trim();
+  const tokenHash = hashResetCode(cleanToken);
   db.volunteers = db.volunteers || [];
-  const vol = db.volunteers.find((v: any) => v.passwordResetToken === String(token).trim());
+  const vol = db.volunteers.find((v: any) =>
+    v && (
+      (typeof v.passwordResetTokenHash === "string" && safeEqualStrings(v.passwordResetTokenHash, tokenHash)) ||
+      // Legacy codes issued before this fix were stored in plain text; accept them once, then they are wiped.
+      (typeof v.passwordResetToken === "string" && v.passwordResetToken && safeEqualStrings(v.passwordResetToken, cleanToken))
+    )
+  );
   if (!vol) {
     return res.status(400).json({ error: "كود التحقق غير صحيح أو تم استخدامه مسبقاً." });
   }
 
-  if (vol.passwordResetExpiresAt && Date.now() > vol.passwordResetExpiresAt) {
+  if (!vol.passwordResetExpiresAt || Date.now() > vol.passwordResetExpiresAt) {
+    delete vol.passwordResetToken;
+    delete vol.passwordResetTokenHash;
+    delete vol.passwordResetExpiresAt;
+    writeDb(db);
     return res.status(400).json({ error: "انتهت صلاحية كود التحقق (صالح لمدة 24 ساعة فقط). يرجى طلب كود جديد من قائد الفريق." });
   }
 
-  // Update password safely
-  vol.password = String(newPassword).trim();
-  vol.passwordResetToken = undefined;
-  vol.passwordResetExpiresAt = undefined;
+  const strength = validatePasswordStrength(newPassword.trim());
+  if (!strength.isValid) {
+    return res.status(400).json({ error: `كلمة المرور الجديدة غير مطابقة لسياسة الأمان: ${strength.errors.join(" ")}`, errors: strength.errors });
+  }
+
+  // Store only the bcrypt hash; the code is single-use and wiped immediately.
+  vol.passwordHash = hashPassword(newPassword.trim());
+  delete vol.password;
+  vol.mustChangePassword = false;
+  delete vol.passwordResetToken;
+  delete vol.passwordResetTokenHash;
+  delete vol.passwordResetExpiresAt;
+  // Existing sessions of this account are revoked after a reset.
+  try { invalidateUserSessions(vol.id); } catch {}
 
   // Mark linked request as completed
   if (db.passwordResetRequests) {
@@ -24927,6 +26018,7 @@ app.post("/api/auth/reset-password-with-token", (req, res) => {
     if (linkedReq) {
       linkedReq.status = 'completed';
       linkedReq.completedAt = new Date().toISOString();
+      delete linkedReq.resetToken;
     }
   }
 
@@ -24951,28 +26043,31 @@ app.post("/api/auth/reset-password-with-token", (req, res) => {
 
 // 1. Get Team & Volunteer Support Tickets with Strict Isolation
 app.get("/api/support/team-tickets", (req, res) => {
+  // SECURITY: identity, role and team come ONLY from the verified session.
+  const ticketCtx = getUserAccessContext(req);
+  if (!ticketCtx.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
+  }
   const db = readDb();
   db.supportTickets = db.supportTickets || [];
-  const requesterId = req.query.requesterId as string;
-  const volunteerId = req.query.volunteerId as string;
-  const teamId = req.query.teamId as string;
-  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
-  const ticketCode = req.query.ticketCode as string;
+  const userRole = String(ticketCtx.role || '');
+  const selfId = ticketCtx.userId;
+  const teamId = ticketCtx.teamId || '';
+  const ticketCode = typeof req.query.ticketCode === 'string' ? req.query.ticketCode : '';
+  const isStaffViewer =
+    ticketCtx.isSuperAdmin || ticketCtx.isOperationsManager ||
+    ['admin', 'operations_manager', 'support', 'support_manager'].includes(userRole);
 
   let tickets = db.supportTickets.filter((t: any) => t.category === "team_volunteer" || t.teamId);
 
-  // Volunteer Isolation: Volunteers can ONLY view their own tickets!
-  if (userRole === "volunteer" || (volunteerId && userRole !== "admin" && userRole !== "operations_manager" && userRole !== "support")) {
-    const targetVolId = volunteerId || requesterId;
-    tickets = tickets.filter((t: any) => t.volunteerId === targetVolId || t.requesterId === targetVolId);
-  } else if (userRole === "leader") {
-    // Leader Isolation: Leaders only view tickets created by themselves or officially submitted for their team
-    tickets = tickets.filter((t: any) => t.requesterId === requesterId || (t.teamId === teamId && t.isCreatedByLeader));
-  } else if (userRole === "support") {
-    const agentId = req.query.agentId as string;
-    if (agentId) {
-      tickets = tickets.filter((t: any) => t.assignedStaffId === agentId || !t.assignedStaffId);
-    }
+  if (userRole === "leader") {
+    // Leader Isolation: own tickets, or tickets officially submitted for their own team
+    tickets = tickets.filter((t: any) => t.requesterId === selfId || (teamId && t.teamId === teamId && t.isCreatedByLeader));
+  } else if (userRole === "support_agent" || userRole === "support") {
+    tickets = tickets.filter((t: any) => t.assignedStaffId === selfId || !t.assignedStaffId);
+  } else if (!isStaffViewer) {
+    // Volunteers and every other role: ONLY their own tickets
+    tickets = tickets.filter((t: any) => t.volunteerId === selfId || t.requesterId === selfId);
   }
 
   if (ticketCode) {
@@ -25408,7 +26503,8 @@ app.post("/api/db/custodies/resend-email", async (req, res) => {
 // Get all support agents
 app.get("/api/support/agents", (req, res) => {
   const db = readDb();
-  res.json(db.supportAgents || []);
+  // Credential fields (plain text on legacy records, or the bcrypt hash) are never returned.
+  res.json((db.supportAgents || []).map(stripSecretRecordFields));
 });
 
 // Add new support agent (Support Manager)
@@ -25429,7 +26525,11 @@ app.post("/api/support/agents/add", (req, res) => {
     id: "sa-" + Date.now(),
     name: String(name).trim(),
     username: String(username).trim(),
-    password: password ? String(password).trim() : "123",
+    // SECURITY: never store plain text and never fall back to a shared default credential. The bcrypt hash
+    // is written to both fields so the previous version (which reads `password` only) can verify it.
+    ...(password && String(password).trim()
+      ? (() => { const h = hashPassword(String(password).trim()); return { passwordHash: h, password: h }; })()
+      : {}),
     email: email ? String(email).trim() : "",
     phone: phone ? String(phone).trim() : "",
     role: "support_agent",
@@ -25453,7 +26553,7 @@ app.post("/api/support/agents/add", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ success: true, agent: newAgent, agents: db.supportAgents, db });
+  res.json({ success: true, agent: stripSecretRecordFields(newAgent), agents: db.supportAgents.map(stripSecretRecordFields), db });
 });
 
 // Update agent status or permissions
@@ -25469,7 +26569,7 @@ app.post("/api/support/agents/update-status", (req, res) => {
   if (permissions) agent.permissions = permissions;
 
   writeDb(db);
-  res.json({ success: true, agent, agents: db.supportAgents, db });
+  res.json({ success: true, agent: stripSecretRecordFields(agent), agents: db.supportAgents.map(stripSecretRecordFields), db });
 });
 
 // Get all support tasks (with optional filter by agentId)
@@ -25634,11 +26734,59 @@ app.post("/api/support/tasks/update", (req, res) => {
   res.json({ success: true, task, tasks: db.supportTasks, db });
 });
 
-app.post("/api/ai/chat", async (req, res) => {
-  const { prompt, conversationHistory, userInfo } = req.body;
-  if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+// SECURITY / COST CONTROL for the public website assistant.
+const AI_LIMITS = {
+  promptMaxChars: 2000,
+  historyMaxItems: 10,
+  historyItemMaxChars: 2000,
+  totalMaxChars: 12000,
+  maxOutputTokens: 800,
+  // Guest limits: NETWORK_LIMITS.aiGuest (per visitor + per-egress ceiling).
+  perUser: { max: 30, windowMs: 10 * 60 * 1000 },
+  globalPerDay: Number(process.env.AI_CHAT_DAILY_CAP) > 0 ? Number(process.env.AI_CHAT_DAILY_CAP) : 1500
+};
+const aiDailyUsage = { day: "", count: 0 };
+function consumeAiDailyBudget(): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (aiDailyUsage.day !== today) { aiDailyUsage.day = today; aiDailyUsage.count = 0; }
+  if (aiDailyUsage.count >= AI_LIMITS.globalPerDay) return false;
+  aiDailyUsage.count++;
+  return true;
+}
 
-  const ai = getGeminiClient();
+app.post("/api/ai/chat", async (req, res) => {
+  const aiCtx = getUserAccessContext(req);
+  const rawPrompt = req.body?.prompt;
+  if (typeof rawPrompt !== "string" || !rawPrompt.trim()) return res.status(400).json({ error: "Prompt is required" });
+  if (rawPrompt.length > AI_LIMITS.promptMaxChars) {
+    return res.status(413).json({ error: `الرسالة طويلة جداً (الحد ${AI_LIMITS.promptMaxChars} حرف).` });
+  }
+  // Rate limits: per signed-in account; for guests per visitor plus a per-egress flood ceiling.
+  // The daily budget (consumeAiDailyBudget) remains the cost guarantee whatever the address.
+  const aiRate = aiCtx.isAuthenticated
+    ? checkRateLimit('registration', `ai-user:${aiCtx.userId}`, AI_LIMITS.perUser.max, AI_LIMITS.perUser.windowMs)
+    : checkClientRateLimit('registration', 'aiGuest', req);
+  if (!aiRate.allowed) {
+    return res.status(429).json({ error: `تم تجاوز عدد الرسائل المسموح للمساعد الذكي. يرجى المحاولة بعد ${aiRate.retryAfterSec} ثانية.` });
+  }
+  // History is bounded and sanitised (role + text only).
+  const conversationHistory = (Array.isArray(req.body?.conversationHistory) ? req.body.conversationHistory : [])
+    .slice(-AI_LIMITS.historyMaxItems)
+    .map((h: any) => ({ role: h?.role === "user" ? "user" : "model", text: String(h?.text || "").slice(0, AI_LIMITS.historyItemMaxChars) }));
+  const totalChars = rawPrompt.length + conversationHistory.reduce((n: number, h: any) => n + h.text.length, 0);
+  if (totalChars > AI_LIMITS.totalMaxChars) {
+    return res.status(413).json({ error: "المحادثة طويلة جداً. يرجى بدء محادثة جديدة." });
+  }
+  const prompt = rawPrompt;
+  // Ticket identity comes from the session; guests are recorded as guests (client-sent ids/roles ignored).
+  const bodyInfo = req.body?.userInfo || {};
+  const userInfo = aiCtx.isAuthenticated
+    ? { id: aiCtx.userId, name: aiCtx.userName, email: aiCtx.userEmail || "", phone: "", role: aiCtx.role }
+    : { id: `guest-${crypto.randomBytes(4).toString("hex")}`, name: String(bodyInfo.name || "زائر").slice(0, 80),
+        email: String(bodyInfo.email || "").slice(0, 120), phone: String(bodyInfo.phone || "").slice(0, 20), role: "guest" };
+
+  // Global daily budget: beyond it the assistant answers in local mode (no paid model call).
+  const ai = consumeAiDailyBudget() ? getGeminiClient() : null;
   const db = readDb();
 
   // Check if user prompt requests human escalation explicitly
@@ -25728,7 +26876,8 @@ app.post("/api/ai/chat", async (req, res) => {
     initiativesCount: db.initiatives.length,
     requestsCount: db.requests.length,
     attendanceRecords: db.attendance.length,
-    topVolunteers: db.volunteers.sort((a: any, b: any) => b.points - a.points).slice(0, 3).map((v: any) => `${v.name} (${v.points} نقطة)`),
+    // (copy before sorting: the previous in-place sort reordered the stored volunteers list)
+    topVolunteers: [...(db.volunteers || [])].sort((a: any, b: any) => (b.points || 0) - (a.points || 0)).slice(0, 3).map((v: any) => `${v.name} (${v.points} نقطة)`),
     departments: db.departments.map((d: any) => d.nameAr),
     teams: db.teams.map((t: any) => t.nameAr),
     initiativesList: db.initiatives.map((i: any) => `${i.name} بتاريخ ${i.date}`)
@@ -25773,6 +26922,7 @@ app.post("/api/ai/chat", async (req, res) => {
           config: {
             systemInstruction,
             temperature: 0.7,
+            maxOutputTokens: AI_LIMITS.maxOutputTokens,
           },
         });
         if (response && response.text) {
@@ -27122,16 +28272,17 @@ app.get("/api/db/team-card-template/:teamId", (req, res) => {
 // 1.3 Save Team Card Template (with strict RBAC for team leaders)
 app.post("/api/db/team-card-template/save", (req, res) => {
   const db = readDb();
-  const { teamId, template, leaderTeamId, userRole, performerName, applyToTeamCards } = req.body;
+  const { teamId, template, applyToTeamCards } = req.body || {};
 
   if (!teamId || !template) {
     return res.status(400).json({ error: "معرف الفريق وبيانات القالب مطلوبة" });
   }
 
-  // RBAC Validation: Team leader can ONLY modify their own team's template!
-  if (userRole === "leader" && leaderTeamId && leaderTeamId !== teamId) {
-    return res.status(403).json({ error: "غير مصرح لك بتعديل قالب فريق آخر. صلاحيتك محصورة بفريقك فقط." });
-  }
+  // RBAC Validation (from the verified session only): leaders may ONLY modify their own team's template.
+  const tplCtx = getUserAccessContext(req);
+  const tplGuard = assertTeamScopedStaffAccess(tplCtx, teamId);
+  if (tplGuard) return res.status(tplGuard.status).json({ error: tplGuard.error });
+  const performerName = tplCtx.userName;
 
   db.volunteerCardTemplates = db.volunteerCardTemplates || [];
   const team = (db.teams || []).find((t: any) => t.id === teamId);
@@ -27186,16 +28337,17 @@ app.post("/api/db/team-card-template/save", (req, res) => {
 // 1.4 Bulk Issue Team Cards (Automated generation for team members)
 app.post("/api/db/team-cards/bulk-issue", (req, res) => {
   const db = readDb();
-  const { teamId, leaderTeamId, userRole, performerName } = req.body;
+  const { teamId } = req.body || {};
 
   if (!teamId) {
     return res.status(400).json({ error: "معرف الفريق مطلوب" });
   }
 
-  // RBAC: Leaders can only bulk issue for their own team
-  if (userRole === "leader" && leaderTeamId && leaderTeamId !== teamId) {
-    return res.status(403).json({ error: "غير مصرح لك بإصدار بطاقات لمتطوعي فريق آخر" });
-  }
+  // RBAC (from the verified session only): leaders can only bulk issue for their own team
+  const bulkCtx = getUserAccessContext(req);
+  const bulkGuard = assertTeamScopedStaffAccess(bulkCtx, teamId);
+  if (bulkGuard) return res.status(bulkGuard.status).json({ error: bulkGuard.error });
+  const performerName = bulkCtx.userName;
 
   const team = (db.teams || []).find((t: any) => t.id === teamId);
   if (!team) {
@@ -27961,6 +29113,9 @@ app.post("/api/db/team-staff/assign", (req, res) => {
   if (!teamId || !employeeId || !teamRole) {
     return res.status(400).json({ error: "يرجى تحديد الفريق والموظف والدور الميداني داخل الفريق" });
   }
+  // SECURITY: leaders act on their own team only; others need volunteer-management scope.
+  const tsGuard = assertTeamScopedStaffAccess(getUserAccessContext(req), teamId);
+  if (tsGuard) return res.status(tsGuard.status).json({ error: tsGuard.error });
 
   db.employees = db.employees || [];
   const emp = db.employees.find((e: any) => e.id === employeeId);
@@ -28035,6 +29190,9 @@ app.post("/api/db/team-staff/remove", (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ error: "تكليف الموظف بالفريق غير موجود" });
   }
+  // SECURITY: leaders act on their own team only; others need volunteer-management scope.
+  const tsrGuard = assertTeamScopedStaffAccess(getUserAccessContext(req), db.teamStaffAssignments[idx].teamId);
+  if (tsrGuard) return res.status(tsrGuard.status).json({ error: tsrGuard.error });
 
   const removed = db.teamStaffAssignments.splice(idx, 1)[0];
   const nowIso = new Date().toISOString();
@@ -28355,8 +29513,7 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    password: DEFAULT_NEW_ACCOUNT_PASSWORD,
-    passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
+    passwordHash: hashPassword(generateStrongTemporaryPassword(16)),
     mustChangePassword: true,
     role: "volunteer",
     gender: normGender
@@ -28946,7 +30103,8 @@ setupPasswordResetLinkRoutes(app, {
   validatePasswordStrength,
   invalidateUserSessions,
   revokeAllTrustedDevicesForUser,
-  checkRateLimit
+  checkRateLimit,
+  checkClientRateLimit
 });
 
 // Setup Electronic Volunteer Charter & Restricted Volunteer Teams Overview routes

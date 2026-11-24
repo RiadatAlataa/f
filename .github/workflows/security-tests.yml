@@ -1,0 +1,170 @@
+name: Security tests
+
+# Runs the build and the security regression suite on every pull request.
+# - Uses the committed package-lock.json (npm ci) — no floating versions.
+# - Uses ONLY synthetic data generated inside the test; no secrets or production data are needed or read.
+# - Does not deploy anything.
+on:
+  pull_request:
+  push:
+    branches:
+      - "security/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      # Make sure no storage backend or cloud credentials can be picked up by the tests.
+      DATABASE_URL: ""
+      STORAGE_BACKEND: ""
+      REQUIRE_PERMANENT_STORAGE: ""
+      REQUIRE_R2_STORAGE: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # package-lock.json is currently out of sync with package.json (pre-existing: vite-plugin-pwa
+      # and its dependencies are missing from it), so `npm ci` refuses to run. bun.lock IS in sync,
+      # so dependencies are installed from it with --frozen-lockfile (exact locked versions, no updates).
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies (locked, frozen)
+        run: bun install --frozen-lockfile
+
+      - name: Security tests (phase 1)
+        env:
+          NODE_ENV: test
+          MATRIX_REPORT_PATH: ${{ runner.temp }}/security-route-matrix.csv
+        run: npm run test:security
+
+      # The full per-route report (method, path, class, policy, statuses, verdict). Contains no data or secrets.
+      - name: Upload route matrix report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-route-matrix-${{ github.sha }}
+          path: ${{ runner.temp }}/security-route-matrix.csv
+          if-no-files-found: warn
+
+      - name: Production build
+        run: npm run build
+
+      - name: Type check (informational — reports pre-existing errors)
+        if: always()
+        continue-on-error: true
+        run: npx tsc --noEmit
+
+  # Runs the PREVIOUS server version (PR base) against data shaped as the NEW version writes it,
+  # to prove what a rollback preserves or breaks. Synthetic data only; nothing is deployed.
+  rollback-compat:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR (tests + fixtures)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout base (previous version)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - name: Install (PR, locked)
+        run: bun install --frozen-lockfile
+      - name: Install (base, locked)
+        working-directory: base
+        run: bun install --frozen-lockfile
+      - name: Rollback compatibility tests
+        env:
+          NODE_ENV: test
+          ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/rollback/*.test.ts
+
+  # EVIDENCE ONLY (never blocks): runs the NEW tests against the previous PR head 06d25f2 — the code
+  # before this fix — so the report can show real before/after results. Failures here are expected.
+  evidence-before-fix:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - name: Checkout PR (new tests)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout code before this fix (06d25f2)
+        uses: actions/checkout@v4
+        with:
+          ref: 06d25f2cdd307cf20a2cd0f5d22ec03c04d9e57c
+          path: before
+          persist-credentials: false
+      - name: Checkout base (previous production version)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - name: Install (before, locked)
+        working-directory: before
+        run: bun install --frozen-lockfile
+      - name: Install (base, locked)
+        working-directory: base
+        run: bun install --frozen-lockfile
+      - name: Copy the new tests onto the code before the fix
+        run: |
+          cp test/security/ip-limits.test.ts before/test/security/
+          cp test/rollback/rollback-e2e.test.ts test/rollback/serve-version.ts before/test/rollback/
+      - name: Run new tests against the code before the fix (failures expected)
+        working-directory: before
+        env:
+          NODE_ENV: test
+          ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/security/ip-limits.test.ts test/rollback/rollback-e2e.test.ts || true
+
+  # Builds the UNCHANGED base branch with the same toolchain, so a build failure can be
+  # attributed correctly (pre-existing on main vs. introduced by this PR).
+  baseline-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Build base branch (reference only)
+        run: npm run build

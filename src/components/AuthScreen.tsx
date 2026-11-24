@@ -139,7 +139,7 @@ export function AuthScreen({
   const [googleEmailInput, setGoogleEmailInput] = useState("");
   const [googleModalError, setGoogleModalError] = useState<string | null>(null);
 
-  const [verifiedGoogleData, setVerifiedGoogleData] = useState<{ email: string; name: string; picture?: string } | null>(null);
+  const [verifiedGoogleData, setVerifiedGoogleData] = useState<{ email: string; name: string; picture?: string; registrationTicket?: string } | null>(null);
   const [showGoogleCompleteModal, setShowGoogleCompleteModal] = useState(false);
   const [googleAccountType, setGoogleAccountType] = useState<'volunteer' | 'beneficiary' | null>(null);
   const [googleRegSubmitted, setGoogleRegSubmitted] = useState(false);
@@ -569,7 +569,9 @@ export function AuthScreen({
         setVerifiedGoogleData({
           email: data.googleEmail || "",
           name: data.googleName || "",
-          picture: data.googlePicture
+          picture: data.googlePicture,
+          // Server-issued, single-use proof that this email was verified by Google (required to register).
+          registrationTicket: data.registrationTicket || ""
         });
         setGRegFullName(data.googleName || "");
         setGoogleAccountType(null); // Step 1: Select between Volunteer and Beneficiary
@@ -704,6 +706,7 @@ export function AuthScreen({
     try {
       const payload: any = {
         accountType: googleAccountType,
+        registrationTicket: verifiedGoogleData?.registrationTicket || "",
         googleEmail: verifiedGoogleData?.email || googleEmailInput,
         name: gRegFullName.trim(),
         nationalId: gRegNationalId.trim(),
