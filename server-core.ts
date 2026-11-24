@@ -233,8 +233,10 @@ app.use((req: any, _res, next) => {
   if (req.body && typeof req.body === 'object' && !Array.isArray(req.body) && 'userRole' in req.body) delete req.body.userRole;
 
   if (resolveSessionTokenFromRequest(req)) {
+    const probeBefore = __accessProbe.calls;
     try {
       const ctx = getUserAccessContext(req);
+      __accessProbe.calls = probeBefore;
       if (ctx && ctx.isAuthenticated) {
         req.headers['x-user-id'] = toHeaderSafe(ctx.userId);
         req.headers['x-user-role'] = toHeaderSafe(ctx.role);
@@ -270,13 +272,18 @@ app.use((req: any, res: any, next) => {
   const p = String(req.path || '');
   if (!p.startsWith('/api') || RAW_DB_RESPONSE_EXEMPT_PREFIXES.some((x) => p.startsWith(x))) return next();
   const originalJson = res.json.bind(res);
+  // (response guard: not counted as a handler-level access check by the route-matrix test)
+  const uncountedContext = () => {
+    const before = __accessProbe.calls;
+    try { return getUserAccessContext(req); } finally { __accessProbe.calls = before; }
+  };
   res.json = (body: any) => {
     try {
       if (looksLikeRawDatabase(body)) {
-        return originalJson(filterDatabaseForUser(body, getUserAccessContext(req)));
+        return originalJson(filterDatabaseForUser(body, uncountedContext()));
       }
       if (body && typeof body === 'object' && !Array.isArray(body) && looksLikeRawDatabase(body.db)) {
-        return originalJson({ ...body, db: filterDatabaseForUser(body.db, getUserAccessContext(req)) });
+        return originalJson({ ...body, db: filterDatabaseForUser(body.db, uncountedContext()) });
       }
     } catch {
       // Fail closed: never fall back to sending the raw database.
@@ -364,7 +371,10 @@ app.use((req, res, next) => {
 
   if (exempt) return next();
 
+  // (global middleware: not counted as a handler-level access check by the route-matrix test)
+  const probeBefore = __accessProbe.calls;
   const authContext = getUserAccessContext(req);
+  __accessProbe.calls = probeBefore;
   if (authContext.isAuthenticated && (authContext as any).mustChangePassword) {
     return res.status(403).json({
       ok: false,
@@ -4747,7 +4757,12 @@ export function createServerSession(
   return session;
 }
 
+// Test instrumentation: counts calls to the access-control resolvers so the route-matrix test can
+// detect handlers that never check identity. A plain counter — no data, no side effects.
+export const __accessProbe = { calls: 0 };
+
 export function getServerSession(token?: string): ServerSession | null {
+  __accessProbe.calls++;
   if (!token) return null;
   const now = Date.now();
   let session = activeSessions.get(token);
@@ -5747,6 +5762,7 @@ export interface UserAccessContext {
 
 // 1. Resolve User Access Context from Verified Session (Prevents client header spoofing)
 function getUserAccessContext(req: any): UserAccessContext {
+  __accessProbe.calls++;
   const db = readDb();
   const sessionToken = (req.headers['x-session-token'] as string) || 
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null) ||
@@ -6734,6 +6750,29 @@ export function sanitizeOrgMemberForAdmin(m: any, canViewFullId: boolean = true)
 }
 
 // 3. Database Isolation Filter (Enforces Data Segregation at DB level)
+// Fields a client may NEVER set through generic create/update payloads (credentials, privilege, reset state).
+const CLIENT_FORBIDDEN_RECORD_FIELDS = [
+  'password', 'passwordHash', 'tempPassword', 'resetToken', 'passwordResetToken', 'passwordResetTokenHash',
+  'passwordResetExpiresAt', 'pinHash', 'deviceSecretHash', 'role', 'permissions', 'allowedDepartmentIds',
+  'isSuperAdmin', 'isOperationsManager', 'mustChangePassword', 'loginDisabled', 'hasLoginAccount'
+];
+export function stripCredentialAndPrivilegeFields(input: any): any {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out: any = { ...input };
+  for (const k of CLIENT_FORBIDDEN_RECORD_FIELDS) delete out[k];
+  return out;
+}
+
+// Volunteer card guard: the volunteer themself, the leader of their team, or volunteer-management staff.
+function assertVolunteerCardAccess(context: any, vol: any): { status: number; error: string } | null {
+  if (!context || !context.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
+  const role = String(context.role || '');
+  if (role === 'volunteer') {
+    return context.userId === vol?.id ? null : { status: 403, error: "غير مصرح: يمكنك إدارة بطاقتك فقط." };
+  }
+  return assertTeamScopedStaffAccess(context, vol?.teamId || '');
+}
+
 // Team-scoped staff guard: leaders only for their own team; volunteers/beneficiaries/public never;
 // other staff need volunteer-management (dep-5) scope or super-admin / operations rights.
 function assertTeamScopedStaffAccess(context: any, teamId: string): { status: number; error: string } | null {
@@ -14572,9 +14611,12 @@ app.post("/api/db/opportunity-requests/update", (req, res) => {
 // 10. Re-issue Card
 app.post("/api/db/reissue-card", (req, res) => {
   const db = readDb();
-  const { volunteerId } = req.body;
+  const { volunteerId } = req.body || {};
   const vol = db.volunteers.find((v: any) => v.id === volunteerId);
   if (!vol) return res.status(404).json({ error: "Volunteer not found" });
+  // SECURITY: previously unauthenticated. Owner, own-team leader or volunteer-management staff only.
+  const cardGuard = assertVolunteerCardAccess(getUserAccessContext(req), vol);
+  if (cardGuard) return res.status(cardGuard.status).json({ error: cardGuard.error });
   vol.issueDate = new Date().toISOString().split('T')[0];
   const expiry = new Date();
   expiry.setFullYear(expiry.getFullYear() + 1);
@@ -19040,8 +19082,13 @@ app.delete("/api/teams/:id", async (req, res) => {
 
 // Volunteers CRUD & Import
 app.post("/api/volunteers", (req, res) => {
+  // SECURITY: previously unauthenticated — anyone could create volunteers or overwrite ANY volunteer
+  // record (including credentials and status). Same policy as /api/db/volunteers/add now applies.
+  const isEditReq = Boolean(req.body?.id);
+  const auth = checkDepartmentPermission(req, res, 'dep-5', isEditReq ? 'edit_data' : 'create_data', 'ملف المتطوع');
+  if (!auth.allowed) return;
   const db = readDb();
-  const vol = req.body;
+  const vol = stripCredentialAndPrivilegeFields(req.body || {});
   if (!vol.id) {
     vol.id = "vol-" + Date.now();
     // Auto generate membership numbers & barcodes
@@ -19074,17 +19121,20 @@ app.post("/api/volunteers", (req, res) => {
   db.logs.unshift({
     id: "log-" + Date.now(),
     timestamp: new Date().toISOString(),
-    user: "إدارة التطوع",
+    user: auth.context.userName || "إدارة التطوع",
     action: `إضافة/تعديل ملف متطوع: ${vol.name}`,
     ip: req.ip || "127.0.0.1",
     device: req.headers["user-agent"] || "System"
   });
 
   writeDb(db);
-  res.json({ status: "success", volunteer: vol });
+  res.json({ status: "success", volunteer: stripSecretRecordFields(vol) });
 });
 
 app.post("/api/volunteers/batch-create", (req, res) => {
+  // SECURITY: previously unauthenticated bulk account creation.
+  const auth = checkDepartmentPermission(req, res, 'dep-5', 'create_data', 'استيراد المتطوعين');
+  if (!auth.allowed) return;
   const db = readDb();
   const list = req.body.volunteers;
   if (!Array.isArray(list)) return res.status(400).json({ error: "Invalid data format" });
@@ -19127,7 +19177,7 @@ app.post("/api/volunteers/batch-create", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ status: "success", count: added.length, volunteers: added });
+  res.json({ status: "success", count: added.length, volunteers: added.map(stripSecretRecordFields) });
 });
 
 app.delete("/api/volunteers/:id", handleVolunteerArchiveOrDelete);
@@ -19666,6 +19716,9 @@ app.post("/api/volunteers/:id/reissue-card", (req, res) => {
   const id = req.params.id;
   const vol = db.volunteers.find((v: any) => v.id === id);
   if (!vol) return res.status(404).json({ error: "Volunteer not found" });
+  // SECURITY: previously unauthenticated. Owner, own-team leader or volunteer-management staff only.
+  const cardGuard = assertVolunteerCardAccess(getUserAccessContext(req), vol);
+  if (cardGuard) return res.status(cardGuard.status).json({ error: cardGuard.error });
 
   vol.issueDate = new Date().toISOString().split('T')[0];
   const expiry = new Date();
