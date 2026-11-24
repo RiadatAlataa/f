@@ -180,6 +180,7 @@ test("route access matrix: no non-public route is reachable anonymously or witho
     report.push([r.method, r.path, "protected", pol, anon.status, anon.checked ? "yes" : "no", vol.status, anonOk && volOk ? "PASS" : "FAIL"].join(","));
   }
   console.log(`MATRIX-TOTAL\tregistered=${allRoutes.length}\tpublic=${allRoutes.length - rows.length}\tprotected=${rows.length}`);
+  for (const line of report) console.log(`ROUTE\t${line}`);
   if (process.env.MATRIX_REPORT_PATH) {
     fs.writeFileSync(process.env.MATRIX_REPORT_PATH, report.join("\n") + "\n", "utf8");
   }
