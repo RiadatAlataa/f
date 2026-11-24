@@ -51,7 +51,17 @@ jobs:
       - name: Security tests (phase 1)
         env:
           NODE_ENV: test
+          MATRIX_REPORT_PATH: ${{ runner.temp }}/security-route-matrix.csv
         run: npm run test:security
+
+      # The full per-route report (method, path, class, policy, statuses, verdict). Contains no data or secrets.
+      - name: Upload route matrix report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-route-matrix-${{ github.sha }}
+          path: ${{ runner.temp }}/security-route-matrix.csv
+          if-no-files-found: warn
 
       - name: Production build
         run: npm run build

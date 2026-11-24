@@ -152,15 +152,36 @@ after(async () => {
 test("route access matrix: no non-public route is reachable anonymously or without an access check", async () => {
   // Late-registered routes: give any deferred registration a moment before reading the table.
   await new Promise((r) => setTimeout(r, 1500));
-  const routes = listRoutes(core.default).filter((r) => r.path.startsWith("/api"));
+  const allRoutes = listRoutes(core.default);
+  const routes = allRoutes.filter((r) => r.path.startsWith("/api"));
   assert.ok(routes.length > 200, `expected the full route table, found ${routes.length}`);
 
-  for (const r of routes) {
+  // Full report of EVERY registered route (public ones are probed anonymously too, for the record).
+  const report: string[] = ["method,path,class,policy,anonymous_status,access_check_ran,volunteer_status,verdict"];
+  const table0: any[] = core.__routePolicyTable || [];
+  const policyOf = (method: string, p: string) => {
+    const rule = table0.find((r: any) => (r.method === "*" || r.method === method) && r.rx.test(concretePath(p)));
+    return rule ? rule.policy : "handler";
+  };
+  for (const r of allRoutes) {
     const key = `${r.method} ${r.path}`;
-    if (PUBLIC_ROUTES.has(key)) continue;
+    const isPublic = PUBLIC_ROUTES.has(key) || !r.path.startsWith("/api");
+    if (isPublic) {
+      const anon = await probe(r.method, r.path);
+      report.push([r.method, r.path, r.path.startsWith("/api") ? "public" : "public-website", "public", anon.status, anon.checked ? "yes" : "no", "-", "public by design"].join(","));
+      continue;
+    }
     const anon = await probe(r.method, r.path);
     const vol = await probe(r.method, r.path, volToken);
     rows.push({ key, status: anon.status, checked: anon.checked, volStatus: vol.status });
+    const pol = policyOf(r.method, r.path);
+    const anonOk = !(anon.status >= 200 && anon.status < 300) && (anon.checked || anon.status === 401 || anon.status === 403);
+    const volOk = pol === "handler" || pol === "authenticated" || !(vol.status >= 200 && vol.status < 300);
+    report.push([r.method, r.path, "protected", pol, anon.status, anon.checked ? "yes" : "no", vol.status, anonOk && volOk ? "PASS" : "FAIL"].join(","));
+  }
+  console.log(`MATRIX-TOTAL\tregistered=${allRoutes.length}\tpublic=${allRoutes.length - rows.length}\tprotected=${rows.length}`);
+  if (process.env.MATRIX_REPORT_PATH) {
+    fs.writeFileSync(process.env.MATRIX_REPORT_PATH, report.join("\n") + "\n", "utf8");
   }
 
   const open = rows.filter((x) => x.status >= 200 && x.status < 300);
