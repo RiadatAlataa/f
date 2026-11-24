@@ -262,3 +262,45 @@ test("chat: a leader can reach own-team volunteers and staff, not other teams", 
   assert.equal((await newChat(t, ["vol-z", "staff-1"])).status, 200);
   assert.equal((await newChat(t, ["vol-other-team"])).status, 403);
 });
+
+// ---------------------------------------------------------------------------
+// Login-failure accounting and recovery edge cases
+// ---------------------------------------------------------------------------
+test("malformed sign-in requests (400) are not counted as failed attempts against the account", async () => {
+  for (let i = 0; i < 40; i++) {
+    await call("POST", "/api/db/auth/login", { identifier: "1900000301", password: "" }, { "x-forwarded-for": `172.20.${i}.1` });
+  }
+  const r = await call("POST", "/api/db/auth/login", { identifier: "1900000301", password: VOL_PW }, { "x-forwarded-for": "172.21.0.1" });
+  assert.equal(r.json?.status, "success", "validation errors locked the account");
+});
+
+test("a successful sign-in clears the account's failure counter", async () => {
+  const acctIp = "172.22.0.1";
+  for (let i = 0; i < 5; i++) {
+    await call("POST", "/api/db/auth/login", { identifier: "1900000301", password: `bad-${i}` }, { "x-forwarded-for": `172.23.${i}.1` });
+  }
+  const ok = await call("POST", "/api/db/auth/login", { identifier: "1900000301", password: VOL_PW }, { "x-forwarded-for": acctIp });
+  assert.equal(ok.json?.status, "success");
+});
+
+test("an expired single-use reset code is refused and wiped", async () => {
+  const db = core.readDb();
+  const vol = db.volunteers.find((v: any) => v.id === "vol-z");
+  const code = "RST-" + rnd(12).toUpperCase();
+  vol.passwordResetTokenHash = core.hashResetCode(code);
+  vol.passwordResetExpiresAt = Date.now() - 1000;
+  const r = await call("POST", "/api/auth/reset-password-with-token", { token: code, newPassword: `Aa1!${rnd()}` }, { "x-forwarded-for": "172.24.0.1" });
+  assert.equal(r.status, 400);
+  assert.equal(core.readDb().volunteers.find((v: any) => v.id === "vol-z").passwordResetTokenHash, undefined);
+});
+
+test("a reset code cannot be used with a weak or published-default new password", async () => {
+  const db = core.readDb();
+  const vol = db.volunteers.find((v: any) => v.id === "vol-z");
+  const code = "RST-" + rnd(12).toUpperCase();
+  vol.passwordResetTokenHash = core.hashResetCode(code);
+  vol.passwordResetExpiresAt = Date.now() + 60_000;
+  const r = await call("POST", "/api/auth/reset-password-with-token", { token: code, newPassword: "A123b456" }, { "x-forwarded-for": "172.25.0.1" });
+  assert.equal(r.status, 400);
+  assert.ok(core.readDb().volunteers.find((v: any) => v.id === "vol-z").passwordResetTokenHash, "code should remain usable after a rejected weak password");
+});

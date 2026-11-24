@@ -187,3 +187,55 @@ test("the formerly hard-coded administrator addresses no longer grant admin, eve
     assert.equal(forged.status, 401);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Simulated test tokens: refused under EVERY production-like configuration.
+// (isExplicitDevAuthBypassAllowed reads the environment at call time, so the matrix is real.)
+// ---------------------------------------------------------------------------
+const DEV_TOKEN = "dev_test_token:" + Buffer.from(JSON.stringify({ email: "owner@example.org" })).toString("base64");
+async function withEnv(vars: Record<string, string | undefined>, fn: () => Promise<void>) {
+  const saved: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) { saved[k] = process.env[k]; if (vars[k] === undefined) delete process.env[k]; else process.env[k] = vars[k]; }
+  try { await fn(); } finally { for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+}
+
+test("dev test tokens are refused for NODE_ENV unset / production / development / test (no opt-in)", async () => {
+  for (const env of [undefined, "production", "development", "test", "staging"]) {
+    await withEnv({ NODE_ENV: env, ALLOW_DEV_GOOGLE_TEST_TOKENS: undefined }, async () => {
+      const r = await google({ credential: DEV_TOKEN });
+      assert.equal(r.status, 401, `accepted with NODE_ENV=${env}`);
+    });
+  }
+});
+
+test("dev test tokens are refused on Render / Vercel EVEN WITH the opt-in flag set", async () => {
+  for (const marker of ["RENDER", "RENDER_SERVICE_ID", "VERCEL", "VERCEL_ENV"]) {
+    await withEnv({ NODE_ENV: "development", ALLOW_DEV_GOOGLE_TEST_TOKENS: "true", [marker]: "1" }, async () => {
+      const r = await google({ credential: DEV_TOKEN });
+      assert.equal(r.status, 401, `accepted on ${marker} with opt-in`);
+    });
+  }
+});
+
+test("dev test tokens are refused with NODE_ENV=production even with the opt-in flag", async () => {
+  await withEnv({ NODE_ENV: "production", ALLOW_DEV_GOOGLE_TEST_TOKENS: "true" }, async () => {
+    const r = await google({ credential: DEV_TOKEN });
+    assert.equal(r.status, 401);
+  });
+});
+
+test("control: the ONLY accepted case is local dev/test + explicit opt-in + no hosting marker (and still no admin without approval)", async () => {
+  await withEnv({ NODE_ENV: "test", ALLOW_DEV_GOOGLE_TEST_TOKENS: "true", RENDER: undefined, RENDER_SERVICE_ID: undefined, VERCEL: undefined, VERCEL_ENV: undefined }, async () => {
+    const plain = "dev_test_token:" + Buffer.from(JSON.stringify({ email: "brand-new@example.org", sub: "s1" })).toString("base64");
+    const r = await google({ credential: plain });
+    assert.notEqual(r.status, 401, "the explicit local opt-in path should work (proves the gate is the only switch)");
+  });
+});
+
+test("unsigned JWT fallback is refused even when ALLOW_DEV_JWT_FALLBACK=true on a hosted runtime", async () => {
+  const unsigned = "eyJhbGciOiJub25lIn0." + Buffer.from(JSON.stringify({ email: "owner@example.org" })).toString("base64url") + ".";
+  await withEnv({ ALLOW_DEV_JWT_FALLBACK: "true", ALLOW_DEV_GOOGLE_TEST_TOKENS: "true", RENDER: "1", NODE_ENV: "development" }, async () => {
+    const r = await google({ credential: unsigned });
+    assert.equal(r.status, 401);
+  });
+});
