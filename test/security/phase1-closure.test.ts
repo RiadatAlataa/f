@@ -23,20 +23,27 @@ process.env.NODE_ENV = "test";
 const CLIENT_ID = "test-client-id.apps.googleusercontent.com";
 const rnd = (n = 8) => crypto.randomBytes(n).toString("hex");
 const VOL_PW = `Aa1!${rnd()}`;
+const VICTIM_PW = `Aa1!${rnd()}`;
 
 fs.writeFileSync(dbPath, JSON.stringify({
   systemSettings: { societyName: "جمعية اختبار", maintenanceMode: false }, homeSettings: {},
   news: [], partners: [], gallery: [], heroSlides: [], orgMembers: [], faqs: [],
   departments: [{ id: "dep-1", nameAr: "تنفيذي" }, { id: "dep-5", nameAr: "تطوع" }],
-  teams: [{ id: "team-a", nameAr: "فريق أ", departmentId: "dep-5", status: "active" }],
+  teams: [{ id: "team-a", nameAr: "فريق أ", departmentId: "dep-5", status: "active" }, { id: "team-b", nameAr: "فريق ب", departmentId: "dep-5", status: "active" }],
   volunteers: [
     { id: "vol-mail", name: "متطوع ببريد", nationalId: "1900000301", email: "member@example.org", teamId: "team-a",
       status: "active", passwordHash: bcrypt.hashSync(VOL_PW, 4), mustChangePassword: false, points: 1 },
     { id: "vol-z", name: "متطوع آخر", nationalId: "1900000302", teamId: "team-a", status: "active", points: 9,
-      passwordHash: bcrypt.hashSync(`Aa1!${rnd()}`, 4) }
+      passwordHash: bcrypt.hashSync(`Aa1!${rnd()}`, 4) },
+    { id: "vol-victim", name: "متطوع مستهدف", nationalId: "1900000303", teamId: "team-a", status: "active",
+      passwordHash: bcrypt.hashSync(VICTIM_PW, 4), mustChangePassword: false },
+    { id: "vol-other-team", name: "متطوع فريق آخر", nationalId: "1900000304", teamId: "team-b", status: "active" }
   ],
-  beneficiaries: [], employees: [], storekeepers: [], supportManagers: [], supportAgents: [],
-  userDepartmentAccess: [], passwordResetRequests: [], passwordResetOtps: [], passwordResetTokens: [],
+  beneficiaries: [{ id: "ben-c", name: "مستفيد", nationalId: "1800000301", status: "approved" }],
+  employees: [], storekeepers: [], supportManagers: [], supportAgents: [],
+  userDepartmentAccess: [{ id: "perm-staff", userId: "staff-1", userName: "موظف", role: "employee", primaryDepartmentId: "dep-5",
+    allowedDepartmentIds: ["dep-5"], permissions: ["view_department"], status: "active" }],
+  passwordResetRequests: [], passwordResetOtps: [], passwordResetTokens: [],
   notifications: [], supportTickets: [], initiatives: [], requests: [], attendance: [], logs: [], accessAuditLogs: [], activeSessions: []
 }), "utf8");
 
@@ -205,4 +212,53 @@ test("AI assistant rate-limits a guest even when the client forges new left-most
     if (r.status === 429) { limited = true; break; }
   }
   assert.ok(limited, "guest rate limit never triggered");
+});
+
+// ---------------------------------------------------------------------------
+// Lockout abuse: an attacker exhausting the per-account limit cannot lock out the real user
+// ---------------------------------------------------------------------------
+test("the legitimate user keeps signing in from a proven source while an attacker is throttled", async () => {
+  const LEGIT_IP = "203.0.113.200";
+  const first = await call("POST", "/api/db/auth/login", { identifier: "1900000303", password: VICTIM_PW }, { "x-forwarded-for": LEGIT_IP });
+  assert.equal(first.json?.status, "success");
+  let attackerThrottled = false;
+  for (let i = 0; i < 45; i++) {
+    const r = await call("POST", "/api/db/auth/login", { identifier: "1900000303", password: `guess-${i}` },
+      { "x-forwarded-for": `100.${i}.${i % 250}.${(i * 7) % 250}` });
+    if (r.status === 429) attackerThrottled = true;
+  }
+  assert.ok(attackerThrottled, "brute force from rotating IPs was never throttled");
+  const fromNewIp = await call("POST", "/api/db/auth/login", { identifier: "1900000303", password: VICTIM_PW }, { "x-forwarded-for": "100.200.200.200" });
+  assert.equal(fromNewIp.status, 429, "unproven sources must stay throttled during the attack");
+  const legit = await call("POST", "/api/db/auth/login", { identifier: "1900000303", password: VICTIM_PW }, { "x-forwarded-for": LEGIT_IP });
+  assert.equal(legit.json?.status, "success", "the real user was locked out by the attacker");
+});
+
+// ---------------------------------------------------------------------------
+// Chat: participants must be within the creator's scope
+// ---------------------------------------------------------------------------
+const sess = (u: any, role: string) => core.createServerSession(u, role).token;
+async function newChat(token: string, participantIds: string[], extra: any = {}) {
+  return call("POST", "/api/chat/conversations", { type: "group", name: "اختبار", participantIds, ...extra }, { "x-session-token": token });
+}
+
+test("chat: a volunteer can reach their team and staff, but not other teams, beneficiaries or unknown ids", async () => {
+  const t = sess({ id: "vol-mail", name: "متطوع", nationalId: "1900000301", role: "volunteer", teamId: "team-a" }, "volunteer");
+  assert.equal((await newChat(t, ["vol-z", "leader-team-a", "staff-1"])).status, 200);
+  assert.equal((await newChat(t, ["vol-other-team"])).status, 403);
+  assert.equal((await newChat(t, ["ben-c"])).status, 403);
+  assert.equal((await newChat(t, ["admin-ghost-" + rnd()])).status, 403);
+  assert.equal((await newChat(t, ["vol-z"], { teamId: "team-b" })).status, 403);
+});
+
+test("chat: a beneficiary can only start conversations with staff", async () => {
+  const t = sess({ id: "ben-c", name: "مستفيد", nationalId: "1800000301", role: "beneficiary" }, "beneficiary");
+  assert.equal((await newChat(t, ["staff-1"])).status, 200);
+  assert.equal((await newChat(t, ["vol-z"])).status, 403);
+});
+
+test("chat: a leader can reach own-team volunteers and staff, not other teams", async () => {
+  const t = sess({ id: "leader-team-a", name: "قائد", role: "leader", teamId: "team-a" }, "leader");
+  assert.equal((await newChat(t, ["vol-z", "staff-1"])).status, 200);
+  assert.equal((await newChat(t, ["vol-other-team"])).status, 403);
 });

@@ -15823,12 +15823,57 @@ app.post("/api/db/auth/logout", (req, res) => {
   return res.json({ status: "logged_out", message: "تم تسجيل الخروج بنجاح." });
 });
 
+// --- Account lockout that cannot be used against the legitimate user --------------------------
+const ACCOUNT_FAILURE_CEILING = 30;           // failed attempts per account / 15 min from unproven sources
+const ACCOUNT_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const KNOWN_SOURCE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const loginFailures = new Map<string, { count: number; resetAt: number }>();
+const knownLoginSources = new Map<string, Map<string, number>>(); // account → (ip → lastSuccessAt)
+
+function getLoginFailureState(acct: string) {
+  const now = Date.now();
+  const s = loginFailures.get(acct);
+  if (!s || now > s.resetAt) return { count: 0, resetAt: now + ACCOUNT_FAILURE_WINDOW_MS };
+  return s;
+}
+function recordLoginFailure(acct: string) {
+  const s = getLoginFailureState(acct);
+  loginFailures.set(acct, { count: s.count + 1, resetAt: s.resetAt });
+  if (loginFailures.size > 50000) loginFailures.clear(); // memory guard
+}
+function recordLoginSuccess(acct: string, ip: string) {
+  loginFailures.delete(acct);
+  let m = knownLoginSources.get(acct);
+  if (!m) { m = new Map(); knownLoginSources.set(acct, m); }
+  m.set(ip, Date.now());
+  if (m.size > 20) m.delete(m.keys().next().value as string);
+  if (knownLoginSources.size > 50000) knownLoginSources.clear();
+}
+function isProvenLoginSource(acct: string, ip: string, req: any): boolean {
+  const seen = knownLoginSources.get(acct)?.get(ip);
+  if (seen && Date.now() - seen < KNOWN_SOURCE_TTL_MS) return true;
+  // A valid trusted-device cookie (HttpOnly secret issued after a full sign-in) also proves the source.
+  try {
+    const secret = req.cookies?.['reyadat_device_trust'];
+    if (secret) {
+      const h = hashDeviceSecret(secret);
+      return (readDb().trustedDevices || []).some((t: any) => t && !t.revokedAt && t.deviceSecretHash === h);
+    }
+  } catch {}
+  return false;
+}
+
 function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwordRaw: string, opts?: { auditEndpoint?: string; deviceId?: string }) {
   // Wrap res.json to automatically generate and attach a persistent server session
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
   const originalJson = res.json.bind(res);
   lastVerificationUsedLegacyPlaintext = false;
+  const loginAcctKey = String(identifierRaw || '').trim().toLowerCase();
   res.json = function(body: any) {
+    // Account-level failure accounting (wrong credentials only; validation/429 responses are not counted).
+    if (res.statusCode === 401 && loginAcctKey) recordLoginFailure(loginAcctKey);
+    const usedPublicDefault = KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim());
+    if (body && body.status === "success" && body.user && loginAcctKey && !usedPublicDefault) recordLoginSuccess(loginAcctKey, clientIp);
     if (body && body.status === "success" && body.user) {
       // SECURITY: a shared/published default password is not proof of identity → no session; recover instead.
       if (KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim())) {
@@ -15897,10 +15942,18 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // Rate Limiting Protection (Anti-Brute Force)
   // 1) per trusted client IP + account, 2) per ACCOUNT regardless of IP (defeats IP rotation / spoofing),
   // 3) coarse per-IP ceiling across accounts (defeats spraying one password over many accounts).
-  const rateLimitKey = `${clientIp}:${identifier.toLowerCase()}`;
+  // The per-ACCOUNT ceiling counts FAILED attempts only, and does not apply to a source that already
+  // proved itself for this account (a trusted-device cookie, or an IP that signed in successfully before).
+  // So an attacker can exhaust it for unknown sources, but cannot lock the legitimate user out.
+  const acctKey = identifier.toLowerCase();
+  const rateLimitKey = `${clientIp}:${acctKey}`;
   const rateCheckIpAcct = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
-  const rateCheckAcct = checkRateLimit('login', `acct:${identifier.toLowerCase()}`, 30, 15 * 60 * 1000);
   const rateCheckIp = checkRateLimit('login', `ip:${clientIp}`, 200, 15 * 60 * 1000);
+  const provenSource = isProvenLoginSource(acctKey, clientIp, req);
+  const acctFailures = getLoginFailureState(acctKey);
+  const rateCheckAcct = !provenSource && acctFailures.count >= ACCOUNT_FAILURE_CEILING
+    ? { allowed: false, retryAfterSec: Math.max(1, Math.ceil((acctFailures.resetAt - Date.now()) / 1000)) }
+    : { allowed: true };
   const rateCheck: { allowed: boolean; retryAfterSec?: number } =
     [rateCheckIpAcct, rateCheckAcct, rateCheckIp].find((r) => !r.allowed) || { allowed: true };
   if (!rateCheck.allowed) {
@@ -24752,6 +24805,46 @@ app.post("/api/db/teamApplications/delete", (req, res) => {
 // -------------------------------------------------------------
 
 // Get Chat Conversations
+// Resolves a chat participant id to { kind, teamId, active } from stored records (never from the client).
+function resolveChatParticipant(db: any, id: string): { kind: 'staff' | 'leader' | 'volunteer' | 'beneficiary'; teamId?: string; active: boolean } | null {
+  const inactive = (s: any) => ['suspended', 'inactive', 'archived', 'deactivated', 'banned', 'rejected'].includes(String(s?.status || '')) || s?.isArchived === true || s?.loginDisabled === true;
+  const vol = (db.volunteers || []).find((v: any) => v && v.id === id);
+  if (vol) return { kind: 'volunteer', teamId: vol.teamId, active: !inactive(vol) };
+  const ben = (db.beneficiaries || []).find((b: any) => b && b.id === id);
+  if (ben) return { kind: 'beneficiary', active: !inactive(ben) };
+  if (id.startsWith('leader-')) {
+    const team = (db.teams || []).find((t: any) => t && t.id === id.slice('leader-'.length));
+    if (team) return { kind: 'leader', teamId: team.id, active: !inactive(team) };
+  }
+  const staff =
+    (db.userDepartmentAccess || []).find((u: any) => u && (u.userId === id || u.id === id)) ||
+    (db.employees || []).find((e: any) => e && (e.id === id || e.userId === id)) ||
+    (db.supportAgents || []).find((s: any) => s && s.id === id) ||
+    (db.supportManagers || []).find((s: any) => s && s.id === id) ||
+    (db.storekeepers || []).find((s: any) => s && s.id === id);
+  if (staff) return { kind: 'staff', active: !inactive(staff) };
+  return null;
+}
+
+// Who may start a conversation with whom:
+//   staff / admin → any active account
+//   team leader   → staff, and the volunteers of their own team
+//   volunteer     → staff, their own team's leader and their own team's volunteers
+//   beneficiary   → staff only
+function validateChatParticipants(db: any, ctx: any, others: string[]): string | null {
+  const role = String(ctx.role || '');
+  const isStaffCreator = !['leader', 'volunteer', 'beneficiary', 'public'].includes(role);
+  for (const id of others) {
+    const p = resolveChatParticipant(db, id);
+    if (!p || !p.active) return "لا يمكن إضافة مشارك غير معروف أو غير نشط إلى المحادثة.";
+    if (isStaffCreator || p.kind === 'staff') continue;
+    if (role === 'leader' && p.kind === 'volunteer' && p.teamId && p.teamId === ctx.teamId) continue;
+    if (role === 'volunteer' && (p.kind === 'volunteer' || p.kind === 'leader') && p.teamId && p.teamId === ctx.teamId) continue;
+    return "غير مصرح: لا يمكنك إضافة هذا المشارك إلى محادثة (خارج نطاق صلاحياتك).";
+  }
+  return null;
+}
+
 // SECURITY: chat is bound to the session identity — a user only sees / writes conversations they take part in.
 function isChatParticipant(ctx: any, conv: any): boolean {
   return Boolean(conv && Array.isArray(conv.participantIds) && conv.participantIds.includes(ctx.userId));
@@ -24773,12 +24866,21 @@ app.post("/api/chat/conversations", (req, res) => {
   const ctx = getUserAccessContext(req);
   if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { type, name, participantNames, teamId, avatar } = req.body || {};
+  const { type, name, participantNames, avatar } = req.body || {};
   // The creator is always a participant (identity from the session).
   const participantIds: string[] = Array.from(new Set([
     ctx.userId,
     ...(Array.isArray(req.body?.participantIds) ? req.body.participantIds.map(String) : [])
-  ]));
+  ])).slice(0, 200);
+  // SECURITY: every other participant must be a known, active account within the creator's scope.
+  const scopeError = validateChatParticipants(db, ctx, participantIds.filter((p) => p !== ctx.userId));
+  if (scopeError) return res.status(403).json({ error: scopeError });
+  // A team group can only be bound to the creator's own team (unless staff/admin).
+  const requestedTeamId = typeof req.body?.teamId === "string" ? req.body.teamId : undefined;
+  if (requestedTeamId && ['leader', 'volunteer', 'beneficiary'].includes(String(ctx.role)) && requestedTeamId !== ctx.teamId) {
+    return res.status(403).json({ error: "غير مصرح: لا يمكنك إنشاء محادثة لفريق آخر." });
+  }
+  const teamId = requestedTeamId;
 
   db.chatConversations = db.chatConversations || [];
   

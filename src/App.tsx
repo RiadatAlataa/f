@@ -788,17 +788,8 @@ export default function App() {
       userId: userId
     };
 
-    console.log(`[Maintenance Toggle Request]:`, {
-      requestUrl: finalUrl,
-      httpMethod: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        ...authHeaders,
-        'x-user-role': userRole,
-        'x-user-id': userId
-      },
-      payload
-    });
+    // SECURITY: never log request headers — they carry the session token.
+    console.log(`[Maintenance Toggle Request]:`, { requestUrl: finalUrl, httpMethod: 'POST', enabled });
 
     try {
       const res = await fetch(finalUrl, {

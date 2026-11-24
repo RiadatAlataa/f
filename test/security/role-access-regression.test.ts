@@ -28,13 +28,21 @@ fs.writeFileSync(dbPath, JSON.stringify({
   news: [], partners: [], gallery: [], heroSlides: [], orgMembers: [], faqs: [],
   departments: ["dep-1", "dep-2", "dep-4", "dep-5", "dep-6", "dep-8", "dep-9"].map((id) => ({ id, nameAr: id })),
   teams: [{ id: "team-a", nameAr: "فريق أ", departmentId: "dep-5", status: "active" }, { id: "team-b", nameAr: "فريق ب", departmentId: "dep-5", status: "active" }],
-  volunteers: [{ id: "vol-a", name: "متطوع", nationalId: "1900000501", teamId: "team-a", status: "active", mustChangePassword: false }],
-  beneficiaries: [{ id: "ben-a", name: "مستفيد", nationalId: "1800000501", status: "approved", mustChangePassword: false }],
+  volunteers: [
+    { id: "vol-a", name: "متطوع", nationalId: "1900000501", teamId: "team-a", status: "active", mustChangePassword: false },
+    { id: "vol-b", name: "متطوع ب", nationalId: "1900000502", teamId: "team-b", status: "active", phone: "0500000502" }
+  ],
+  beneficiaries: [
+    { id: "ben-a", name: "مستفيد", nationalId: "1800000501", status: "approved", mustChangePassword: false },
+    { id: "ben-b", name: "مستفيد ب", nationalId: "1800000502", status: "approved" }
+  ],
+  financialTransactions: [{ id: "ft-1", amount: 100, type: "income" }],
   employees: [{ id: "emp-x", name: "موظف ميداني", status: "active", departmentId: "dep-5" }],
   storekeepers: [], supportManagers: [], supportAgents: [],
   userDepartmentAccess: [emp("emp-fin", "dep-2"), emp("emp-ben", "dep-4"), emp("emp-vol", "dep-5"), emp("emp-media", "dep-6"),
     emp("emp-wh", "dep-8"), emp("emp-hr", "dep-9"),
-    { id: "perm-admin", userId: "admin-user", userName: "مدير", role: "admin", primaryDepartmentId: "dep-1", permissions: ["super_admin"], status: "active" }],
+    { id: "perm-admin", userId: "admin-user", userName: "مدير", role: "admin", primaryDepartmentId: "dep-1", permissions: ["super_admin"], status: "active" },
+    { id: "perm-ops", userId: "ops-manager", userName: "مدير العمليات", role: "operations_manager", primaryDepartmentId: "dep-1", permissions: ["operations_manager"], status: "active" }],
   passwordResetRequests: [], notifications: [], supportTickets: [], initiatives: [], requests: [], attendance: [],
   benefitRequests: [], distributions: [], inventoryItems: [], logs: [], accessAuditLogs: [], activeSessions: []
 }), "utf8");
@@ -62,6 +70,7 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${(server.address() as any).port}`;
   const s = (user: any, role: string) => core.createServerSession(user, role).token;
   T.admin = s({ id: "admin-user", userId: "admin-user", name: "مدير", role: "admin" }, "admin");
+  T.ops = s({ id: "ops-manager", userId: "ops-manager", name: "مدير العمليات", role: "operations_manager" }, "operations_manager");
   T.leader = s({ id: "leader-team-a", name: "قائد", role: "leader", teamId: "team-a" }, "leader");
   T.volunteer = s({ id: "vol-a", name: "متطوع", nationalId: "1900000501", role: "volunteer", teamId: "team-a" }, "volunteer");
   T.beneficiary = s({ id: "ben-a", name: "مستفيد", nationalId: "1800000501", role: "beneficiary" }, "beneficiary");
@@ -115,7 +124,14 @@ const ALLOWED: Array<[string, string, string, any?]> = [
   ["admin", "GET", "/api/db/finance/all"],
   ["admin", "GET", "/api/db/email-settings"],
   ["admin", "POST", "/api/db/systemSettings", {}],
-  ["admin", "GET", "/api/db/inventory"]
+  ["admin", "GET", "/api/db/inventory"],
+  // operations manager
+  ["ops", "GET", "/api/db/finance/all"],
+  ["ops", "GET", "/api/db/inventory"],
+  ["ops", "POST", "/api/db/hr/job-titles/save", {}],
+  ["ops", "GET", "/api/db/passwordResetRequests"],
+  ["ops", "POST", "/api/db/volunteers/toggle-status", {}],
+  ["ops", "GET", "/api/db/beneficiaries/statistics"]
 ];
 
 const REFUSED: Array<[string, string, string, any?]> = [
@@ -147,4 +163,45 @@ test("out-of-scope operations are refused for each role", async () => {
     if (passesAccess(s)) leaked.push(`${role} ${m} ${p} → ${s}`);
   }
   assert.deepEqual(leaked, [], "out-of-scope operations were allowed");
+});
+
+async function dbView(token: string) {
+  const res = await fetch(baseUrl + "/api/db", { headers: { "x-session-token": token } });
+  return res.json();
+}
+const ids = (arr: any) => (Array.isArray(arr) ? arr.map((x: any) => x.id).sort() : []);
+
+test("each role sees the data its work needs, and only that (GET /api/db)", async () => {
+  const admin = await dbView(T.admin);
+  assert.deepEqual(ids(admin.beneficiaries), ["ben-a", "ben-b"]);
+  assert.deepEqual(ids(admin.volunteers), ["vol-a", "vol-b"]);
+
+  const ops = await dbView(T.ops);
+  assert.equal(ops.currentUserContext?.role, "operations_manager");
+  assert.deepEqual(ids(ops.beneficiaries), ["ben-a", "ben-b"]);
+
+  const fin = await dbView(T["emp-fin"]);
+  assert.deepEqual(ids(fin.financialTransactions), ["ft-1"]);
+  assert.deepEqual(ids(fin.beneficiaries), []);
+
+  const benStaff = await dbView(T["emp-ben"]);
+  assert.deepEqual(ids(benStaff.beneficiaries), ["ben-a", "ben-b"]);
+  assert.deepEqual(ids(benStaff.financialTransactions), []);
+
+  const volStaff = await dbView(T["emp-vol"]);
+  assert.deepEqual(ids(volStaff.volunteers), ["vol-a", "vol-b"]);
+  assert.deepEqual(ids(volStaff.beneficiaries), []);
+
+  const leader = await dbView(T.leader);
+  assert.deepEqual(ids(leader.volunteers), ["vol-a"]);
+  assert.deepEqual(ids(leader.beneficiaries), []);
+
+  const volunteer = await dbView(T.volunteer);
+  const other = (volunteer.volunteers || []).find((v: any) => v.id === "vol-b");
+  assert.equal(other?.phone, undefined, "volunteer sees another volunteer's phone");
+  assert.deepEqual(ids(volunteer.beneficiaries), []);
+
+  const beneficiary = await dbView(T.beneficiary);
+  assert.deepEqual(ids(beneficiary.beneficiaries), ["ben-a"]);
+  assert.deepEqual(ids(beneficiary.volunteers), []);
 });
