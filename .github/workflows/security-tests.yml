@@ -39,10 +39,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install dependencies (locked)
-        run: npm ci --no-audit --no-fund
+      # package-lock.json is currently out of sync with package.json (pre-existing: vite-plugin-pwa
+      # and its dependencies are missing from it), so `npm ci` refuses to run. bun.lock IS in sync,
+      # so dependencies are installed from it with --frozen-lockfile (exact locked versions, no updates).
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies (locked, frozen)
+        run: bun install --frozen-lockfile
 
       - name: Security tests (phase 1)
         run: npm run test:security
