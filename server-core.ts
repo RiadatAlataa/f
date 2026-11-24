@@ -78,7 +78,11 @@ app.use((req, res, next) => {
   // appended by OUR proxy, never from values the client can prepend. TRUSTED_PROXY_HOPS (default 1 =
   // Render's edge) says how many right-most entries were added by trusted proxies. The normalised value
   // replaces X-Forwarded-For / X-Real-IP so every legacy `split(',')[0]` read gets the trusted address.
-  const clientIp = resolveTrustedClientIp(req);
+  // The two-tier identity (trusted address + per-visitor key) is computed from the ORIGINAL header first.
+  const network = resolveClientNetwork(req);
+  (req as any).clientNetwork = network;
+  recordNetworkTopologySample(network);
+  const clientIp = network.trustedIp;
   req.headers['x-forwarded-for'] = clientIp;
   req.headers['x-real-ip'] = clientIp;
   try {
@@ -104,6 +108,106 @@ export function resolveTrustedClientIp(req: any): string {
   const idx = Math.max(0, full.length - 1 - hops);
   const candidate = (full[idx] || socketIp).replace(/^::ffff:/, '');
   return /^[0-9a-fA-F:.]{3,45}$/.test(candidate) ? candidate : socketIp;
+}
+
+// --- Two-tier client identity for rate limits ----------------------------------------------------
+// The number of proxies in front of production is NOT known, and all website traffic arrives through
+// the Vercel rewrite, so the TRUSTED address (right-hand side, appended by infrastructure, cannot be
+// forged) may be shared by many real visitors. The CLAIMED address (left-most X-Forwarded-For entry)
+// distinguishes visitors behind a shared egress but CAN be forged. Therefore:
+//   • trustedIp  → only high "flood" ceilings (resource protection; never a per-person limit);
+//   • visitorKey → normal per-visitor limits (fairness only; forging it buys a new bucket, nothing more);
+//   • per-ACCOUNT limits (login failures, OTP issuance, per-code attempts) are the real defence and do
+//     not depend on any address.
+// Nothing here treats the claimed address as proof of identity.
+export interface ClientNetwork {
+  trustedIp: string;
+  claimedIp: string | null;
+  visitorKey: string;
+  chainLength: number;
+}
+const IP_SHAPE = /^[0-9a-fA-F:.]{3,45}$/;
+export function resolveClientNetwork(req: any): ClientNetwork {
+  const trustedIp = resolveTrustedClientIp(req);
+  const xff = req.headers?.['x-forwarded-for'];
+  const chain = (Array.isArray(xff) ? xff.join(',') : String(xff || ''))
+    .split(',').map((s: string) => s.trim()).filter(Boolean);
+  const left = (chain[0] || '').replace(/^::ffff:/, '');
+  const claimedIp = IP_SHAPE.test(left) ? left : null;
+  return { trustedIp, claimedIp, visitorKey: `${trustedIp}|${claimedIp || trustedIp}`, chainLength: chain.length };
+}
+export function getClientNetwork(req: any): ClientNetwork {
+  return req?.clientNetwork || resolveClientNetwork(req);
+}
+
+// Limits per route: `visitor` = existing per-client value (unchanged), `flood` = ceiling per trusted
+// address, sized so that hundreds of visitors behind one shared egress are not blocked.
+export const NETWORK_LIMITS = {
+  login:                   { visitor: 200, flood: 3000, windowMs: 15 * 60 * 1000 },
+  loginVisitorAccount:     { visitor: 10,  windowMs: 15 * 60 * 1000 },
+  forgotPassword:          { visitor: 5,   flood: 600,  windowMs: 15 * 60 * 1000 },
+  forgotIdentify:          { visitor: 12,  flood: 1200, windowMs: 15 * 60 * 1000 },
+  forgotSendOtp:           { visitor: 8,   flood: 600,  windowMs: 15 * 60 * 1000 },
+  requestLink:             { visitor: 6,   flood: 600,  windowMs: 15 * 60 * 1000 },
+  resetCode:               { visitor: 10,  flood: 600,  windowMs: 15 * 60 * 1000 },
+  googleRegistration:      { visitor: 15,  flood: 600,  windowMs: 30 * 60 * 1000 },
+  beneficiaryRegistration: { visitor: 15,  flood: 600,  windowMs: 30 * 60 * 1000 },
+  volunteerApplication:    { visitor: 20,  flood: 800,  windowMs: 30 * 60 * 1000 },
+  teamLicenseUpload:       { visitor: 15,  flood: 300,  windowMs: 60 * 1000 },
+  aiGuest:                 { visitor: 10,  flood: 400,  windowMs: 10 * 60 * 1000 }
+} as const;
+export type NetworkLimitProfile = Exclude<keyof typeof NETWORK_LIMITS, 'loginVisitorAccount'>;
+
+export function checkClientRateLimit(
+  bucket: 'login' | 'forgotPassword' | 'forgotIdentify' | 'forgotSendOtp' | 'registration' | 'team_license_upload',
+  profile: NetworkLimitProfile,
+  req: any
+): { allowed: boolean; retryAfterSec?: number } {
+  const lim = NETWORK_LIMITS[profile];
+  const net = getClientNetwork(req);
+  // Visitor first: a visitor that is already blocked does not keep consuming the shared flood budget.
+  const visitor = checkRateLimit(bucket, `v:${profile}:${net.visitorKey}`, lim.visitor, lim.windowMs);
+  if (!visitor.allowed) return visitor;
+  return checkRateLimit(bucket, `t:${profile}:${net.trustedIp}`, lim.flood, lim.windowMs);
+}
+
+// Read-only topology evidence (counts only — no address is ever exposed): how many X-Forwarded-For
+// entries requests arrive with, and how many distinct visitors share one trusted address. Used to
+// establish the real proxy count from production traffic instead of assuming it.
+const topology = {
+  since: Date.now(),
+  windowStart: Date.now(),
+  chainLengths: {} as Record<string, number>,
+  visitorsPerTrusted: new Map<string, Set<string>>()
+};
+const anonymise = (s: string) => crypto.createHash('sha256').update('topology:' + s).digest('hex').slice(0, 16);
+export function recordNetworkTopologySample(net: ClientNetwork) {
+  try {
+    const now = Date.now();
+    if (now - topology.windowStart > 60 * 60 * 1000) { topology.windowStart = now; topology.visitorsPerTrusted.clear(); }
+    const k = String(Math.min(net.chainLength, 6));
+    topology.chainLengths[k] = (topology.chainLengths[k] || 0) + 1;
+    if (topology.visitorsPerTrusted.size < 5000) {
+      const tk = anonymise(net.trustedIp);
+      let set = topology.visitorsPerTrusted.get(tk);
+      if (!set) { set = new Set(); topology.visitorsPerTrusted.set(tk, set); }
+      if (set.size < 5000) set.add(anonymise(net.visitorKey));
+    }
+  } catch {}
+}
+export function getNetworkTopologySummary() {
+  const perTrusted = [...topology.visitorsPerTrusted.values()].map((s) => s.size).sort((a, b) => b - a);
+  const hopsRaw = Number(process.env.TRUSTED_PROXY_HOPS);
+  return {
+    configuredTrustedProxyHops: Number.isFinite(hopsRaw) && hopsRaw >= 0 && hopsRaw <= 5 ? Math.floor(hopsRaw) : 1,
+    sampledSince: new Date(topology.since).toISOString(),
+    forwardedForEntriesHistogram: { ...topology.chainLengths },
+    currentHour: {
+      distinctTrustedAddresses: perTrusted.length,
+      maxDistinctVisitorsBehindOneTrustedAddress: perTrusted[0] || 0,
+      top5VisitorCounts: perTrusted.slice(0, 5)
+    }
+  };
 }
 
 /**
@@ -350,6 +454,7 @@ const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
   // admin / system
   ['GET', '/api/logs/developer-error', 'admin'],
   ['GET', '/api/admin/freeze/status', 'admin'],
+  ['GET', '/api/admin/security/network-topology', 'admin'],
   ['GET', '/api/tools/download-extractor-zip', 'admin'],
   ['POST', '/api/db/systemSettings', 'admin'],
   ['POST', '/api/db/license/upload', 'admin'],
@@ -4811,6 +4916,20 @@ let lastVerificationUsedLegacyPlaintext = false;
 
 // Unique per-account temporary password for staff-created accounts (replaces the shared default).
 // Only the bcrypt hash is stored; the plain value is returned ONCE to the authorised creator.
+// ROLLBACK COMPATIBILITY: the previous version verifies support managers / agents (and reads storekeepers
+// on one path) from the `password` field only. The SAME bcrypt hash is therefore written to both fields —
+// never plain text — so a password changed after deploy still verifies if the previous version is restored.
+// (The pattern already used by the OTP / reset-link recovery paths.)
+export function setCompatiblePasswordHash(record: any, bcryptHash: string) {
+  record.passwordHash = bcryptHash;
+  record.password = bcryptHash;
+}
+// Support staff are verified from `password` first (as the previous version does), then `passwordHash`,
+// so both versions always agree on which credential is current.
+export function supportStaffStoredCredential(record: any): string | undefined {
+  return (typeof record?.password === 'string' && record.password) || record?.passwordHash || undefined;
+}
+
 export function issueInitialTemporaryCredential(record: any): string {
   const temp = generateStrongTemporaryPassword(12);
   record.passwordHash = hashPassword(temp);
@@ -5623,7 +5742,7 @@ function resolveLiveUserAccount(
         role: "support_manager",
         status: smObj.status || "active"
       },
-      storedPasswordHash: smObj.passwordHash || smObj.password
+      storedPasswordHash: supportStaffStoredCredential(smObj)
     };
   }
 
@@ -5650,7 +5769,7 @@ function resolveLiveUserAccount(
         managerId: saObj.managerId,
         status: saObj.status || "active"
       },
-      storedPasswordHash: saObj.passwordHash || saObj.password
+      storedPasswordHash: supportStaffStoredCredential(saObj)
     };
   }
 
@@ -10791,11 +10910,11 @@ app.post("/api/db/auth/change-password", (req, res) => {
   }
 
   const sk = (db.storekeepers || []).find((s: any) => s.id === userId);
-  if (sk) { sk.passwordHash = hashedPassword; delete sk.password; }
+  if (sk) setCompatiblePasswordHash(sk, hashedPassword);
   // Support staff previously kept plain-text passwords and were never updated here.
   for (const coll of ['supportManagers', 'supportAgents']) {
     const rec = (db[coll] || []).find((s: any) => s && s.id === userId);
-    if (rec) { rec.passwordHash = hashedPassword; delete rec.password; }
+    if (rec) setCompatiblePasswordHash(rec, hashedPassword);
   }
 
   // Real-time memory and persisted session update
@@ -11018,7 +11137,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   if (sk) { sk.password = hashedPassword; sk.passwordHash = hashedPassword; }
   for (const coll of ['supportManagers', 'supportAgents']) {
     const rec = (db[coll] || []).find((s: any) => s && s.id === userId);
-    if (rec) { rec.passwordHash = hashedPassword; delete rec.password; }
+    if (rec) setCompatiblePasswordHash(rec, hashedPassword);
   }
 
   // Also update Beneficiaries cleanly with bcrypt
@@ -11928,6 +12047,13 @@ app.get("/api/admin/freeze/status", (req, res) => {
       ? "عمليات الكتابة مجمدة مؤقتاً لأغراض الصيانة والترحيل والنسخ الاحتياطي"
       : "النظام في وضع العمل الطبيعي وقابل للكتابة والقراءة"
   });
+});
+
+// Read-only evidence for the real proxy count (admin only; counts only, never an address).
+app.get("/api/admin/security/network-topology", (req, res) => {
+  const denied = evaluateRoutePolicy('admin', getUserAccessContext(req));
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  res.json({ ok: true, ...getNetworkTopologySummary() });
 });
 
 app.post("/api/admin/freeze/acquire", async (req, res) => {
@@ -15824,56 +15950,70 @@ app.post("/api/db/auth/logout", (req, res) => {
 });
 
 // --- Account lockout that cannot be used against the legitimate user --------------------------
-const ACCOUNT_FAILURE_CEILING = 30;           // failed attempts per account / 15 min from unproven sources
+// Failed attempts are counted PER ACCOUNT, independent of any address, in separate classes:
+//   'device:<h>' – a valid trusted-device cookie (HttpOnly secret; cryptographic proof) → a budget of its
+//                  own for THIS account, so nobody else can exhaust it;
+//   'known'      – a visitor key that signed in successfully to this account before → its own budget;
+//   'unknown'    – everything else → its own budget.
+// The visitor key contains the forgeable left-most address, so 'known' is NOT treated as proof: it only
+// selects a separate, equally bounded budget. Every class is bounded, so no address or cookie gives
+// unlimited guesses; an attacker without the user's cookie / visitor key cannot touch the user's budget.
+const ACCOUNT_FAILURE_CEILING = 30;           // failed attempts per account / 15 min, per source class
 const ACCOUNT_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const KNOWN_SOURCE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const loginFailures = new Map<string, { count: number; resetAt: number }>();
-const knownLoginSources = new Map<string, Map<string, number>>(); // account → (ip → lastSuccessAt)
+type LoginSourceClass = string; // 'known' | 'unknown' | `device:${hash}`
+const loginFailures = new Map<string, { count: number; resetAt: number }>(); // `${class}:${account}`
+const knownLoginSources = new Map<string, Map<string, number>>(); // account → (visitorKey → lastSuccessAt)
 
-function getLoginFailureState(acct: string) {
+function getLoginFailureState(acct: string, cls: LoginSourceClass) {
   const now = Date.now();
-  const s = loginFailures.get(acct);
+  const s = loginFailures.get(`${cls}:${acct}`);
   if (!s || now > s.resetAt) return { count: 0, resetAt: now + ACCOUNT_FAILURE_WINDOW_MS };
   return s;
 }
-function recordLoginFailure(acct: string) {
-  const s = getLoginFailureState(acct);
-  loginFailures.set(acct, { count: s.count + 1, resetAt: s.resetAt });
+function recordLoginFailure(acct: string, cls: LoginSourceClass) {
+  const s = getLoginFailureState(acct, cls);
+  loginFailures.set(`${cls}:${acct}`, { count: s.count + 1, resetAt: s.resetAt });
   if (loginFailures.size > 50000) loginFailures.clear(); // memory guard
 }
-function recordLoginSuccess(acct: string, ip: string) {
-  loginFailures.delete(acct);
+function recordLoginSuccess(acct: string, visitorKey: string, cls: LoginSourceClass) {
+  loginFailures.delete(`known:${acct}`);
+  loginFailures.delete(`unknown:${acct}`);
+  loginFailures.delete(`${cls}:${acct}`);
   let m = knownLoginSources.get(acct);
   if (!m) { m = new Map(); knownLoginSources.set(acct, m); }
-  m.set(ip, Date.now());
+  m.set(visitorKey, Date.now());
   if (m.size > 20) m.delete(m.keys().next().value as string);
   if (knownLoginSources.size > 50000) knownLoginSources.clear();
 }
-function isProvenLoginSource(acct: string, ip: string, req: any): boolean {
-  const seen = knownLoginSources.get(acct)?.get(ip);
-  if (seen && Date.now() - seen < KNOWN_SOURCE_TTL_MS) return true;
-  // A valid trusted-device cookie (HttpOnly secret issued after a full sign-in) also proves the source.
+function classifyLoginSource(acct: string, visitorKey: string, req: any): LoginSourceClass {
+  // A valid trusted-device cookie (HttpOnly secret issued after a full sign-in) proves the source.
   try {
     const secret = req.cookies?.['reyadat_device_trust'];
     if (secret) {
       const h = hashDeviceSecret(secret);
-      return (readDb().trustedDevices || []).some((t: any) => t && !t.revokedAt && t.deviceSecretHash === h);
+      if ((readDb().trustedDevices || []).some((t: any) => t && !t.revokedAt && t.deviceSecretHash === h)) return `device:${h.slice(0, 24)}`;
     }
   } catch {}
-  return false;
+  const seen = knownLoginSources.get(acct)?.get(visitorKey);
+  if (seen && Date.now() - seen < KNOWN_SOURCE_TTL_MS) return 'known';
+  return 'unknown';
 }
 
 function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwordRaw: string, opts?: { auditEndpoint?: string; deviceId?: string }) {
   // Wrap res.json to automatically generate and attach a persistent server session
-  const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
+  const clientNet = getClientNetwork(req);
+  const clientIp = clientNet.trustedIp;
   const originalJson = res.json.bind(res);
   lastVerificationUsedLegacyPlaintext = false;
   const loginAcctKey = String(identifierRaw || '').trim().toLowerCase();
+  // Set below, once the request passed validation; failures/successes are attributed to this class.
+  let loginSourceClass: LoginSourceClass | null = null;
   res.json = function(body: any) {
     // Account-level failure accounting (wrong credentials only; validation/429 responses are not counted).
-    if (res.statusCode === 401 && loginAcctKey) recordLoginFailure(loginAcctKey);
+    if (res.statusCode === 401 && loginAcctKey && loginSourceClass) recordLoginFailure(loginAcctKey, loginSourceClass);
     const usedPublicDefault = KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim());
-    if (body && body.status === "success" && body.user && loginAcctKey && !usedPublicDefault) recordLoginSuccess(loginAcctKey, clientIp);
+    if (body && body.status === "success" && body.user && loginAcctKey && !usedPublicDefault) recordLoginSuccess(loginAcctKey, clientNet.visitorKey, loginSourceClass || 'unknown');
     if (body && body.status === "success" && body.user) {
       // SECURITY: a shared/published default password is not proof of identity → no session; recover instead.
       if (KNOWN_PUBLIC_DEFAULT_PASSWORDS.has(String(passwordRaw || '').trim())) {
@@ -15940,22 +16080,22 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   password = password.trim();
 
   // Rate Limiting Protection (Anti-Brute Force)
-  // 1) per trusted client IP + account, 2) per ACCOUNT regardless of IP (defeats IP rotation / spoofing),
-  // 3) coarse per-IP ceiling across accounts (defeats spraying one password over many accounts).
-  // The per-ACCOUNT ceiling counts FAILED attempts only, and does not apply to a source that already
-  // proved itself for this account (a trusted-device cookie, or an IP that signed in successfully before).
-  // So an attacker can exhaust it for unknown sources, but cannot lock the legitimate user out.
+  // PRIMARY: per-ACCOUNT failed-attempt budgets by source class (see classifyLoginSource) — independent of
+  // any address, so forging X-Forwarded-For never yields more guesses.
+  // SECONDARY (fairness / resource protection): per visitor+account and per visitor (forgeable key, so
+  // never relied on for security), and a high flood ceiling per trusted address (unforgeable, possibly
+  // shared by many visitors behind one egress, hence high).
   const acctKey = identifier.toLowerCase();
-  const rateLimitKey = `${clientIp}:${acctKey}`;
-  const rateCheckIpAcct = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
-  const rateCheckIp = checkRateLimit('login', `ip:${clientIp}`, 200, 15 * 60 * 1000);
-  const provenSource = isProvenLoginSource(acctKey, clientIp, req);
-  const acctFailures = getLoginFailureState(acctKey);
-  const rateCheckAcct = !provenSource && acctFailures.count >= ACCOUNT_FAILURE_CEILING
+  const visitorAcctLimit = NETWORK_LIMITS.loginVisitorAccount;
+  const rateCheckVisitorAcct = checkRateLimit('login', `va:${clientNet.visitorKey}:${acctKey}`, visitorAcctLimit.visitor, visitorAcctLimit.windowMs);
+  const rateCheckNet = rateCheckVisitorAcct.allowed ? checkClientRateLimit('login', 'login', req) : { allowed: true };
+  loginSourceClass = classifyLoginSource(acctKey, clientNet.visitorKey, req);
+  const acctFailures = getLoginFailureState(acctKey, loginSourceClass);
+  const rateCheckAcct = acctFailures.count >= ACCOUNT_FAILURE_CEILING
     ? { allowed: false, retryAfterSec: Math.max(1, Math.ceil((acctFailures.resetAt - Date.now()) / 1000)) }
     : { allowed: true };
   const rateCheck: { allowed: boolean; retryAfterSec?: number } =
-    [rateCheckIpAcct, rateCheckAcct, rateCheckIp].find((r) => !r.allowed) || { allowed: true };
+    [rateCheckAcct, rateCheckVisitorAcct, rateCheckNet].find((r) => !r.allowed) || { allowed: true };
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لمحاولات تسجيل الدخول. يرجى الانتظار لمدة ${rateCheck.retryAfterSec} ثانية قبل المحاولة مجدداً.`,
@@ -16612,7 +16752,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     }
     const statusCheck = checkStatus(supportManager.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(supportManager.password, supportManager.passwordHash)) {
+    if (!verifyPassword(undefined, supportStaffStoredCredential(supportManager))) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
@@ -16647,7 +16787,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     }
     const statusCheck = checkStatus(supportAgent.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(supportAgent.password, supportAgent.passwordHash)) {
+    if (!verifyPassword(undefined, supportStaffStoredCredential(supportAgent))) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
@@ -17313,7 +17453,7 @@ function consumeGoogleRegistrationTicket(key: string) {
 // Endpoint: Complete New Google User Registration (Volunteer or Beneficiary ONLY - Status: Pending Review)
 app.post("/api/db/auth/google/complete-registration", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('registration', 'googleRegistration', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لطلبات التسجيل عبر Google. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -17550,7 +17690,8 @@ const OTP_SECRET_SALT = "reyadat_otp_salt_2026_secure";
 // 1. Request Password Recovery OTP (Anti-Enumeration & Rate-Limited)
 app.post("/api/db/auth/forgot-password", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('forgotPassword', clientIp, 5, 15 * 60 * 1000);
+  // Per visitor + flood ceiling per trusted address; the per-ACCOUNT OTP cap below is the real defence.
+  const rateCheck = checkClientRateLimit('forgotPassword', 'forgotPassword', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لطلبات استعادة كلمة المرور. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -18084,7 +18225,7 @@ function findRecoveryAccountRecord(db: any, identifierOrRememberId: string, reme
 
 app.post("/api/db/auth/forgot-password/identify", (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('forgotIdentify', clientIp, 12, 15 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('forgotIdentify', 'forgotIdentify', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
   }
@@ -18102,7 +18243,7 @@ app.post("/api/db/auth/forgot-password/identify", (req, res) => {
 
 app.post("/api/db/auth/forgot-password/send-otp", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('forgotSendOtp', clientIp, 8, 15 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('forgotSendOtp', 'forgotSendOtp', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
   }
@@ -21105,7 +21246,7 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
     }
   } else {
     // New registration rate limit
-    const rateCheck = checkRateLimit('registration', clientIp, 15, 30 * 60 * 1000);
+    const rateCheck = checkClientRateLimit('registration', 'beneficiaryRegistration', req);
     if (!rateCheck.allowed) {
       return res.status(429).json({
         error: `تم تجاوز الحد المسموح به لطلبات تسجيل المستفيدين. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -23881,7 +24022,7 @@ app.post("/api/db/social-links/update", (req, res) => {
 // 23. Volunteer Applications: Submit New Application (Atomic mutateDb & Rate Limited)
 app.post("/api/db/volunteerApplications/submit", async (req, res) => {
   const clientIp = (req.headers['x-forwarded-for'] as string || req.ip || '127.0.0.1').split(',')[0].trim();
-  const rateCheck = checkRateLimit('registration', clientIp, 20, 30 * 60 * 1000);
+  const rateCheck = checkClientRateLimit('registration', 'volunteerApplication', req);
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لتقديم طلبات التطوع. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.`,
@@ -24356,7 +24497,7 @@ app.post("/api/db/teamApplications/upload-license", async (req, res) => {
       : "") ||
     req.ip ||
     "127.0.0.1";
-  const rl = checkRateLimit("team_license_upload", clientIp, 15, 60 * 1000);
+  const rl = checkClientRateLimit("team_license_upload", "teamLicenseUpload", req);
   if (!rl.allowed) {
     return res.status(429).json({ ok: false, error: "تم تجاوز الحد المسموح لرفع الملفات. يرجى الانتظار قليلاً." });
   }
@@ -25827,8 +25968,9 @@ app.post("/api/auth/reset-password-with-token", (req, res) => {
     return res.status(400).json({ error: "كود التحقق وكلمة المرور الجديدة حقول مطلوبة" });
   }
 
-  // Anti brute-force: limit attempts per client IP.
-  const resetRate = checkRateLimit('forgotPassword', `reset-code:${req.ip || 'unknown'}`, 10, 15 * 60 * 1000);
+  // Abuse control per visitor + flood ceiling per trusted address. Codes carry 96 bits of randomness and
+  // are single-use, so guessing is not feasible regardless of the address.
+  const resetRate = checkClientRateLimit('forgotPassword', 'resetCode', req);
   if (!resetRate.allowed) {
     return res.status(429).json({ error: `محاولات كثيرة. يرجى الانتظار ${resetRate.retryAfterSec} ثانية ثم المحاولة مجدداً.`, retryAfterSec: resetRate.retryAfterSec });
   }
@@ -26361,7 +26503,8 @@ app.post("/api/db/custodies/resend-email", async (req, res) => {
 // Get all support agents
 app.get("/api/support/agents", (req, res) => {
   const db = readDb();
-  res.json(db.supportAgents || []);
+  // Credential fields (plain text on legacy records, or the bcrypt hash) are never returned.
+  res.json((db.supportAgents || []).map(stripSecretRecordFields));
 });
 
 // Add new support agent (Support Manager)
@@ -26382,8 +26525,11 @@ app.post("/api/support/agents/add", (req, res) => {
     id: "sa-" + Date.now(),
     name: String(name).trim(),
     username: String(username).trim(),
-    // SECURITY: never store plain text and never fall back to a shared default credential.
-    ...(password && String(password).trim() ? { passwordHash: hashPassword(String(password).trim()) } : {}),
+    // SECURITY: never store plain text and never fall back to a shared default credential. The bcrypt hash
+    // is written to both fields so the previous version (which reads `password` only) can verify it.
+    ...(password && String(password).trim()
+      ? (() => { const h = hashPassword(String(password).trim()); return { passwordHash: h, password: h }; })()
+      : {}),
     email: email ? String(email).trim() : "",
     phone: phone ? String(phone).trim() : "",
     role: "support_agent",
@@ -26407,7 +26553,7 @@ app.post("/api/support/agents/add", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ success: true, agent: newAgent, agents: db.supportAgents, db });
+  res.json({ success: true, agent: stripSecretRecordFields(newAgent), agents: db.supportAgents.map(stripSecretRecordFields), db });
 });
 
 // Update agent status or permissions
@@ -26423,7 +26569,7 @@ app.post("/api/support/agents/update-status", (req, res) => {
   if (permissions) agent.permissions = permissions;
 
   writeDb(db);
-  res.json({ success: true, agent, agents: db.supportAgents, db });
+  res.json({ success: true, agent: stripSecretRecordFields(agent), agents: db.supportAgents.map(stripSecretRecordFields), db });
 });
 
 // Get all support tasks (with optional filter by agentId)
@@ -26595,7 +26741,7 @@ const AI_LIMITS = {
   historyItemMaxChars: 2000,
   totalMaxChars: 12000,
   maxOutputTokens: 800,
-  perGuestIp: { max: 10, windowMs: 10 * 60 * 1000 },
+  // Guest limits: NETWORK_LIMITS.aiGuest (per visitor + per-egress ceiling).
   perUser: { max: 30, windowMs: 10 * 60 * 1000 },
   globalPerDay: Number(process.env.AI_CHAT_DAILY_CAP) > 0 ? Number(process.env.AI_CHAT_DAILY_CAP) : 1500
 };
@@ -26615,10 +26761,11 @@ app.post("/api/ai/chat", async (req, res) => {
   if (rawPrompt.length > AI_LIMITS.promptMaxChars) {
     return res.status(413).json({ error: `الرسالة طويلة جداً (الحد ${AI_LIMITS.promptMaxChars} حرف).` });
   }
-  // Rate limits: per signed-in account, or per trusted client IP for guests.
+  // Rate limits: per signed-in account; for guests per visitor plus a per-egress flood ceiling.
+  // The daily budget (consumeAiDailyBudget) remains the cost guarantee whatever the address.
   const aiRate = aiCtx.isAuthenticated
     ? checkRateLimit('registration', `ai-user:${aiCtx.userId}`, AI_LIMITS.perUser.max, AI_LIMITS.perUser.windowMs)
-    : checkRateLimit('registration', `ai-ip:${req.ip}`, AI_LIMITS.perGuestIp.max, AI_LIMITS.perGuestIp.windowMs);
+    : checkClientRateLimit('registration', 'aiGuest', req);
   if (!aiRate.allowed) {
     return res.status(429).json({ error: `تم تجاوز عدد الرسائل المسموح للمساعد الذكي. يرجى المحاولة بعد ${aiRate.retryAfterSec} ثانية.` });
   }
@@ -29956,7 +30103,8 @@ setupPasswordResetLinkRoutes(app, {
   validatePasswordStrength,
   invalidateUserSessions,
   revokeAllTrustedDevicesForUser,
-  checkRateLimit
+  checkRateLimit,
+  checkClientRateLimit
 });
 
 // Setup Electronic Volunteer Charter & Restricted Volunteer Teams Overview routes

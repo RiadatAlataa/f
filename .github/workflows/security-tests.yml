@@ -103,6 +103,51 @@ jobs:
           ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
         run: node --import tsx --test --test-force-exit --test-reporter=spec test/rollback/*.test.ts
 
+  # EVIDENCE ONLY (never blocks): runs the NEW tests against the previous PR head 06d25f2 — the code
+  # before this fix — so the report can show real before/after results. Failures here are expected.
+  evidence-before-fix:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - name: Checkout PR (new tests)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout code before this fix (06d25f2)
+        uses: actions/checkout@v4
+        with:
+          ref: 06d25f2cdd307cf20a2cd0f5d22ec03c04d9e57c
+          path: before
+          persist-credentials: false
+      - name: Checkout base (previous production version)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - name: Install (before, locked)
+        working-directory: before
+        run: bun install --frozen-lockfile
+      - name: Install (base, locked)
+        working-directory: base
+        run: bun install --frozen-lockfile
+      - name: Copy the new tests onto the code before the fix
+        run: |
+          cp test/security/ip-limits.test.ts before/test/security/
+          cp test/rollback/rollback-e2e.test.ts test/rollback/serve-version.ts before/test/rollback/
+      - name: Run new tests against the code before the fix (failures expected)
+        working-directory: before
+        env:
+          NODE_ENV: test
+          ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/security/ip-limits.test.ts test/rollback/rollback-e2e.test.ts || true
+
   # Builds the UNCHANGED base branch with the same toolchain, so a build failure can be
   # attributed correctly (pre-existing on main vs. introduced by this PR).
   baseline-build:

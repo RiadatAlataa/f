@@ -206,12 +206,17 @@ test("AI assistant rejects oversized prompts", async () => {
 });
 
 test("AI assistant rate-limits a guest even when the client forges new left-most IPs", async () => {
-  let limited = false;
-  for (let i = 0; i < 15; i++) {
-    const r = await call("POST", "/api/ai/chat", { prompt: "مرحبا" }, { "x-forwarded-for": `${i}.1.1.1, 192.0.2.77` });
+  // Forged left-most entries select a new per-visitor bucket, but the unforgeable address keeps its
+  // per-egress ceiling (two-tier limits; see ip-limits.test.ts), so the forger is still bounded.
+  const ceiling = core.NETWORK_LIMITS.aiGuest.flood;
+  let limited = false, allowed = 0;
+  for (let i = 0; i < ceiling + 5; i++) {
+    const r = await call("POST", "/api/ai/chat", { prompt: "مرحبا" }, { "x-forwarded-for": `${i & 255}.${i >> 8}.1.1, 192.0.2.77` });
     if (r.status === 429) { limited = true; break; }
+    allowed++;
   }
   assert.ok(limited, "guest rate limit never triggered");
+  assert.ok(allowed <= ceiling);
 });
 
 // ---------------------------------------------------------------------------

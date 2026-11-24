@@ -44,7 +44,8 @@ fs.writeFileSync(dbPath, JSON.stringify({
   beneficiaries: [], employees: [],
   storekeepers: [{ id: "sk-new", name: "أمين", status: "active", passwordHash: bcrypt.hashSync(PW.keeper, 4) }],
   supportManagers: [],
-  supportAgents: [{ id: "sa-new", name: "دعم", username: "agent_new", status: "active", passwordHash: bcrypt.hashSync(PW.agent, 4) }],
+  // the new version writes the SAME bcrypt hash to password + passwordHash for support staff (rollback compatibility)
+  supportAgents: [(() => { const h = bcrypt.hashSync(PW.agent, 4); return { id: "sa-new", name: "دعم", username: "agent_new", status: "active", password: h, passwordHash: h }; })()],
   userDepartmentAccess: [
     { id: "perm-admin", userId: "admin-user", username: "admin", userName: "مدير", userEmail: "owner@example.org", role: "admin",
       primaryDepartmentId: "dep-1", permissions: ["super_admin"], status: "active", mustChangePassword: false,
@@ -107,14 +108,14 @@ test("bcrypt-only passwords written by the new version still work on the previou
   note(`volunteer=OK admin=OK storekeeper(hash-only)=${keeper.json?.status === "success" ? "OK" : "FAILS (" + keeper.status + ")"}`);
 });
 
-test("FINDING: support staff whose plain text was replaced by a hash cannot sign in on the previous version", async () => {
+test("support staff whose password was set by the new version can sign in on the previous version", async () => {
+  // Fixed: the previous handler reads only `password`; the new version now stores the bcrypt hash there too.
   const agent = await call("POST", "/api/db/auth/login", { identifier: "agent_new", password: PW.agent });
-  note(`support agent (hash-only) on previous version: ${agent.json?.status === "success" ? "OK" : "LOCKED OUT (" + agent.status + ")"}`);
-  // Documented effect (not a pass/fail of the new code): the old handler only reads `password`.
-  assert.notEqual(agent.json?.status, "success");
+  note(`support agent (hash in password+passwordHash) on previous version: ${agent.json?.status === "success" ? "OK" : "LOCKED OUT (" + agent.status + ")"}`);
+  assert.equal(agent.json?.status, "success");
   // and it must NOT open the account to an arbitrary password
   const wrong = await call("POST", "/api/db/auth/login", { identifier: "agent_new", password: `wrong-${rnd()}` });
-  assert.notEqual(wrong.json?.status, "success", "previous version accepted ANY password for a hash-only support account");
+  assert.notEqual(wrong.json?.status, "success", "previous version accepted ANY password for a support account");
 });
 
 test("sessions issued by the new version remain valid after rollback (forced-change flag is ignored)", async () => {

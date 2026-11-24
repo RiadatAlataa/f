@@ -80,7 +80,6 @@ test("invalid / non-IP values fall back to the socket address", () => {
   });
 });
 
-// Behaviour the PROPOSED fix must provide (not implemented yet — reported as TODO, not as failures).
-test.todo("proposed: 300 distinct visitors behind ONE shared egress IP can each request recovery / register without hitting a site-wide cap");
-test.todo("proposed: per-account limits still stop an attacker who rotates forged IPs");
-test.todo("proposed: guest AI limits are per visitor, with a high per-egress ceiling and the daily budget as the cost guard");
+// The shared-address risk above is handled by the two-tier limits (trusted address → flood ceiling only;
+// per-visitor key → fairness; per-account budgets → the real defence). Server-level proof, including the
+// three previously-pending cases, is in ip-limits.test.ts.

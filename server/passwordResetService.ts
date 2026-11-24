@@ -15,6 +15,12 @@ export interface PasswordResetDeps {
     maxRequests: number,
     windowMs: number
   ) => { allowed: boolean; retryAfterSec?: number };
+  // Two-tier client limit (per visitor + flood ceiling per trusted address); see server-core.ts.
+  checkClientRateLimit?: (
+    bucket: "forgotPassword",
+    profile: "requestLink",
+    req: any
+  ) => { allowed: boolean; retryAfterSec?: number };
 }
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -331,7 +337,10 @@ export function setupPasswordResetLinkRoutes(app: Express, deps: PasswordResetDe
       .split(",")[0]
       .trim();
 
-    const ipRate = deps.checkRateLimit("forgotPassword", `ip:${clientIp}`, 6, 15 * 60 * 1000);
+    // The per-EMAIL limit below is the account-level defence; this one is per visitor + flood ceiling.
+    const ipRate = deps.checkClientRateLimit
+      ? deps.checkClientRateLimit("forgotPassword", "requestLink", req)
+      : deps.checkRateLimit("forgotPassword", `ip:${clientIp}`, 6, 15 * 60 * 1000);
     if (!ipRate.allowed) {
       return res.status(429).json({
         error: `تم تجاوز الحد المسموح به لطلبات استعادة كلمة المرور. يرجى الانتظار ${ipRate.retryAfterSec} ثانية.`,
