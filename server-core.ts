@@ -261,8 +261,73 @@ app.use((req: any, _res, next) => {
 //   admin         → super admin / operations manager
 //   dept:<ids>    → admin, or staff (not leaders) whose allowed departments include one of <ids>
 // ---------------------------------------------------------------------------
-type RoutePolicy = 'authenticated' | 'staff' | 'admin' | `dept:${string}`;
+type RoutePolicy = 'public' | 'authenticated' | 'staff' | 'admin' | `dept:${string}`;
+// First matching rule wins. Method '*' = any method; a pattern ending in '/*' also matches its base path.
 const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
+  // explicit public exceptions that sit under protected prefixes
+  ['POST', '/api/whatsapp/webhook', 'public'],
+  ['POST', '/api/db/teamApplications/submit', 'public'],
+  ['POST', '/api/db/teamApplications/upload-license', 'public'],
+  ['POST', '/api/db/volunteerApplications/submit', 'public'],
+  // finance (dep-2); donors shared with partnerships (dep-7)
+  ['POST', '/api/db/finance/donors/save', 'dept:dep-2,dep-7'],
+  ['*', '/api/db/finance/*', 'dept:dep-2'],
+  // HR (dep-9)
+  ['*', '/api/db/hr/*', 'dept:dep-9'],
+  // warehouse & inventory (dep-8; storekeepers implied) — managing storekeeper accounts is admin-only
+  ['POST', '/api/db/inventory/storekeepers/add', 'admin'],
+  ['POST', '/api/db/inventory/storekeepers/delete', 'admin'],
+  ['*', '/api/db/inventory/*', 'dept:dep-8'],
+  // messaging / integrations configuration (secrets, logs) — admin only
+  ['*', '/api/whatsapp/*', 'admin'],
+  ['*', '/api/db/email-settings/*', 'admin'],
+  ['*', '/api/db/email-logs/*', 'admin'],
+  ['*', '/api/db/resend/*', 'admin'],
+  ['*', '/api/db/dns/*', 'admin'],
+  ['POST', '/api/db/email/test', 'admin'],
+  ['GET', '/api/notifications/logs', 'admin'],
+  ['POST', '/api/notifications/send-centralized', 'staff'],
+  // internal messaging, support, letters, custody, staff requests
+  ['*', '/api/chat/*', 'authenticated'],
+  ['GET', '/api/support/tickets', 'authenticated'],
+  ['POST', '/api/support/tickets/create', 'authenticated'],
+  ['POST', '/api/support/tickets/reply', 'authenticated'],
+  ['POST', '/api/support/tickets/status', 'staff'],
+  ['POST', '/api/support/team-tickets/create', 'authenticated'],
+  ['POST', '/api/support/team-tickets/reply', 'authenticated'],
+  ['POST', '/api/support/team-tickets/assign', 'staff'],
+  ['POST', '/api/support/team-tickets/status', 'staff'],
+  ['*', '/api/support/agents/*', 'staff'],
+  ['*', '/api/support/tasks/*', 'staff'],
+  ['*', '/api/db/letters/*', 'staff'],
+  ['*', '/api/db/custodies/*', 'staff'],
+  ['*', '/api/db/employee-requests/*', 'staff'],
+  ['GET', '/api/db/staff-members', 'staff'],
+  ['*', '/api/db/team-staff/*', 'dept:dep-5'],
+  // volunteer / team applications review (dep-5); leaders act on their own team's queue
+  ['GET', '/api/db/teamApplications', 'dept:dep-5'],
+  ['*', '/api/db/teamApplications/*', 'dept:dep-5'],
+  ['POST', '/api/db/volunteerApplications/leader-action', 'staff'],
+  ['*', '/api/db/volunteerApplications/*', 'dept:dep-5'],
+  // cards & templates
+  ['GET', '/api/db/card-templates', 'authenticated'],
+  ['GET', '/api/db/team-card-template/:teamId', 'authenticated'],
+  ['POST', '/api/db/team-card-template/save', 'staff'],
+  ['POST', '/api/db/team-cards/bulk-issue', 'staff'],
+  ['POST', '/api/db/card-templates/add', 'dept:dep-5'],
+  ['POST', '/api/db/card-templates/delete', 'dept:dep-5'],
+  ['POST', '/api/db/card-templates/upload-image', 'dept:dep-5'],
+  ['POST', '/api/db/systemSettings/femaleUnifiedPhoto', 'dept:dep-5'],
+  ['*', '/api/db/cards/*', 'staff'],
+  // beneficiary self-service vs. case management
+  ['POST', '/api/db/benefitRequests/add', 'authenticated'],
+  ['POST', '/api/db/benefitRequests/status', 'dept:dep-4,dep-8'],
+  ['POST', '/api/db/aid/confirm-receipt', 'authenticated'],
+  ['POST', '/api/db/beneficiaryRatings/add', 'authenticated'],
+  // website content
+  ['POST', '/api/db/partners/batch-update', 'dept:dep-6'],
+  ['POST', '/api/db/social-links/update', 'dept:dep-6'],
+  ['POST', '/api/db/license/update', 'admin'],
   // admin / system
   ['GET', '/api/logs/developer-error', 'admin'],
   ['GET', '/api/admin/freeze/status', 'admin'],
@@ -338,12 +403,18 @@ const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
   ['POST', '/api/db/distributions/create', 'dept:dep-4,dep-8'],
   ['POST', '/api/db/distributions/handover/cancel', 'dept:dep-4,dep-8']
 ];
-const COMPILED_ROUTE_POLICIES = ROUTE_POLICIES.map(([method, pattern, policy]) => ({
-  method,
-  rx: new RegExp('^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\?:[A-Za-z_]+/g, '[^/]+') + '/?$'),
-  policy
-}));
+const COMPILED_ROUTE_POLICIES = ROUTE_POLICIES.map(([method, pattern, policy]) => {
+  const isPrefix = pattern.endsWith('/*');
+  const base = isPrefix ? pattern.slice(0, -2) : pattern;
+  const body = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z_]+/g, '[^/]+');
+  return { method, rx: new RegExp('^' + body + (isPrefix ? '(/.*)?$' : '/?$')), policy };
+});
+// Exposed read-only for the route-matrix test (pattern → policy; no data).
+export const __routePolicyTable = COMPILED_ROUTE_POLICIES;
+// Roles that imply a department scope without an explicit userDepartmentAccess grant.
+const ROLE_IMPLIED_DEPARTMENTS: Record<string, string[]> = { storekeeper: ['dep-8'] };
 export function evaluateRoutePolicy(policy: RoutePolicy, ctx: any): { status: number; error: string } | null {
+  if (policy === 'public') return null;
   if (!ctx || !ctx.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
   const role = String(ctx.role || '');
   const isAdmin = Boolean(ctx.isSuperAdmin || ctx.isOperationsManager || role === 'admin' || role === 'operations_manager');
@@ -353,7 +424,10 @@ export function evaluateRoutePolicy(policy: RoutePolicy, ctx: any): { status: nu
   if (policy === 'staff') return isEndUser ? { status: 403, error: "غير مصرح: هذه العملية مخصصة لكوادر الجمعية." } : null;
   if (policy === 'admin') return { status: 403, error: "غير مصرح: هذه العملية مخصصة للإدارة العليا." };
   const depts = policy.slice('dept:'.length).split(',');
-  const allowed: string[] = Array.isArray(ctx.allowedDepartmentIds) ? ctx.allowedDepartmentIds : [];
+  const allowed: string[] = [
+    ...(Array.isArray(ctx.allowedDepartmentIds) ? ctx.allowedDepartmentIds : []),
+    ...(ROLE_IMPLIED_DEPARTMENTS[role] || [])
+  ];
   if (isEndUser || role === 'leader' || !depts.some((d) => allowed.includes(d))) {
     return { status: 403, error: "غير مصرح: هذه العملية خارج نطاق صلاحيات إدارتك." };
   }
@@ -362,8 +436,8 @@ export function evaluateRoutePolicy(policy: RoutePolicy, ctx: any): { status: nu
 app.use((req: any, res: any, next) => {
   const p = String(req.path || '');
   if (!p.startsWith('/api')) return next();
-  const rule = COMPILED_ROUTE_POLICIES.find((r) => r.method === req.method && r.rx.test(p));
-  if (!rule) return next();
+  const rule = COMPILED_ROUTE_POLICIES.find((r) => (r.method === '*' || r.method === req.method) && r.rx.test(p));
+  if (!rule || rule.policy === 'public') return next();
   const denied = evaluateRoutePolicy(rule.policy, getUserAccessContext(req));
   if (denied) return res.status(denied.status).json({ error: denied.error, code: denied.status === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN' });
   next();

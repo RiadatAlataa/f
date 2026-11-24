@@ -59,7 +59,15 @@ const PUBLIC_ROUTES = new Set<string>([
   "POST /api/db/auth/validate-password-strength",
   "POST /api/db/volunteerApplications/submit", "POST /api/db/teamApplications/submit",
   "POST /api/db/teamApplications/upload-license", "POST /api/db/beneficiaries/add",
-  "POST /api/db/store/donate", "GET /api/db/systemSettings", "POST /api/logs/developer-error"
+  "POST /api/db/store/donate", "GET /api/db/systemSettings", "POST /api/logs/developer-error",
+  // password-recovery link flow (server/passwordResetService.ts) — public by design, token-gated
+  "GET /api/db/auth/recovery-config", "POST /api/db/auth/forgot-password/request-link",
+  "POST /api/db/auth/reset-password/validate", "GET /api/db/auth/reset-password/validate",
+  "POST /api/db/auth/reset-password/confirm",
+  // inbound provider webhook
+  "POST /api/whatsapp/webhook",
+  // public website assistant (reviewed: residual cost-abuse risk, see report)
+  "POST /api/ai/chat"
 ]);
 
 let server: http.Server;
@@ -162,6 +170,17 @@ test("route access matrix: no non-public route is reachable anonymously or witho
   }
   console.log(`MATRIX-SUMMARY\troutes=${rows.length}\topenAnon=${open.length}\tnoAccessCheck=${unchecked.length}`);
 
+  // Routes the central policy marks staff / admin / department-only must refuse a volunteer.
+  const table: any[] = core.__routePolicyTable || [];
+  const staffOnlyServedToVolunteer = rows.filter((x) => {
+    const [method, p] = x.key.split(" ");
+    const concrete = concretePath(p);
+    const rule = table.find((r: any) => (r.method === "*" || r.method === method) && r.rx.test(concrete));
+    return rule && rule.policy !== "public" && rule.policy !== "authenticated" &&
+      typeof x.volStatus === "number" && x.volStatus >= 200 && x.volStatus < 300;
+  });
+
   assert.deepEqual(open.map((x) => x.key), [], "non-public routes answered 2xx to an anonymous caller");
   assert.deepEqual(unchecked.map((x) => x.key), [], "non-public routes never consulted access control");
+  assert.deepEqual(staffOnlyServedToVolunteer.map((x) => x.key), [], "staff/admin/department routes served a volunteer");
 });

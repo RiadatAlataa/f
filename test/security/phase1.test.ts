@@ -37,6 +37,7 @@ const PW = {
   employee: strongPassword()
 };
 const LEGACY_PLAIN_RESET_CODE = `RST-${rnd(10).toUpperCase()}`;
+const LEGACY_PLAIN_PASSWORD = strongPassword();
 const NOTIFICATION_SECRET_CODE = `RST-${rnd(10).toUpperCase()}`;
 
 const syntheticDb = {
@@ -59,7 +60,13 @@ const syntheticDb = {
       passwordHash: bcrypt.hashSync(strongPassword(), 4), mustChangePassword: false,
       // Legacy plain-text reset code (as stored before the fix)
       passwordResetToken: LEGACY_PLAIN_RESET_CODE, passwordResetExpiresAt: Date.now() + 3600_000 },
-    { id: "vol-nopwd", name: "متطوع بلا كلمة مرور", nationalId: "1900000003", teamId: "team-a", status: "active", mustChangePassword: false }
+    { id: "vol-nopwd", name: "متطوع بلا كلمة مرور", nationalId: "1900000003", teamId: "team-a", status: "active", mustChangePassword: false },
+    // Account still on the published shared default (stored as bcrypt hash)
+    { id: "vol-default", name: "متطوع افتراضي", nationalId: "1900000004", teamId: "team-a", status: "active",
+      passwordHash: bcrypt.hashSync("A123b456", 4), mustChangePassword: true },
+    // Legacy plain-text credential (user-chosen, not a published default)
+    { id: "vol-legacy", name: "متطوع قديم", nationalId: "1900000005", teamId: "team-a", status: "active",
+      password: LEGACY_PLAIN_PASSWORD, mustChangePassword: false }
   ],
   beneficiaries: [
     { id: "ben-a", name: "مستفيد أ", nationalId: "1800000001", status: "approved", passwordHash: bcrypt.hashSync(strongPassword(), 4) },
@@ -399,4 +406,120 @@ test("logout invalidates the session server-side", async () => {
   await call("POST", "/api/db/auth/logout", { token: t });
   const afterLogout = await call("GET", "/api/db", { token: t });
   assert.equal(afterLogout.json.currentUserContext?.isAuthenticated, false);
+});
+
+// ---------------------------------------------------------------------------
+// Completion of phase 1: authentication flows and password policy
+// ---------------------------------------------------------------------------
+test("change-password is no longer callable anonymously (was: set ANY account's password)", async () => {
+  const r = await call("POST", "/api/db/auth/change-password", { body: { userId: "admin-user", newPassword: strongPassword() } });
+  assert.equal(r.status, 401);
+  // and the admin's password is unchanged
+  const admin = core.readDb().userDepartmentAccess.find((u: any) => u.userId === "admin-user");
+  assert.ok(core.verifyPasswordAgainstHash(PW.admin, admin.passwordHash));
+});
+
+test("change-password cannot target another account or bypass the current password", async () => {
+  const r1 = await call("POST", "/api/db/auth/change-password", { token: tokens.volA, body: { userId: "admin-user", newPassword: strongPassword() } });
+  assert.equal(r1.status, 403);
+  const r2 = await call("POST", "/api/db/auth/change-password", { token: tokens.volA, body: { newPassword: strongPassword() } });
+  assert.equal(r2.status, 403, "a normal session must use self-change-password with the current password");
+});
+
+test("Google simulated test tokens are refused without an explicit dev opt-in", async () => {
+  const fake = "dev_test_token:" + Buffer.from(JSON.stringify({ email: "someone@example.org" })).toString("base64");
+  const r = await call("POST", "/api/db/auth/google", { body: { credential: fake } });
+  assert.equal(r.status, 401);
+  assert.ok(!r.json?.sessionToken);
+});
+
+test("an account still on the published shared default gets no session and must reset", async () => {
+  const r = await call("POST", "/api/db/auth/login", { body: { identifier: "1900000004", password: "A123b456" } });
+  assert.equal(r.status, 403);
+  assert.equal(r.json?.code, "PASSWORD_RESET_REQUIRED");
+  assert.ok(!r.json?.sessionToken);
+});
+
+test("an account without any stored password is sent to verified setup", async () => {
+  const r = await call("POST", "/api/db/auth/login", { body: { identifier: "1900000003", password: strongPassword() } });
+  assert.equal(r.status, 403);
+  assert.equal(r.json?.code, "PASSWORD_SETUP_REQUIRED");
+});
+
+test("a legacy plain-text password works once and forces an immediate change", async () => {
+  const login = await call("POST", "/api/db/auth/login", { body: { identifier: "1900000005", password: LEGACY_PLAIN_PASSWORD } });
+  assert.equal(login.json?.status, "success");
+  assert.equal(login.json?.mustChangePassword, true);
+  const t = login.json.sessionToken;
+
+  const blocked = await call("POST", "/api/db/notifications/mark-read", { token: t, body: { notificationId: "x" } });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.json?.code, "MUST_CHANGE_PASSWORD");
+
+  const newPassword = strongPassword();
+  const changed = await call("POST", "/api/db/auth/change-password", { token: t, body: { newPassword } });
+  assert.equal(changed.status, 200);
+  const rec = core.readDb().volunteers.find((v: any) => v.id === "vol-legacy");
+  assert.equal(rec.password, undefined, "plain text kept after the change");
+  assert.ok(core.verifyPasswordAgainstHash(newPassword, rec.passwordHash));
+
+  const after = await call("POST", "/api/db/notifications/mark-read", { token: t, body: { notificationId: "x" } });
+  assert.notEqual(after.json?.code, "MUST_CHANGE_PASSWORD");
+});
+
+test("published defaults are rejected as new passwords", () => {
+  for (const p of ["A123b456", "mosa11", "123"]) {
+    assert.equal(core.validatePasswordStrength(p).isValid, false, `${p.length}-char default accepted`);
+  }
+});
+
+test("staff-created volunteers get a unique temporary password, never the shared default", async () => {
+  const mk = async (nid: string) => call("POST", "/api/db/volunteers/add", {
+    token: tokens.admin, body: { name: "متطوع " + nid, nationalId: nid, teamId: "team-a" }
+  });
+  const a = await mk("1900000201");
+  const b = await mk("1900000202");
+  assert.equal(a.status, 200);
+  assert.ok(typeof a.json.temporaryPassword === "string" && a.json.temporaryPassword.length >= 12);
+  assert.notEqual(a.json.temporaryPassword, b.json.temporaryPassword);
+  const rec = core.readDb().volunteers.find((v: any) => v.nationalId === "1900000201");
+  assert.equal(core.verifyPasswordAgainstHash("A123b456", rec.passwordHash), false);
+  assert.equal(rec.mustChangePassword, true);
+});
+
+test("a volunteer record cannot be given a password hash or role through the edit payload", async () => {
+  const r = await call("POST", "/api/db/volunteers/add", {
+    token: tokens.admin,
+    body: { id: "vol-a", name: "متطوع أ", passwordHash: "$2b$04$attackerattackerattackerattackerattackerattackerat", role: "admin" }
+  });
+  assert.equal(r.status, 200);
+  const rec = core.readDb().volunteers.find((v: any) => v.id === "vol-a");
+  assert.notEqual(rec.role, "admin");
+  assert.ok(!String(rec.passwordHash).includes("attacker"));
+});
+
+test("legacy unauthenticated volunteer endpoints now refuse anonymous callers", async () => {
+  const create = await call("POST", "/api/volunteers", { body: { name: "x", role: "admin" } });
+  assert.equal(create.status, 401);
+  const overwrite = await call("POST", "/api/volunteers", { body: { id: "vol-a", passwordHash: "x" } });
+  assert.equal(overwrite.status, 401);
+  const card = await call("POST", "/api/db/reissue-card", { body: { volunteerId: "vol-a" } });
+  assert.equal(card.status, 401);
+  const card2 = await call("POST", "/api/volunteers/vol-a/reissue-card", { body: {} });
+  assert.equal(card2.status, 401);
+});
+
+test("a volunteer cannot reissue another volunteer's card", async () => {
+  const r = await call("POST", "/api/db/reissue-card", { token: tokens.volA, body: { volunteerId: "vol-b" } });
+  assert.equal(r.status, 403);
+});
+
+test("finance, HR, inventory and messaging settings refuse anonymous callers and volunteers", async () => {
+  for (const [m, p] of [["GET", "/api/db/finance/all"], ["POST", "/api/db/finance/payroll/save"], ["POST", "/api/db/hr/employees/save"],
+    ["GET", "/api/db/inventory"], ["GET", "/api/db/email-settings"], ["GET", "/api/whatsapp/settings"], ["GET", "/api/db/letters"]]) {
+    const anon = await call(m, p, { body: m === "GET" ? undefined : {} });
+    assert.equal(anon.status, 401, `${m} ${p} anonymous`);
+    const vol = await call(m, p, { token: tokens.volA, body: m === "GET" ? undefined : {} });
+    assert.equal(vol.status, 403, `${m} ${p} volunteer`);
+  }
 });
