@@ -19215,8 +19215,11 @@ app.post("/api/db/notifications/add", (req, res) => {
 
 // Mark Notification(s) as Read
 app.post("/api/db/notifications/mark-read", (req, res) => {
+  const notifCtx = getUserAccessContext(req);
+  if (!notifCtx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { notificationId, userId, markAll } = req.body;
+  const { notificationId, markAll } = req.body || {};
+  const userId = notifCtx.userId; // identity from the session only
   db.notifications = db.notifications || [];
   const nowStr = new Date().toISOString();
 
@@ -19248,8 +19251,12 @@ app.post("/api/db/notifications/mark-read", (req, res) => {
 
 // Delete Notification(s)
 app.post("/api/db/notifications/delete", (req, res) => {
+  const delCtx = getUserAccessContext(req);
+  if (!delCtx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { notificationId, userId, clearAll } = req.body;
+  const { notificationId, clearAll } = req.body || {};
+  const userId = delCtx.userId; // identity from the session only
+  const isStaffDeleter = isPrivilegedViewer(delCtx) || !['volunteer', 'beneficiary', 'leader'].includes(String(delCtx.role));
   db.notifications = db.notifications || [];
 
   if (clearAll && userId) {
@@ -19258,6 +19265,11 @@ app.post("/api/db/notifications/delete", (req, res) => {
       return true;
     });
   } else if (notificationId) {
+    const target = db.notifications.find((n: any) => n.id === notificationId);
+    // End users may only delete their own notifications (not broadcasts or other people's).
+    if (target && !isStaffDeleter && target.userId !== userId) {
+      return res.status(403).json({ error: "غير مصرح: يمكنك حذف إشعاراتك فقط." });
+    }
     db.notifications = db.notifications.filter((n: any) => n.id !== notificationId);
   }
 
@@ -24636,20 +24648,33 @@ app.post("/api/db/teamApplications/delete", (req, res) => {
 // -------------------------------------------------------------
 
 // Get Chat Conversations
+// SECURITY: chat is bound to the session identity — a user only sees / writes conversations they take part in.
+function isChatParticipant(ctx: any, conv: any): boolean {
+  return Boolean(conv && Array.isArray(conv.participantIds) && conv.participantIds.includes(ctx.userId));
+}
+function isPrivilegedViewer(ctx: any): boolean {
+  return Boolean(ctx && (ctx.isSuperAdmin || ctx.isOperationsManager || ctx.role === 'admin' || ctx.role === 'operations_manager'));
+}
+
 app.get("/api/chat/conversations", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const userId = req.query.userId as string;
-  let convs = db.chatConversations || [];
-  if (userId) {
-    convs = convs.filter((c: any) => c.participantIds && c.participantIds.includes(userId));
-  }
+  const convs = (db.chatConversations || []).filter((c: any) => isChatParticipant(ctx, c));
   res.json(convs);
 });
 
 // Create New Conversation (Direct or Group)
 app.post("/api/chat/conversations", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { type, name, participantIds, participantNames, teamId, avatar } = req.body;
+  const { type, name, participantNames, teamId, avatar } = req.body || {};
+  // The creator is always a participant (identity from the session).
+  const participantIds: string[] = Array.from(new Set([
+    ctx.userId,
+    ...(Array.isArray(req.body?.participantIds) ? req.body.participantIds.map(String) : [])
+  ]));
 
   db.chatConversations = db.chatConversations || [];
   
@@ -24696,20 +24721,31 @@ app.post("/api/chat/conversations", (req, res) => {
 
 // Get Messages for a Conversation
 app.get("/api/chat/messages/:conversationId", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
   const { conversationId } = req.params;
+  const conv = (db.chatConversations || []).find((c: any) => c.id === conversationId);
+  if (!isChatParticipant(ctx, conv)) return res.status(403).json({ error: "غير مصرح: لست مشاركاً في هذه المحادثة." });
   const messages = (db.chatMessages || []).filter((m: any) => m.conversationId === conversationId);
   res.json(messages);
 });
 
 // Send a Chat Message
 app.post("/api/chat/messages", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { conversationId, senderId, senderName, senderAvatar, senderRole, type, content, fileName, fileSize } = req.body;
+  const { conversationId, senderAvatar, senderRole, type, content, fileName, fileSize } = req.body || {};
+  // Sender identity comes from the session, never from the body.
+  const senderId = ctx.userId;
+  const senderName = ctx.userName;
 
   if (!conversationId || !senderId || !content) {
     return res.status(400).json({ error: "بيانات الرسالة غير اكتمال" });
   }
+  const targetConv = (db.chatConversations || []).find((c: any) => c.id === conversationId);
+  if (!isChatParticipant(ctx, targetConv)) return res.status(403).json({ error: "غير مصرح: لست مشاركاً في هذه المحادثة." });
 
   db.chatMessages = db.chatMessages || [];
   db.chatConversations = db.chatConversations || [];
@@ -24758,8 +24794,13 @@ app.post("/api/chat/messages", (req, res) => {
 
 // Mark Conversation as Read for User
 app.post("/api/chat/mark-read", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  const { conversationId, userId } = req.body;
+  const { conversationId } = req.body || {};
+  const userId = ctx.userId;
+  const markConv = (db.chatConversations || []).find((c: any) => c.id === conversationId);
+  if (!isChatParticipant(ctx, markConv)) return res.status(403).json({ error: "غير مصرح: لست مشاركاً في هذه المحادثة." });
 
   if (db.chatConversations) {
     const conv = db.chatConversations.find((c: any) => c.id === conversationId);
@@ -24786,8 +24827,13 @@ app.post("/api/chat/mark-read", (req, res) => {
 
 // Get All Support Tickets
 app.get("/api/support/tickets", (req, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول." });
   const db = readDb();
-  res.json(db.supportTickets || []);
+  const all = db.supportTickets || [];
+  const isSupportStaff = isPrivilegedViewer(ctx) || ['support', 'support_manager', 'support_agent'].includes(String(ctx.role));
+  // End users only see their own tickets; support staff and admins see the queue.
+  res.json(isSupportStaff ? all : all.filter((t: any) => t && (t.requesterId === ctx.userId || t.volunteerId === ctx.userId)));
 });
 
 // Create Support Ticket

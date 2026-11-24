@@ -97,6 +97,8 @@ const syntheticDb = {
     { id: "t-a", category: "team_volunteer", volunteerId: "vol-a", requesterId: "vol-a", teamId: "team-a", ticketNumber: "TA" },
     { id: "t-b", category: "team_volunteer", volunteerId: "vol-b", requesterId: "vol-b", teamId: "team-b", ticketNumber: "TB" }
   ],
+  chatConversations: [{ id: "conv-b", type: "direct", participantIds: ["vol-b", "admin-user"], name: "خاصة" }],
+  chatMessages: [{ id: "msg-b", conversationId: "conv-b", senderId: "vol-b", content: "رسالة خاصة" }],
   initiatives: [], requests: [], logs: [], accessAuditLogs: [], activeSessions: []
 };
 fs.writeFileSync(dbPath, JSON.stringify(syntheticDb), "utf8");
@@ -411,6 +413,10 @@ test("logout invalidates the session server-side", async () => {
 // ---------------------------------------------------------------------------
 // Completion of phase 1: authentication flows and password policy
 // ---------------------------------------------------------------------------
+// vol-a's earlier sessions are revoked by the password-reset test (by design) → fresh session for later tests.
+const freshVolASession = () =>
+  core.createServerSession({ id: "vol-a", name: "متطوع أ", nationalId: "1900000001", role: "volunteer", teamId: "team-a" }, "volunteer").token;
+
 test("change-password is no longer callable anonymously (was: set ANY account's password)", async () => {
   const r = await call("POST", "/api/db/auth/change-password", { body: { userId: "admin-user", newPassword: strongPassword() } });
   assert.equal(r.status, 401);
@@ -420,9 +426,9 @@ test("change-password is no longer callable anonymously (was: set ANY account's 
 });
 
 test("change-password cannot target another account or bypass the current password", async () => {
-  const r1 = await call("POST", "/api/db/auth/change-password", { token: tokens.volA, body: { userId: "admin-user", newPassword: strongPassword() } });
+  const r1 = await call("POST", "/api/db/auth/change-password", { token: freshVolASession(), body: { userId: "admin-user", newPassword: strongPassword() } });
   assert.equal(r1.status, 403);
-  const r2 = await call("POST", "/api/db/auth/change-password", { token: tokens.volA, body: { newPassword: strongPassword() } });
+  const r2 = await call("POST", "/api/db/auth/change-password", { token: freshVolASession(), body: { newPassword: strongPassword() } });
   assert.equal(r2.status, 403, "a normal session must use self-change-password with the current password");
 });
 
@@ -510,16 +516,40 @@ test("legacy unauthenticated volunteer endpoints now refuse anonymous callers", 
 });
 
 test("a volunteer cannot reissue another volunteer's card", async () => {
-  const r = await call("POST", "/api/db/reissue-card", { token: tokens.volA, body: { volunteerId: "vol-b" } });
+  const r = await call("POST", "/api/db/reissue-card", { token: freshVolASession(), body: { volunteerId: "vol-b" } });
   assert.equal(r.status, 403);
 });
 
 test("finance, HR, inventory and messaging settings refuse anonymous callers and volunteers", async () => {
   for (const [m, p] of [["GET", "/api/db/finance/all"], ["POST", "/api/db/finance/payroll/save"], ["POST", "/api/db/hr/employees/save"],
     ["GET", "/api/db/inventory"], ["GET", "/api/db/email-settings"], ["GET", "/api/whatsapp/settings"], ["GET", "/api/db/letters"]]) {
+    const volT = freshVolASession();
     const anon = await call(m, p, { body: m === "GET" ? undefined : {} });
     assert.equal(anon.status, 401, `${m} ${p} anonymous`);
-    const vol = await call(m, p, { token: tokens.volA, body: m === "GET" ? undefined : {} });
+    const vol = await call(m, p, { token: volT, body: m === "GET" ? undefined : {} });
     assert.equal(vol.status, 403, `${m} ${p} volunteer`);
   }
+});
+
+test("chat: a user cannot list, read or post into other people's conversations", async () => {
+  const t = freshVolASession();
+  const list = await call("GET", "/api/chat/conversations?userId=vol-b", { token: t });
+  assert.equal(list.status, 200);
+  assert.ok(!list.json.some((c: any) => c.id === "conv-b"));
+  const read = await call("GET", "/api/chat/messages/conv-b", { token: t });
+  assert.equal(read.status, 403);
+  const post = await call("POST", "/api/chat/messages", { token: t, body: { conversationId: "conv-b", senderId: "vol-b", content: "x" } });
+  assert.equal(post.status, 403);
+});
+
+test("support tickets: end users only see their own tickets", async () => {
+  const r = await call("GET", "/api/support/tickets", { token: freshVolASession() });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json.map((x: any) => x.id), ["t-a"]);
+});
+
+test("notifications: a volunteer cannot delete someone else's notification", async () => {
+  const r = await call("POST", "/api/db/notifications/delete", { token: freshVolASession(), body: { notificationId: "not-secret", userId: "vol-b" } });
+  assert.equal(r.status, 403);
+  assert.ok(core.readDb().notifications.some((n: any) => n.id === "not-secret"));
 });
