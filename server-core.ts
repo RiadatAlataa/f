@@ -6981,11 +6981,13 @@ function filterDatabaseForUserCore(db: any, context: any) {
 
     // Beneficiaries & aid distributions: available to dep-4 (Beneficiary Care), dep-8 / storekeeper (Warehouse & Aid Handover), dep-1 (Executive Management), operations_manager, admin, and authenticated beneficiaries
     // STRICT IDOR PREVENTION: Beneficiaries only receive THEIR OWN record!
-    beneficiaries: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
-      ? stripArrSecrets(db.beneficiaries || [])
-      : (context.role === 'beneficiary'
-        ? stripArrSecrets((db.beneficiaries || []).filter((b: any) => b.id === context.userId || (context.nationalId && b.nationalId === context.nationalId)))
-        : []),
+    // SECURITY FIX: the beneficiary context itself carries allowedDepartmentIds ['dep-4'], so the
+    // beneficiary role MUST be checked first — otherwise every beneficiary received all records.
+    beneficiaries: (context.role === 'beneficiary')
+      ? stripArrSecrets((db.beneficiaries || []).filter((b: any) => b.id === context.userId || (context.nationalId && b.nationalId === context.nationalId)))
+      : (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
+        ? stripArrSecrets(db.beneficiaries || [])
+        : [],
     benefitRequests: (allowedDepts.includes('dep-4') || allowedDepts.includes('dep-8') || allowedDepts.includes('dep-1') || context.role === 'storekeeper' || context.role === 'operations_manager' || context.role === 'admin' || context.isSuperAdmin || context.isOperationsManager)
       ? (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : (db.benefitRequests || []))
       : (context.role === 'beneficiary' ? (db.benefitRequests || []).filter((r: any) => r.beneficiaryId === context.userId) : []),
