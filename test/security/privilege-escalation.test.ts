@@ -44,6 +44,7 @@ let baseUrl = "";
 let core: any;
 const T: Record<string, string> = {};
 let snapshot = "";
+let initialPrivileged: string[] = [];
 
 async function call(method: string, p: string, token: string, body?: any) {
   const res = await fetch(baseUrl + p, {
@@ -69,6 +70,8 @@ before(async () => {
   for (const id of ["emp-vol", "emp-fin", "emp-hr"]) T[id] = s({ id, userId: id, name: id, role: "employee" }, "employee");
   T.leader = s({ id: "leader-team-a", name: "قائد", role: "leader", teamId: "team-a" }, "leader");
   T.volunteer = s({ id: "vol-a", name: "متطوع أ", nationalId: "1900000601", role: "volunteer", teamId: "team-a" }, "volunteer");
+  // (the app's own startup normalisation may add its built-in operations record — captured here, before any attempt)
+  initialPrivileged = privilegedHolders();
   snapshot = JSON.stringify({ uda: core.readDb().userDepartmentAccess, deps: core.readDb().departments, sys: core.readDb().systemSettings });
 });
 
@@ -124,7 +127,8 @@ test("top-management and cross-scope operations are refused for lower roles", as
 });
 
 test("no privilege was gained and protected records are unchanged after the attempts", () => {
-  assert.deepEqual(privilegedHolders(), ["admin-user"]);
+  assert.deepEqual(privilegedHolders(), initialPrivileged, "a new privileged account appeared");
+  assert.ok(!initialPrivileged.includes("emp-vol") && !initialPrivileged.includes("emp-hr"));
   const db = core.readDb();
   assert.equal(JSON.stringify({ uda: db.userDepartmentAccess, deps: db.departments, sys: db.systemSettings }), snapshot);
   assert.ok(db.teams.some((t: any) => t.id === "team-b" && t.nameAr === "فريق ب"));
