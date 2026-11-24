@@ -1,0 +1,55 @@
+name: Security tests
+
+# Runs the build and the security regression suite on every pull request.
+# - Uses the committed package-lock.json (npm ci) — no floating versions.
+# - Uses ONLY synthetic data generated inside the test; no secrets or production data are needed or read.
+# - Does not deploy anything.
+on:
+  pull_request:
+  push:
+    branches:
+      - "security/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      NODE_ENV: test
+      # Make sure no storage backend or cloud credentials can be picked up by the tests.
+      DATABASE_URL: ""
+      STORAGE_BACKEND: ""
+      REQUIRE_PERMANENT_STORAGE: ""
+      REQUIRE_R2_STORAGE: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (locked)
+        run: npm ci --no-audit --no-fund
+
+      - name: Security tests (phase 1)
+        run: npm run test:security
+
+      - name: Production build
+        run: npm run build
+
+      - name: Type check (informational — reports pre-existing errors)
+        continue-on-error: true
+        run: npx tsc --noEmit

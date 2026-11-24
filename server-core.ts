@@ -206,6 +206,89 @@ app.use((req: any, _res, next) => {
   next();
 });
 
+// ---------------------------------------------------------------------------
+// SECURITY: Client identity headers are NEVER trusted.
+// Browsers send x-user-id / x-user-role / x-department-id / x-national-id / x-team-id / x-user-name,
+// and some legacy handlers read them. This middleware discards every client-supplied value and
+// re-derives them from the verified server session (or removes them when there is no session),
+// so no handler can be tricked into granting a role by editing a request header.
+// ---------------------------------------------------------------------------
+const CLIENT_IDENTITY_HEADERS = ['x-user-id', 'x-user-role', 'x-user-name', 'x-department-id', 'x-national-id', 'x-team-id'];
+const toHeaderSafe = (val: any): string => {
+  const s = String(val ?? '').trim();
+  return /^[\x20-\x7E]*$/.test(s) ? s : encodeURIComponent(s);
+};
+export function resolveSessionTokenFromRequest(req: any): string | null {
+  const auth = req.headers?.authorization;
+  return (req.headers?.['x-session-token'] as string) ||
+    (typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.substring(7) : null) ||
+    req.cookies?.['reyadat_session'] ||
+    null;
+}
+app.use((req: any, _res, next) => {
+  if (!String(req.path || '').startsWith('/api')) return next();
+  for (const h of CLIENT_IDENTITY_HEADERS) delete req.headers[h];
+  // Legacy handlers also read ?userRole= / body.userRole — neutralise those too.
+  if (req.query && typeof req.query === 'object' && 'userRole' in req.query) delete req.query.userRole;
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body) && 'userRole' in req.body) delete req.body.userRole;
+
+  if (resolveSessionTokenFromRequest(req)) {
+    try {
+      const ctx = getUserAccessContext(req);
+      if (ctx && ctx.isAuthenticated) {
+        req.headers['x-user-id'] = toHeaderSafe(ctx.userId);
+        req.headers['x-user-role'] = toHeaderSafe(ctx.role);
+        if (ctx.userName) req.headers['x-user-name'] = toHeaderSafe(ctx.userName);
+        if (ctx.primaryDepartmentId) req.headers['x-department-id'] = toHeaderSafe(ctx.primaryDepartmentId);
+        if (ctx.nationalId) req.headers['x-national-id'] = toHeaderSafe(ctx.nationalId);
+        if (ctx.teamId) req.headers['x-team-id'] = toHeaderSafe(ctx.teamId);
+      }
+    } catch {
+      // On any resolution error the request simply proceeds without identity headers (least privilege).
+    }
+  }
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// SECURITY: No API response may ever contain the raw database.
+// ~120 legacy handlers end with res.json(db) or res.json({ ..., db }). This guard replaces any raw
+// database object in a JSON response with the same role-filtered, secret-free view that GET /api/db
+// returns for the caller, so existing front-end code keeps working while nothing leaks.
+// Encrypted backup/export endpoints (already restricted to super admins) are exempt by design.
+// ---------------------------------------------------------------------------
+const RAW_DB_RESPONSE_EXEMPT_PREFIXES = ['/api/db/backup', '/api/admin/backup'];
+export function looksLikeRawDatabase(obj: any): boolean {
+  return Boolean(
+    obj && typeof obj === 'object' && !Array.isArray(obj) &&
+    !('currentUserContext' in obj) &&
+    Array.isArray(obj.volunteers) &&
+    (Array.isArray(obj.departments) || Array.isArray(obj.beneficiaries) || 'systemSettings' in obj || Array.isArray(obj.userDepartmentAccess))
+  );
+}
+app.use((req: any, res: any, next) => {
+  const p = String(req.path || '');
+  if (!p.startsWith('/api') || RAW_DB_RESPONSE_EXEMPT_PREFIXES.some((x) => p.startsWith(x))) return next();
+  const originalJson = res.json.bind(res);
+  res.json = (body: any) => {
+    try {
+      if (looksLikeRawDatabase(body)) {
+        return originalJson(filterDatabaseForUser(body, getUserAccessContext(req)));
+      }
+      if (body && typeof body === 'object' && !Array.isArray(body) && looksLikeRawDatabase(body.db)) {
+        return originalJson({ ...body, db: filterDatabaseForUser(body.db, getUserAccessContext(req)) });
+      }
+    } catch {
+      // Fail closed: never fall back to sending the raw database.
+      if (looksLikeRawDatabase(body) || (body && looksLikeRawDatabase(body.db))) {
+        return originalJson({ ok: false, error: "تعذر تجهيز الاستجابة بشكل آمن." });
+      }
+    }
+    return originalJson(body);
+  };
+  next();
+});
+
 // Write Freeze Barrier Middleware (Protects data consistency during snapshots/migrations)
 app.use((req, res, next) => {
   if (writeCoordinator.getIsWriteFrozen() && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
@@ -2937,7 +3020,7 @@ export function readDb() {
             nationalId: "1010000099",
             phone: "0559998877",
             email: "storekeeper@riadataleata.org.sa",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             assignedWarehouseId: "wh-1",
             assignedWarehouseName: "المستودع الرئيسي - العسيلة",
             status: "active",
@@ -2951,7 +3034,7 @@ export function readDb() {
             nationalId: "1010000098",
             phone: "0558887766",
             email: "sk2@riadataleata.org.sa",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             assignedWarehouseId: "wh-2",
             assignedWarehouseName: "مستودع السلال الغذائية والتموين",
             status: "active",
@@ -3892,7 +3975,7 @@ export function readDb() {
             id: "sm-1",
             name: "م. عبد العزيز بن سلطان السلمي",
             username: "support_manager",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             email: "support.manager@riadataleata.org.sa",
             phone: "0550001122",
             role: "support_manager",
@@ -3909,7 +3992,7 @@ export function readDb() {
             id: "sa-1",
             name: "م. عبد الرحمن المكي",
             username: "support_agent",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             email: "abdulrahman.support@riadataleata.org.sa",
             phone: "0551122334",
             role: "support_agent",
@@ -3924,7 +4007,7 @@ export function readDb() {
             id: "sa-2",
             name: "أ. سارة الحربي",
             username: "sara_support",
-            password: "123",
+            // SECURITY: no seeded credential — set via admin password reset.
             email: "sara.support@riadataleata.org.sa",
             phone: "0552233445",
             role: "support_agent",
@@ -4069,9 +4152,8 @@ export function readDb() {
             allowedDepartmentIds: ["dep-1", "dep-2", "dep-3", "dep-4", "dep-5", "dep-6", "dep-7", "dep-8"],
             status: "active",
             notes: "حساب إداري بصلاحيات Administrator كاملة للتحكم وإجراء عمليات الإدارة والحذف",
-            password: "mosa11",
-            passwordHash: "$2b$10$3wi69fD5oprWYJp7g7htMuFZiZmxMWyPsuAJ2VnaT0QiADE/Xww9i",
-            mustChangePassword: false,
+            // SECURITY: seeded credential removed (it was published in this repository).
+            mustChangePassword: true,
             updatedAt: "2026-10-04T18:40:00Z",
             updatedBy: "النظام المركزي"
           },
@@ -4539,9 +4621,26 @@ export function validatePasswordStrength(pwd: string): PasswordValidationResult 
 }
 
 // Password Verification supporting Bcrypt, legacy formats, and plain text
+// Constant-time string comparison (prevents timing side channels on legacy formats)
+function safeEqualStrings(a: string, b: string): boolean {
+  const ab = Buffer.from(String(a), "utf8");
+  const bb = Buffer.from(String(b), "utf8");
+  if (ab.length !== bb.length) {
+    crypto.timingSafeEqual(ab, ab);
+    return false;
+  }
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+// Single-use reset codes are high-entropy random values; a SHA-256 digest is sufficient for storage.
+export function hashResetCode(code: string): string {
+  return crypto.createHash("sha256").update("reyadat_reset_code_v1:" + String(code || "").trim()).digest("hex");
+}
+
 export function verifyPasswordAgainstHash(plainText: string, storedHash?: string): boolean {
-  if (!storedHash) return true;
-  if (typeof storedHash !== "string") return false;
+  // SECURITY: an account without a stored credential must NEVER authenticate.
+  if (!storedHash || typeof storedHash !== "string" || !storedHash.trim()) return false;
+  if (typeof plainText !== "string" || !plainText) return false;
 
   // Bcrypt format check ($2a$, $2b$, $2y$)
   if (storedHash.startsWith("$2a$") || storedHash.startsWith("$2b$") || storedHash.startsWith("$2y$")) {
@@ -4558,8 +4657,9 @@ export function verifyPasswordAgainstHash(plainText: string, storedHash?: string
     const iterations = parseInt(parts[1], 10);
     const salt = parts[2];
     const hash = parts[3];
+    if (!salt || !hash || !Number.isFinite(iterations) || iterations <= 0) return false;
     const testHash = crypto.pbkdf2Sync(plainText, salt, iterations, 32, "sha256").toString("hex");
-    return testHash === hash;
+    return safeEqualStrings(testHash, hash);
   }
 
   // Legacy SHA256 format
@@ -4567,12 +4667,14 @@ export function verifyPasswordAgainstHash(plainText: string, storedHash?: string
     const parts = storedHash.split("$");
     const salt = parts[1];
     const hash = parts[2];
+    if (!salt || !hash) return false;
     const testHash = crypto.createHmac("sha256", salt).update(plainText).digest("hex");
-    return testHash === hash;
+    return safeEqualStrings(testHash, hash);
   }
 
-  // Fallback for legacy plain text mock passwords
-  return storedHash === plainText;
+  // Legacy plain-text records (kept only so existing users are not locked out;
+  // new writes never store plain text — see hashPassword usages).
+  return safeEqualStrings(storedHash, plainText);
 }
 
 // Server-side Session Management (session_start persistence)
@@ -4895,7 +4997,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!mosaEntry?.mustChangePassword,
       status: mosaEntry?.status || "active"
     };
-    return { found: true, active: true, role: "admin", user: mosaUser, storedPasswordHash: mosaEntry?.passwordHash || mosaEntry?.password || "mosa11" };
+    return { found: true, active: true, role: "admin", user: mosaUser, storedPasswordHash: mosaEntry?.passwordHash || mosaEntry?.password || undefined };
   }
 
   // 2. Primary Admin
@@ -4926,7 +5028,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!adminCustom?.mustChangePassword,
       status: adminCustom?.status || "active"
     };
-    return { found: true, active: true, role: "admin", user: adminUser, storedPasswordHash: adminCustom?.passwordHash || adminCustom?.password || "123" };
+    return { found: true, active: true, role: "admin", user: adminUser, storedPasswordHash: adminCustom?.passwordHash || adminCustom?.password || undefined };
   }
 
   // 3. Operations Manager
@@ -4960,7 +5062,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!opsCustom?.mustChangePassword,
       status: opsCustom?.status || "active"
     };
-    return { found: true, active: true, role: "operations_manager", user: opsUser, storedPasswordHash: opsCustom?.passwordHash || opsCustom?.password || "123" };
+    return { found: true, active: true, role: "operations_manager", user: opsUser, storedPasswordHash: opsCustom?.passwordHash || opsCustom?.password || undefined };
   }
 
   // 4. Supervisor sup-1
@@ -5166,7 +5268,7 @@ function resolveLiveUserAccount(
       mustChangePassword: !!skObj.mustChangePassword,
       status: skObj.status || "active"
     };
-    return { found: true, active: true, role: "storekeeper", user: skUser, storedPasswordHash: skObj.passwordHash || skObj.password || "123" };
+    return { found: true, active: true, role: "storekeeper", user: skUser, storedPasswordHash: skObj.passwordHash || skObj.password || undefined };
   }
 
   // 9. Volunteers
@@ -6531,8 +6633,69 @@ export function maskNationalId(val?: string | null): string {
 
 export function sanitizeSecretFields<T extends Record<string, any>>(obj: T): T {
   if (!obj || typeof obj !== 'object') return obj;
-  const { password, passwordHash, tempPassword, hash, secret, bootstrapSecret, resetToken, passwordResetToken, ...rest } = obj as any;
+  const {
+    password, passwordHash, tempPassword, hash, secret, bootstrapSecret, resetToken, passwordResetToken,
+    resetTokenHash, passwordResetTokenHash, pinHash, deviceSecretHash, codeHash,
+    ...rest
+  } = obj as any;
   return rest as T;
+}
+
+// Fields that must never leave the server inside ANY API response record.
+const SECRET_RECORD_FIELDS = [
+  'password', 'passwordHash', 'tempPassword', 'bootstrapSecret', 'resetToken', 'passwordResetToken',
+  'resetTokenHash', 'passwordResetTokenHash', 'pinHash', 'deviceSecretHash', 'codeHash'
+];
+
+export function stripSecretRecordFields(obj: any): any {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  let changed = false;
+  for (const k of SECRET_RECORD_FIELDS) {
+    if (k in obj) { changed = true; break; }
+  }
+  if (!changed) return obj;
+  const copy: any = { ...obj };
+  for (const k of SECRET_RECORD_FIELDS) delete copy[k];
+  return copy;
+}
+
+export function sanitizePasswordResetRequestForClient(r: any) {
+  if (!r || typeof r !== 'object') return r;
+  const { resetToken, resetTokenHash, resetTokenExpiresAt, ...rest } = r;
+  return { ...rest, hasActiveResetCode: Boolean((resetToken || resetTokenHash) && (!resetTokenExpiresAt || Date.now() < resetTokenExpiresAt)) };
+}
+
+// Redacts password-reset codes inside notifications that do not belong to the viewer.
+export function redactNotificationForViewer(n: any, viewerUserId: string) {
+  if (!n || typeof n !== 'object') return n;
+  const isResetCode = n.type === 'password_reset_token' || 'token' in n;
+  if (!isResetCode) return n;
+  const ownerId = n.userId || n.targetUserId;
+  if (ownerId && viewerUserId && ownerId === viewerUserId) return n;
+  const { token, ...rest } = n;
+  if (n.type === 'password_reset_token') {
+    return { ...rest, bodyAr: 'تم إرسال كود إعادة تعيين كلمة المرور إلى صاحب الحساب.', bodyEn: 'A password reset code was sent to the account owner.' };
+  }
+  return rest;
+}
+
+// Final defence: scrub secret fields from every record of every top-level collection.
+export function scrubDatabaseSecrets(db: any, viewerUserId: string) {
+  if (!db || typeof db !== 'object') return db;
+  const out: any = { ...db };
+  for (const key of Object.keys(out)) {
+    const val = out[key];
+    if (Array.isArray(val)) {
+      if (key === 'notifications') {
+        out[key] = val.map((n: any) => stripSecretRecordFields(redactNotificationForViewer(n, viewerUserId)));
+      } else if (key === 'passwordResetRequests') {
+        out[key] = val.map(sanitizePasswordResetRequestForClient);
+      } else {
+        out[key] = val.map(stripSecretRecordFields);
+      }
+    }
+  }
+  return out;
 }
 
 export function sanitizeDepartmentForClient(d: any, canViewFullNationalId: boolean = true) {
@@ -6571,7 +6734,51 @@ export function sanitizeOrgMemberForAdmin(m: any, canViewFullId: boolean = true)
 }
 
 // 3. Database Isolation Filter (Enforces Data Segregation at DB level)
+// Team-scoped staff guard: leaders only for their own team; volunteers/beneficiaries/public never;
+// other staff need volunteer-management (dep-5) scope or super-admin / operations rights.
+function assertTeamScopedStaffAccess(context: any, teamId: string): { status: number; error: string } | null {
+  if (!context || !context.isAuthenticated) return { status: 401, error: "غير مصرح: يجب تسجيل الدخول." };
+  const role = String(context.role || '');
+  if (role === 'leader') {
+    return context.teamId && context.teamId === teamId
+      ? null
+      : { status: 403, error: "غير مصرح: صلاحيتك محصورة بفريقك فقط." };
+  }
+  if (['volunteer', 'beneficiary', 'public'].includes(role)) return { status: 403, error: "غير مصرح." };
+  const ok = context.isSuperAdmin || context.isOperationsManager || role === 'operations_manager' ||
+    (Array.isArray(context.allowedDepartmentIds) && context.allowedDepartmentIds.includes('dep-5'));
+  return ok ? null : { status: 403, error: "غير مصرح: لا تملك صلاحية إدارة بطاقات الفرق." };
+}
+
+function canReviewPasswordResetRequests(context: any): boolean {
+  // NOTE: leader/volunteer contexts also carry allowedDepartmentIds ['dep-5'], so they are excluded explicitly.
+  if (!context || ['leader', 'volunteer', 'beneficiary', 'public'].includes(String(context.role || ''))) return false;
+  return Boolean(
+    context && context.isAuthenticated && (
+      context.isSuperAdmin ||
+      context.isOperationsManager ||
+      context.role === 'operations_manager' ||
+      (Array.isArray(context.allowedDepartmentIds) && context.allowedDepartmentIds.includes('dep-5'))
+    )
+  );
+}
+
 function filterDatabaseForUser(db: any, context: any) {
+  const filtered: any = filterDatabaseForUserCore(db, context);
+  if (!filtered || typeof filtered !== 'object') return filtered;
+  // Password-reset requests: reviewers see all; leaders see their team only; everyone else sees none.
+  const allResetRequests = Array.isArray(db?.passwordResetRequests) ? db.passwordResetRequests : [];
+  if (canReviewPasswordResetRequests(context)) {
+    filtered.passwordResetRequests = allResetRequests;
+  } else if (context?.isAuthenticated && context.role === 'leader' && context.teamId) {
+    filtered.passwordResetRequests = allResetRequests.filter((r: any) => r && r.teamId === context.teamId);
+  } else {
+    filtered.passwordResetRequests = [];
+  }
+  return scrubDatabaseSecrets(filtered, context?.userId || '');
+}
+
+function filterDatabaseForUserCore(db: any, context: any) {
   const sanitizedEmail = getSanitizedEmailConfig(db);
   const { activeSessions, ...safeDb } = db || {};
   const stripArrSecrets = (arr: any) => (Array.isArray(arr) ? arr.map(sanitizeSecretFields) : []);
@@ -10383,7 +10590,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   if (!storedHash && db.volunteers) {
     const vol = db.volunteers.find((v: any) => v.id === userId || v.nationalId === userId || v.email === userId);
     if (vol) {
-      storedHash = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      storedHash = vol.passwordHash || vol.password;
       if (!userEntry) userEntry = { id: vol.id, userName: vol.name, nationalId: vol.nationalId, role: 'volunteer' };
     }
   }
@@ -10392,7 +10599,7 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
   if (!storedHash && db.beneficiaries) {
     const benMatch = db.beneficiaries.find((b: any) => b.id === userId || b.nationalId === userId || b.email === userId || b.phone === userId);
     if (benMatch) {
-      storedHash = benMatch.passwordHash || benMatch.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+      storedHash = benMatch.passwordHash || benMatch.password;
       if (!userEntry) userEntry = { id: benMatch.id, userName: benMatch.name, nationalId: benMatch.nationalId, role: 'beneficiary' };
     }
   }
@@ -10419,11 +10626,8 @@ app.post("/api/db/auth/self-change-password", (req, res) => {
           role: liveSelf.role || "user"
         };
       }
-    } else if (userId === 'admin' || userId === 'admin-user' || userId === '1000000000') {
-      storedHash = "123";
-    } else if (userId === 'operations' || userId === 'ops-manager' || userId === '1020000000') {
-      storedHash = "123";
     }
+    // SECURITY: removed hard-coded "123" fallbacks for admin/operations accounts.
   }
 
   // Verify Current Password with Bcrypt / Stored Hash
@@ -13034,8 +13238,11 @@ app.post("/api/db/volunteers/add", (req, res) => {
       vol.file_number = fn;
     }
 
-    vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
-    vol.passwordHash = hashPassword(vol.password);
+    // SECURITY: store only the bcrypt hash, never the plain-text password.
+    vol.passwordHash = hashPassword(
+      typeof vol.password === "string" && vol.password.trim() ? vol.password.trim() : DEFAULT_NEW_ACCOUNT_PASSWORD
+    );
+    delete vol.password;
     vol.mustChangePassword = true;
     vol.profileCompleted = vol.profileCompleted !== undefined ? vol.profileCompleted : true;
 
@@ -13064,8 +13271,11 @@ app.post("/api/db/volunteers/add", (req, res) => {
         file_number: existingFileNumber || vol.fileNumber
       };
     } else {
-      vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
-      vol.passwordHash = hashPassword(vol.password);
+      // SECURITY: store only the bcrypt hash, never the plain-text password.
+      vol.passwordHash = hashPassword(
+        typeof vol.password === "string" && vol.password.trim() ? vol.password.trim() : DEFAULT_NEW_ACCOUNT_PASSWORD
+      );
+      delete vol.password;
       vol.mustChangePassword = true;
       db.volunteers.push(vol);
       const linkedTeam = (db.teams || []).find((t: any) => t.id === vol.teamId);
@@ -13851,7 +14061,6 @@ app.post("/api/db/volunteers/batch", (req, res) => {
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
-      password: DEFAULT_NEW_ACCOUNT_PASSWORD,
       passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
       mustChangePassword: true
     };
@@ -14382,12 +14591,23 @@ app.post("/api/db/reissue-card", (req, res) => {
 
 // 11. Request Action (Accept, Reject, Waitlist, Transfer)
 app.post("/api/db/requests/action", (req, res) => {
+  // SECURITY: previously unauthenticated. Only staff/leaders (from the verified session) may act on requests.
+  const actionCtx = getUserAccessContext(req);
+  if (!actionCtx.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
+  }
+  if (['volunteer', 'beneficiary', 'public'].includes(String(actionCtx.role))) {
+    return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية معالجة طلبات الانضمام.", code: "FORBIDDEN" });
+  }
   const db = readDb();
-  const { requestId, action, targetTeamId } = req.body;
+  const { requestId, action, targetTeamId } = req.body || {};
   const reqObj = db.requests.find((r: any) => r.id === requestId);
   if (!reqObj) return res.status(404).json({ error: "Request not found" });
   const init = db.initiatives.find((i: any) => i.id === reqObj.initiativeId);
   if (!init) return res.status(404).json({ error: "Initiative not found" });
+  if (actionCtx.role === 'leader' && init.teamId && actionCtx.teamId && init.teamId !== actionCtx.teamId) {
+    return res.status(403).json({ error: "غير مصرح: يمكن لقائد الفريق معالجة طلبات مبادرات فريقه فقط.", code: "FORBIDDEN_TEAM_SCOPE" });
+  }
 
   init.acceptedVolunteerIds = (init.acceptedVolunteerIds || []).filter((vId: string) => vId !== reqObj.volunteerId);
   init.waitlistVolunteerIds = (init.waitlistVolunteerIds || []).filter((vId: string) => vId !== reqObj.volunteerId);
@@ -14436,8 +14656,15 @@ app.post("/api/db/requests/action", (req, res) => {
     // SECURITY ENFORCEMENT:
     // Team leaders are strictly forbidden from transferring volunteers directly.
     // They must submit a formal request via /api/db/volunteerTransfers/submit to the Volunteer Department.
-    const userRole = (req.headers['x-user-role'] || req.body.userRole || '') as string;
-    if (userRole === 'leader' || (!['admin', 'operations_manager', 'supervisor'].includes(userRole) && userRole !== '')) {
+    // SECURITY: role comes ONLY from the verified session (headers/body are client-controlled).
+    const transferCtx = getUserAccessContext(req);
+    const userRole = transferCtx.isAuthenticated ? String(transferCtx.role || '') : '';
+    const canTransfer = transferCtx.isAuthenticated && (
+      transferCtx.isSuperAdmin || transferCtx.isOperationsManager ||
+      ['admin', 'operations_manager', 'supervisor'].includes(userRole) ||
+      (Array.isArray(transferCtx.allowedDepartmentIds) && transferCtx.allowedDepartmentIds.includes('dep-5') && userRole !== 'leader' && userRole !== 'volunteer')
+    );
+    if (!canTransfer) {
       return res.status(403).json({
         error: "غير مصرح: لا يملك قائد الفريق صلاحية نقل المتطوعين مباشرة إلى فريق آخر. يتوجب تقديم طلب نقل رسمي عبر قسم (طلبات نقل المتطوعين) للإحالة إلى إدارة التطوع للاعتماد."
       });
@@ -15376,8 +15603,9 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // 1.0 Check Temporary Administrative Account: mosa
   if (identifier.toLowerCase() === "mosa" || matches("mosa@riadataleata.org.sa") || identifier === "perm-mosa") {
     const mosaEntry = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'mosa' || u.username === 'mosa' || u.id === 'perm-mosa');
-    const pwdToVerify = mosaEntry?.passwordHash || mosaEntry?.password || "mosa11";
-    if (!verifyPasswordAgainstHash(password, pwdToVerify) && password !== "mosa11") {
+    // SECURITY: no hard-coded fallback or master credential. A stored credential is mandatory.
+    const pwdToVerify = mosaEntry?.passwordHash || mosaEntry?.password;
+    if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: "mosa", name: "موسى (مسؤول النظام Administrator)", role: "admin" }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
@@ -15419,7 +15647,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // 1. Check Admin / Management
   if (identifier === "admin" || matches("admin@riadataleata.org.sa") || matches("0550000000") || identifier === "1000000000" || identifier === "المدير التنفيذي") {
     const adminCustom = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'admin-user' || u.role === 'admin');
-    const pwdToVerify = adminCustom?.passwordHash || adminCustom?.password || "123";
+    const pwdToVerify = adminCustom?.passwordHash || adminCustom?.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: "admin-user", name: "مجلس الجمعية", role: "admin" }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -15459,7 +15687,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   // 1.1 Check Operations Manager (مدير العمليات والتشغيل - أعلى صلاحيات تشغيلية)
   if (identifier === "operations" || identifier === "operations_manager" || identifier === "ops" || matches("operations@riadataleata.org.sa") || matches("0559000000") || identifier === "1020000000" || identifier === "مدير العمليات" || identifier === "سلطان الزهراني") {
     const opsCustom = (db.userDepartmentAccess || []).find((u: any) => u.userId === 'ops-manager' || u.role === 'operations_manager' || u.nationalId === '1020000000');
-    const pwdToVerify = opsCustom?.passwordHash || opsCustom?.password || "123";
+    const pwdToVerify = opsCustom?.passwordHash || opsCustom?.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: "ops-manager", name: "مدير العمليات", role: "operations_manager" }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -15534,7 +15762,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
         return res.status(403).json({ error: empStatusCheck.error });
       }
     }
-    const pwdToVerify = accessUser.passwordHash || accessUser.password || "123";
+    const pwdToVerify = accessUser.passwordHash || accessUser.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'كلمة المرور غير صحيحة');
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
@@ -15749,7 +15977,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     const statusCheck = checkStatus(storekeeper.status);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
-    const pwdToVerify = storekeeper.passwordHash || storekeeper.password || "123";
+    const pwdToVerify = storekeeper.passwordHash || storekeeper.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
@@ -15801,18 +16029,19 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     const statusCheck = checkStatus(vol.status, vol.isArchived);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
     
-    const pwdToVerify = vol.passwordHash || vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    const pwdToVerify = vol.passwordHash || vol.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
     const isUsingDefaultPasswordVol = password === DEFAULT_NEW_ACCOUNT_PASSWORD;
     const volUser = {
-      ...vol,
+      ...stripSecretRecordFields(vol),
       mustChangePassword: vol.mustChangePassword !== undefined ? Boolean(vol.mustChangePassword) : isUsingDefaultPasswordVol
     };
     delete volUser.password;
     delete volUser.passwordHash;
+    delete volUser.passwordResetExpiresAt;
 
     return res.json({
       status: "success",
@@ -15866,14 +16095,14 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     const statusCheck = checkStatus(ben.status === "rejected" ? "suspended" : ben.status, ben.isArchived);
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
 
-    const pwdToVerify = ben.passwordHash || ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
+    const pwdToVerify = ben.passwordHash || ben.password;
     if (!verifyPasswordAgainstHash(password, pwdToVerify)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
     const isUsingDefaultPasswordBen = password === DEFAULT_NEW_ACCOUNT_PASSWORD;
     const benUser = {
-      ...ben,
+      ...stripSecretRecordFields(ben),
       mustChangePassword: ben.mustChangePassword !== undefined ? Boolean(ben.mustChangePassword) : isUsingDefaultPasswordBen
     };
     delete benUser.password;
@@ -15888,6 +16117,20 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
 
   // 7. Check Supervisors
   if (identifier.includes("مشرف") || identifier === "supervisor" || identifier === "sup-1") {
+    // SECURITY: previously this account logged in WITHOUT any password check.
+    // A stored credential (userDepartmentAccess entry for sup-1 / role supervisor) is now mandatory.
+    const supEntry = (db.userDepartmentAccess || []).find(
+      (u: any) => u && (u.userId === "sup-1" || u.id === "sup-1" || u.username === "supervisor" || u.role === "supervisor")
+    );
+    const supPwd = supEntry?.passwordHash || supEntry?.password;
+    if (!verifyPasswordAgainstHash(password, supPwd)) {
+      logLoginAttempt('denied', { id: "sup-1", name: "مشرف الإدارة", role: "supervisor" }, 'كلمة المرور غير صحيحة أو لا توجد كلمة مرور محفوظة');
+      return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
+    }
+    if (supEntry) {
+      const supStatus = checkStatus(supEntry.status || "active", Boolean(supEntry.isArchived));
+      if (!supStatus.ok) return res.status(403).json({ error: supStatus.error });
+    }
     return res.json({
       status: "success",
       role: "supervisor",
@@ -15921,7 +16164,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     }
     const statusCheck = checkStatus(supportManager.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(supportManager.password)) {
+    if (!verifyPassword(supportManager.password, supportManager.passwordHash)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
@@ -15956,7 +16199,7 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
     }
     const statusCheck = checkStatus(supportAgent.status || "active");
     if (!statusCheck.ok) return res.status(403).json({ error: statusCheck.error });
-    if (!verifyPassword(supportAgent.password)) {
+    if (!verifyPassword(supportAgent.password, supportAgent.passwordHash)) {
       return res.status(401).json({ error: "بيانات الدخول غير صحيحة، يرجى التحقق من البيانات والمحاولة مرة أخرى." });
     }
 
@@ -18810,8 +19053,11 @@ app.post("/api/volunteers", (req, res) => {
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
     vol.expiryDate = vol.expiryDate || expiry.toISOString().split('T')[0];
-    vol.password = vol.password || DEFAULT_NEW_ACCOUNT_PASSWORD;
-    vol.passwordHash = hashPassword(vol.password);
+    // SECURITY: store only the bcrypt hash, never the plain-text password.
+    vol.passwordHash = hashPassword(
+      typeof vol.password === "string" && vol.password.trim() ? vol.password.trim() : DEFAULT_NEW_ACCOUNT_PASSWORD
+    );
+    delete vol.password;
     vol.mustChangePassword = true;
     db.volunteers.push(vol);
   } else {
@@ -18862,7 +19108,6 @@ app.post("/api/volunteers/batch-create", (req, res) => {
       points: 0,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
-      password: DEFAULT_NEW_ACCOUNT_PASSWORD,
       passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
       mustChangePassword: true
     };
@@ -20416,7 +20661,6 @@ app.post("/api/db/beneficiaries/add", async (req, res) => {
           orphanStatus: cleanOrphanStatus,
           role: "beneficiary", // Strictly beneficiary
           status: ben.status || "pending",   // Strictly pending approval unless admin creates approved
-          password: ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD,
           passwordHash: hashPassword(ben.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
           mustChangePassword: true,
           createdAt: new Date().toISOString(),
@@ -20886,7 +21130,6 @@ app.post("/api/db/beneficiaries/import", (req, res) => {
         category: item.category || "أسر متعففة",
         notes: item.notes || "",
         status: item.status || "approved",
-        password: item.password || DEFAULT_NEW_ACCOUNT_PASSWORD,
         passwordHash: hashPassword(item.password || DEFAULT_NEW_ACCOUNT_PASSWORD),
         mustChangePassword: true,
         createdAt: new Date().toISOString()
@@ -23399,7 +23642,6 @@ app.post("/api/db/volunteerApplications/accept", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    password: DEFAULT_NEW_ACCOUNT_PASSWORD,
     passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
     mustChangePassword: true,
     role: "volunteer"
@@ -24679,35 +24921,49 @@ app.post("/api/db/volunteerTransfers/action", async (req, res) => {
 
 // 1. Get Password Reset Requests
 app.get("/api/db/passwordResetRequests", (req, res) => {
-  const db = readDb();
-  db.passwordResetRequests = db.passwordResetRequests || [];
-  const teamId = req.query.teamId as string;
-  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
-  let list = db.passwordResetRequests;
-  if (teamId && userRole === 'leader') {
-    list = list.filter((r: any) => r.teamId === teamId);
+  // SECURITY: identity and role come ONLY from the verified server session.
+  const context = getUserAccessContext(req);
+  if (!context.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
   }
-  // Sanitize so tokens are not exposed to leader
-  const sanitized = list.map((r: any) => {
-    if (userRole === 'leader') {
-      const { resetToken, ...rest } = r;
-      return rest;
+  const db = readDb();
+  const all = Array.isArray(db.passwordResetRequests) ? db.passwordResetRequests : [];
+
+  let list: any[];
+  if (context.role === 'leader') {
+    // Leaders only see requests for their own team (team id taken from the session, never from the query).
+    list = context.teamId ? all.filter((r: any) => r && r.teamId === context.teamId) : [];
+  } else {
+    if (!canReviewPasswordResetRequests(context)) {
+      return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية عرض طلبات إعادة تعيين كلمات المرور.", code: "FORBIDDEN" });
     }
-    return r;
-  });
-  res.json(sanitized);
+    list = all;
+  }
+
+  // Reset codes are NEVER returned to anyone through the API.
+  res.json(list.map(sanitizePasswordResetRequestForClient));
 });
 
 // 2. Submit Password Reset Request by Team Leader
 app.post("/api/db/passwordResetRequests/submit", (req, res) => {
+  // SECURITY: only an authenticated team leader (for their own team) or an authorised reviewer may submit.
+  const submitContext = getUserAccessContext(req);
+  if (!submitContext.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
+  }
+  const isLeaderSubmitter = submitContext.role === 'leader';
+  if (!isLeaderSubmitter && !canReviewPasswordResetRequests(submitContext)) {
+    return res.status(403).json({ error: "غير مصرح: لا تملك صلاحية رفع طلب إعادة تعيين كلمة المرور.", code: "FORBIDDEN" });
+  }
   const db = readDb();
   const {
     volunteerId,
     reason,
-    additionalNotes,
-    leaderId,
-    leaderName
-  } = req.body;
+    additionalNotes
+  } = req.body || {};
+  // Leader identity comes from the session, never from the request body.
+  const leaderId = submitContext.userId;
+  const leaderName = submitContext.userName;
 
   if (!volunteerId) {
     return res.status(400).json({ error: "معرف المتطوع مطلوب" });
@@ -24720,6 +24976,12 @@ app.post("/api/db/passwordResetRequests/submit", (req, res) => {
   const vol = db.volunteers.find((v: any) => v.id === volunteerId);
   if (!vol) {
     return res.status(404).json({ error: "سجل المتطوع غير موجود" });
+  }
+  if (isLeaderSubmitter && (!submitContext.teamId || vol.teamId !== submitContext.teamId)) {
+    return res.status(403).json({ error: "غير مصرح: يمكن لقائد الفريق رفع طلبات لمتطوعي فريقه فقط.", code: "FORBIDDEN_TEAM_SCOPE" });
+  }
+  if (typeof reason !== "string") {
+    return res.status(400).json({ error: "يرجى توضيح سبب طلب إعادة تعيين كلمة المرور" });
   }
 
   const team = (db.teams || []).find((t: any) => t.id === vol.teamId);
@@ -24736,7 +24998,7 @@ app.post("/api/db/passwordResetRequests/submit", (req, res) => {
     leaderId: leaderId || "leader",
     leaderName: leaderName || team?.leaderName || "قائد الفريق",
     reason: reason.trim(),
-    additionalNotes: additionalNotes ? additionalNotes.trim() : "",
+    additionalNotes: typeof additionalNotes === "string" ? additionalNotes.trim() : "",
     status: "new",
     createdAt: new Date().toISOString()
   };
@@ -24769,7 +25031,7 @@ app.post("/api/db/passwordResetRequests/submit", (req, res) => {
   });
 
   writeDb(db);
-  res.json({ status: "success", request: newReq, db });
+  res.json({ status: "success", request: newReq, db: filterDatabaseForUser(db, submitContext) });
 });
 
 // 3. Action Password Reset Request by Operations Manager
@@ -24808,20 +25070,32 @@ app.post("/api/db/passwordResetRequests/action", (req, res) => {
     reqObj.reviewedBy = adminName;
     reqObj.reviewerNotes = notes || "قيد التحقق والمراجعة من قبل مدير العمليات";
   } else if (action === "send_reset_link" || action === "approve") {
-    // Generate secure temporary token (24-hour expiry) using cryptographically secure random bytes
-    const token = "RST-" + crypto.randomBytes(6).toString("hex").toUpperCase() + "-" + Date.now().toString(36).toUpperCase();
+    // Generate secure single-use code (24-hour expiry). Only its SHA-256 hash is stored on the account;
+    // the plain code is delivered once in the owner's private notification and is never returned by the API.
+    const token = "RST-" + crypto.randomBytes(12).toString("hex").toUpperCase();
     const expiry = Date.now() + 24 * 60 * 60 * 1000;
 
-    if (vol) {
-      vol.passwordResetToken = token;
-      vol.passwordResetExpiresAt = expiry;
+    if (!vol) {
+      return res.status(404).json({ error: "حساب المتطوع المرتبط بالطلب غير موجود." });
+    }
+
+    // Issuing a new code invalidates any previous code for this account.
+    delete vol.passwordResetToken;
+    vol.passwordResetTokenHash = hashResetCode(token);
+    vol.passwordResetExpiresAt = expiry;
+    vol.passwordResetAttempts = 0;
+    for (const other of db.passwordResetRequests) {
+      if (other && other !== reqObj && other.volunteerId === reqObj.volunteerId && other.status === "reset_link_sent") {
+        other.status = "superseded";
+        delete other.resetToken;
+      }
     }
 
     reqObj.status = "reset_link_sent";
     reqObj.reviewedAt = nowIso;
-    reqObj.reviewedBy = adminName;
+    reqObj.reviewedBy = auth.context.userName || adminName;
     reqObj.resetLinkSentAt = nowIso;
-    reqObj.resetToken = token;
+    delete reqObj.resetToken;
     reqObj.resetTokenExpiresAt = expiry;
     reqObj.reviewerNotes = notes || "تم التحقق من هوية المتطوع وإرسال آلية التعيين الآمنة بنجاح.";
 
@@ -24894,32 +25168,61 @@ app.post("/api/db/passwordResetRequests/action", (req, res) => {
   }
 
   writeDb(db);
-  res.json({ status: "success", request: reqObj, db });
+  // SECURITY: never return the whole database; return a role-filtered view without secrets.
+  res.json({ status: "success", request: sanitizePasswordResetRequestForClient(reqObj), db: filterDatabaseForUser(db, auth.context) });
 });
 
 // 4. Secure Password Reset Completion with Token by Volunteer
 app.post("/api/auth/reset-password-with-token", (req, res) => {
   const db = readDb();
-  const { token, newPassword } = req.body;
+  const { token, newPassword } = req.body || {};
 
-  if (!token || !newPassword) {
+  if (!token || !newPassword || typeof token !== "string" || typeof newPassword !== "string") {
     return res.status(400).json({ error: "كود التحقق وكلمة المرور الجديدة حقول مطلوبة" });
   }
 
+  // Anti brute-force: limit attempts per client IP.
+  const resetRate = checkRateLimit('forgotPassword', `reset-code:${req.ip || 'unknown'}`, 10, 15 * 60 * 1000);
+  if (!resetRate.allowed) {
+    return res.status(429).json({ error: `محاولات كثيرة. يرجى الانتظار ${resetRate.retryAfterSec} ثانية ثم المحاولة مجدداً.`, retryAfterSec: resetRate.retryAfterSec });
+  }
+
+  const cleanToken = token.trim();
+  const tokenHash = hashResetCode(cleanToken);
   db.volunteers = db.volunteers || [];
-  const vol = db.volunteers.find((v: any) => v.passwordResetToken === String(token).trim());
+  const vol = db.volunteers.find((v: any) =>
+    v && (
+      (typeof v.passwordResetTokenHash === "string" && safeEqualStrings(v.passwordResetTokenHash, tokenHash)) ||
+      // Legacy codes issued before this fix were stored in plain text; accept them once, then they are wiped.
+      (typeof v.passwordResetToken === "string" && v.passwordResetToken && safeEqualStrings(v.passwordResetToken, cleanToken))
+    )
+  );
   if (!vol) {
     return res.status(400).json({ error: "كود التحقق غير صحيح أو تم استخدامه مسبقاً." });
   }
 
-  if (vol.passwordResetExpiresAt && Date.now() > vol.passwordResetExpiresAt) {
+  if (!vol.passwordResetExpiresAt || Date.now() > vol.passwordResetExpiresAt) {
+    delete vol.passwordResetToken;
+    delete vol.passwordResetTokenHash;
+    delete vol.passwordResetExpiresAt;
+    writeDb(db);
     return res.status(400).json({ error: "انتهت صلاحية كود التحقق (صالح لمدة 24 ساعة فقط). يرجى طلب كود جديد من قائد الفريق." });
   }
 
-  // Update password safely
-  vol.password = String(newPassword).trim();
-  vol.passwordResetToken = undefined;
-  vol.passwordResetExpiresAt = undefined;
+  const strength = validatePasswordStrength(newPassword.trim());
+  if (!strength.isValid) {
+    return res.status(400).json({ error: `كلمة المرور الجديدة غير مطابقة لسياسة الأمان: ${strength.errors.join(" ")}`, errors: strength.errors });
+  }
+
+  // Store only the bcrypt hash; the code is single-use and wiped immediately.
+  vol.passwordHash = hashPassword(newPassword.trim());
+  delete vol.password;
+  vol.mustChangePassword = false;
+  delete vol.passwordResetToken;
+  delete vol.passwordResetTokenHash;
+  delete vol.passwordResetExpiresAt;
+  // Existing sessions of this account are revoked after a reset.
+  try { invalidateUserSessions(vol.id); } catch {}
 
   // Mark linked request as completed
   if (db.passwordResetRequests) {
@@ -24927,6 +25230,7 @@ app.post("/api/auth/reset-password-with-token", (req, res) => {
     if (linkedReq) {
       linkedReq.status = 'completed';
       linkedReq.completedAt = new Date().toISOString();
+      delete linkedReq.resetToken;
     }
   }
 
@@ -24951,28 +25255,31 @@ app.post("/api/auth/reset-password-with-token", (req, res) => {
 
 // 1. Get Team & Volunteer Support Tickets with Strict Isolation
 app.get("/api/support/team-tickets", (req, res) => {
+  // SECURITY: identity, role and team come ONLY from the verified session.
+  const ticketCtx = getUserAccessContext(req);
+  if (!ticketCtx.isAuthenticated) {
+    return res.status(401).json({ error: "غير مصرح: يجب تسجيل الدخول.", code: "UNAUTHORIZED" });
+  }
   const db = readDb();
   db.supportTickets = db.supportTickets || [];
-  const requesterId = req.query.requesterId as string;
-  const volunteerId = req.query.volunteerId as string;
-  const teamId = req.query.teamId as string;
-  const userRole = (req.headers['x-user-role'] || req.query.userRole || '') as string;
-  const ticketCode = req.query.ticketCode as string;
+  const userRole = String(ticketCtx.role || '');
+  const selfId = ticketCtx.userId;
+  const teamId = ticketCtx.teamId || '';
+  const ticketCode = typeof req.query.ticketCode === 'string' ? req.query.ticketCode : '';
+  const isStaffViewer =
+    ticketCtx.isSuperAdmin || ticketCtx.isOperationsManager ||
+    ['admin', 'operations_manager', 'support', 'support_manager'].includes(userRole);
 
   let tickets = db.supportTickets.filter((t: any) => t.category === "team_volunteer" || t.teamId);
 
-  // Volunteer Isolation: Volunteers can ONLY view their own tickets!
-  if (userRole === "volunteer" || (volunteerId && userRole !== "admin" && userRole !== "operations_manager" && userRole !== "support")) {
-    const targetVolId = volunteerId || requesterId;
-    tickets = tickets.filter((t: any) => t.volunteerId === targetVolId || t.requesterId === targetVolId);
-  } else if (userRole === "leader") {
-    // Leader Isolation: Leaders only view tickets created by themselves or officially submitted for their team
-    tickets = tickets.filter((t: any) => t.requesterId === requesterId || (t.teamId === teamId && t.isCreatedByLeader));
-  } else if (userRole === "support") {
-    const agentId = req.query.agentId as string;
-    if (agentId) {
-      tickets = tickets.filter((t: any) => t.assignedStaffId === agentId || !t.assignedStaffId);
-    }
+  if (userRole === "leader") {
+    // Leader Isolation: own tickets, or tickets officially submitted for their own team
+    tickets = tickets.filter((t: any) => t.requesterId === selfId || (teamId && t.teamId === teamId && t.isCreatedByLeader));
+  } else if (userRole === "support_agent" || userRole === "support") {
+    tickets = tickets.filter((t: any) => t.assignedStaffId === selfId || !t.assignedStaffId);
+  } else if (!isStaffViewer) {
+    // Volunteers and every other role: ONLY their own tickets
+    tickets = tickets.filter((t: any) => t.volunteerId === selfId || t.requesterId === selfId);
   }
 
   if (ticketCode) {
@@ -25429,7 +25736,8 @@ app.post("/api/support/agents/add", (req, res) => {
     id: "sa-" + Date.now(),
     name: String(name).trim(),
     username: String(username).trim(),
-    password: password ? String(password).trim() : "123",
+    // SECURITY: never store plain text and never fall back to a shared default credential.
+    ...(password && String(password).trim() ? { passwordHash: hashPassword(String(password).trim()) } : {}),
     email: email ? String(email).trim() : "",
     phone: phone ? String(phone).trim() : "",
     role: "support_agent",
@@ -27122,16 +27430,17 @@ app.get("/api/db/team-card-template/:teamId", (req, res) => {
 // 1.3 Save Team Card Template (with strict RBAC for team leaders)
 app.post("/api/db/team-card-template/save", (req, res) => {
   const db = readDb();
-  const { teamId, template, leaderTeamId, userRole, performerName, applyToTeamCards } = req.body;
+  const { teamId, template, applyToTeamCards } = req.body || {};
 
   if (!teamId || !template) {
     return res.status(400).json({ error: "معرف الفريق وبيانات القالب مطلوبة" });
   }
 
-  // RBAC Validation: Team leader can ONLY modify their own team's template!
-  if (userRole === "leader" && leaderTeamId && leaderTeamId !== teamId) {
-    return res.status(403).json({ error: "غير مصرح لك بتعديل قالب فريق آخر. صلاحيتك محصورة بفريقك فقط." });
-  }
+  // RBAC Validation (from the verified session only): leaders may ONLY modify their own team's template.
+  const tplCtx = getUserAccessContext(req);
+  const tplGuard = assertTeamScopedStaffAccess(tplCtx, teamId);
+  if (tplGuard) return res.status(tplGuard.status).json({ error: tplGuard.error });
+  const performerName = tplCtx.userName;
 
   db.volunteerCardTemplates = db.volunteerCardTemplates || [];
   const team = (db.teams || []).find((t: any) => t.id === teamId);
@@ -27186,16 +27495,17 @@ app.post("/api/db/team-card-template/save", (req, res) => {
 // 1.4 Bulk Issue Team Cards (Automated generation for team members)
 app.post("/api/db/team-cards/bulk-issue", (req, res) => {
   const db = readDb();
-  const { teamId, leaderTeamId, userRole, performerName } = req.body;
+  const { teamId } = req.body || {};
 
   if (!teamId) {
     return res.status(400).json({ error: "معرف الفريق مطلوب" });
   }
 
-  // RBAC: Leaders can only bulk issue for their own team
-  if (userRole === "leader" && leaderTeamId && leaderTeamId !== teamId) {
-    return res.status(403).json({ error: "غير مصرح لك بإصدار بطاقات لمتطوعي فريق آخر" });
-  }
+  // RBAC (from the verified session only): leaders can only bulk issue for their own team
+  const bulkCtx = getUserAccessContext(req);
+  const bulkGuard = assertTeamScopedStaffAccess(bulkCtx, teamId);
+  if (bulkGuard) return res.status(bulkGuard.status).json({ error: bulkGuard.error });
+  const performerName = bulkCtx.userName;
 
   const team = (db.teams || []).find((t: any) => t.id === teamId);
   if (!team) {
@@ -28355,7 +28665,6 @@ app.post("/api/db/volunteerApplications/admin-approve", (req, res) => {
     nationalId: appObj.nationalId,
     issueDate: new Date().toISOString().split('T')[0],
     expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    password: DEFAULT_NEW_ACCOUNT_PASSWORD,
     passwordHash: hashPassword(DEFAULT_NEW_ACCOUNT_PASSWORD),
     mustChangePassword: true,
     role: "volunteer",
