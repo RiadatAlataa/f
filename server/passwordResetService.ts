@@ -358,14 +358,16 @@ export function setupPasswordResetLinkRoutes(app: Express, deps: PasswordResetDe
     const dbSnapshot = deps.readDb();
     const account = findActiveAccountByEmail(dbSnapshot, cleanEmail);
 
-    // Anti-enumeration shield: always return generic success when account doesn't exist
-    if (!account) {
-      return res.json({
-        status: "success",
-        message: GENERIC_LINK_RESPONSE_MSG
-      });
-    }
+    // ANTI-ENUMERATION: the visitor ALWAYS receives the same response, immediately, whether or not the
+    // email belongs to an account and whether or not the email provider succeeds. All account work
+    // (token, email, audit) runs in the background so response time does not reveal anything either.
+    res.json({
+      status: "success",
+      message: GENERIC_LINK_RESPONSE_MSG
+    });
+    if (!account) return;
 
+    (async () => {
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = hashResetToken(rawToken);
     const expiresAt = Date.now() + RESET_TOKEN_TTL_MS;
@@ -449,15 +451,10 @@ export function setupPasswordResetLinkRoutes(app: Express, deps: PasswordResetDe
     });
 
     if (!sendRes?.success && sendRes?.provider !== "simulation") {
-      return res.status(502).json({
-        error: `تعذر إرسال رابط استعادة كلمة المرور عبر مزود البريد (${sendRes?.error || "خطأ غير معروف"}). يرجى المحاولة لاحقاً.`
-      });
+      // Logged for administrators only (never revealed to the requester).
+      console.warn("[password-reset-link] email provider failure (details in email logs)");
     }
-
-    return res.json({
-      status: "success",
-      message: GENERIC_LINK_RESPONSE_MSG
-    });
+    })().catch(() => console.warn("[password-reset-link] background processing failed"));
   });
 
   // Validate single-use reset token (GET and POST supported)

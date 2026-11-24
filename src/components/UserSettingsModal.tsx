@@ -9,6 +9,7 @@ import { buildApiUrl, getAuthHeaders } from '../config/api';
 import { useApplicationAudio, GENERAL_AUDIO_STORAGE_KEY } from '../utils/audioNotification';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 import { PinCodeInput } from './PinCodeInput';
+import { GoogleSignInApprovalCard } from './GoogleSignInApprovalCard';
 import { generateStrongPassword, evaluatePasswordStrength } from '../utils/passwordSecurity';
 import {
   getOrCreateDeviceId,
@@ -666,6 +667,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {/* TAB 1: SECURITY & SIGN-IN */}
           {activeTab === 'security' && !isPublicGuest && (
             <div className="space-y-5">
+              {(currentUserRole === 'admin' || currentUserRole === 'operations_manager') && (
+                <GoogleSignInApprovalCard lang={lang} />
+              )}
               {/* Account Identity & Session Summary Card */}
               <div className="p-4 rounded-2xl bg-gradient-to-br from-[#F4F8FF] to-white dark:from-[#0E2447] dark:to-[#091830] border border-blue-200/80 dark:border-[#244577] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3">

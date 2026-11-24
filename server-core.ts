@@ -74,10 +74,13 @@ app.use((req, res, next) => {
   } else if (!req.socket.remoteAddress) {
     (req.socket as any).remoteAddress = '127.0.0.1';
   }
-  const forwarded = req.headers['x-forwarded-for'];
-  const clientIp = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '') || 
-                   (req.headers['x-real-ip'] as string) || 
-                   '127.0.0.1';
+  // SECURITY: the client IP is taken from the right-hand side of X-Forwarded-For, i.e. the address
+  // appended by OUR proxy, never from values the client can prepend. TRUSTED_PROXY_HOPS (default 1 =
+  // Render's edge) says how many right-most entries were added by trusted proxies. The normalised value
+  // replaces X-Forwarded-For / X-Real-IP so every legacy `split(',')[0]` read gets the trusted address.
+  const clientIp = resolveTrustedClientIp(req);
+  req.headers['x-forwarded-for'] = clientIp;
+  req.headers['x-real-ip'] = clientIp;
   try {
     Object.defineProperty(req, 'ip', {
       value: clientIp,
@@ -87,6 +90,21 @@ app.use((req, res, next) => {
   } catch {}
   next();
 });
+
+export function resolveTrustedClientIp(req: any): string {
+  const hopsRaw = Number(process.env.TRUSTED_PROXY_HOPS);
+  const hops = Number.isFinite(hopsRaw) && hopsRaw >= 0 && hopsRaw <= 5 ? Math.floor(hopsRaw) : 1;
+  const xff = req.headers?.['x-forwarded-for'];
+  const chain = (Array.isArray(xff) ? xff.join(',') : String(xff || ''))
+    .split(',').map((s: string) => s.trim()).filter(Boolean);
+  const socketIp = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '') || '127.0.0.1';
+  // Full chain as seen by this process: [...client-supplied/upstream entries, connecting peer].
+  const full = [...chain, socketIp];
+  // The entry just left of the trusted hops is the address that connected to our first trusted proxy.
+  const idx = Math.max(0, full.length - 1 - hops);
+  const candidate = (full[idx] || socketIp).replace(/^::ffff:/, '');
+  return /^[0-9a-fA-F:.]{3,45}$/.test(candidate) ? candidate : socketIp;
+}
 
 /**
  * Strict CORS Origin Validator
@@ -261,7 +279,8 @@ app.use((req: any, _res, next) => {
 //   admin         → super admin / operations manager
 //   dept:<ids>    → admin, or staff (not leaders) whose allowed departments include one of <ids>
 // ---------------------------------------------------------------------------
-type RoutePolicy = 'public' | 'authenticated' | 'staff' | 'admin' | `dept:${string}`;
+// 'deptx:<ids>' = like dept but WITHOUT role-implied departments (e.g. a storekeeper cannot manage storekeepers).
+type RoutePolicy = 'public' | 'authenticated' | 'staff' | 'admin' | `dept:${string}` | `deptx:${string}`;
 // First matching rule wins. Method '*' = any method; a pattern ending in '/*' also matches its base path.
 const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
   // explicit public exceptions that sit under protected prefixes
@@ -275,8 +294,8 @@ const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
   // HR (dep-9)
   ['*', '/api/db/hr/*', 'dept:dep-9'],
   // warehouse & inventory (dep-8; storekeepers implied) — managing storekeeper accounts is admin-only
-  ['POST', '/api/db/inventory/storekeepers/add', 'admin'],
-  ['POST', '/api/db/inventory/storekeepers/delete', 'admin'],
+  ['POST', '/api/db/inventory/storekeepers/add', 'deptx:dep-8'],
+  ['POST', '/api/db/inventory/storekeepers/delete', 'deptx:dep-8'],
   ['*', '/api/db/inventory/*', 'dept:dep-8'],
   // messaging / integrations configuration (secrets, logs) — admin only
   ['*', '/api/whatsapp/*', 'admin'],
@@ -303,7 +322,7 @@ const ROUTE_POLICIES: Array<[string, string, RoutePolicy]> = [
   ['*', '/api/db/custodies/*', 'staff'],
   ['*', '/api/db/employee-requests/*', 'staff'],
   ['GET', '/api/db/staff-members', 'staff'],
-  ['*', '/api/db/team-staff/*', 'dept:dep-5'],
+  ['*', '/api/db/team-staff/*', 'staff'], // + per-team scope enforced in the handlers
   // volunteer / team applications review (dep-5); leaders act on their own team's queue
   ['GET', '/api/db/teamApplications', 'dept:dep-5'],
   ['*', '/api/db/teamApplications/*', 'dept:dep-5'],
@@ -423,12 +442,13 @@ export function evaluateRoutePolicy(policy: RoutePolicy, ctx: any): { status: nu
   const isEndUser = ['volunteer', 'beneficiary', 'public'].includes(role);
   if (policy === 'staff') return isEndUser ? { status: 403, error: "غير مصرح: هذه العملية مخصصة لكوادر الجمعية." } : null;
   if (policy === 'admin') return { status: 403, error: "غير مصرح: هذه العملية مخصصة للإدارة العليا." };
-  const depts = policy.slice('dept:'.length).split(',');
+  const strict = policy.startsWith('deptx:');
+  const depts = policy.slice(policy.indexOf(':') + 1).split(',');
   const allowed: string[] = [
     ...(Array.isArray(ctx.allowedDepartmentIds) ? ctx.allowedDepartmentIds : []),
-    ...(ROLE_IMPLIED_DEPARTMENTS[role] || [])
+    ...(strict ? [] : (ROLE_IMPLIED_DEPARTMENTS[role] || []))
   ];
-  if (isEndUser || role === 'leader' || !depts.some((d) => allowed.includes(d))) {
+  if (isEndUser || role === 'leader' || (strict && ROLE_IMPLIED_DEPARTMENTS[role]) || !depts.some((d) => allowed.includes(d))) {
     return { status: 403, error: "غير مصرح: هذه العملية خارج نطاق صلاحيات إدارتك." };
   }
   return null;
@@ -6907,7 +6927,7 @@ export function sanitizeSecretFields<T extends Record<string, any>>(obj: T): T {
 // Fields that must never leave the server inside ANY API response record.
 const SECRET_RECORD_FIELDS = [
   'password', 'passwordHash', 'tempPassword', 'bootstrapSecret', 'resetToken', 'passwordResetToken',
-  'resetTokenHash', 'passwordResetTokenHash', 'pinHash', 'deviceSecretHash', 'codeHash'
+  'resetTokenHash', 'passwordResetTokenHash', 'pinHash', 'deviceSecretHash', 'codeHash', 'googleSub', 'requestIdHash'
 ];
 
 export function stripSecretRecordFields(obj: any): any {
@@ -15875,8 +15895,14 @@ function handleCredentialLogin(req: any, res: any, identifierRaw: string, passwo
   password = password.trim();
 
   // Rate Limiting Protection (Anti-Brute Force)
+  // 1) per trusted client IP + account, 2) per ACCOUNT regardless of IP (defeats IP rotation / spoofing),
+  // 3) coarse per-IP ceiling across accounts (defeats spraying one password over many accounts).
   const rateLimitKey = `${clientIp}:${identifier.toLowerCase()}`;
-  const rateCheck = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
+  const rateCheckIpAcct = checkRateLimit('login', rateLimitKey, 10, 15 * 60 * 1000);
+  const rateCheckAcct = checkRateLimit('login', `acct:${identifier.toLowerCase()}`, 30, 15 * 60 * 1000);
+  const rateCheckIp = checkRateLimit('login', `ip:${clientIp}`, 200, 15 * 60 * 1000);
+  const rateCheck: { allowed: boolean; retryAfterSec?: number } =
+    [rateCheckIpAcct, rateCheckAcct, rateCheckIp].find((r) => !r.allowed) || { allowed: true };
   if (!rateCheck.allowed) {
     return res.status(429).json({
       error: `تم تجاوز الحد المسموح به لمحاولات تسجيل الدخول. يرجى الانتظار لمدة ${rateCheck.retryAfterSec} ثانية قبل المحاولة مجدداً.`,
@@ -16883,11 +16909,37 @@ app.post("/api/db/auth/google", async (req, res) => {
       return res.status(403).json({ error: statusCheck.error, status: accessUser.status });
     }
 
-    accessUser.lastLogin = new Date().toISOString();
-    writeDb(db);
-
     const isOps = accessUser.role === 'operations_manager' || accessUser.userId === 'ops-manager';
     const isAdmin = accessUser.role === 'admin' || accessUser.userId === 'admin-user';
+
+    // SECURITY: Google sign-in for a PRIVILEGED account (admin / operations / super-admin permissions)
+    // requires an explicit approval recorded on that account (granted by a super admin after
+    // re-entering their own password) and is then bound to the Google account's immutable id (sub).
+    // A matching email alone is never enough for admin rights.
+    if (isPrivilegedAccessRecord(accessUser)) {
+      const sub = String(verification.sub || "");
+      if (accessUser.googleSignInApproved !== true) {
+        logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'دخول Google لحساب إداري غير معتمد');
+        return res.status(403).json({
+          error: "الدخول عبر Google لحسابات الإدارة يتطلب اعتماداً مسبقاً. سجّل الدخول بكلمة المرور ثم فعّل الدخول عبر Google من إعدادات الأمان.",
+          code: "GOOGLE_ADMIN_APPROVAL_REQUIRED"
+        });
+      }
+      if (!sub) {
+        return res.status(401).json({ error: "تعذر التحقق من معرّف حساب Google.", code: "GOOGLE_SUB_MISSING" });
+      }
+      if (accessUser.googleSub && accessUser.googleSub !== sub) {
+        logLoginAttempt('denied', { id: accessUser.userId, name: accessUser.userName, role: accessUser.role }, 'حساب Google مختلف عن الحساب المعتمد');
+        return res.status(403).json({
+          error: "حساب Google هذا ليس الحساب المعتمد لهذا المستخدم الإداري.",
+          code: "GOOGLE_ACCOUNT_MISMATCH"
+        });
+      }
+      if (!accessUser.googleSub) accessUser.googleSub = sub; // bind on first approved sign-in
+    }
+
+    accessUser.lastLogin = new Date().toISOString();
+    writeDb(db);
 
     const loggedUser = {
       id: accessUser.userId || accessUser.id,
@@ -16916,30 +16968,8 @@ app.post("/api/db/auth/google", async (req, res) => {
     });
   }
 
-  // 1.1 Direct match for primary admin / executive email
-  if (cleanEmail === "admin@riadataleata.org.sa" || cleanEmail === "riadataleata@gmail.com") {
-    const adminUser = {
-      id: "admin-user",
-      name: name || "مجلس الجمعية والمدير التنفيذي",
-      email: cleanEmail,
-      phone: "0550000000",
-      nationalId: "1000000000",
-      role: "admin",
-      jobTitle: "المدير العام والمدير التنفيذي",
-      primaryDepartmentId: "dep-1",
-      primaryDepartmentName: "الإدارة التنفيذية",
-      allowedDepartmentIds: (db.departments || []).map((d: any) => d.id),
-      permissions: ["all_permissions", "super_admin", "manage_staff", "view_reports"],
-      status: "active",
-      lastLogin: new Date().toISOString()
-    };
-    logLoginAttempt('allowed', adminUser, 'تسجيل دخول الإدارة العليا بنجاح عبر حساب Google المعتمد');
-    return res.json({
-      status: "success",
-      role: "admin",
-      user: adminUser
-    });
-  }
+  // SECURITY: removed the hard-coded addresses that granted super-admin rights to anyone who could
+  // sign in to Google with them. Admin access via Google now requires an approved, sub-bound record.
 
   // 1.2 Maintenance Mode Guard: Block non-administrative Google logins during maintenance mode
   const isMaintenanceModeActive = Boolean(
@@ -17137,9 +17167,95 @@ app.post("/api/db/auth/google", async (req, res) => {
     googleEmail: cleanEmail,
     googleName: name || cleanEmail.split("@")[0],
     googlePicture: picture || null,
+    // Single-use, 20-minute proof that THIS email was verified by Google — required by complete-registration.
+    registrationTicket: issueGoogleRegistrationTicket(cleanEmail, verification.sub || ""),
     message: "حساب Google موثق ولكنه غير مسجل مسبقًا في الجمعية. يرجى اختيار نوع الحساب لإكمال نموذج التسجيل المطلوب."
   });
 });
+
+// Privileged = admin / operations role, or any super-admin-grade permission.
+function isPrivilegedAccessRecord(u: any): boolean {
+  if (!u) return false;
+  const role = String(u.role || '');
+  const perms: string[] = Array.isArray(u.permissions) ? u.permissions : [];
+  return role === 'admin' || role === 'operations_manager' || u.userId === 'admin-user' || u.userId === 'ops-manager' ||
+    perms.includes('super_admin') || perms.includes('all_permissions') || perms.includes('operations_manager');
+}
+
+// Approve / revoke Google sign-in for a privileged account. Super admin only, and the caller must
+// re-enter THEIR OWN password (a stolen session alone cannot enable Google access). Approval clears
+// any previous binding so the next verified Google sign-in binds the account's immutable Google id.
+app.post("/api/db/auth/google-signin/approval", (req: any, res) => {
+  const ctx = getUserAccessContext(req);
+  if (!ctx.isAuthenticated) return res.status(401).json({ error: "يجب تسجيل الدخول." });
+  if (!(ctx.isSuperAdmin || ctx.role === 'admin' || ctx.role === 'operations_manager')) {
+    return res.status(403).json({ error: "غير مصرح: الاعتماد متاح للإدارة العليا فقط." });
+  }
+  const { targetUserId, approve, currentPassword } = req.body || {};
+  if (typeof currentPassword !== "string" || !currentPassword) {
+    return res.status(400).json({ error: "يرجى إدخال كلمة المرور الحالية لتأكيد العملية." });
+  }
+  const pwdRate = checkRateLimit('login', `google-approval:${ctx.userId}`, 5, 15 * 60 * 1000);
+  if (!pwdRate.allowed) return res.status(429).json({ error: `محاولات كثيرة. انتظر ${pwdRate.retryAfterSec} ثانية.` });
+  const db = readDb();
+  const live = resolveLiveUserAccount(db, ctx.userId, ctx.role, ctx.nationalId);
+  if (!live.storedPasswordHash || !verifyPasswordAgainstHash(currentPassword.trim(), live.storedPasswordHash)) {
+    return res.status(403).json({ error: "كلمة المرور الحالية غير صحيحة." });
+  }
+  const targetId = typeof targetUserId === "string" && targetUserId.trim() ? targetUserId.trim() : ctx.userId;
+  const record = (db.userDepartmentAccess || []).find((u: any) => u && (u.userId === targetId || u.id === targetId));
+  if (!record) return res.status(404).json({ error: "الحساب الإداري غير موجود." });
+  if (!record.userEmail && !record.email) return res.status(400).json({ error: "لا يوجد بريد مسجل لهذا الحساب." });
+  const nowIso = new Date().toISOString();
+  if (approve === true) {
+    record.googleSignInApproved = true;
+    record.googleSignInApprovedBy = ctx.userId;
+    record.googleSignInApprovedAt = nowIso;
+    delete record.googleSub; // re-bind on next verified sign-in
+  } else {
+    record.googleSignInApproved = false;
+    record.googleSignInRevokedBy = ctx.userId;
+    record.googleSignInRevokedAt = nowIso;
+    delete record.googleSub;
+  }
+  if (!Array.isArray(db.accessAuditLogs)) db.accessAuditLogs = [];
+  db.accessAuditLogs.unshift({
+    id: `audit-google-approval-${Date.now()}`,
+    timestamp: nowIso,
+    userId: ctx.userId,
+    userName: ctx.userName,
+    userRole: ctx.role,
+    action: approve === true ? 'approve_google_signin' : 'revoke_google_signin',
+    resource: 'أمان الحسابات',
+    endpoint: '/api/db/auth/google-signin/approval',
+    status: 'allowed',
+    ip: req.ip,
+    notes: `${approve === true ? 'اعتماد' : 'إلغاء'} الدخول عبر Google للحساب الإداري (${record.userId || record.id})`
+  });
+  writeDb(db);
+  res.json({ status: "success", googleSignInApproved: record.googleSignInApproved === true });
+});
+
+// SECURITY: registration tickets bind the registration form to an email Google actually verified.
+// Stored in memory as SHA-256 hashes only; single use; 20-minute lifetime.
+const googleRegistrationTickets = new Map<string, { email: string; sub: string; expiresAt: number }>();
+function issueGoogleRegistrationTicket(email: string, sub: string): string {
+  const now = Date.now();
+  for (const [k, v] of googleRegistrationTickets) if (v.expiresAt < now) googleRegistrationTickets.delete(k);
+  const ticket = `grt_${crypto.randomBytes(24).toString("hex")}`;
+  googleRegistrationTickets.set(crypto.createHash("sha256").update(ticket).digest("hex"), { email, sub, expiresAt: now + 20 * 60 * 1000 });
+  return ticket;
+}
+function peekGoogleRegistrationTicket(ticket: any): { key: string; email: string; sub: string } | null {
+  if (typeof ticket !== "string" || !ticket.startsWith("grt_")) return null;
+  const key = crypto.createHash("sha256").update(ticket).digest("hex");
+  const rec = googleRegistrationTickets.get(key);
+  if (!rec || rec.expiresAt < Date.now()) { googleRegistrationTickets.delete(key); return null; }
+  return { key, email: rec.email, sub: rec.sub };
+}
+function consumeGoogleRegistrationTicket(key: string) {
+  googleRegistrationTickets.delete(key);
+}
 
 // Endpoint: Complete New Google User Registration (Volunteer or Beneficiary ONLY - Status: Pending Review)
 app.post("/api/db/auth/google/complete-registration", async (req, res) => {
@@ -17187,11 +17303,17 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
     });
   }
 
-  // 2. Validate Email
-  if (!googleEmail || typeof googleEmail !== 'string' || !googleEmail.includes('@')) {
-    return res.status(400).json({ error: "البريد الإلكتروني الموثق عبر Google مطلوب." });
+  // 2. Verified email — SECURITY: taken ONLY from the server-issued ticket created after Google verified
+  // the ID token. The googleEmail field sent by the browser is ignored (it could be any address).
+  const ticket = peekGoogleRegistrationTicket(req.body?.registrationTicket);
+  if (!ticket) {
+    return res.status(401).json({
+      error: "انتهت صلاحية جلسة التحقق عبر Google أو أنها غير صالحة. يرجى تسجيل الدخول عبر Google مرة أخرى لإكمال التسجيل.",
+      code: "GOOGLE_VERIFICATION_REQUIRED"
+    });
   }
-  const cleanEmail = googleEmail.toLowerCase().trim();
+  void googleEmail;
+  const cleanEmail = ticket.email;
 
   // 3. Validate Mandatory Personal Details
   if (!name || typeof name !== 'string' || name.trim().length < 3) {
@@ -17334,6 +17456,8 @@ app.post("/api/db/auth/google/complete-registration", async (req, res) => {
         });
       }
     });
+
+    consumeGoogleRegistrationTicket(ticket.key); // single use, only after the account was created
 
     // Send acknowledgement email to user
     try {
@@ -17483,20 +17607,20 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     }
   }
 
-  // Fallback for default admin
-  if (!userEmail && (cleanId === "admin" || cleanId === "1000000000")) {
-    userEmail = db.emailSettings?.testRecipientEmail || "riadataleata@gmail.com";
-    userName = "مجلس الإدارة والمدير التنفيذي";
-    targetUserId = "admin-user";
-  }
+  // SECURITY: removed the hard-coded fallback that sent the "admin" recovery code to a fixed mailbox.
 
-  // USER ENUMERATION SHIELD: If identifier not found, return generic success without leaking account existence
-  if (!userEmail || !userEmail.includes("@") || !userEmail.trim()) {
-    return res.json({
-      status: "success",
-      message: "إذا كان المعرّف المدخل مسجلاً في النظام، فقد تم إرسال تعليمات ورمز استعادة كلمة المرور إلى البريد الإلكتروني المرتبط به."
-    });
-  }
+  // ANTI-ENUMERATION: one identical response for every identifier — no email, no masked email, no
+  // provider errors — returned BEFORE any account work, which then continues in the background.
+  // The opaque requestId is used (instead of the email) to verify the code in the next step.
+  const requestId = `rq_${crypto.randomBytes(18).toString("hex")}`;
+  res.json({
+    status: "success",
+    requestId,
+    message: "إذا كان المعرّف المدخل مسجلاً في النظام، فقد تم إرسال رمز التحقق إلى وسيلة التواصل المسجلة لديه. الرمز صالح لمدة 15 دقيقة."
+  });
+  if (!userEmail || !userEmail.includes("@") || !userEmail.trim()) return;
+  // Per-account issuance cap: an attacker cannot mint unlimited codes for one account (IP-independent).
+  if (!checkRateLimit('forgotPassword', `otp-acct:${targetUserId}`, 5, 60 * 60 * 1000).allowed) return;
 
   // Generate 6-digit cryptographically secure random numeric OTP
   const otpCode = crypto.randomInt(100000, 1000000).toString();
@@ -17514,6 +17638,7 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
     userName,
     codeHash, // Secure hashed OTP
     resetToken: `rtok_${crypto.randomBytes(24).toString("hex")}`,
+    requestIdHash: crypto.createHash("sha256").update(requestId).digest("hex"),
     expiresAt: Date.now() + (15 * 60 * 1000), // Valid for 15 minutes
     attempts: 0,
     maxAttempts: 5,
@@ -17523,8 +17648,9 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   };
 
   db.passwordResetOtps.push(otpRecord);
+  writeDb(db);
 
-  // Send OTP Email via Central Email Service
+  // Send OTP Email via Central Email Service (background — the response was already sent)
   const baseUrl = (req.headers.origin as string) || "https://riadataleata.com";
   const resetLink = `${baseUrl}/?resetToken=${otpRecord.resetToken}&email=${encodeURIComponent(userEmail.toLowerCase())}`;
 
@@ -17555,9 +17681,8 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   }
 
   if (emailSendFailed) {
-    return res.status(502).json({
-      error: `تعذر إرسال رسالة استعادة كلمة المرور عبر مزود البريد (${emailErrorMsg}). يرجى المحاولة لاحقاً أو مراجعة إدارة الجمعية.`
-    });
+    // Never revealed to the requester (would disclose that the account exists).
+    console.warn("[forgot-password] email provider failure:", emailErrorMsg ? "see email logs" : "unknown");
   }
 
   // Log audit event
@@ -17580,56 +17705,47 @@ app.post("/api/db/auth/forgot-password", async (req, res) => {
   });
 
   writeDb(db);
-
-  // Masked email for display
-  const maskedEmail = userEmail.replace(/(.{2})(.*)(@.*)/, "$1•••$3");
-
-  return res.json({
-    status: "success",
-    email: userEmail.toLowerCase(),
-    maskedEmail,
-    message: `إذا كان الحساب مسجلاً لدينا، فقد تم إرسال رمز التحقق OTP إلى البريد الإلكتروني (${maskedEmail}) بنجاح. الرمز صالح لمدة 15 دقيقة.`
-  });
 });
 
 // 2. Verify OTP Code
 app.post("/api/db/auth/verify-otp", (req, res) => {
-  const { email, otpCode } = req.body || {};
-  if (!email || !otpCode || typeof otpCode !== "string") {
-    return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني ورمز التحقق OTP المكون من 6 أرقام." });
+  const { email, otpCode, requestId } = req.body || {};
+  if ((!email && !requestId) || !otpCode || typeof otpCode !== "string") {
+    return res.status(400).json({ error: "يرجى إدخال رمز التحقق OTP المكون من 6 أرقام." });
   }
+  // ANTI-ENUMERATION: one generic answer whether the request/email exists, expired, or the code is wrong.
+  const GENERIC_OTP_ERROR = "رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى المحاولة مجدداً أو طلب رمز جديد.";
 
   const db = readDb();
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const requestIdHash = typeof requestId === "string" && requestId ? crypto.createHash("sha256").update(requestId).digest("hex") : "";
   const cleanCode = otpCode.trim();
 
   if (!db.passwordResetOtps) db.passwordResetOtps = [];
-  const otpRecord = db.passwordResetOtps.find((o: any) => o.email === cleanEmail && !o.used);
+  const otpRecord = db.passwordResetOtps.find((o: any) =>
+    o && !o.used && (requestIdHash ? o.requestIdHash === requestIdHash : (cleanEmail && o.email === cleanEmail))
+  );
 
   if (!otpRecord) {
-    return res.status(400).json({ error: "لا يوجد طلب استعادة فعال لهذا البريد، يرجى طلب رمز تحقق جديد." });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Check expiration
   if (Date.now() > otpRecord.expiresAt) {
-    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق (صالح لمدة 15 دقيقة فقط)، يرجى طلب رمز جديد." });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Check max attempts
   if (otpRecord.attempts >= otpRecord.maxAttempts) {
-    return res.status(429).json({ error: "تم تجاوز الحد الأقصى للمحاولات الخاطئة (5 محاولات). يرجى طلب رمز تحقق جديد لأسباب أمنية." });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Verify hash
   const testHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + cleanCode).digest("hex");
-  if (testHash !== otpRecord.codeHash) {
+  if (!safeEqualStrings(testHash, String(otpRecord.codeHash || ""))) {
     otpRecord.attempts = (otpRecord.attempts || 0) + 1;
     writeDb(db);
-    const remaining = otpRecord.maxAttempts - otpRecord.attempts;
-    return res.status(400).json({
-      error: `رمز التحقق غير صحيح. متبقي لديك (${remaining}) ${remaining === 1 ? 'محاولة واحدة' : 'محاولات'}.`,
-      remainingAttempts: remaining
-    });
+    return res.status(400).json({ error: GENERIC_OTP_ERROR });
   }
 
   // Generate or return secure single-use reset token
@@ -17685,7 +17801,8 @@ app.post("/api/db/auth/verify-reset-token", (req, res) => {
 app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
   const { email, resetToken, newPassword, confirmPassword } = req.body || {};
 
-  if (!email || !resetToken || !newPassword || typeof newPassword !== "string") {
+  // email is optional: the 192-bit single-use resetToken (issued only after a correct OTP) identifies the request.
+  if (!resetToken || typeof resetToken !== "string" || !newPassword || typeof newPassword !== "string") {
     return res.status(400).json({ error: "جميع الحقول مطلوبة لإتمام تعيين كلمة المرور." });
   }
 
@@ -17703,13 +17820,14 @@ app.post("/api/db/auth/reset-password-with-otp", (req, res) => {
   }
 
   const db = readDb();
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
   if (!db.passwordResetOtps) db.passwordResetOtps = [];
-  const otpRecord = db.passwordResetOtps.find((o: any) => 
-    o.email === cleanEmail && 
-    o.resetToken === resetToken && 
-    o.verified && 
+  const otpRecord = db.passwordResetOtps.find((o: any) =>
+    o &&
+    (!cleanEmail || o.email === cleanEmail) &&
+    typeof o.resetToken === "string" && safeEqualStrings(o.resetToken, resetToken) &&
+    o.verified &&
     !o.used
   );
 
@@ -17917,29 +18035,14 @@ app.post("/api/db/auth/forgot-password/identify", (req, res) => {
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
   }
-  const { identifier, rememberId } = req.body || {};
-  const db = readDb();
-  const found = findRecoveryAccountRecord(db, identifier, rememberId);
-
-  const maskMail = (e: string) => (e && e.includes("@") ? e.replace(/(.{2})(.*)(@.*)/, "$1•••$3") : "");
-  const maskPhone = (p: string) => (p && p.length >= 4 ? `••••••${p.slice(-4)}` : "");
-
-  if (!found) {
-    // Anti-enumeration fallback channels UI or generic error
-    return res.json({
-      status: "success",
-      availableChannels: {
-        email: { available: true, masked: "re•••@riadataleata.org.sa" },
-        whatsapp: { available: true, masked: "••••••0000" }
-      }
-    });
-  }
-
+  // ANTI-ENUMERATION: the answer is IDENTICAL for every identifier (existing or not) and carries no
+  // masked email/phone. Previously unknown accounts got a fixed fake mask, which made real accounts
+  // distinguishable. Only email delivery is implemented server-side, so only email is offered.
   return res.json({
     status: "success",
     availableChannels: {
-      email: { available: Boolean(found.email && found.email.includes("@")), masked: maskMail(found.email) },
-      whatsapp: { available: Boolean(found.phone && found.phone.trim().length >= 8), masked: maskPhone(found.phone) }
+      email: { available: true, masked: "مسجل" },
+      whatsapp: { available: false, masked: "" }
     }
   });
 });
@@ -17950,15 +18053,19 @@ app.post("/api/db/auth/forgot-password/send-otp", async (req, res) => {
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: `تم تجاوز الحد المسموح. يرجى الانتظار ${rateCheck.retryAfterSec} ثانية.` });
   }
-  const { identifier, rememberId, channel } = req.body || {};
+  const { identifier, rememberId } = req.body || {};
+  const channel = "email"; // only email delivery is implemented server-side
   const db = readDb();
   const found = findRecoveryAccountRecord(db, identifier, rememberId);
-  if (!found) {
-    return res.json({
-      status: "success",
-      message: "إذا كان الحساب مسجلاً لدينا، فقد تم إرسال رمز التحقق بنجاح."
-    });
-  }
+
+  // ANTI-ENUMERATION: identical, immediate response for every identifier; delivery happens in the background.
+  res.json({
+    status: "success",
+    message: "إذا كان الحساب مسجلاً لدينا وله بريد إلكتروني مسجل، فقد تم إرسال رمز التحقق إليه. الرمز صالح لمدة 15 دقيقة."
+  });
+  if (!found || !found.email || !String(found.email).includes("@")) return;
+  // Per-account issuance cap (IP-independent): at most 5 codes per hour → at most 25 guesses per hour.
+  if (!checkRateLimit('forgotSendOtp', `otp-acct:${found.userId}`, 5, 60 * 60 * 1000).allowed) return;
 
   const otpCode = crypto.randomInt(100000, 1000000).toString();
   const codeHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode).digest("hex");
@@ -18012,14 +18119,9 @@ app.post("/api/db/auth/forgot-password/send-otp", async (req, res) => {
     status: "allowed",
     ip: clientIp,
     device: (req.headers["user-agent"] || "Web Client").substring(0, 100),
-    notes: `طلب إرسال رمز تحقق OTP لاستعادة كلمة المرور عبر (${channel === "whatsapp" ? "واتساب" : "البريد الإلكتروني"})`
+    notes: "طلب إرسال رمز تحقق OTP لاستعادة كلمة المرور عبر البريد الإلكتروني"
   });
   writeDb(db);
-
-  return res.json({
-    status: "success",
-    message: `تم إرسال رمز التحقق بنجاح عبر (${channel === "whatsapp" ? "واتساب" : "البريد الإلكتروني"}).`
-  });
 });
 
 app.post("/api/db/auth/forgot-password/verify-otp", (req, res) => {
@@ -18027,23 +18129,25 @@ app.post("/api/db/auth/forgot-password/verify-otp", (req, res) => {
   if (!otpCode || typeof otpCode !== "string" || !/^\d{6}$/.test(otpCode.trim())) {
     return res.status(400).json({ error: "يرجى إدخال رمز التحقق المكون من 6 أرقام." });
   }
+  // ANTI-ENUMERATION: one generic answer for unknown account / no request / expired / locked / wrong code.
+  const GENERIC = "رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى المحاولة مجدداً أو طلب رمز جديد.";
   const db = readDb();
   const found = findRecoveryAccountRecord(db, identifier, rememberId);
   if (!found || !Array.isArray(db.passwordResetOtps)) {
-    return res.status(400).json({ error: "رمز التحقق غير صحيح أو منتهي الصلاحية." });
+    return res.status(400).json({ error: GENERIC });
   }
   const otpRecord = db.passwordResetOtps.find((o: any) => o && o.userId === found.userId && !o.used);
   if (!otpRecord || Date.now() > otpRecord.expiresAt) {
-    return res.status(400).json({ error: "انتهت صلاحية رمز التحقق أو لا يوجد طلب نشط." });
+    return res.status(400).json({ error: GENERIC });
   }
   if (otpRecord.attempts >= (otpRecord.maxAttempts || 5)) {
-    return res.status(429).json({ error: "تم تجاوز الحد الأقصى للمحاولات، يرجى طلب رمز جديد." });
+    return res.status(400).json({ error: GENERIC });
   }
   const testHash = crypto.createHash("sha256").update(OTP_SECRET_SALT + otpCode.trim()).digest("hex");
-  if (testHash !== otpRecord.codeHash) {
+  if (!safeEqualStrings(testHash, String(otpRecord.codeHash || ""))) {
     otpRecord.attempts = (otpRecord.attempts || 0) + 1;
     writeDb(db);
-    return res.status(400).json({ error: `رمز التحقق غير صحيح. متبقي ${(otpRecord.maxAttempts || 5) - otpRecord.attempts} محاولات.` });
+    return res.status(400).json({ error: GENERIC });
   }
   otpRecord.verified = true;
   writeDb(db);
@@ -26382,11 +26486,58 @@ app.post("/api/support/tasks/update", (req, res) => {
   res.json({ success: true, task, tasks: db.supportTasks, db });
 });
 
-app.post("/api/ai/chat", async (req, res) => {
-  const { prompt, conversationHistory, userInfo } = req.body;
-  if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+// SECURITY / COST CONTROL for the public website assistant.
+const AI_LIMITS = {
+  promptMaxChars: 2000,
+  historyMaxItems: 10,
+  historyItemMaxChars: 2000,
+  totalMaxChars: 12000,
+  maxOutputTokens: 800,
+  perGuestIp: { max: 10, windowMs: 10 * 60 * 1000 },
+  perUser: { max: 30, windowMs: 10 * 60 * 1000 },
+  globalPerDay: Number(process.env.AI_CHAT_DAILY_CAP) > 0 ? Number(process.env.AI_CHAT_DAILY_CAP) : 1500
+};
+const aiDailyUsage = { day: "", count: 0 };
+function consumeAiDailyBudget(): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (aiDailyUsage.day !== today) { aiDailyUsage.day = today; aiDailyUsage.count = 0; }
+  if (aiDailyUsage.count >= AI_LIMITS.globalPerDay) return false;
+  aiDailyUsage.count++;
+  return true;
+}
 
-  const ai = getGeminiClient();
+app.post("/api/ai/chat", async (req, res) => {
+  const aiCtx = getUserAccessContext(req);
+  const rawPrompt = req.body?.prompt;
+  if (typeof rawPrompt !== "string" || !rawPrompt.trim()) return res.status(400).json({ error: "Prompt is required" });
+  if (rawPrompt.length > AI_LIMITS.promptMaxChars) {
+    return res.status(413).json({ error: `الرسالة طويلة جداً (الحد ${AI_LIMITS.promptMaxChars} حرف).` });
+  }
+  // Rate limits: per signed-in account, or per trusted client IP for guests.
+  const aiRate = aiCtx.isAuthenticated
+    ? checkRateLimit('registration', `ai-user:${aiCtx.userId}`, AI_LIMITS.perUser.max, AI_LIMITS.perUser.windowMs)
+    : checkRateLimit('registration', `ai-ip:${req.ip}`, AI_LIMITS.perGuestIp.max, AI_LIMITS.perGuestIp.windowMs);
+  if (!aiRate.allowed) {
+    return res.status(429).json({ error: `تم تجاوز عدد الرسائل المسموح للمساعد الذكي. يرجى المحاولة بعد ${aiRate.retryAfterSec} ثانية.` });
+  }
+  // History is bounded and sanitised (role + text only).
+  const conversationHistory = (Array.isArray(req.body?.conversationHistory) ? req.body.conversationHistory : [])
+    .slice(-AI_LIMITS.historyMaxItems)
+    .map((h: any) => ({ role: h?.role === "user" ? "user" : "model", text: String(h?.text || "").slice(0, AI_LIMITS.historyItemMaxChars) }));
+  const totalChars = rawPrompt.length + conversationHistory.reduce((n: number, h: any) => n + h.text.length, 0);
+  if (totalChars > AI_LIMITS.totalMaxChars) {
+    return res.status(413).json({ error: "المحادثة طويلة جداً. يرجى بدء محادثة جديدة." });
+  }
+  const prompt = rawPrompt;
+  // Ticket identity comes from the session; guests are recorded as guests (client-sent ids/roles ignored).
+  const bodyInfo = req.body?.userInfo || {};
+  const userInfo = aiCtx.isAuthenticated
+    ? { id: aiCtx.userId, name: aiCtx.userName, email: aiCtx.userEmail || "", phone: "", role: aiCtx.role }
+    : { id: `guest-${crypto.randomBytes(4).toString("hex")}`, name: String(bodyInfo.name || "زائر").slice(0, 80),
+        email: String(bodyInfo.email || "").slice(0, 120), phone: String(bodyInfo.phone || "").slice(0, 20), role: "guest" };
+
+  // Global daily budget: beyond it the assistant answers in local mode (no paid model call).
+  const ai = consumeAiDailyBudget() ? getGeminiClient() : null;
   const db = readDb();
 
   // Check if user prompt requests human escalation explicitly
@@ -26476,7 +26627,8 @@ app.post("/api/ai/chat", async (req, res) => {
     initiativesCount: db.initiatives.length,
     requestsCount: db.requests.length,
     attendanceRecords: db.attendance.length,
-    topVolunteers: db.volunteers.sort((a: any, b: any) => b.points - a.points).slice(0, 3).map((v: any) => `${v.name} (${v.points} نقطة)`),
+    // (copy before sorting: the previous in-place sort reordered the stored volunteers list)
+    topVolunteers: [...(db.volunteers || [])].sort((a: any, b: any) => (b.points || 0) - (a.points || 0)).slice(0, 3).map((v: any) => `${v.name} (${v.points} نقطة)`),
     departments: db.departments.map((d: any) => d.nameAr),
     teams: db.teams.map((t: any) => t.nameAr),
     initiativesList: db.initiatives.map((i: any) => `${i.name} بتاريخ ${i.date}`)
@@ -26521,6 +26673,7 @@ app.post("/api/ai/chat", async (req, res) => {
           config: {
             systemInstruction,
             temperature: 0.7,
+            maxOutputTokens: AI_LIMITS.maxOutputTokens,
           },
         });
         if (response && response.text) {
@@ -28711,6 +28864,9 @@ app.post("/api/db/team-staff/assign", (req, res) => {
   if (!teamId || !employeeId || !teamRole) {
     return res.status(400).json({ error: "يرجى تحديد الفريق والموظف والدور الميداني داخل الفريق" });
   }
+  // SECURITY: leaders act on their own team only; others need volunteer-management scope.
+  const tsGuard = assertTeamScopedStaffAccess(getUserAccessContext(req), teamId);
+  if (tsGuard) return res.status(tsGuard.status).json({ error: tsGuard.error });
 
   db.employees = db.employees || [];
   const emp = db.employees.find((e: any) => e.id === employeeId);
@@ -28785,6 +28941,9 @@ app.post("/api/db/team-staff/remove", (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ error: "تكليف الموظف بالفريق غير موجود" });
   }
+  // SECURITY: leaders act on their own team only; others need volunteer-management scope.
+  const tsrGuard = assertTeamScopedStaffAccess(getUserAccessContext(req), db.teamStaffAssignments[idx].teamId);
+  if (tsrGuard) return res.status(tsrGuard.status).json({ error: tsrGuard.error });
 
   const removed = db.teamStaffAssignments.splice(idx, 1)[0];
   const nowIso = new Date().toISOString();

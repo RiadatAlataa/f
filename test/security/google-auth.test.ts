@@ -11,6 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 
 const sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), "reyadat-sec-google-"));
 const dbPath = path.join(sandboxDir, "synthetic-db.json");
@@ -21,6 +23,7 @@ for (const k of ["DATABASE_URL", "STORAGE_BACKEND", "REQUIRE_PERMANENT_STORAGE",
 process.env.APP_DB_PATH = dbPath;
 process.env.NODE_ENV = "test";
 const CLIENT_ID = "test-client-id.apps.googleusercontent.com";
+const ADMIN_PW = `Aa1!${crypto.randomBytes(8).toString("hex")}`;
 
 fs.writeFileSync(dbPath, JSON.stringify({
   systemSettings: { societyName: "جمعية اختبار", maintenanceMode: false }, homeSettings: {},
@@ -29,7 +32,7 @@ fs.writeFileSync(dbPath, JSON.stringify({
   teams: [], volunteers: [], beneficiaries: [], employees: [], storekeepers: [], supportManagers: [], supportAgents: [],
   userDepartmentAccess: [
     { id: "perm-admin", userId: "admin-user", userName: "مدير", userEmail: "owner@example.org", role: "admin",
-      primaryDepartmentId: "dep-1", permissions: ["super_admin"], status: "active" }
+      primaryDepartmentId: "dep-1", permissions: ["super_admin"], status: "active", passwordHash: bcrypt.hashSync(ADMIN_PW, 4) }
   ],
   passwordResetRequests: [], notifications: [], initiatives: [], requests: [], logs: [], accessAuditLogs: [], activeSessions: []
 }), "utf8");
@@ -56,6 +59,7 @@ const googleToken = (claims: Record<string, any>) =>
 
 let server: http.Server;
 let baseUrl = "";
+let core: any;
 
 async function google(body: any) {
   const res = await realFetch(baseUrl + "/api/db/auth/google", {
@@ -70,7 +74,7 @@ const isAdmin = (r: any) => r.json?.status === "success" && ["admin", "operation
 
 before(async () => {
   process.env.GOOGLE_CLIENT_ID = CLIENT_ID;
-  const core: any = await import("../../server-core");
+  core = await import("../../server-core");
   core.reloadDbFromDisk();
   server = http.createServer(core.default);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -131,19 +135,55 @@ test("without GOOGLE_CLIENT_ID configured the server refuses every Google sign-i
   }
 });
 
-test("positive control: the verified owner of the admin record's exact email signs in as admin", async () => {
+test("an admin record's exact email is NOT enough: Google sign-in for admins needs explicit approval", async () => {
   const r = await google({ credential: googleToken({ email: "owner@example.org" }) });
-  assert.ok(isAdmin(r), `expected admin, got ${r.status} ${r.json?.role}`);
-  assert.ok(typeof r.json?.sessionToken === "string");
+  assert.equal(r.status, 403);
+  assert.equal(r.json?.code, "GOOGLE_ADMIN_APPROVAL_REQUIRED");
+  assert.ok(!r.json?.sessionToken);
 });
 
-test("the two hard-coded administrator addresses still require a valid, verified Google token", async () => {
+async function approve(body: any, token?: string) {
+  const res = await realFetch(baseUrl + "/api/db/auth/google-signin/approval", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(token ? { "x-session-token": token } : {}) },
+    body: JSON.stringify(body)
+  });
+  let json: any = null;
+  try { json = await res.json(); } catch {}
+  return { status: res.status, json };
+}
+
+test("approval requires a signed-in super admin AND their current password", async () => {
+  const anon = await approve({ approve: true, currentPassword: ADMIN_PW });
+  assert.equal(anon.status, 401);
+  const t = core.createServerSession({ id: "admin-user", userId: "admin-user", name: "مدير", role: "admin" }, "admin").token;
+  const wrongPw = await approve({ approve: true, currentPassword: "Wrong-123456" }, t);
+  assert.equal(wrongPw.status, 403);
+});
+
+test("after approval the verified Google account is bound by its immutable id; another Google account with the same email is refused", async () => {
+  const t = core.createServerSession({ id: "admin-user", userId: "admin-user", name: "مدير", role: "admin" }, "admin").token;
+  const ok = await approve({ approve: true, currentPassword: ADMIN_PW }, t);
+  assert.equal(ok.status, 200);
+
+  const first = await google({ credential: googleToken({ email: "owner@example.org", sub: "google-sub-owner" }) });
+  assert.ok(isAdmin(first), `expected admin after approval, got ${first.status}`);
+
+  const impostor = await google({ credential: googleToken({ email: "owner@example.org", sub: "google-sub-other" }) });
+  assert.equal(impostor.status, 403);
+  assert.equal(impostor.json?.code, "GOOGLE_ACCOUNT_MISMATCH");
+
+  const revoke = await approve({ approve: false, currentPassword: ADMIN_PW }, t);
+  assert.equal(revoke.status, 200);
+  const afterRevoke = await google({ credential: googleToken({ email: "owner@example.org", sub: "google-sub-owner" }) });
+  assert.equal(afterRevoke.status, 403);
+});
+
+test("the formerly hard-coded administrator addresses no longer grant admin, even with a valid verified token", async () => {
   for (const email of ["admin@riadataleata.org.sa", "riadataleata@gmail.com"]) {
-    const unverified = await google({ credential: googleToken({ email, email_verified: "false" }) });
-    assert.equal(unverified.status, 401, `${email}: unverified token accepted`);
-    const wrongAud = await google({ credential: googleToken({ email, aud: "other-app" }) });
-    assert.equal(wrongAud.status, 401, `${email}: foreign-audience token accepted`);
+    const r = await google({ credential: googleToken({ email }) });
+    assert.ok(!isAdmin(r), `${email} still grants admin`);
     const forged = await google({ credential: "not-a-google-token", email });
-    assert.equal(forged.status, 401, `${email}: forged credential accepted`);
+    assert.equal(forged.status, 401);
   }
 });
