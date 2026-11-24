@@ -56,5 +56,27 @@ jobs:
         run: npm run build
 
       - name: Type check (informational — reports pre-existing errors)
+        if: always()
         continue-on-error: true
         run: npx tsc --noEmit
+
+  # Builds the UNCHANGED base branch with the same toolchain, so a build failure can be
+  # attributed correctly (pre-existing on main vs. introduced by this PR).
+  baseline-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Build base branch (reference only)
+        run: npm run build
