@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Runs the TEST HOSTING image under the EthioDeploy Free container limits (256 MB RAM, 0.5 CPU) with synthetic data
+# of increasing size and reports boot time, memory and OOM kills. Prints only measurements — no data, no secrets.
+set -u
+IMG=reyadat-backend-test
+PW="Tt9!$(openssl rand -hex 12)"   # throwaway, never printed
+sample_mem() { docker stats --no-stream --format '{{.MemUsage}}' t 2>/dev/null | awk '{print $1}' | sed 's/MiB//;s/GiB/*1024/' | bc 2>/dev/null || echo 0; }
+
+echo "BENCH-ENV	node=$(docker run --rm --entrypoint node $IMG -v)"
+
+# 1) isolation guard: a database URL must make the container refuse to start
+docker run --rm -e DATABASE_URL=postgres://u:p@example.invalid/db $IMG >/tmp/guard.log 2>&1; code=$?
+echo "BENCH-GUARD	DATABASE_URL set → exit=$code refused=$(grep -c 'Refusing to start' /tmp/guard.log)"
+docker run --rm -e STORAGE_BACKEND=postgres $IMG >/tmp/guard2.log 2>&1; code=$?
+echo "BENCH-GUARD	STORAGE_BACKEND=postgres → exit=$code refused=$(grep -c 'Refusing to start' /tmp/guard2.log)"
+
+run() {
+  local scale=$1 img=$2 port=$3
+  docker rm -f t >/dev/null 2>&1
+  local t0=$(date +%s.%N)
+  docker run -d --name t --memory=256m --memory-swap=256m --cpus=0.5 -p $port:$port -e PORT=$port \
+    -e TEST_ADMIN_PASSWORD="$PW" -e TEST_DATA_SCALE=$scale -e TEST_DATA_IMAGE_KB=$img $IMG >/dev/null
+  local ok=0
+  for i in $(seq 1 240); do
+    if curl -sf -o /dev/null "http://127.0.0.1:$port/api/health"; then ok=1; break; fi
+    if [ "$(docker inspect -f '{{.State.Running}}' t)" != "true" ]; then break; fi
+    sleep 0.5
+  done
+  local boot=$(echo "$(date +%s.%N) - $t0" | bc)
+  local listen=$(docker exec t sh -c "cat /proc/net/tcp | awk 'NR>1{print \$2}' | grep -ci ':$(printf '%04X' $port)\$'" 2>/dev/null)
+  local anyaddr=$(docker exec t sh -c "cat /proc/net/tcp | awk 'NR>1 && \$4==\"0A\"{print \$2}' | grep -ci '^00000000:$(printf '%04X' $port)\$'" 2>/dev/null)
+  local root=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/")
+  local dbmb=$(docker exec t sh -c 'stat -c %s /app/.test-data/db.json' 2>/dev/null | awk '{printf "%.1f", $1/1048576}')
+  local idle=$(sample_mem); local peak=$idle
+  if [ $ok -eq 1 ]; then
+    # load: 30 sign-ins (each persists the whole document), 6 parallel full-database reads, 20 list reads
+    ( while docker inspect -f '{{.State.Running}}' t 2>/dev/null | grep -q true; do sample_mem >> /tmp/mem.$scale.$img; sleep 0.5; done ) &
+    local sampler=$!
+    local tok=""
+    for i in $(seq 1 30); do
+      r=$(curl -s -X POST "http://127.0.0.1:$port/api/db/auth/login" -H 'content-type: application/json' -H "x-forwarded-for: 198.18.0.$i" \
+          -d "{\"identifier\":\"admin\",\"password\":\"$PW\"}")
+      [ -z "$tok" ] && tok=$(echo "$r" | sed -n 's/.*"sessionToken":"\([^"]*\)".*/\1/p')
+    done
+    for i in $(seq 1 6); do curl -s -o /dev/null -H "x-session-token: $tok" "http://127.0.0.1:$port/api/db" & done; wait
+    for i in $(seq 1 20); do curl -s -o /dev/null -H "x-session-token: $tok" "http://127.0.0.1:$port/api/db/beneficiaries"; done
+    sleep 2; kill $sampler 2>/dev/null
+    peak=$(sort -n /tmp/mem.$scale.$img 2>/dev/null | tail -1)
+    [ -z "$tok" ] && tok_status="login-failed" || tok_status="login-ok"
+  else tok_status="not-started"; fi
+  local oom=$(docker inspect -f '{{.State.OOMKilled}}' t); local running=$(docker inspect -f '{{.State.Running}}' t)
+  local seeded=$(docker exec t node -e "
+    const fs=require('fs');const d=JSON.parse(fs.readFileSync('/app/.test-data/db.json','utf8'));
+    import('/app/scripts/test-hosting/synthetic-data.mjs').then(m=>{const a=m.buildSyntheticDb({scale:$scale,imageKb:0});
+      const out=[];for(const k of Object.keys(d)){if(k.startsWith('_'))continue;const av=a[k],dv=d[k];
+        if(av===undefined)out.push(k+'(+new)');else if(Array.isArray(dv)&&Array.isArray(av)&&dv.length>av.length&&!['activeSessions','logs','accessAuditLogs'].includes(k))out.push(k+'(+'+(dv.length-av.length)+')');}
+      const s=JSON.stringify(d);const real=(s.match(/riadataleata/gi)||[]).length;
+      console.log((out.join(',')||'none')+' realDomainMentions='+real);});" 2>/dev/null)
+  echo "BENCH	scale=$scale	imageKb=$img	dbMB=$dbmb	boot_s=$(printf '%.1f' $boot)	health=$ok	root=$root	port=$port listening=$listen on0.0.0.0=$anyaddr	idleMiB=$idle	peakMiB=$peak	oomKilled=$oom	running=$running	$tok_status	seededAtBoot=$seeded"
+  [ "$oom" = "true" ] || [ $ok -eq 0 ] && docker logs t 2>&1 | grep -E "FATAL|heap|Killed|Refusing|Error" | head -3 | sed 's/^/BENCH-LOG	/'
+  docker rm -f t >/dev/null 2>&1
+}
+
+run 1 0 8123      # also proves PORT is honoured (non-default port)
+run 5 0 3000
+run 20 0 3000
+run 50 0 3000
+run 5 30 3000
+run 10 50 3000
+run 20 50 3000

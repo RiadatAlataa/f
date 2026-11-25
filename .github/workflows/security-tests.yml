@@ -150,7 +150,7 @@ jobs:
 
   # FINAL REVIEW EVIDENCE (evidence branch only; not part of PR #1)
   final-review-evidence:
-    if: github.ref == 'refs/heads/security/review-08340ef'
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -192,6 +192,22 @@ jobs:
         continue-on-error: true
         env: { NODE_ENV: test }
         run: node --import tsx --test --test-force-exit --test-reporter=spec test/final-review/leaks.test.ts
+
+  # TEST HOSTING evidence (evidence branch only): image build + EthioDeploy Free limits (256 MB / 0.5 CPU)
+  test-hosting-bench:
+    if: github.ref == 'refs/heads/security/review-08340ef'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build test image (Node 22, bun.lock frozen)
+        run: docker build -f scripts/test-hosting/Dockerfile -t reyadat-backend-test . 2>&1 | tail -15
+      - name: Image size
+        run: docker image ls reyadat-backend-test --format 'BENCH-IMAGE {{.Size}}'
+      - name: Run under 256 MB / 0.5 CPU with synthetic data
+        run: bash scripts/test-hosting/bench.sh
 
   # Builds the UNCHANGED base branch with the same toolchain, so a build failure can be
   # attributed correctly (pre-existing on main vs. introduced by this PR).
