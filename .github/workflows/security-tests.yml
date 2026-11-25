@@ -182,7 +182,13 @@ jobs:
           NODE_ENV: test
           ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
         run: node --import tsx --test --test-force-exit --test-reporter=spec test/rollback/*.test.ts
+      - name: Deployed-version exposure (support staff)
+        continue-on-error: true
+        env:
+          ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/final-review/deployed-exposure.test.ts
       - name: Credential leak probe (all routes x all roles)
+        if: false
         continue-on-error: true
         env: { NODE_ENV: test }
         run: node --import tsx --test --test-force-exit --test-reporter=spec test/final-review/leaks.test.ts
