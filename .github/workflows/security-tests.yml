@@ -207,6 +207,7 @@ jobs:
       - name: Image size
         run: docker image ls reyadat-backend-test --format 'BENCH-IMAGE {{.Size}}'
       - name: Run under 256 MB / 0.5 CPU with synthetic data
+        timeout-minutes: 30
         run: bash scripts/test-hosting/bench.sh
 
   # Builds the UNCHANGED base branch with the same toolchain, so a build failure can be

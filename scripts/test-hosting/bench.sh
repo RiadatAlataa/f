@@ -22,14 +22,14 @@ run() {
     -e TEST_ADMIN_PASSWORD="$PW" -e TEST_DATA_SCALE=$scale -e TEST_DATA_IMAGE_KB=$img $IMG >/dev/null
   local ok=0
   for i in $(seq 1 240); do
-    if curl -sf -o /dev/null "http://127.0.0.1:$port/api/health"; then ok=1; break; fi
+    if curl -sf -m 5 -o /dev/null "http://127.0.0.1:$port/api/health"; then ok=1; break; fi
     if [ "$(docker inspect -f '{{.State.Running}}' rbt)" != "true" ]; then break; fi
     sleep 0.5
   done
   local boot=$(echo "$(date +%s.%N) - $t0" | bc)
   local listen=$(docker exec rbt sh -c "cat /proc/net/tcp | awk 'NR>1{print \$2}' | grep -ci ':$(printf '%04X' $port)\$'" 2>/dev/null)
   local anyaddr=$(docker exec rbt sh -c "cat /proc/net/tcp | awk 'NR>1 && \$4==\"0A\"{print \$2}' | grep -ci '^00000000:$(printf '%04X' $port)\$'" 2>/dev/null)
-  local root=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/")
+  local root=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/")
   local dbmb=$(docker exec rbt sh -c 'stat -c %s /app/.test-data/db.json' 2>/dev/null | awk '{printf "%.1f", $1/1048576}')
   local idle=$(sample_mem); local peak=$idle
   if [ $ok -eq 1 ]; then
@@ -38,12 +38,14 @@ run() {
     local sampler=$!
     local tok=""
     for i in $(seq 1 30); do
-      r=$(curl -s -X POST "http://127.0.0.1:$port/api/db/auth/login" -H 'content-type: application/json' -H "x-forwarded-for: 198.18.0.$i" \
+      r=$(curl -s -m 30 -X POST "http://127.0.0.1:$port/api/db/auth/login" -H 'content-type: application/json' -H "x-forwarded-for: 198.18.0.$i" \
           -d "{\"identifier\":\"admin\",\"password\":\"$PW\"}")
       [ -z "$tok" ] && tok=$(echo "$r" | sed -n 's/.*"sessionToken":"\([^"]*\)".*/\1/p')
     done
-    for i in $(seq 1 6); do curl -s -o /dev/null -H "x-session-token: $tok" "http://127.0.0.1:$port/api/db" & done; wait
-    for i in $(seq 1 20); do curl -s -o /dev/null -H "x-session-token: $tok" "http://127.0.0.1:$port/api/db/beneficiaries"; done
+    pids=""
+    for i in $(seq 1 6); do curl -s -m 60 -o /dev/null -H "x-session-token: $tok" "http://127.0.0.1:$port/api/db" & pids="$pids $!"; done
+    for p in $pids; do wait $p; done
+    for i in $(seq 1 20); do curl -s -m 30 -o /dev/null -H "x-session-token: $tok" "http://127.0.0.1:$port/api/db/beneficiaries"; done
     sleep 2; kill $sampler 2>/dev/null
     peak=$(sort -n /tmp/mem.$scale.$img 2>/dev/null | tail -1)
     [ -z "$tok" ] && tok_status="login-failed" || tok_status="login-ok"
