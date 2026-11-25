@@ -200,6 +200,18 @@ async function req(method: string, url: string, token: string, body?: any) {
   finally { clearTimeout(timer); }
 }
 const restore = () => core.writeDb(JSON.parse(snapshot));
+// compare data ignoring session bookkeeping / lastActive and log-only collections
+function normalized(db: any) {
+  const { activeSessions, logs, accessAuditLogs, securityLogs, loginAttempts, auditLogs, ...rest } = db || {};
+  return JSON.stringify(rest);
+}
+let baseNormalized = "";
+const snapshotNoSessions = () => baseNormalized;
+function policyOf(method: string, p: string, id: string) {
+  const table: any[] = core.__routePolicyTable || [];
+  const rule = table.find((r: any) => (r.method === "*" || r.method === method) && r.rx.test(concrete(p, id)));
+  return rule ? rule.policy : "handler";
+}
 
 before(async () => {
   core = await import("../../server-core");
@@ -222,12 +234,41 @@ before(async () => {
   for (const [r, t] of Object.entries(ROLE_TOKENS)) if (t) { CANARIES.push(t); TAG.set(t, `SESSION(${r})`); }
   await new Promise((r) => setTimeout(r, 1500)); // late route registration
   snapshot = JSON.stringify(core.readDb());
+  baseNormalized = normalized(JSON.parse(snapshot));
 });
 after(async () => {
   await new Promise<void>((resolve) => server?.close(() => resolve()));
   try { fs.rmSync(sandboxDir, { recursive: true, force: true }); } catch {}
 });
 
+const PUBLIC_ROUTES = new Set<string>([
+  "GET /robots.txt", "GET /google6b1a5bb23d6c4515.html",
+  "GET /api", "GET /api/", "GET /api/health", "GET /api/health/", "GET /health", "GET /health/", "GET /api/ping",
+  "GET /api/db", "GET /api/db/scoped", "GET /api/sitemap.xml", "GET /api/health/db", "GET /api/health/db/",
+  "GET /api/db/org-members",
+  "GET /api/maintenance/status", "GET /api/db/maintenance/status",
+  "GET /api/public/verify-card/:code", "GET /api/db/opportunities/by-code/:code",
+  "POST /api/admin/system/bootstrap",
+  "POST /api/db/auth/login", "POST /api/db/auth/login-remembered", "POST /api/db/auth/google",
+  "POST /api/db/auth/google/complete-registration",
+  "POST /api/db/auth/forgot-password", "POST /api/db/auth/verify-otp", "POST /api/db/auth/verify-reset-token",
+  "POST /api/db/auth/reset-password-with-otp", "POST /api/db/auth/forgot-password/identify",
+  "POST /api/db/auth/forgot-password/send-otp", "POST /api/db/auth/forgot-password/verify-otp",
+  "POST /api/db/auth/forgot-password/reset", "POST /api/db/auth/remember-status", "POST /api/db/auth/pin/login",
+  "POST /api/db/auth/logout", "GET /api/db/auth/session", "POST /api/auth/reset-password-with-token",
+  "POST /api/db/auth/validate-password-strength",
+  "POST /api/db/volunteerApplications/submit", "POST /api/db/teamApplications/submit",
+  "POST /api/db/teamApplications/upload-license", "POST /api/db/beneficiaries/add",
+  "POST /api/db/store/donate", "GET /api/db/systemSettings", "POST /api/logs/developer-error",
+  // password-recovery link flow (server/passwordResetService.ts) — public by design, token-gated
+  "GET /api/db/auth/recovery-config", "POST /api/db/auth/forgot-password/request-link",
+  "POST /api/db/auth/reset-password/validate", "GET /api/db/auth/reset-password/validate",
+  "POST /api/db/auth/reset-password/confirm",
+  // inbound provider webhook
+  "POST /api/whatsapp/webhook",
+  // public website assistant (reviewed: residual cost-abuse risk, see report)
+  "POST /api/ai/chat"
+]);
 const ROLES = ["anonymous", "beneficiary", "volunteer", "leader", "storekeeper", "support_agent", "support_manager", "employee_dep2", "employee_dep5", "operations_manager", "admin"];
 const TARGETS = ["sa-1", "sm-1", "vol-a", "ben-a", "sk-1", "emp-x", "leader-team-a", "depadmin-dep-5", "admin-user", "emp-vol"];
 const BACKUP = /^\/api\/(db\/backup|admin\/backup)/;
@@ -274,6 +315,12 @@ test("B. non-GET routes × all roles (+ every account type as target for admin):
       stats.requests++;
       if (res.status === -1) { stats.timeouts++; stats.skippedSlow.add(r.path); continue; }
       const key = `${r.method} ${r.path}`;
+      // authorization: anonymous / low-privilege success or data change on a non-public route
+      const changed = normalized(core.readDb()) !== snapshotNoSessions();
+      if (!PUBLIC_ROUTES.has(key) && role === "anonymous" && (res.status >= 200 && res.status < 300 || changed)) report("ANON-ACCESS", key, role, `status=${res.status} dataChanged=${changed}`);
+      const pol = policyOf(r.method, r.path, target);
+      if (!PUBLIC_ROUTES.has(key) && ["volunteer", "beneficiary"].includes(role) && pol !== "public" && pol !== "authenticated" && pol !== "handler" && (res.status >= 200 && res.status < 300)) report("LOWPRIV-ACCESS", key, role, `policy=${pol} status=${res.status} dataChanged=${changed}`);
+      if (!PUBLIC_ROUTES.has(key) && ["volunteer", "beneficiary"].includes(role) && pol === "handler" && changed) report("LOWPRIV-WRITE(handler-checked route)", key, role, `status=${res.status}`);
       const hits = scanText(res.text, ROLE_TOKENS[role], newPw);
       for (const h of hits) report(h, key, `${role}→${target}`, `status=${res.status}`);
       // storage: submitted password stored in plain text anywhere
