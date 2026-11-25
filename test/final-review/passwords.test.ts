@@ -31,13 +31,16 @@ fs.writeFileSync(dbPath, JSON.stringify({
   systemSettings: { societyName: "جمعية اختبار", maintenanceMode: false }, homeSettings: {},
   news: [], partners: [], gallery: [], heroSlides: [], orgMembers: [], faqs: [],
   departments: [{ id: "dep-1", nameAr: "تنفيذي" }, { id: "dep-2", nameAr: "مالية" }, { id: "dep-5", nameAr: "تطوع" },
-    { id: "dep-9", nameAr: "موارد", directorName: "مدير الموارد للاختبار", nationalId: "1700000102", status: "active" }],
+    { id: "dep-9", nameAr: "موارد", directorName: "مدير الموارد للاختبار", nationalId: "1700000102", status: "active" },
+    { id: "dep-8", nameAr: "مستودعات", directorName: "مدير المستودعات للاختبار", status: "active", passwordHash: bcrypt.hashSync("DirectorPw9!" + "x", 4) }],
   teams: [{ id: "team-a", nameAr: "فريق أ", departmentId: "dep-5", status: "active" },
     { id: "team-pwt", nameAr: "فريق اختبار", name: "pwtteam", leaderName: "pwt_leader", departmentId: "dep-5", status: "active" }],
   volunteers: [{ id: "pwt-vol", name: "متطوع اختبار", nationalId: "1700000104", teamId: "team-a", status: "active" }],
   beneficiaries: [{ id: "pwt-ben", name: "مستفيد اختبار", nationalId: "1700000105", status: "approved" }],
-  employees: [{ id: "pwt-emp", name: "موظف ميداني اختبار", nationalId: "1700000101", status: "active", departmentId: "dep-5" }],
-  storekeepers: [{ id: "pwt-sk", name: "حارس اختبار", nationalId: "1700000103", status: "active" }],
+  employees: [{ id: "pwt-emp", name: "موظف ميداني اختبار", nationalId: "1700000101", status: "active", departmentId: "dep-5" },
+    { id: "esc-emp", name: "موظف تصعيد", nationalId: "1700000201", status: "active", departmentId: "dep-2" }],
+  storekeepers: [{ id: "pwt-sk", name: "حارس اختبار", nationalId: "1700000103", status: "active" },
+    { id: "esc-sk", name: "حارس تصعيد", nationalId: "1700000203", status: "active" }],
   supportManagers: [{ id: "pwt-sm", name: "مدير دعم", username: "pwt_sm", role: "support_manager", status: "active" }],
   supportAgents: [{ id: "pwt-sa", name: "دعم", username: "pwt_sa", role: "support_agent", status: "active", managerId: "pwt-sm" }],
   userDepartmentAccess: [
@@ -77,7 +80,7 @@ const TYPES: T[] = [
   { type: "admin", coll: "userDepartmentAccess", find: (r) => r.userId === "admin-user", identifier: "admin" },
   { type: "operations_manager", coll: "userDepartmentAccess", find: (r) => r.userId === "ops-manager", identifier: "ops" },
   { type: "system_employee(userDepartmentAccess)", coll: "userDepartmentAccess", find: (r) => r.userId === "pwt-uda", identifier: "pwt_uda" },
-  { type: "department_director", coll: "departments", find: (r) => r.id === "dep-9", identifier: "1700000102" },
+  { type: "department_director", coll: "departments", find: (r) => r.id === "dep-9", identifier: "dep-9" },
   { type: "employee", coll: "employees", find: (r) => r.id === "pwt-emp", identifier: "1700000101" },
   { type: "storekeeper", coll: "storekeepers", find: (r) => r.id === "pwt-sk", identifier: "1700000103" },
   { type: "volunteer", coll: "volunteers", find: (r) => r.id === "pwt-vol", identifier: "1700000104" },
@@ -192,4 +195,27 @@ test("FINDING CHECK: public beneficiary registration must not store body credent
   assert.ok(!res.plainStored, "plain-text password from the request body was stored");
   assert.notEqual(ben.status, "approved", "anonymous registration approved itself");
   assert.ok(!res.permissionsStored, "privilege fields from the request body were stored");
+});
+
+
+test("FINDING CHECK: real storekeeper / employee sessions must not act as their department's director", async () => {
+  const rows: string[] = [];
+  for (const [label, coll, id, ident, depId] of [["storekeeper", "storekeepers", "esc-sk", "1700000203", "dep-8"], ["employee", "employees", "esc-emp", "1700000201", "dep-2"]] as const) {
+    const L = strong("E"), N = strong("F");
+    const db = core.readDb();
+    const rec = db[coll].find((r: any) => r.id === id); rec.password = L; core.writeDb(db);
+    const depBefore = JSON.stringify((core.readDb().departments || []).find((d: any) => d.id === depId));
+    const s = await login(ident, L);
+    const tok = s.json?.sessionToken;
+    // which identity does the server resolve for this real session? (department-admin-only listing as a probe)
+    const ctxProbe = await call("GET", "/api/db/permissions/users", undefined, { "x-session-token": tok });
+    const ch = await call("POST", "/api/db/auth/change-password", { newPassword: N }, { "x-session-token": tok });
+    const depAfter = JSON.stringify((core.readDb().departments || []).find((d: any) => d.id === depId));
+    const dirLogin = await login(depId, N);
+    const ownLogin = await login(ident, N);
+    rows.push(`${label}: signIn=${ok(s) ? s.json.role : s.status} adminListing=${ctxProbe.status} change=${ch.status} directorRecordChanged=${depBefore !== depAfter ? "YES" : "no"} directorSignInWithNewPw=${ok(dirLogin) ? "SESSION(" + dirLogin.json.role + ")" : dirLogin.status} ownSignInWithNewPw=${ok(ownLogin) ? "ok" : ownLogin.status}`);
+  }
+  for (const r of rows) console.log(`PWTYPE\tescalation\t${r}`);
+  assert.ok(rows.every((r) => r.includes("directorRecordChanged=no")), "a forced change wrote to the department director's credentials");
+  assert.ok(rows.every((r) => !r.includes("directorSignInWithNewPw=SESSION")), "the account can now sign in as the department director");
 });
