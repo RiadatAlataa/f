@@ -53,21 +53,32 @@ if (!fs.existsSync(dbPath)) {
 // those records are removed from the in-memory state and the data file BEFORE the server starts listening,
 // on every boot.
 import http from "node:http";
+process.env.TEST_HOSTING_SYNTHETIC = "1"; // disables the built-in 120-initiative seeding (test copy only)
 const SYNTHETIC_ID = /^(init|vol|ben|team|item|dist|log|n|att|dep|wh|perm)-/;
 const REAL_MARKERS = /riadataleata|ريادة العطاء|العسيلة/i;
+// Replace the association's name, city and official domain inside records that are ours (synthetic).
+function scrub(v) {
+  if (typeof v === "string") {
+    return v.replace(/[A-Za-z0-9._%+-]*@?[A-Za-z0-9.-]*riadataleata[A-Za-z0-9.-]*/gi, "test@example.org")
+      .replace(/جمعية ريادة العطاء[^"،.]*/g, "جمعية تجريبية").replace(/ريادة العطاء/g, "جهة تجريبية").replace(/العسيلة/g, "مدينة تجريبية");
+  }
+  if (Array.isArray(v)) return v.map(scrub);
+  if (v && typeof v === "object") { for (const k of Object.keys(v)) v[k] = scrub(v[k]); return v; }
+  return v;
+}
 function removeBuiltInSamples(db) {
   const removed = {};
   for (const [key, val] of Object.entries(db)) {
     if (!Array.isArray(val)) continue;
+    // built-in records (not created by the synthetic generator) that carry real names/domain are dropped
     const keep = val.filter((rec) => {
-      if (key === "initiatives") return rec && SYNTHETIC_ID.test(String(rec.id || ""));
+      if (rec && SYNTHETIC_ID.test(String(rec.id || ""))) return true;
       try { return !REAL_MARKERS.test(JSON.stringify(rec)); } catch { return true; }
     });
     if (keep.length !== val.length) { removed[key] = val.length - keep.length; db[key] = keep; }
   }
-  if (db.homeSettings && Array.isArray(db.homeSettings.orgMembers)) {
-    db.homeSettings.orgMembers = db.homeSettings.orgMembers.filter((m) => !REAL_MARKERS.test(JSON.stringify(m)));
-  }
+  // anything left (our synthetic records, settings objects) gets the real text replaced
+  for (const key of Object.keys(db)) db[key] = scrub(db[key]);
   return removed;
 }
 const originalListen = http.Server.prototype.listen;

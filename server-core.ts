@@ -2886,6 +2886,8 @@ const defaultDb = {
 
 // Helper: seed exactly 120 initiatives if needed
 function seed120Initiatives(db: any): boolean {
+  // TEST HOSTING COPY ONLY: synthetic data must not be mixed with built-in sample initiatives.
+  if (process.env.TEST_HOSTING_SYNTHETIC === "1") return false;
   if (!db.initiatives) {
     db.initiatives = [];
   }
