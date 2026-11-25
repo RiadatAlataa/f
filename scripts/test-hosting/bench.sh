@@ -4,7 +4,7 @@
 set -u
 IMG=reyadat-backend-test
 PW="Tt9!$(openssl rand -hex 12)"   # throwaway, never printed
-sample_mem() { docker stats --no-stream --format '{{.MemUsage}}' t 2>/dev/null | awk '{print $1}' | sed 's/MiB//;s/GiB/*1024/' | bc 2>/dev/null || echo 0; }
+sample_mem() { docker stats --no-stream --format '{{.MemUsage}}' rbt 2>/dev/null | awk '{print $1}' | sed 's/MiB//;s/GiB/*1024/' | bc 2>/dev/null || echo 0; }
 
 echo "BENCH-ENV	node=$(docker run --rm --entrypoint node $IMG -v)"
 
@@ -16,25 +16,25 @@ echo "BENCH-GUARD	STORAGE_BACKEND=postgres → exit=$code refused=$(grep -c 'Ref
 
 run() {
   local scale=$1 img=$2 port=$3
-  docker rm -f t >/dev/null 2>&1
+  docker rm -f rbt >/dev/null 2>&1
   local t0=$(date +%s.%N)
-  docker run -d --name t --memory=256m --memory-swap=256m --cpus=0.5 -p $port:$port -e PORT=$port \
+  docker run -d --name rbt --memory=256m --memory-swap=256m --cpus=0.5 -p $port:$port -e PORT=$port \
     -e TEST_ADMIN_PASSWORD="$PW" -e TEST_DATA_SCALE=$scale -e TEST_DATA_IMAGE_KB=$img $IMG >/dev/null
   local ok=0
   for i in $(seq 1 240); do
     if curl -sf -o /dev/null "http://127.0.0.1:$port/api/health"; then ok=1; break; fi
-    if [ "$(docker inspect -f '{{.State.Running}}' t)" != "true" ]; then break; fi
+    if [ "$(docker inspect -f '{{.State.Running}}' rbt)" != "true" ]; then break; fi
     sleep 0.5
   done
   local boot=$(echo "$(date +%s.%N) - $t0" | bc)
-  local listen=$(docker exec t sh -c "cat /proc/net/tcp | awk 'NR>1{print \$2}' | grep -ci ':$(printf '%04X' $port)\$'" 2>/dev/null)
-  local anyaddr=$(docker exec t sh -c "cat /proc/net/tcp | awk 'NR>1 && \$4==\"0A\"{print \$2}' | grep -ci '^00000000:$(printf '%04X' $port)\$'" 2>/dev/null)
+  local listen=$(docker exec rbt sh -c "cat /proc/net/tcp | awk 'NR>1{print \$2}' | grep -ci ':$(printf '%04X' $port)\$'" 2>/dev/null)
+  local anyaddr=$(docker exec rbt sh -c "cat /proc/net/tcp | awk 'NR>1 && \$4==\"0A\"{print \$2}' | grep -ci '^00000000:$(printf '%04X' $port)\$'" 2>/dev/null)
   local root=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/")
-  local dbmb=$(docker exec t sh -c 'stat -c %s /app/.test-data/db.json' 2>/dev/null | awk '{printf "%.1f", $1/1048576}')
+  local dbmb=$(docker exec rbt sh -c 'stat -c %s /app/.test-data/db.json' 2>/dev/null | awk '{printf "%.1f", $1/1048576}')
   local idle=$(sample_mem); local peak=$idle
   if [ $ok -eq 1 ]; then
     # load: 30 sign-ins (each persists the whole document), 6 parallel full-database reads, 20 list reads
-    ( while docker inspect -f '{{.State.Running}}' t 2>/dev/null | grep -q true; do sample_mem >> /tmp/mem.$scale.$img; sleep 0.5; done ) &
+    ( while docker inspect -f '{{.State.Running}}' rbt 2>/dev/null | grep -q true; do sample_mem >> /tmp/mem.$scale.$img; sleep 0.5; done ) &
     local sampler=$!
     local tok=""
     for i in $(seq 1 30); do
@@ -48,8 +48,8 @@ run() {
     peak=$(sort -n /tmp/mem.$scale.$img 2>/dev/null | tail -1)
     [ -z "$tok" ] && tok_status="login-failed" || tok_status="login-ok"
   else tok_status="not-started"; fi
-  local oom=$(docker inspect -f '{{.State.OOMKilled}}' t); local running=$(docker inspect -f '{{.State.Running}}' t)
-  local seeded=$(docker exec t node -e "
+  local oom=$(docker inspect -f '{{.State.OOMKilled}}' rbt); local running=$(docker inspect -f '{{.State.Running}}' rbt)
+  local seeded=$(docker exec rbt node -e "
     const fs=require('fs');const d=JSON.parse(fs.readFileSync('/app/.test-data/db.json','utf8'));
     import('/app/scripts/test-hosting/synthetic-data.mjs').then(m=>{const a=m.buildSyntheticDb({scale:$scale,imageKb:0});
       const out=[];for(const k of Object.keys(d)){if(k.startsWith('_'))continue;const av=a[k],dv=d[k];
@@ -57,8 +57,8 @@ run() {
       const s=JSON.stringify(d);const real=(s.match(/riadataleata/gi)||[]).length;
       console.log((out.join(',')||'none')+' realDomainMentions='+real);});" 2>/dev/null)
   echo "BENCH	scale=$scale	imageKb=$img	dbMB=$dbmb	boot_s=$(printf '%.1f' $boot)	health=$ok	root=$root	port=$port listening=$listen on0.0.0.0=$anyaddr	idleMiB=$idle	peakMiB=$peak	oomKilled=$oom	running=$running	$tok_status	seededAtBoot=$seeded"
-  [ "$oom" = "true" ] || [ $ok -eq 0 ] && docker logs t 2>&1 | grep -E "FATAL|heap|Killed|Refusing|Error" | head -3 | sed 's/^/BENCH-LOG	/'
-  docker rm -f t >/dev/null 2>&1
+  [ "$oom" = "true" ] || [ $ok -eq 0 ] && docker logs rbt 2>&1 | grep -E "FATAL|heap|Killed|Refusing|Error" | head -3 | sed 's/^/BENCH-LOG	/'
+  docker rm -f rbt >/dev/null 2>&1
 }
 
 run 1 0 8123      # also proves PORT is honoured (non-default port)
