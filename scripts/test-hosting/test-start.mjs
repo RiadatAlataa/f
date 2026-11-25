@@ -48,4 +48,42 @@ if (!fs.existsSync(dbPath)) {
   console.log(`[TEST HOSTING] Synthetic data created (scale=${scale}, imageKb=${imageKb}, ${(fs.statSync(dbPath).size / 1048576).toFixed(1)} MB).`);
 }
 
+// The server inserts built-in sample content at start-up (sample initiatives, letters, requests, custodies
+// that carry the association's name and official domain). The test copy must hold synthetic data only, so
+// those records are removed from the in-memory state and the data file BEFORE the server starts listening,
+// on every boot.
+import http from "node:http";
+const SYNTHETIC_ID = /^(init|vol|ben|team|item|dist|log|n|att|dep|wh|perm)-/;
+const REAL_MARKERS = /riadataleata|ريادة العطاء|العسيلة/i;
+function removeBuiltInSamples(db) {
+  const removed = {};
+  for (const [key, val] of Object.entries(db)) {
+    if (!Array.isArray(val)) continue;
+    const keep = val.filter((rec) => {
+      if (key === "initiatives") return rec && SYNTHETIC_ID.test(String(rec.id || ""));
+      try { return !REAL_MARKERS.test(JSON.stringify(rec)); } catch { return true; }
+    });
+    if (keep.length !== val.length) { removed[key] = val.length - keep.length; db[key] = keep; }
+  }
+  if (db.homeSettings && Array.isArray(db.homeSettings.orgMembers)) {
+    db.homeSettings.orgMembers = db.homeSettings.orgMembers.filter((m) => !REAL_MARKERS.test(JSON.stringify(m)));
+  }
+  return removed;
+}
+const originalListen = http.Server.prototype.listen;
+http.Server.prototype.listen = function (...args) {
+  http.Server.prototype.listen = originalListen;
+  try {
+    const core = require(path.resolve("dist/server.cjs"));
+    const db = core.readDb();
+    const removed = removeBuiltInSamples(db);
+    core.writeDb(db);
+    console.log(`[TEST HOSTING] Built-in sample records removed: ${JSON.stringify(removed)}`);
+  } catch (err) {
+    console.error("[TEST HOSTING] Could not clean built-in samples; refusing to start.", err && err.message);
+    process.exit(1);
+  }
+  return originalListen.apply(this, args);
+};
+
 require(path.resolve("dist/server.cjs"));

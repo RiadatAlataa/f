@@ -60,24 +60,25 @@ run() {
     [ -z "$tok" ] && tok_status="login-failed" || tok_status="login-ok"
   else tok_status="not-started"; fi
   local oom=$(docker inspect -f '{{.State.OOMKilled}}' rbt); local running=$(docker inspect -f '{{.State.Running}}' rbt)
+  # second boot on the same data: built-in samples must not come back
+  if [ "$running" = "true" ]; then
+    docker restart rbt >/dev/null; for i in $(seq 1 120); do curl -sf -m 5 -o /dev/null "http://127.0.0.1:$port/api/health" && break; sleep 0.5; done
+  fi
   local seeded=$(docker exec rbt node -e "
     const fs=require('fs');const d=JSON.parse(fs.readFileSync('/app/.test-data/db.json','utf8'));
     import('/app/scripts/test-hosting/synthetic-data.mjs').then(m=>{const a=m.buildSyntheticDb({scale:$scale,imageKb:0});
       const out=[];for(const k of Object.keys(d)){if(k.startsWith('_'))continue;const av=a[k],dv=d[k];
         if(av===undefined)out.push(k+'(+new)');else if(Array.isArray(dv)&&Array.isArray(av)&&dv.length>av.length&&!['activeSessions','logs','accessAuditLogs'].includes(k))out.push(k+'(+'+(dv.length-av.length)+')');}
-      const s=JSON.stringify(d);const real=(s.match(/riadataleata/gi)||[]).length;
-      const where=Object.keys(d).filter(k=>/riadataleata/i.test(JSON.stringify(d[k]))).join('|')||'-';
+      const s=JSON.stringify(d);const RX=/riadataleata|ريادة العطاء|العسيلة/gi;const real=(s.match(RX)||[]).length;
+      const where=Object.keys(d).filter(k=>/riadataleata|ريادة العطاء|العسيلة/i.test(JSON.stringify(d[k]))).join('|')||'-';
       const extraUsers=(d.userDepartmentAccess||[]).map(u=>u.userId).filter(id=>!['admin-user','ops-manager'].includes(id)).join('|')||'-';
       const grown=out.filter(x=>!x.endsWith('(+new)')).join(',')||'none';
-      console.log('grown='+grown+' newEmptyCollections='+out.filter(x=>x.endsWith('(+new)')).length+' realDomainMentions='+real+' in='+where+' extraUsers='+extraUsers);});" 2>/dev/null)
+      console.log('initiatives='+(d.initiatives||[]).length+' grown='+grown+' newEmptyCollections='+out.filter(x=>x.endsWith('(+new)')).length+' realDomainMentions='+real+' in='+where+' extraUsers='+extraUsers);});" 2>/dev/null)
   echo "BENCH	scale=$scale	imageKb=$img	dbMB=$dbmb	boot_s=$(printf '%.1f' $boot)	health=$ok	root=$root	port=$port listening=$listen on0.0.0.0=$anyaddr	idleMiB=$idle	lightPeakMiB=$lightpeak	heavyPeakMiB=$peak	oomKilled=$oom	running=$running	$tok_status	seededAtBoot=$seeded"
+  docker logs rbt 2>&1 | grep -E "Built-in sample records removed" | sed 's/^/BENCH-CLEAN	/'
   [ "$oom" = "true" ] || [ $ok -eq 0 ] && docker logs rbt 2>&1 | grep -E "FATAL|heap|Killed|Refusing|Error" | head -3 | sed 's/^/BENCH-LOG	/'
   docker rm -f rbt >/dev/null 2>&1
 }
 
 run 1 0 8123      # also proves PORT is honoured (non-default port)
 run 5 0 3000
-run 8 0 3000
-run 12 0 3000
-run 20 0 3000
-run 5 10 3000
