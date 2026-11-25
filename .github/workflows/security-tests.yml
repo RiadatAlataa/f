@@ -148,6 +148,43 @@ jobs:
           ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
         run: node --import tsx --test --test-force-exit --test-reporter=spec test/security/ip-limits.test.ts test/rollback/rollback-e2e.test.ts || true
 
+  # FINAL REVIEW EVIDENCE (evidence branch only; not part of PR #1)
+  final-review-evidence:
+    if: github.ref == 'refs/heads/security/review-08340ef'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout previous production version (main 1fb76b0)
+        uses: actions/checkout@v4
+        with:
+          ref: 1fb76b0579200d82c50af79561f36381b236e18c
+          path: base
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - working-directory: base
+        run: bun install --frozen-lockfile
+      - name: Password storage per account type
+        continue-on-error: true
+        env: { NODE_ENV: test }
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/final-review/passwords.test.ts
+      - name: Rollback compatibility incl. Google approvals (previous = main)
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+          ROLLBACK_SERVER_PATH: ${{ github.workspace }}/base/server-core.ts
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/rollback/*.test.ts
+      - name: Credential leak probe (all routes x all roles)
+        continue-on-error: true
+        env: { NODE_ENV: test }
+        run: node --import tsx --test --test-force-exit --test-reporter=spec test/final-review/leaks.test.ts
+
   # Builds the UNCHANGED base branch with the same toolchain, so a build failure can be
   # attributed correctly (pre-existing on main vs. introduced by this PR).
   baseline-build:

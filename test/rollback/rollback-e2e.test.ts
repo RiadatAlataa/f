@@ -257,3 +257,63 @@ test("F. roll-forward: the new version still verifies everything after the previ
 test("summary", () => {
   console.log("ROLLBACK-E2E-SUMMARY\t" + report.join(" | "));
 });
+
+// ================= FINAL REVIEW (evidence branch only): Google approvals across versions =================
+async function adminToken() {
+  const a = await login("admin", PW.admin);
+  assert.ok(ok(a), "admin sign-in failed");
+  return a.json.sessionToken as string;
+}
+const g = (sub: string) => call("POST", "/api/db/auth/google", { credential: signedGoogle({ email: "owner@example.org", sub }) });
+
+test("G. new version: admin approves own Google sign-in; first sign-in binds the Google account; another account is refused", async () => {
+  await startVersion(NEW, { NODE_ENV: "test", GOOGLE_CLIENT_ID: CLIENT_ID });
+  const tok = await adminToken();
+  const ap = await call("POST", "/api/db/auth/google-signin/approval", { approve: true, currentPassword: PW.admin }, { "x-session-token": tok });
+  assert.equal(ap.status, 200);
+  const a = await g("sub-owner-A");
+  assert.ok(ok(a) && a.json.role === "admin", `approved Google sign-in failed (${a.status})`);
+  const b = await g("sub-other-B");
+  assert.ok(!ok(b), "a different Google account was accepted after binding");
+  note(`new: approval + binding OK; other Google account → ${b.status}`);
+  await stopVersion();
+});
+
+test("H. previous version on the same data: approval/binding fields are kept but IGNORED (binding not enforced)", async () => {
+  await startVersion(PREVIOUS, { NODE_ENV: "test", GOOGLE_CLIENT_ID: CLIENT_ID });
+  const b = await g("sub-other-B");
+  note(`previous: other Google account with the admin's email → ${ok(b) ? "ADMIN SESSION (binding ignored)" : b.status}`);
+  await stopVersion();
+  const db = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+  const adm = db.userDepartmentAccess.find((u: any) => u.userId === "admin-user");
+  assert.equal(adm.googleSignInApproved, true, "previous version dropped the approval flag");
+  assert.ok(adm.googleSub, "previous version dropped the binding");
+  note("previous: approval + binding fields preserved in data");
+});
+
+test("I. roll-forward: binding still enforced; revocation works on the new version", async () => {
+  await startVersion(NEW, { NODE_ENV: "test", GOOGLE_CLIENT_ID: CLIENT_ID });
+  assert.ok(ok(await g("sub-owner-A")));
+  assert.ok(!ok(await g("sub-other-B")));
+  const tok = await adminToken();
+  const rv = await call("POST", "/api/db/auth/google-signin/approval", { approve: false, currentPassword: PW.admin }, { "x-session-token": tok });
+  assert.equal(rv.status, 200);
+  const after = await g("sub-owner-A");
+  assert.ok(!ok(after), "revoked Google sign-in still works on the new version");
+  note(`roll-forward: binding enforced; after revocation → ${after.status}`);
+  await stopVersion();
+});
+
+test("J. previous version after a revocation made on the new version: revocation is IGNORED", async () => {
+  await startVersion(PREVIOUS, { NODE_ENV: "test", GOOGLE_CLIENT_ID: CLIENT_ID });
+  const r = await g("sub-owner-A");
+  note(`previous: revoked admin Google sign-in → ${ok(r) ? "ADMIN SESSION (revocation ignored)" : r.status}`);
+  await stopVersion();
+  await startVersion(PREVIOUS, { NODE_ENV: "production", GOOGLE_CLIENT_ID: EMERGENCY_GOOGLE_CLIENT_ID });
+  const r2 = await g("sub-owner-A");
+  note(`previous + emergency settings: revoked admin Google sign-in → ${ok(r2) ? "SESSION" : r2.status}`);
+  assert.ok(!ok(r2));
+  await stopVersion();
+});
+
+test("summary-2", () => { console.log("ROLLBACK-E2E-SUMMARY-2\t" + report.join(" | ")); });
