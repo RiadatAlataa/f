@@ -41,7 +41,8 @@ const out = (s: string) => process.stdout.write(s + "\n");
 
 const rnd = (n = 6) => crypto.randomBytes(n).toString("hex");
 const CANARIES: string[] = [];
-const C = (tag: string) => { const v = `CNRY${tag}${rnd()}`; CANARIES.push(v); return v; };
+const TAG = new Map<string, string>();
+const C = (tag: string) => { const v = `CNRY${tag}${rnd()}`; CANARIES.push(v); TAG.set(v, tag); return v; };
 const OWN_PW: Record<string, string> = {};
 const BCRYPT_RX = /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/;
 
@@ -49,7 +50,7 @@ function secrets(id: string, opts: { supportStyle?: boolean } = {}) {
   const pw = C(`PW${id}`);
   OWN_PW[id] = pw;
   const h = bcrypt.hashSync(pw, 4);
-  CANARIES.push(h);
+  CANARIES.push(h); TAG.set(h, `HASH(${id})`);
   return {
     password: opts.supportStyle ? pw : pw, passwordHash: h,
     pinHash: C("PIN"), tempPassword: C("TMP"), resetToken: C("RTK"), passwordResetToken: C("PRT"),
@@ -134,10 +135,27 @@ const report = (cat: string, route: string, role: string, detail = "") => {
   if (!findings.includes(line)) { findings.push(line); out(line); }
 };
 
+function locate(obj: any, needles: string[], max = 4): string[] {
+  const found: string[] = [];
+  const walk = (v: any, p: string, d: number) => {
+    if (found.length >= max || d > 10 || v == null) return;
+    if (typeof v === "string") { for (const n of needles) if (v.includes(n)) { found.push(`${TAG.get(n) || "?"}@${p.replace(/\.\d+/g, "[]")}`); break; } return; }
+    if (Array.isArray(v)) { v.forEach((x, i) => walk(x, `${p}.${i}`, d + 1)); return; }
+    if (typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, p ? `${p}.${k}` : k, d + 1);
+  };
+  walk(obj, "", 0);
+  return [...new Set(found)];
+}
 function scanText(text: string, ownToken: string, newPw?: string): string[] {
   const hits: string[] = [];
-  for (const c of CANARIES) if (text.includes(c)) { hits.push("canary-secret"); break; }
-  if (BCRYPT_RX.test(text)) hits.push("bcrypt-hash");
+  const present = CANARIES.filter((c) => text.includes(c));
+  if (present.length) {
+    let parsed: any = null; try { parsed = JSON.parse(text); } catch {}
+    const where = parsed ? locate(parsed, present) : present.slice(0, 4).map((c) => `${TAG.get(c) || "?"}@raw`);
+    hits.push(`canary-secret[${where.join(" ")}]`);
+  }
+  const bm = text.match(BCRYPT_RX);
+  if (bm && !present.includes(bm[0])) hits.push("bcrypt-hash[unseeded]");
   for (const [role, tok] of Object.entries(ROLE_TOKENS)) if (tok && tok !== ownToken && text.includes(tok)) { hits.push(`other-session-token(${role})`); break; }
   if (newPw && text.includes(newPw)) hits.push("submitted-password-echoed");
   return hits;
@@ -201,7 +219,7 @@ before(async () => {
   s("vol", { id: "vol-a", name: "متطوع أ", nationalId: "1900000601", role: "volunteer", teamId: "team-a" }, "volunteer");
   s("ben", { id: "ben-a", name: "مستفيد أ", nationalId: "1800000601", role: "beneficiary" }, "beneficiary");
   ROLE_TOKENS.anonymous = ""; ROLE_SELF.anonymous = "";
-  for (const t of Object.values(ROLE_TOKENS)) if (t) CANARIES.push(t);
+  for (const [r, t] of Object.entries(ROLE_TOKENS)) if (t) { CANARIES.push(t); TAG.set(t, `SESSION(${r})`); }
   await new Promise((r) => setTimeout(r, 1500)); // late route registration
   snapshot = JSON.stringify(core.readDb());
 });
@@ -261,7 +279,10 @@ test("B. non-GET routes × all roles (+ every account type as target for admin):
       // storage: submitted password stored in plain text anywhere
       const dbNow = core.readDb();
       const text = JSON.stringify(dbNow);
-      if (text.includes(newPw)) report("PLAINTEXT-STORED(submitted password)", key, `${role}→${target}`, `status=${res.status}`);
+      if (text.includes(newPw)) {
+        TAG.set(newPw, "SUBMITTED");
+        report("PLAINTEXT-STORED(submitted password)", key, `${role}→${target}`, `at ${locate(dbNow, [newPw], 3).join(" ")}`);
+      }
       // credential fields written with a non-hash value
       for (const [coll, arr] of Object.entries(dbNow)) {
         if (!Array.isArray(arr)) continue;

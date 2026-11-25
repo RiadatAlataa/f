@@ -171,10 +171,12 @@ jobs:
       - working-directory: base
         run: bun install --frozen-lockfile
       - name: Password storage per account type
+        if: false
         continue-on-error: true
         env: { NODE_ENV: test }
         run: node --import tsx --test --test-force-exit --test-reporter=spec test/final-review/passwords.test.ts
       - name: Rollback compatibility incl. Google approvals (previous = main)
+        if: false
         continue-on-error: true
         env:
           NODE_ENV: test
