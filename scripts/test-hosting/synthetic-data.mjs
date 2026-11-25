@@ -62,10 +62,18 @@ export function buildSyntheticDb({ scale = 1, imageKb = 0, adminPasswordHash }) 
         id: "perm-admin", userId: "admin-user", username: "admin", userName: "مدير تجريبي", userEmail: "test-admin@example.org",
         role: "admin", primaryDepartmentId: "dep-1", permissions: ["super_admin"], status: "active", mustChangePassword: false,
         ...(adminPasswordHash ? { passwordHash: adminPasswordHash } : { loginDisabled: true })
+      },
+      // synthetic operations-manager record so start-up normalisation does not create its built-in default
+      {
+        id: "perm-ops", userId: "ops-manager", username: "ops-test", userName: "مدير عمليات تجريبي", userEmail: "test-ops@example.org",
+        nationalId: "9000000002", phone: "0000000002", role: "operations_manager", primaryDepartmentId: "dep-1",
+        permissions: ["operations_manager"], status: "active", loginDisabled: true
       }
     ],
     inventoryItems, distributions, warehouses: [{ id: "wh-1", nameAr: "مستودع تجريبي" }],
-    logs, accessAuditLogs: [], notifications, attendance, initiatives: [], requests: [], benefitRequests: [],
+    logs, accessAuditLogs: [], notifications, attendance,
+    // non-empty so the server does not insert its built-in sample initiatives
+    initiatives: Array.from({ length: 3 }, (_, i) => ({ id: `init-${i}`, titleAr: `مبادرة تجريبية ${i}`, status: "active", teamId: "team-0", createdAt: now })), requests: [], benefitRequests: [],
     passwordResetRequests: [], passwordResetOtps: [], supportTickets: [], supportTasks: [], chatConversations: [],
     activeSessions: [], trustedDevices: [], rememberedHandles: [], volunteerApplications: [], teamApplications: [],
     emailSettings: { provider: "both_auto", resendApiKey: "", smtpPassword: "", enabled: false },
